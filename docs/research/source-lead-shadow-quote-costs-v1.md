@@ -45,6 +45,10 @@ separate. This document registers capture only; it does not authorize a cost
 read. The existing latency diagnostic retains its own registered read and
 continues to use only its stated operational fields.
 
+The proposed diagnostic read is specified in
+`source-lead-v2-book-cost-diagnostic-v1.md`. It becomes registered only when
+that protocol is merged, before its first read.
+
 The v2 cohort contract is stricter for exit books: until a separate registered
 exit diagnostic read, only coverage, statuses and delays may be shown. Exit
 prices, exit spread and exit impact may be read only under that registration.
@@ -52,18 +56,15 @@ Neither entry nor exit diagnostics may change the registered v2 verdict.
 
 ## Deployment record
 
-Deployment has not happened at the time of this code review. The first attempt
-with `send_cost_capture_version = source_lead_send_book_costs_v1` and its UTC
-`created_at` will establish the exact data cutover without inspecting any cost
-values. After deployment, replace the pending fields below in a separate
-operations amendment to this document; do not guess a timestamp in advance.
-Choose a quiet UTC window from outcome-blind event counts, allow for the full
-pre-migration backup, and record the window as context for the first weekly
-latency report. Deploy the migration before the updated execution worker.
-
-- Production deployment started at UTC: pending.
-- Production deployment completed at UTC: pending.
-- First versioned shadow attempt at UTC: pending.
+Operations amendment, 2026-09-29: the pre-migration backup
+`db-2026-09-29T14:36:42` completed with its receipt at 15:01:41 UTC.
+Migration 0056 was applied before the updated execution container started at
+15:02:54 UTC. Deployment completed before 15:05 UTC. The execution worker was
+healthy with `SOURCE_LEAD_MODE=shadow`, `DRY_RUN=true` and `AUTO_TRADE=false`.
+At the 15:05 UTC outcome-blind health check there were no v2-qualified Bybit
+episodes, so the first versioned attempt and its exact data cutover were still
+pending. Old attempts are not backfilled. The deployment interval should be
+marked in the first weekly latency report.
 
 The book-side fields support a descriptive cost calibration for a future
 contract version. They do not replace the registered v2 cost model or turn a

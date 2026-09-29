@@ -643,7 +643,7 @@ source-lead-readiness-report:
 			&& printf '%s' '--no-working-tree-dirty' \
 			|| printf '%s' '--working-tree-dirty') $(ARGS)
 
-.PHONY: prod-source-lead-shadow-diagnostic prod-source-lead-shadow-diagnostic-install
+.PHONY: prod-source-lead-shadow-diagnostic prod-source-lead-shadow-diagnostic-install prod-source-lead-v2-book-cost-diagnostic
 
 source-lead-identity-report:
 	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
@@ -1481,6 +1481,16 @@ prod-source-lead-shadow-diagnostic-install:
 	sudo systemctl daemon-reload
 	sudo systemctl enable --now schurfer-source-lead-shadow-diagnostic.timer
 	@systemctl list-timers schurfer-source-lead-shadow-diagnostic.timer --no-pager
+
+# One registered diagnostic read from 2026-10-15T00:00Z, never the formal v2
+# return reader. The CLI fixes the cohort window and artifact directory.
+prod-source-lead-v2-book-cost-diagnostic:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@$(_PROD) run --rm --no-deps --entrypoint source-lead-v2-book-cost-diagnostic analytics \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty')
 
 # HYP-012b (docs/research/source-lead-multi-source-hyp012b-v1.md). Read-only. PHASE=all
 # (default) freezes the inputs once, takes the durable claim, then computes the result
