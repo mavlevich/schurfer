@@ -1,6 +1,6 @@
 # Roadmap
 
-> Living document. Updated as we progress. Last refreshed 2026-09-27.
+> Living document. Updated as we progress. Last refreshed 2026-09-29.
 
 ## Current focus
 
@@ -8,10 +8,10 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: source-venue early detection (MEXC): archive the expiring MEXC 1m bars, then a 5m exploratory screen on the burnt 2026-08-10..31 window; passive: HYP-012c single read 2026-09-29, HYP-012 v2 cohort from 2026-09-29 with shadow execution, HYP-015 registered cohort 2026-10-05..11-02 (read from 2026-11-04 12:00Z)
-State: DRY_RUN, AUTO_TRADE off, no trading credentials; Bybit is the only confirmed execution venue; HYP-012b and HYP-028 rejected; no after-cost edge established; the scanner detects every pump only at +20% 24h change on a 60s poll, so every tested entry came after the first 20%
-Next: MEXC 5m early-trigger screen (frequency, false positives, remaining move, net at measured costs); execution costs measured from shadow books; ENG-025 narrow restore drill; only if the screen survives, a bounded MEXC websocket canary and one registered rule
-User decision required: which venues the owner can trade futures on (MEXC, BingX, Bitget, OKX?); the HYP-012c read is approved and scheduled for 2026-09-29 00:30Z
+Current primary: preserve the HYP-012 v2 cohort from 2026-09-29 with shadow execution and the HYP-015 cohort 2026-10-05..11-02 (formal read from 2026-11-04 12:00Z); HYP-012c and HYP-029 each had one formal read on 2026-09-29 and failed their registered gates
+State: DRY_RUN, AUTO_TRADE off, no trading credentials; Bybit is the only confirmed execution venue; no after-cost edge established; HYP-012c's holdout mean net was negative and HYP-029's positive mean had a wide interval crossing zero
+Next: measure v2 shadow quote quality and costs without changing either cohort, repair the flaky make verify gate, and confirm disk headroom after cold-bar retention converges; discuss the next research direction before registering another rule
+User decision required: none for the active cohorts; confirm accessible futures venues only before designing a source-native execution route
 ```
 
 ### Completed code card — ENG-024 outcome-consumer integrity
@@ -267,6 +267,13 @@ closed research decisions; a historical unchecked box is not authority to rerun 
 closed pilot or to block an already established capture lane.
 
 ### Source-venue early detection (2026-09-27)
+
+**Status as of 2026-09-29.** Steps 1-2 are complete. Step 4 was the single
+registered HYP-029 read on September 1m bars; it failed its candidate gate, so
+this MEXC early-trigger line is closed. Step 3 did not replace the registered
+0.4% cost assumption. Steps 5-6 have not started and are not authorized by this
+line's result: the descriptive 60s-to-120s delay difference does not establish
+that latency decides the outcome.
 
 **Why this, now.** Every hypothesis tested so far entered after the pump was already
 visible to everyone:
