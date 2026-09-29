@@ -60,6 +60,7 @@ def health_key(paper_version: str) -> str:
 
 class PaperStore(Protocol):
     async def acquire_worker_lock(self, paper_version: str) -> bool: ...
+    async def assert_worker_lock(self) -> None: ...
 
     async def register_run(
         self,
@@ -603,6 +604,9 @@ async def run_paper_worker(
         )
         last_tick: TickResult | None = None
         while True:
+            # A PostgreSQL restart releases session locks without restarting this
+            # container. Fail outside the recoverable tick handler before quoting.
+            await active_store.assert_worker_lock()
             try:
                 # Checked BEFORE process_tick, not after: this worker owns
                 # more than just opening new entries (see process_tick's
