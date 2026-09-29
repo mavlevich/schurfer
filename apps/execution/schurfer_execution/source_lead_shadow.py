@@ -46,6 +46,7 @@ if TYPE_CHECKING:
 log = structlog.get_logger()
 
 SHADOW_VERSION = "source_lead_shadow_v1"
+SEND_COST_CAPTURE_VERSION = "source_lead_send_book_costs_v1"
 STRATEGY_NAME = "source_lead"
 STRATEGY_VERSION = "1"
 # Literal copies of the analytics contract (HYP-012 qualification v4); the
@@ -173,6 +174,13 @@ def rounded_quantity(target_usd: Decimal, vwap: Decimal, qty_step: Decimal) -> D
     return steps * qty_step
 
 
+def mid_to_ask_vwap_bps(ask_vwap: Decimal, mid: Decimal) -> Decimal | None:
+    """Mid-to-ask cost; invalid diagnostics cannot change shadow admission."""
+    if not (ask_vwap.is_finite() and mid.is_finite()) or mid <= 0 or ask_vwap < mid:
+        return None
+    return (ask_vwap - mid) / mid * 10_000
+
+
 @dataclass(frozen=True)
 class Episode:
     capture_id: int
@@ -224,12 +232,12 @@ INSERT INTO app.source_lead_shadow_attempts (
     capture_id, qualification_version, shadow_version, native_symbol,
     instrument_identity_key, source_first_observed_at, observed_at, qualified_at,
     first_seen_at, outcome, late, gate_to_seen_ms, detect_latency_ms, from_qualified_ms,
-    capture_ask_vwap
+    capture_ask_vwap, send_cost_capture_version
 ) VALUES (
     %(capture_id)s, %(qv)s, %(sv)s, %(symbol)s, %(identity_key)s,
     %(source_first_observed_at)s, %(observed_at)s, %(qualified_at)s, %(first_seen_at)s,
     'claimed', %(late)s, %(gate_to_seen_ms)s, %(detect_latency_ms)s, %(from_qualified_ms)s,
-    %(capture_ask_vwap)s
+    %(capture_ask_vwap)s, %(cost_version)s
 )
 ON CONFLICT (capture_id, qualification_version) DO NOTHING
 RETURNING id
@@ -253,6 +261,9 @@ _FINAL_COLUMNS = frozenset(
         "send_ask_vwap",
         "send_qty_vwap",
         "send_notional_usd",
+        "send_spread_bps",
+        "send_notional_ask_impact_bps",
+        "send_qty_ask_impact_bps",
         "quote_change_bps",
         "decision_id",
         "error",
@@ -348,6 +359,7 @@ class ShadowStore:
                 "capture_id": episode.capture_id,
                 "qv": QUALIFICATION_VERSION,
                 "sv": SHADOW_VERSION,
+                "cost_version": SEND_COST_CAPTURE_VERSION,
                 "symbol": native_symbol(episode.identity_key),
                 "identity_key": episode.identity_key,
                 "source_first_observed_at": episode.source_first_observed_at,
@@ -583,6 +595,8 @@ async def _evaluate(
     best_bid, best_ask = best_price(book.bids), best_price(book.asks)
     if best_bid is None or best_ask is None or best_ask < best_bid:
         return "crossed_book"
+    mid = (best_bid + best_ask) / 2
+    fields["send_spread_bps"] = (best_ask - best_bid) / mid * 10_000
 
     # Comparable to capture: the same $50 notional on the same instrument.
     notional_vwap = ask_vwap_for_notional(book.asks, TARGET_USD)
@@ -590,6 +604,7 @@ async def _evaluate(
         return "insufficient_depth"
     fields |= {
         "send_ask_vwap": notional_vwap,
+        "send_notional_ask_impact_bps": mid_to_ask_vwap_bps(notional_vwap, mid),
         "quote_change_bps": (notional_vwap - episode.capture_ask_vwap)
         / episode.capture_ask_vwap
         * 10_000,
@@ -605,7 +620,11 @@ async def _evaluate(
     if qty_vwap is None:
         return "insufficient_depth"
     notional = qty_vwap * quantity
-    fields |= {"send_qty_vwap": qty_vwap, "send_notional_usd": notional}
+    fields |= {
+        "send_qty_vwap": qty_vwap,
+        "send_notional_usd": notional,
+        "send_qty_ask_impact_bps": mid_to_ask_vwap_bps(qty_vwap, mid),
+    }
     if notional < spec.min_notional_usd:
         return "below_min_notional"
 

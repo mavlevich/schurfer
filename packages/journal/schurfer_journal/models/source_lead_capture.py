@@ -393,7 +393,7 @@ _SHADOW_OUTCOMES = (
 
 
 class SourceLeadShadowAttempt(Base):
-    """HYP-012 v2 shadow-execution attempt per qualified episode (migration 0055)."""
+    """HYP-012 v2 shadow attempt per qualified episode (migrations 0055-0056)."""
 
     __tablename__ = "source_lead_shadow_attempts"
 
@@ -438,6 +438,12 @@ class SourceLeadShadowAttempt(Base):
     send_notional_usd: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
     capture_ask_vwap: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
     send_ask_vwap: Mapped[Decimal | None] = mapped_column(Numeric(30, 14), nullable=True)
+    send_cost_capture_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    send_spread_bps: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
+    send_notional_ask_impact_bps: Mapped[Decimal | None] = mapped_column(
+        Numeric(18, 4), nullable=True
+    )
+    send_qty_ask_impact_bps: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
     quote_change_bps: Mapped[Decimal | None] = mapped_column(Numeric(18, 4), nullable=True)
     decision_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
