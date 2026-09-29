@@ -802,6 +802,12 @@ verify` accepts, and the tree passes it with no baseline file or blanket nolint.
 
 - **Status / priority:** `confirmed`, `P2`; found while writing the ENG-022 regressions,
   not an audit finding.
+- **Partial remediation (2026-09-29):** the Python pytest suite now fails on
+  unmocked external sockets, DNS lookups, and psycopg connections outside the
+  local test database. Two tests with unintended database/Telegram calls were
+  corrected. This does not isolate the shared local PostgreSQL database or
+  cover subprocess and Go network calls; the first-run `make verify` flake is
+  not yet attributed to a specific cause.
 - **Evidence:** a test in `apps/execution/tests/test_orders.py` reached
   `order_attempts.mark_completed` with an unpatched database call and opened a
   connection to the production PostgreSQL host, failing only on a socket timeout after

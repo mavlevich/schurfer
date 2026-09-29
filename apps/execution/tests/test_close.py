@@ -333,6 +333,11 @@ async def test_check_exit_resolved_close_without_trade_id_creates_durable_incide
     with (
         patch("schurfer_execution.monitor.close_position", new_callable=AsyncMock) as mock_close,
         patch(
+            "schurfer_execution.monitor.journal.find_open_trade_entry_at",
+            new_callable=AsyncMock,
+            return_value=None,
+        ),
+        patch(
             "schurfer_execution.monitor.incidents.create_incident",
             new_callable=AsyncMock,
             return_value=55,
@@ -345,6 +350,7 @@ async def test_check_exit_resolved_close_without_trade_id_creates_durable_incide
         patch(
             "schurfer_execution.monitor.notify.notify_alert", new_callable=AsyncMock
         ) as mock_alert,
+        patch("schurfer_execution.monitor.notify.notify_close", new_callable=AsyncMock),
         patch(
             "schurfer_execution.monitor.journal.revoke_pnl_readiness", new_callable=AsyncMock
         ) as mock_revoke,
