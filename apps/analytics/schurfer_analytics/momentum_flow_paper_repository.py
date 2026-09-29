@@ -23,6 +23,7 @@ from sqlalchemy import (
     func,
     or_,
     select,
+    text,
     update,
 )
 from sqlalchemy.dialects.postgresql import JSONB, insert
@@ -296,6 +297,7 @@ class MomentumFlowPaperRepository:
     def __init__(self, engine: AsyncEngine) -> None:
         self._engine = engine
         self._lock_connection: AsyncConnection | None = None
+        self._lock_backend_identity: tuple[int, datetime] | None = None
 
     @classmethod
     def from_url(cls, database_url: str) -> MomentumFlowPaperRepository:
@@ -312,14 +314,63 @@ class MomentumFlowPaperRepository:
         if self._lock_connection is not None:
             return True
         connection = await self._engine.connect()
-        result = await connection.execute(
-            select(func.pg_try_advisory_lock(func.hashtext(paper_version)))
-        )
-        if not bool(result.scalar_one()):
+        try:
+            result = await connection.execute(
+                select(
+                    func.pg_backend_pid(),
+                    func.pg_try_advisory_lock(func.hashtext(paper_version)),
+                )
+            )
+            backend_pid, acquired = result.one()
+            if not bool(acquired):
+                return False
+            backend_started_at = (
+                await connection.execute(
+                    text("SELECT backend_start FROM pg_stat_activity WHERE pid = pg_backend_pid()")
+                )
+            ).scalar_one()
+            # This is a session lock. Commit the implicit SELECT transaction while
+            # retaining the checked-out connection and its advisory lock.
+            await connection.commit()
+            self._lock_connection = connection
+            self._lock_backend_identity = (int(backend_pid), backend_started_at)
+            return True
+        except BaseException:
+            # A failed commit may already have acquired the session lock. Drop
+            # the physical session instead of returning it to the pool locked.
+            await connection.invalidate()
+            raise
+        finally:
+            if self._lock_connection is not connection:
+                # On a failed claim or query error, return the connection without
+                # leaving an idle transaction behind.
+                await connection.close()
+
+    async def assert_worker_lock(self) -> None:
+        connection = self._lock_connection
+        expected = self._lock_backend_identity
+        if connection is None or expected is None:
+            raise RuntimeError("momentum paper worker lock is not held")
+        try:
+            row = await connection.execute(
+                text("SELECT pid, backend_start FROM pg_stat_activity WHERE pid = pg_backend_pid()")
+            )
+            backend_pid, backend_started_at = row.one()
+            await connection.commit()
+        except BaseException as exc:
+            await connection.invalidate()
             await connection.close()
-            return False
-        self._lock_connection = connection
-        return True
+            self._lock_connection = None
+            self._lock_backend_identity = None
+            if isinstance(exc, Exception):
+                raise RuntimeError("momentum paper worker lock session was lost") from exc
+            raise
+        if (int(backend_pid), backend_started_at) != expected:
+            await connection.invalidate()
+            await connection.close()
+            self._lock_connection = None
+            self._lock_backend_identity = None
+            raise RuntimeError("momentum paper worker lock session changed")
 
     async def register_run(
         self,
@@ -914,4 +965,5 @@ class MomentumFlowPaperRepository:
         if self._lock_connection is not None:
             await self._lock_connection.close()
             self._lock_connection = None
+        self._lock_backend_identity = None
         await self._engine.dispose()

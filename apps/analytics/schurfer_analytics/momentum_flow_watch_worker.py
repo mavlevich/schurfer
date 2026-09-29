@@ -56,6 +56,7 @@ def health_key(watch_version: str) -> str:
 
 class WatchStore(Protocol):
     async def acquire_worker_lock(self, watch_version: str) -> bool: ...
+    async def assert_worker_lock(self) -> None: ...
 
     async def register_run(
         self,
@@ -411,6 +412,9 @@ async def run_watch_worker(
         )
         last_result: BucketResult | None = None
         while True:
+            # A PostgreSQL restart releases session locks without restarting this
+            # container. Fail outside the recoverable tick handler before writing.
+            await active_store.assert_worker_lock()
             try:
                 # Readiness check every tick, not a startup-only gate: a
                 # worker that raised here used to crash-loop under Docker's
