@@ -166,19 +166,66 @@ def _distribution(values: list[float]) -> dict[str, int | float | None]:
     }
 
 
-def _verify_exit_snapshot(row: BookCostRow) -> None:
+def _exit_snapshot_integrity_failure(row: BookCostRow) -> str | None:
     if row.exit_outcome != "sampled":
-        return
+        return None
     if not isinstance(row.exit_book_snapshot, dict) or not row.exit_book_sha256:
-        raise ValueError(f"sampled exit {row.capture_id} has no hashed book snapshot")
-    digest = hashlib.sha256(
-        json.dumps(row.exit_book_snapshot, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+        return "sampled_exit_snapshot_missing"
+    try:
+        digest = hashlib.sha256(
+            json.dumps(row.exit_book_snapshot, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+    except (TypeError, ValueError):
+        return "sampled_exit_snapshot_invalid"
     if digest != row.exit_book_sha256:
-        raise ValueError(f"sampled exit {row.capture_id} has a mismatched book snapshot")
+        return "sampled_exit_snapshot_hash_mismatch"
+    return None
+
+
+def _integrity_failures(rows: list[BookCostRow]) -> Counter[str]:
+    failures: Counter[str] = Counter()
+    seen: set[int] = set()
+    for row in rows:
+        if row.capture_id in seen:
+            failures["duplicate_qualified_capture"] += 1
+        seen.add(row.capture_id)
+        if row.shadow_version not in (None, SHADOW_VERSION):
+            failures["unexpected_shadow_version"] += 1
+        if row.attempt_outcome is not None and row.shadow_version is None:
+            failures["shadow_attempt_missing_version"] += 1
+        if row.send_cost_capture_version not in (None, SEND_COST_VERSION):
+            failures["unexpected_send_cost_version"] += 1
+        if row.exit_version not in (None, EXIT_VERSION):
+            failures["unexpected_exit_version"] += 1
+        if row.exit_outcome is not None and row.exit_version is None:
+            failures["exit_observation_missing_version"] += 1
+        if failure := _exit_snapshot_integrity_failure(row):
+            failures[failure] += 1
+    return failures
 
 
 def build_report(rows: list[BookCostRow]) -> dict[str, Any]:
+    identity = {
+        "report_version": REPORT_VERSION,
+        "qualification_version": QUALIFICATION_VERSION,
+        "shadow_version": SHADOW_VERSION,
+        "send_cost_capture_version": SEND_COST_VERSION,
+        "exit_version": EXIT_VERSION,
+        "window_start_utc": WINDOW_START.isoformat(),
+        "window_end_utc": WINDOW_END.isoformat(),
+        "read_eligible_at_utc": READ_AFTER.isoformat(),
+    }
+    failures = _integrity_failures(rows)
+    if failures:
+        return {
+            **identity,
+            "status": "integrity_failed",
+            "rows_read": len(rows),
+            "unique_capture_ids": len({row.capture_id for row in rows}),
+            "integrity_failures": dict(sorted(failures.items())),
+            "interpretation": "no_book_cost_estimates_due_to_integrity_failure",
+        }
+
     target: Counter[str] = Counter()
     attempt: Counter[str] = Counter()
     cost_version: Counter[str] = Counter()
@@ -198,23 +245,7 @@ def build_report(rows: list[BookCostRow]) -> dict[str, Any]:
     }
     paired = 0
     paired_same_quantity = 0
-    seen: set[int] = set()
     for row in rows:
-        if row.capture_id in seen:
-            raise ValueError(f"duplicate qualified capture {row.capture_id}")
-        seen.add(row.capture_id)
-        if row.shadow_version not in (None, SHADOW_VERSION):
-            raise ValueError(f"unexpected shadow version for {row.capture_id}")
-        if row.attempt_outcome is not None and row.shadow_version is None:
-            raise ValueError(f"shadow attempt {row.capture_id} has no shadow version")
-        if row.send_cost_capture_version not in (None, SEND_COST_VERSION):
-            raise ValueError(f"unexpected send-cost version for {row.capture_id}")
-        if row.exit_version not in (None, EXIT_VERSION):
-            raise ValueError(f"unexpected exit version for {row.capture_id}")
-        if row.exit_outcome is not None and row.exit_version is None:
-            raise ValueError(f"exit observation {row.capture_id} has no exit version")
-        _verify_exit_snapshot(row)
-
         target[row.target_status or "no_target"] += 1
         capture_ready = (
             row.target_status == "sampled"
@@ -317,14 +348,9 @@ def build_report(rows: list[BookCostRow]) -> dict[str, Any]:
                 paired_same_quantity += 1
 
     return {
-        "report_version": REPORT_VERSION,
-        "qualification_version": QUALIFICATION_VERSION,
-        "shadow_version": SHADOW_VERSION,
-        "send_cost_capture_version": SEND_COST_VERSION,
-        "exit_version": EXIT_VERSION,
-        "window_start_utc": WINDOW_START.isoformat(),
-        "window_end_utc": WINDOW_END.isoformat(),
-        "read_eligible_at_utc": READ_AFTER.isoformat(),
+        **identity,
+        "status": "complete",
+        "integrity_failures": {},
         "eligible": len(rows),
         "target_status": dict(sorted(target.items())),
         "attempt_outcome": dict(sorted(attempt.items())),
@@ -425,10 +451,34 @@ async def report_once(
 
 
 def render_markdown(report: dict[str, Any]) -> str:
+    if report["status"] == "integrity_failed":
+        lines = [
+            "# HYP-012 v2 book-cost diagnostic",
+            "",
+            f"Window: {report['window_start_utc']} to {report['window_end_utc']} (exclusive).",
+            "Status: integrity_failed. No book-cost estimates were published.",
+            f"Rows read: {report['rows_read']}; unique capture IDs: "
+            f"{report['unique_capture_ids']}.",
+            "",
+            "| integrity failure | n |",
+            "| ----------------- | - |",
+        ]
+        lines.extend(f"| {key} | {n} |" for key, n in report["integrity_failures"].items())
+        lines.extend(
+            [
+                "",
+                f"Database read: {report['database_now_utc']}; code: {report['code_revision']}; "
+                f"dirty: {report['working_tree_dirty']}.",
+                f"Rows SHA-256: {report['row_snapshot_sha256']}.",
+                "",
+            ]
+        )
+        return "\n".join(lines)
     lines = [
         "# HYP-012 v2 book-cost diagnostic",
         "",
         f"Window: {report['window_start_utc']} to {report['window_end_utc']} (exclusive).",
+        "Status: complete.",
         f"Eligible: {report['eligible']}; on-time paired: {report['paired_on_time']}; "
         f"same quantity: {report['paired_same_quantity']}.",
         "Descriptive book costs only; no return, fill or cost-model update.",
@@ -472,20 +522,24 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-async def _run(args: argparse.Namespace) -> str:
+async def _run(args: argparse.Namespace) -> tuple[str, bool]:
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
         raise ValueError("DATABASE_URL is required")
     report = await report_once(db_url, code_revision=args.code_revision, dirty=args.dirty)
-    return (
+    output = (
         json.dumps(report, indent=2, sort_keys=True) + "\n"
         if args.format == "json"
         else render_markdown(report)
     )
+    return output, report["status"] == "integrity_failed"
 
 
 def main() -> None:
-    sys.stdout.write(asyncio.run(_run(build_parser().parse_args())))
+    output, failed = asyncio.run(_run(build_parser().parse_args()))
+    sys.stdout.write(output)
+    if failed:
+        raise SystemExit(2)
 
 
 if __name__ == "__main__":

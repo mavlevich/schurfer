@@ -24,8 +24,9 @@ profitability, or authorize orders. No v2 return, OHLCV exit close, funding,
   outcome, attempt status, or available book is a population filter.
 - The denominator includes an episode with no target, shadow attempt, or exit
   observation row. Unique database keys permit at most one row of each kind per
-  capture and version. The reader refuses unexpected versions or duplicate
-  rows instead of silently multiplying the denominator.
+  capture and version. Unexpected versions or duplicate rows produce a
+  write-once `integrity_failed` artifact rather than silently multiplying the
+  denominator or publishing partial cost estimates.
 - The read may begin at **2026-10-15T00:00:00Z**, 24 hours after the window
   closes, by the database clock. This exceeds the scheduled 30-minute exit and
   the workers' 10-minute claim recovery. Open or missing rows remain visible;
@@ -36,6 +37,13 @@ profitability, or authorize orders. No v2 return, OHLCV exit close, funding,
   crash before publication can retry the same fixed window; the artifact
   records its actual read time and a SHA-256 of the rows selected in a single
   read-only repeatable-read transaction.
+- Row-level integrity failures (duplicate capture, unexpected version, or a
+  missing or mismatched sampled exit snapshot) publish `status=integrity_failed`
+  with failure counts and the row fingerprint, without any book-cost
+  distributions. That artifact also consumes the one read. Repairing data and
+  reading costs requires a separately registered diagnostic version. The CLI
+  exits nonzero after printing this artifact. A query failure or row-limit
+  breach aborts before publication.
 
 ## Three distinct measurements
 
@@ -45,8 +53,11 @@ half the spread. Spread must not be added again. Each distribution has its own
 
 1. **Capture:** the selected Bybit target observation's stored
    `liquidity.spread_bps` and `liquidity.ask_impact_bps` for $50, with its
-   registered point-in-time identity and fresh, instrument-sourced contract
-   size. This is the v2 entry book, not an order fill.
+   selected `identity_key`, a Bybit swap prefix, and fresh, instrument-sourced
+   contract size. Qualification v4 performed the registered identity check at
+   decision time; this reader checks the stored prefix and equality with send
+   and exit identities but does not revalidate the registry. This is the v2
+   entry book, not an order fill.
 2. **Hypothetical send:** only `source_lead_shadow_v1` attempts tagged
    `source_lead_send_book_costs_v1`. The principal distribution requires
    `shadow_recorded`, the exact selected `identity_key`, `late=false`, and book
@@ -55,7 +66,8 @@ half the spread. Spread must not be added again. Each distribution has its own
    `send_qty_ask_impact_bps` (the rounded intended quantity) separately.
    `shadow_recorded` late attempts are a separate sensitivity. Rejections can
    carry a partial book measurement, but never enter the principal cost
-   distribution.
+   distribution. A usable capture book is a prerequisite for either send
+   distribution; otherwise `send_identity_or_capture_mismatch` is counted.
 3. **Scheduled exit:** only `source_lead_exit_book_v1` observations with
    `outcome='sampled'`, `timeliness='on_time'` (at most 30 s late), valid book
    age in [-1000, 2000] ms, instrument-sourced contract size, complete bid
@@ -63,7 +75,9 @@ half the spread. Spread must not be added again. Each distribution has its own
    `identity_key` and entry time. The reader verifies the stored raw snapshot
    against `book_sha256` before using `spread_bps` and `impact_bps` (midpoint
    minus bid VWAP for that quantity). A sampled snapshot with a missing or
-   mismatched hash is an integrity error, not an ordinary missing book.
+   mismatched hash is an integrity error, not an ordinary missing book. A usable
+   capture book is also a prerequisite; otherwise `exit_capture_unusable` is
+   counted.
 
 Capture, send and exit books are never interchangeable. Send's $50 VWAP and
 exit's entry-derived quantity need not represent the same position size; the
@@ -97,5 +111,7 @@ for an alternate period or output directory. It reads only qualification,
 capture target, shadow attempt, and exit observation fields named above. Raw
 exit snapshots are hashed in memory and never emitted. The JSON includes the
 reader version, code revision, dirty-tree flag, database and artifact times,
-row fingerprint, all denominators, and only aggregate cost distributions.
+row fingerprint, all denominators, and only aggregate cost distributions on
+`status=complete`. An `integrity_failed` artifact contains failure counts and
+no costs.
 The formal v2 reader remains independent and unchanged.

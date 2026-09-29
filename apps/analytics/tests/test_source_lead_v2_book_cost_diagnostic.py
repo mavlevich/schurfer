@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from decimal import Decimal
@@ -120,20 +121,40 @@ def test_identity_depth_and_quantity_are_not_silently_mixed() -> None:
     assert report["missingness"]["send_identity_or_capture_mismatch"] == 1
 
 
-def test_sampled_exit_snapshot_corruption_fails_closed_even_when_late() -> None:
-    with pytest.raises(ValueError, match="mismatched book snapshot"):
-        build_report([_row(exit_timeliness="late", exit_book_snapshot={"b": []})])
-    with pytest.raises(ValueError, match="no hashed book snapshot"):
-        build_report([_row(exit_book_sha256=None)])
+def test_sampled_exit_snapshot_corruption_publishes_no_costs_even_when_late() -> None:
+    for row, reason in (
+        (
+            _row(exit_timeliness="late", exit_book_snapshot={"b": []}),
+            "sampled_exit_snapshot_hash_mismatch",
+        ),
+        (_row(exit_book_sha256=None), "sampled_exit_snapshot_missing"),
+    ):
+        report = build_report([_row(2), row])
+        assert report["status"] == "integrity_failed"
+        assert report["integrity_failures"] == {reason: 1}
+        assert report["rows_read"] == 2
+        assert "book_cost_bps" not in report
+        assert "book metric" not in diagnostic.render_markdown(
+            {
+                **report,
+                "database_now_utc": ENTRY.isoformat(),
+                "code_revision": "test",
+                "working_tree_dirty": False,
+                "row_snapshot_sha256": "a" * 64,
+            }
+        )
 
 
-def test_duplicate_and_unknown_versions_fail_closed() -> None:
-    with pytest.raises(ValueError, match="duplicate qualified capture"):
-        build_report([_row(), _row()])
-    with pytest.raises(ValueError, match="unexpected send-cost version"):
-        build_report([_row(send_cost_capture_version="unknown_v2")])
-    with pytest.raises(ValueError, match="unexpected exit version"):
-        build_report([_row(exit_version="unknown_v2")])
+def test_duplicate_and_unknown_versions_publish_integrity_failures() -> None:
+    for rows, reason in (
+        ([_row(), _row()], "duplicate_qualified_capture"),
+        ([_row(send_cost_capture_version="unknown_v2")], "unexpected_send_cost_version"),
+        ([_row(exit_version="unknown_v2")], "unexpected_exit_version"),
+    ):
+        report = build_report(rows)
+        assert report["status"] == "integrity_failed"
+        assert report["integrity_failures"] == {reason: 1}
+        assert "book_cost_bps" not in report
 
 
 def test_pre_version_attempt_is_counted_without_costs() -> None:
@@ -183,6 +204,45 @@ async def test_published_artifact_is_reused_without_second_database_read(
     artifact = tmp_path / diagnostic.ARTIFACT_NAME
     assert artifact.exists()
     assert (tmp_path / f"{diagnostic.ARTIFACT_NAME}.sha256").exists()
+
+
+@pytest.mark.asyncio
+async def test_integrity_failed_artifact_is_one_time_and_does_not_reload_database(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = 0
+
+    async def fake_load_rows(_db_url: str) -> tuple[datetime, list[BookCostRow]]:
+        nonlocal calls
+        calls += 1
+        return datetime(2026, 10, 15, tzinfo=UTC), [_row(exit_book_sha256=None)]
+
+    monkeypatch.setattr(diagnostic, "load_rows", fake_load_rows)
+    first = await diagnostic.report_once(
+        "unused", artifact_dir=tmp_path, code_revision="abc", dirty=False
+    )
+    second = await diagnostic.report_once(
+        "unused", artifact_dir=tmp_path, code_revision="different", dirty=True
+    )
+    assert calls == 1
+    assert second == first
+    assert first["status"] == "integrity_failed"
+    assert first["integrity_failures"] == {"sampled_exit_snapshot_missing": 1}
+    assert "book_cost_bps" not in first
+
+
+def test_cli_reports_integrity_failure_with_nonzero_exit(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    async def fake_run(_args: object) -> tuple[str, bool]:
+        return "Status: integrity_failed.\n", True
+
+    monkeypatch.setattr(diagnostic, "_run", fake_run)
+    monkeypatch.setattr(sys, "argv", ["source-lead-v2-book-cost-diagnostic"])
+    with pytest.raises(SystemExit) as exc:
+        diagnostic.main()
+    assert exc.value.code == 2
+    assert capsys.readouterr().out == "Status: integrity_failed.\n"
 
 
 def test_saved_artifact_rejects_a_different_registered_version(tmp_path: Path) -> None:
