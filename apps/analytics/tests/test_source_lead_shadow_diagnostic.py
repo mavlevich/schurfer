@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from schurfer_analytics.source_lead_shadow_diagnostic import (
@@ -12,11 +13,21 @@ from schurfer_analytics.source_lead_shadow_diagnostic import (
     ShadowRow,
     build_report,
     render_markdown,
+    report_once,
 )
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 S = datetime(2026, 9, 29, 0, 1, tzinfo=UTC)
 FIRST_WEEK_END = datetime(2026, 10, 5, tzinfo=UTC)
 SECOND_WEEK_END = datetime(2026, 10, 12, tzinfo=UTC)
+
+
+async def _run_week(directory: Path, week_end: datetime) -> dict[str, Any]:
+    return await report_once(
+        "unused", until=week_end, artifact_dir=directory, code_revision="abc", dirty=False
+    )
 
 
 def _row(
@@ -67,19 +78,22 @@ def test_empty_and_missing_marks_are_explicit() -> None:
 
 def test_first_eligible_prefix_fixes_detection_branch() -> None:
     first_week = [_row(i) for i in range(1, 31)]
+    first_report = build_report(first_week, until=FIRST_WEEK_END)
     # A later bad week must not change which first eligible prefix was read.
     second_week = [
         _row(31, source_at=S + timedelta(days=7), outcome="stale_book", quote_delay_s=90),
         _row(32, source_at=S + timedelta(days=7), shadow_version=None),
     ]
-    report = build_report(first_week + second_week, until=SECOND_WEEK_END)
+    report = build_report(
+        first_week + second_week, until=SECOND_WEEK_END, prior_report=first_report
+    )
     rule = report["engineering_rule"]
     assert rule["status"] == "detection_next"
     assert rule["first_eligible_week_end_utc"] == FIRST_WEEK_END.isoformat()
     assert rule["shadow_recorded"] == 30
     assert rule["quote_coverage"] == 1
-    assert report["weekly"][1]["outcomes"] == {"no_attempt": 1, "stale_book": 1}
-    assert report["weekly"][1]["segments"]["end_to_end_after_detection_ms"]["p50"] == 90_000
+    assert report["weekly"][0]["outcomes"] == {"no_attempt": 1, "stale_book": 1}
+    assert report["weekly"][0]["segments"]["end_to_end_after_detection_ms"]["p50"] == 90_000
 
 
 def test_low_coverage_selects_pipeline_and_names_failure() -> None:
@@ -120,6 +134,58 @@ def test_week_bounds_and_duplicate_identity_fail_closed() -> None:
         build_report([_row(1), _row(1)], until=FIRST_WEEK_END)
     with pytest.raises(ValueError, match="outside"):
         build_report([_row(1, source_at=FIRST_WEEK_END)], until=FIRST_WEEK_END)
+    with pytest.raises(ValueError, match="preceding"):
+        build_report([], until=SECOND_WEEK_END)
+
+
+@pytest.mark.asyncio
+async def test_weekly_artifact_pins_decision_when_old_attempts_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from schurfer_analytics import source_lead_shadow_diagnostic as diagnostic
+
+    first_rows = [_row(i) for i in range(1, 31)]
+    calls = 0
+
+    async def load(_db_url: str, *, until: datetime) -> tuple[datetime, list[ShadowRow]]:
+        nonlocal calls
+        calls += 1
+        if until == FIRST_WEEK_END:
+            return until, first_rows
+        # Recovery changed every old attempt to a failure after the first read.
+        return until, [replace(row, outcome="evaluation_error") for row in first_rows]
+
+    monkeypatch.setattr(diagnostic, "load_rows", load)
+    first = await _run_week(tmp_path, FIRST_WEEK_END)
+    assert first["engineering_rule"]["status"] == "detection_next"
+    assert await _run_week(tmp_path, FIRST_WEEK_END) == first
+    assert calls == 1
+    second = await _run_week(tmp_path, SECOND_WEEK_END)
+    assert second["engineering_rule"] == first["engineering_rule"]
+    assert second["cumulative"]["outcomes"] == {"evaluation_error": 30}
+    assert (
+        second["prior_report_sha256"]
+        == (tmp_path / "week-2026-10-05.json.sha256").read_text().strip()
+    )
+
+
+@pytest.mark.asyncio
+async def test_weekly_artifact_requires_prior_and_rejects_corruption(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from schurfer_analytics import source_lead_shadow_diagnostic as diagnostic
+
+    async def load(_db_url: str, *, until: datetime) -> tuple[datetime, list[ShadowRow]]:
+        return until, [_row(1)]
+
+    monkeypatch.setattr(diagnostic, "load_rows", load)
+    with pytest.raises(ValueError, match="preceding weekly report is missing"):
+        await _run_week(tmp_path, SECOND_WEEK_END)
+    await _run_week(tmp_path, FIRST_WEEK_END)
+    path = tmp_path / "week-2026-10-05.json"
+    path.write_text(path.read_text().replace('"rows": 1', '"rows": 2'))
+    with pytest.raises(ValueError, match="does not match"):
+        await _run_week(tmp_path, FIRST_WEEK_END)
 
 
 def test_quote_change_without_received_book_is_flagged_and_not_reported() -> None:

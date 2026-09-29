@@ -1475,6 +1475,7 @@ prod-source-lead-readiness-report:
 prod-source-lead-shadow-diagnostic:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	@$(_PROD) run --rm --no-deps --entrypoint source-lead-shadow-diagnostic analytics \
+		--artifact-dir=/runtime/research/source_lead_shadow_latency \
 		--code-revision="$$(git rev-parse HEAD)" \
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import fcntl
 import hashlib
 import json
 import os
@@ -16,6 +17,7 @@ import sys
 from collections import Counter
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, time, timedelta
+from pathlib import Path
 from typing import Any
 
 from sqlalchemy import text
@@ -26,6 +28,7 @@ from .source_lead_forward_cohort import (
     QUALIFICATION_VERSION,
     SOURCE_LEAD_FORWARD_COHORT_START,
 )
+from .source_lead_multi_source_report import complete_digest, load_verified, write_once
 
 SHADOW_VERSION = "source_lead_shadow_v1"
 REPORT_VERSION = "source_lead_shadow_diagnostic_v1"
@@ -189,13 +192,10 @@ def _summary(rows: list[ShadowRow]) -> dict[str, Any]:
     }
 
 
-def build_report(rows: list[ShadowRow], *, until: datetime) -> dict[str, Any]:
-    """Summarize only completed UTC weeks; apply the engineering rule once.
-
-    The first complete-week prefix with >=30 shadow_recorded attempts fixes the
-    engineering branch. Later calls recompute that same first prefix rather than
-    choosing a more favorable week.
-    """
+def build_report(
+    rows: list[ShadowRow], *, until: datetime, prior_report: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Summarize one closed UTC week and carry forward its pinned decision."""
     if until.tzinfo is None or until.utcoffset() != timedelta(0):
         raise ValueError("until must be UTC")
     if until.weekday() != 0 or until.time() != time.min:
@@ -203,6 +203,17 @@ def build_report(rows: list[ShadowRow], *, until: datetime) -> dict[str, Any]:
     first_week = _week_start(SOURCE_LEAD_FORWARD_COHORT_START)
     if until <= SOURCE_LEAD_FORWARD_COHORT_START:
         raise ValueError("until must close at least one cohort week")
+    prior_end = until - timedelta(days=7)
+    if prior_end > first_week:
+        if (
+            prior_report is None
+            or prior_report.get("through_week_end_utc") != prior_end.isoformat()
+        ):
+            raise ValueError("the immediately preceding weekly report is required")
+        if prior_report.get("report_version") != REPORT_VERSION:
+            raise ValueError("preceding weekly report has a different version")
+    elif prior_report is not None:
+        raise ValueError("first cohort week must not have a preceding report")
     if len({row.capture_id for row in rows}) != len(rows):
         raise ValueError("duplicate qualified capture ids")
     if any(
@@ -211,17 +222,16 @@ def build_report(rows: list[ShadowRow], *, until: datetime) -> dict[str, Any]:
         for row in rows
     ):
         raise ValueError("row outside requested cohort prefix")
-    weekly = []
-    decision: dict[str, Any] = {"status": "pending", "reason": "fewer than 30 recorded"}
-    start = first_week
-    while start < until:
-        end = start + timedelta(days=7)
-        this_week = [row for row in rows if start <= row.source_first_observed_at < end]
-        weekly.append({"week_start_utc": start.isoformat(), **_summary(this_week)})
-        prefix = [row for row in rows if row.source_first_observed_at < end]
-        prefix_summary = _summary(prefix)
+    this_week = [row for row in rows if prior_end <= row.source_first_observed_at < until]
+    prefix_summary = _summary(rows)
+    decision: dict[str, Any] = (
+        prior_report["engineering_rule"]
+        if prior_report is not None
+        else {"status": "pending", "reason": "fewer than 30 recorded"}
+    )
+    if decision["status"] == "pending":
         recorded = prefix_summary["outcomes"].get("shadow_recorded", 0)
-        if decision["status"] == "pending" and recorded >= 30:
+        if recorded >= 30:
             latency = prefix_summary["segments"]["end_to_end_after_detection_ms"]
             failures = []
             if (prefix_summary["quote_coverage"] or 0) < 0.9:
@@ -232,13 +242,12 @@ def build_report(rows: list[ShadowRow], *, until: datetime) -> dict[str, Any]:
                 failures.append("p90_above_30s_or_missing")
             decision = {
                 "status": "pipeline_first" if failures else "detection_next",
-                "first_eligible_week_end_utc": end.isoformat(),
+                "first_eligible_week_end_utc": until.isoformat(),
                 "shadow_recorded": recorded,
                 "quote_coverage": prefix_summary["quote_coverage"],
                 "end_to_end_ms": latency,
                 "failed_conditions": failures,
             }
-        start = end
     return {
         "report_version": REPORT_VERSION,
         "outcome_blind": True,
@@ -247,8 +256,8 @@ def build_report(rows: list[ShadowRow], *, until: datetime) -> dict[str, Any]:
         "qualification_version": QUALIFICATION_VERSION,
         "shadow_version": SHADOW_VERSION,
         "rows": len(rows),
-        "cumulative": _summary(rows),
-        "weekly": weekly,
+        "cumulative": prefix_summary,
+        "weekly": [{"week_start_utc": prior_end.isoformat(), **_summary(this_week)}],
         "engineering_rule": decision,
         "heartbeat_gap_history": "unavailable: Redis stores current health, not past intervals",
         "formal_v2_verdict_changed": False,
@@ -375,6 +384,11 @@ def render_markdown(report: dict[str, Any]) -> str:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--week-end", required=True, help="Monday UTC date, YYYY-MM-DD")
+    parser.add_argument(
+        "--artifact-dir",
+        default="runtime/research/source_lead_shadow_latency",
+        help="persistent directory for write-once weekly JSON reports",
+    )
     parser.add_argument("--format", choices=("json", "markdown"), default="markdown")
     parser.add_argument("--code-revision", default="unknown")
     parser.add_argument("--working-tree-dirty", dest="dirty", action="store_true")
@@ -383,22 +397,80 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _report_path(directory: Path, until: datetime) -> Path:
+    return directory / f"week-{until.date().isoformat()}.json"
+
+
+def _load_week(path: Path, until: datetime) -> tuple[dict[str, Any], str]:
+    complete_digest(path)
+    report, digest = load_verified(path)
+    if report.get("report_version") != REPORT_VERSION:
+        raise ValueError(f"{path} has an unexpected report version")
+    if report.get("through_week_end_utc") != until.isoformat():
+        raise ValueError(f"{path} has an unexpected week end")
+    if report.get("qualification_version") != QUALIFICATION_VERSION:
+        raise ValueError(f"{path} has an unexpected qualification version")
+    return report, digest
+
+
+async def report_once(
+    db_url: str,
+    *,
+    until: datetime,
+    artifact_dir: Path,
+    code_revision: str,
+    dirty: bool,
+) -> dict[str, Any]:
+    # Validate the week before creating a file or querying the database.
+    if until.tzinfo is None or until.utcoffset() != timedelta(0):
+        raise ValueError("until must be UTC")
+    if until.weekday() != 0 or until.time() != time.min:
+        raise ValueError("until must be Monday 00:00 UTC")
+    first_end = _week_start(SOURCE_LEAD_FORWARD_COHORT_START) + timedelta(days=7)
+    if until < first_end:
+        raise ValueError("until must close at least one cohort week")
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    with (artifact_dir / ".weekly.lock").open("a+b") as lock:
+        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+        path = _report_path(artifact_dir, until)
+        if path.exists():
+            report, _ = _load_week(path, until)
+            return report
+        prior_report = None
+        prior_digest = None
+        if until > first_end:
+            prior_end = until - timedelta(days=7)
+            prior_path = _report_path(artifact_dir, prior_end)
+            if not prior_path.exists():
+                raise ValueError(f"preceding weekly report is missing: {prior_path}")
+            prior_report, prior_digest = _load_week(prior_path, prior_end)
+        database_now, rows = await load_rows(db_url, until=until)
+        report = build_report(rows, until=until, prior_report=prior_report)
+        report["generated_at_utc"] = datetime.now(UTC).isoformat()
+        report["database_now_utc"] = database_now.isoformat()
+        report["code_revision"] = code_revision
+        report["working_tree_dirty"] = dirty
+        report["prior_report_sha256"] = prior_digest
+        report["snapshot_sha256"] = hashlib.sha256(
+            json.dumps([asdict(row) for row in rows], default=str, sort_keys=True).encode()
+        ).hexdigest()
+        write_once(path, report)
+        saved, _ = _load_week(path, until)
+        return saved
+
+
 async def _run(args: argparse.Namespace) -> str:
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
         raise ValueError("DATABASE_URL is required")
     until = datetime.combine(date.fromisoformat(args.week_end), time.min, tzinfo=UTC)
-    # Validate before connecting; the DB clock check follows inside load_rows.
-    build_report([], until=until)
-    database_now, rows = await load_rows(db_url, until=until)
-    report = build_report(rows, until=until)
-    report["generated_at_utc"] = datetime.now(UTC).isoformat()
-    report["database_now_utc"] = database_now.isoformat()
-    report["code_revision"] = args.code_revision
-    report["working_tree_dirty"] = args.dirty
-    report["snapshot_sha256"] = hashlib.sha256(
-        json.dumps([asdict(row) for row in rows], default=str, sort_keys=True).encode()
-    ).hexdigest()
+    report = await report_once(
+        db_url,
+        until=until,
+        artifact_dir=Path(args.artifact_dir),
+        code_revision=args.code_revision,
+        dirty=args.dirty,
+    )
     return (
         json.dumps(report, indent=2, sort_keys=True) + "\n"
         if args.format == "json"

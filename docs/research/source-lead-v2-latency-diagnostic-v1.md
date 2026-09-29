@@ -111,10 +111,14 @@ Neither branch changes v2. Both only choose the next engineering PR.
 ## Reader implementation note (2026-09-29)
 
 `source-lead-shadow-diagnostic --week-end YYYY-MM-DD` reads a closed UTC-week
-prefix through Monday 00:00 UTC. It prints weekly counts and timing
-distributions, and applies the engineering rule to the first complete-week
-prefix with at least 30 `shadow_recorded` attempts. A later run keeps that
-same first eligible prefix rather than selecting a favorable later week.
+prefix through Monday 00:00 UTC. It prints the current week's counts and timing
+distributions, plus cumulative coverage. The first weekly report with at least
+30 `shadow_recorded` attempts fixes the engineering branch. Each week's JSON is
+written once with SHA-256 in the persistent artifact directory. Repeating a
+week returns that saved report without querying the database. A later week
+requires the immediately preceding saved report and carries its decision
+forward, even if old attempt statuses have since changed. Missed weeks must be
+recorded in order; the report records when each read actually occurred.
 
 The report reads only qualifications, capture/target timestamps and shadow
 attempt status, timestamps and `quote_change_bps`. It never reads prices,
@@ -127,7 +131,9 @@ and labels historical heartbeat-gap attribution unavailable; it never infers a
 specific outage from a missing attempt. This limits diagnosis of missingness
 but cannot make the 90% quote-coverage gate pass. The report's JSON contains a
 SHA-256 of the rows read. Attempt status can later change through recovery,
-so that digest identifies this read snapshot, not an immutable formal result.
+so that digest identifies the read snapshot pinned in that week's operational
+artifact, not an immutable formal v2 result. On production, the artifacts live
+under `/runtime/research/source_lead_shadow_latency`.
 
 Run the first complete week no earlier than 2026-10-05T00:00Z. The CLI does
-not send orders, persist a claim or trigger a formal cohort read.
+not send orders or trigger a formal cohort read.
