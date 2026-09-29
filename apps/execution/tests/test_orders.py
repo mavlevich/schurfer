@@ -974,7 +974,7 @@ class TestCompletesJournalOnFill:
     async def test_creates_incident_when_journal_write_fails(
         self, _mock_bal: MagicMock, _mock_pos: MagicMock
     ) -> None:
-        cfg = MagicMock(db_url="postgresql://x")
+        cfg = MagicMock(db_url="postgresql://x", telegram_bot_token=None, telegram_chat_id=None)
         with (
             patch(
                 "schurfer_execution.orders.journal.complete_open",
