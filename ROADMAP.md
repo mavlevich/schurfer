@@ -275,6 +275,11 @@ this MEXC early-trigger line is closed. Step 3 did not replace the registered
 line's result: the descriptive 60s-to-120s delay difference does not establish
 that latency decides the outcome.
 
+The separate [pre-move data feasibility audit](docs/research/mexc-pre-move-data-feasibility-v1.md)
+finds no historical MEXC trade-direction, pre-move OI or depth tape in the retained
+archive. It is an inventory, not a new HYP-029 threshold or permission to start
+the feed in step 5.
+
 **Why this, now.** Every hypothesis tested so far entered after the pump was already
 visible to everyone:
 
