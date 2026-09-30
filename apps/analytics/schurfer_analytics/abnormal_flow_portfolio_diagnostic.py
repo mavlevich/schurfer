@@ -25,7 +25,6 @@ import duckdb
 
 from . import abnormal_flow_replay as replay_module
 from .abnormal_flow_formal_runner import (
-    RealGitState,
     _hash_file,
     _load_registered_contract,
     _load_registered_evaluation_manifest,
@@ -48,6 +47,7 @@ from .portfolio_engine_v2 import (
     UnresolvedCapitalPolicy,
     simulate_portfolio_v2,
 )
+from .research_code_state import run_code_state
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
@@ -546,8 +546,7 @@ def _write_bundle(
 
 
 def _run_code_state() -> dict[str, Any]:
-    git = RealGitState()
-    return {"code_revision": git.get_revision(), "working_tree_dirty": git.is_dirty()}
+    return run_code_state()
 
 
 def run_diagnostic(
