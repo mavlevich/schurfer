@@ -21,6 +21,10 @@ dev = [
 
 [tool.uv]
 constraint-dependencies = ["msgpack>=1.2.1"]
+# ccxt 4.5.77 pins urllib3==2.7.0, which carries three advisories fixed in
+# 2.8.0. The installed uv version supports only a global override; ccxt and
+# requests are currently the only consumers. Revisit this when ccxt upgrades.
+override-dependencies = ["urllib3==2.8.0"]
 
 [tool.uv.workspace]
 members = [

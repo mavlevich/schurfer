@@ -321,8 +321,11 @@ jobs:
         # ship to production while never being scanned (ENG-026).
         run: |
           uv sync --frozen --extra dev --all-packages
+          # uv's reviewed lock includes a security override for ccxt's exact
+          # urllib3 pin. Audit every exact exported version without asking pip
+          # to resolve ccxt's original, conflicting metadata a second time.
           uv export --extra dev --all-packages --no-emit-project --no-hashes \
-            | grep -v '^pip==' | uv run pip-audit -r /dev/stdin
+            | grep -v '^pip==' | uv run pip-audit -r /dev/stdin --no-deps --disable-pip
       - name: Go vulnerability check
         # infra/scripts/go_workspace_modules.sh, not `grep '^use '` -- see
         # the Run tests step in the test-go job above for why.
