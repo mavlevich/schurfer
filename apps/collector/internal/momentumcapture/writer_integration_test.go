@@ -2,11 +2,13 @@ package momentumcapture
 
 import (
 	"context"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/mavlevich/schurfer/collector/internal/momentum"
+	"github.com/mavlevich/schurfer/collector/internal/testdburl"
 )
 
 // testDatabaseURL matches infra/docker/docker-compose.dev.yml's local dev
@@ -16,7 +18,13 @@ import (
 // NULL handling, the RETURNING clause actually matching insertRowSQL).
 // Skips instead of failing when no local Postgres is reachable, so `go
 // test ./...` still passes in an environment without docker-compose.dev up.
-const testDatabaseURL = "postgres://schurfer:schurfer_dev@localhost:5432/schurfer"
+var testDatabaseURL = func() string {
+	url, err := testdburl.URL()
+	if err != nil {
+		panic(err)
+	}
+	return url
+}()
 
 func TestWriterFlushAgainstRealPostgres(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -24,10 +32,16 @@ func TestWriterFlushAgainstRealPostgres(t *testing.T) {
 
 	pool, err := pgxpool.New(ctx, testDatabaseURL)
 	if err != nil {
+		if os.Getenv("REQUIRE_INTEGRATION_DB") == "1" {
+			t.Fatalf("no local dev postgres reachable: %v", err)
+		}
 		t.Skipf("no local dev postgres reachable: %v", err)
 	}
 	defer pool.Close()
 	if err := pool.Ping(ctx); err != nil {
+		if os.Getenv("REQUIRE_INTEGRATION_DB") == "1" {
+			t.Fatalf("no local dev postgres reachable: %v", err)
+		}
 		t.Skipf("no local dev postgres reachable: %v", err)
 	}
 

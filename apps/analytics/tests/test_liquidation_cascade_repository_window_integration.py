@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 from schurfer_analytics.liquidation_cascade_repository import LiquidationCascadeRepository
+from schurfer_journal.testing_database import integration_database_url
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
@@ -34,7 +35,7 @@ async def _stream_all(
     return result
 
 
-TEST_DATABASE_URL = "postgresql+psycopg://schurfer:schurfer_dev@localhost:5432/schurfer"
+TEST_DATABASE_URL = integration_database_url(sqlalchemy=True)
 
 _TEST_EXCHANGE = "test_liq_cascade"
 _TEST_CAPTURE_VERSION = "test_capture_v1"

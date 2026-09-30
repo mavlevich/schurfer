@@ -6,24 +6,23 @@ import os
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import urlsplit
 
 import psycopg
 import pytest
 from alembic import command
 from alembic.config import Config
+from schurfer_journal.testing_database import (
+    assert_active_test_database_url,
+    integration_database_url,
+)
 from sqlalchemy.exc import DBAPIError
 
-TEST_DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://schurfer:schurfer_dev@localhost:5432/schurfer"
-)
+TEST_DATABASE_URL = integration_database_url()
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 
 
 def _connect_or_skip() -> psycopg.Connection:
-    parsed = urlsplit(TEST_DATABASE_URL)
-    if parsed.hostname not in {"localhost", "127.0.0.1"} or parsed.port != 5432:
-        raise RuntimeError("migration 0047 integration test only permits local PostgreSQL:5432")
+    assert_active_test_database_url(TEST_DATABASE_URL)
     try:
         connection = psycopg.connect(TEST_DATABASE_URL)
         with connection.transaction(), connection.cursor() as cursor:

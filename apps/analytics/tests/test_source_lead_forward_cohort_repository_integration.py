@@ -25,10 +25,11 @@ import pytest
 from schurfer_analytics.source_lead_forward_cohort_repository import (
     SourceLeadForwardCohortRepository,
 )
+from schurfer_journal.testing_database import integration_database_url
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-TEST_DATABASE_URL = "postgresql+psycopg://schurfer:schurfer_dev@localhost:5432/schurfer"
+TEST_DATABASE_URL = integration_database_url(sqlalchemy=True)
 
 _QUALIFICATION_VERSION = "test_source_lead_forward_cohort_v1"
 _IDENTITY_REGISTRY_FINGERPRINT = "ab" * 32  # matches ck_..._registry_fingerprint's ^[0-9a-f]{64}$

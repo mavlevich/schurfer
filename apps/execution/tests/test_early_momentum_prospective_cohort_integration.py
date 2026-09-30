@@ -6,8 +6,9 @@ from schurfer_execution.early_momentum_prospective_cohort import (
     COHORT_KEY,
     register_prospective_cohort,
 )
+from schurfer_journal.testing_database import integration_database_url
 
-TEST_DATABASE_URL = "postgresql://schurfer:schurfer_dev@localhost:5432/schurfer"
+TEST_DATABASE_URL = integration_database_url()
 
 
 async def _connect_or_skip() -> psycopg.AsyncConnection:

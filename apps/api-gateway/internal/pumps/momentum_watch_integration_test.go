@@ -6,10 +6,12 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/mavlevich/schurfer/api-gateway/internal/testdburl"
 )
 
 // testDatabaseURL matches infra/docker/docker-compose.dev.yml's local dev Postgres
@@ -23,7 +25,13 @@ import (
 // Postgres is reachable, so `go test ./...` still passes without a live database; CI's
 // own test-go job runs a real Postgres service specifically so this is NOT skipped
 // there (see .github/workflows/ci.yml).
-const testDatabaseURL = "postgres://schurfer:schurfer_dev@localhost:5432/schurfer"
+var testDatabaseURL = func() string {
+	url, err := testdburl.URL()
+	if err != nil {
+		panic(err)
+	}
+	return url
+}()
 
 func connectTestPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
@@ -32,10 +40,16 @@ func connectTestPool(t *testing.T) *pgxpool.Pool {
 
 	pool, err := pgxpool.New(ctx, testDatabaseURL)
 	if err != nil {
+		if os.Getenv("REQUIRE_INTEGRATION_DB") == "1" {
+			t.Fatalf("no local postgres reachable: %v", err)
+		}
 		t.Skipf("no local postgres reachable: %v", err)
 	}
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
+		if os.Getenv("REQUIRE_INTEGRATION_DB") == "1" {
+			t.Fatalf("no local postgres reachable: %v", err)
+		}
 		t.Skipf("no local postgres reachable: %v", err)
 	}
 	return pool

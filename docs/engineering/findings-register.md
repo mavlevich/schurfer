@@ -816,6 +816,14 @@ verify` accepts, and the tree passes it with no baseline file or blanket nolint.
   `init-db.sql` and `make migrate` restored the suite. Give each verification
   run a disposable database so its migration tests cannot accumulate schema
   history or break another run.
+- **Local verify remediation (2026-09-30):** `make verify`
+  creates a fresh loopback-only TimescaleDB container on a random port,
+  initializes and migrates it, then removes it after success or failure.
+  Python and Go integration tests use that same database; a centralized pytest
+  guard turns database-related skips into failures when the database is required.
+  Direct CI test commands retain their fresh
+  CI PostgreSQL service. This does not isolate arbitrary Go or subprocess
+  network calls; the Python external-I/O guard remains in force.
 - **Evidence:** a test in `apps/execution/tests/test_orders.py` reached
   `order_attempts.mark_completed` with an unpatched database call and opened a
   connection to the production PostgreSQL host, failing only on a socket timeout after

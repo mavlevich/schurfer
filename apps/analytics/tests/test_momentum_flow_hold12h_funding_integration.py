@@ -25,9 +25,10 @@ from schurfer_analytics.momentum_flow_hold12h_funding_resolver import (
 from schurfer_analytics.momentum_flow_hold12h_verdict_report import InstrumentRoute
 from schurfer_analytics.momentum_flow_paper_contract import HOLD12H_PAPER_CONTRACT
 from schurfer_analytics.outcome_repository import async_database_url
+from schurfer_journal.testing_database import integration_database_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
-_PG_DSN = "postgresql://schurfer:schurfer_dev@localhost:5432/schurfer"
+_PG_DSN = integration_database_url()
 _SCHEMA = "hold12h_funding_it"
 _ENTRY = datetime(2026, 10, 1, 0, 0, tzinfo=UTC)
 _EXIT = _ENTRY + timedelta(hours=12)

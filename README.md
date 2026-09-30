@@ -228,7 +228,7 @@ by a bounded read-only job rather than an always-on firehose.
 ## Development commands
 
 ```bash
-make verify       # full pre-PR gate: lint, types, tests, build, compose config
+make verify       # full pre-PR gate; requires running Docker for disposable TimescaleDB
 make test         # run all tests (Python + Go + TS)
 make lint         # run all linters via pre-commit
 make ci-lint      # run the exact all-files lint gate used by GitHub Actions
@@ -241,6 +241,9 @@ make migrate      # run Alembic migrations against local DB
 make momentum-capture-health  # inspect optional local momentum capture (Bybit; unsuffixed
                                # name predates Binance -- see momentum-capture-binance-health)
 ```
+
+`make verify` also runs in the pre-push hook. Docker must be running; the
+command creates and removes its own local test database container.
 
 ## License
 

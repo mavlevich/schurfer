@@ -18,11 +18,12 @@ from schurfer_analytics.source_lead_forward_cohort_repository import (
 )
 from schurfer_analytics.source_lead_readiness import build_readiness
 from schurfer_analytics.source_lead_readiness_repository import load_readiness_inputs
+from schurfer_journal.testing_database import integration_database_url
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-TEST_DATABASE_URL = "postgresql+psycopg://schurfer:schurfer_dev@localhost:5432/schurfer"
-_RAW_DB_URL = "postgresql://schurfer:schurfer_dev@localhost:5432/schurfer"
+TEST_DATABASE_URL = integration_database_url(sqlalchemy=True)
+_RAW_DB_URL = integration_database_url()
 _QV = "test_source_lead_readiness_v1"
 _FINGERPRINT = "cd" * 32
 _COHORT_START = datetime(2026, 9, 3, tzinfo=UTC)

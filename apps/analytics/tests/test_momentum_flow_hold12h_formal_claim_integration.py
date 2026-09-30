@@ -26,11 +26,12 @@ from schurfer_analytics.momentum_flow_hold12h_verdict_reader import (
     pinned_inputs,
     publish_formal_result,
 )
+from schurfer_journal.testing_database import integration_database_url
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-_PG_DSN = "postgresql://schurfer:schurfer_dev@localhost:5432/schurfer"
+_PG_DSN = integration_database_url()
 _SCHEMA = "hold12h_claim_it"
 _SCHEMAS = Schemas(timeseries=_SCHEMA, app=_SCHEMA)
 _START = datetime(2026, 10, 5, tzinfo=UTC)

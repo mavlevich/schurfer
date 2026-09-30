@@ -26,10 +26,11 @@ from schurfer_analytics.orderflow_microstructure_repository import (
     HeldOutWindowError,
     OrderflowMicrostructureRepository,
 )
+from schurfer_journal.testing_database import integration_database_url
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
 
-TEST_DATABASE_URL = "postgresql+psycopg://schurfer:schurfer_dev@localhost:5432/schurfer"
+TEST_DATABASE_URL = integration_database_url(sqlalchemy=True)
 
 _DECISION_BUCKET = datetime(2026, 8, 15, 12, 0, tzinfo=UTC)
 _DECISION_TS = _DECISION_BUCKET + timedelta(seconds=5)

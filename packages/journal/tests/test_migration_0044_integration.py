@@ -16,23 +16,18 @@ from __future__ import annotations
 import os
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import urlsplit
 
 import psycopg
 import pytest
 from alembic import command
 from alembic.config import Config
-
-TEST_DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://schurfer:schurfer_dev@localhost:5432/schurfer"
+from schurfer_journal.testing_database import (
+    assert_active_test_database_url,
+    integration_database_url,
 )
-ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 
-# Same guard as the 0043 test: this file runs real DDL and DML, and must never
-# do so against the documented production tunnel (port 15432) or any remote
-# host, whatever DATABASE_URL happens to be exported to.
-_ALLOWED_TEST_HOSTS = {"localhost", "127.0.0.1"}
-_ALLOWED_TEST_PORT = 5432
+TEST_DATABASE_URL = integration_database_url()
+ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 
 _COLUMNS = (
     "asset_class",
@@ -43,14 +38,14 @@ _COLUMNS = (
 )
 
 
+# Same guard as the 0043 test: this file runs real DDL and DML, and must never
+# do so against the documented production tunnel (port 15432) or any remote
+# host, whatever DATABASE_URL happens to be exported to.
 def _refuse_unless_local_test_database(url: str) -> None:
-    parsed = urlsplit(url)
-    if parsed.hostname not in _ALLOWED_TEST_HOSTS or parsed.port != _ALLOWED_TEST_PORT:
-        raise RuntimeError(
-            f"refusing to run destructive migration-test DDL/DML against "
-            f"{parsed.hostname}:{parsed.port} -- only localhost/127.0.0.1:{_ALLOWED_TEST_PORT} "
-            "(the local dev or CI Postgres) is permitted."
-        )
+    try:
+        assert_active_test_database_url(url)
+    except RuntimeError as exc:
+        raise RuntimeError("refusing to run destructive migration-test DDL/DML") from exc
 
 
 _refuse_unless_local_test_database(TEST_DATABASE_URL)

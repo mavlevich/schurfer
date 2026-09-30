@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"errors"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -36,10 +37,16 @@ func testUniverseSnapshotPool(t *testing.T) *pgxpool.Pool {
 	defer cancel()
 	pool, err := pgxpool.New(ctx, testDatabaseURL)
 	if err != nil {
+		if os.Getenv("REQUIRE_INTEGRATION_DB") == "1" {
+			t.Fatalf("no local dev postgres reachable: %v", err)
+		}
 		t.Skipf("no local dev postgres reachable: %v", err)
 	}
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
+		if os.Getenv("REQUIRE_INTEGRATION_DB") == "1" {
+			t.Fatalf("no local dev postgres reachable: %v", err)
+		}
 		t.Skipf("no local dev postgres reachable: %v", err)
 	}
 	t.Cleanup(pool.Close)

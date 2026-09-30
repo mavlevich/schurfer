@@ -22,10 +22,11 @@ from schurfer_analytics.momentum_flow_bidirectional_burst_repository import (
     MomentumFlowBidirectionalBurstRepository,
     candidate_query_windows,
 )
+from schurfer_journal.testing_database import integration_database_url
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-TEST_DATABASE_URL = "postgresql+psycopg://schurfer:schurfer_dev@localhost:5432/schurfer"
+TEST_DATABASE_URL = integration_database_url(sqlalchemy=True)
 
 _TEST_EXCHANGE = "test_bidir_burst"
 _TEST_CAPTURE_VERSION = "test_capture_v1"

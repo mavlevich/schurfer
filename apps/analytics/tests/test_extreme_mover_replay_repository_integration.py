@@ -10,10 +10,11 @@ import pytest
 from schurfer_analytics.extreme_mover_replay import DISCOVERY_END, DISCOVERY_START, build_report
 from schurfer_analytics.extreme_mover_replay_repository import ExtremeMoverReplayRepository
 from schurfer_analytics.replay import ReplayFilters
+from schurfer_journal.testing_database import integration_database_url
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-TEST_DATABASE_URL = "postgresql+psycopg://schurfer:schurfer_dev@localhost:5432/schurfer"
+TEST_DATABASE_URL = integration_database_url(sqlalchemy=True)
 T0 = datetime(2026, 9, 1, 12, tzinfo=UTC)
 
 

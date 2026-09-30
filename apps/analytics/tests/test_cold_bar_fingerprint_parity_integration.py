@@ -19,12 +19,13 @@ from typing import TYPE_CHECKING, Any
 
 import pytest
 from schurfer_analytics.cold_bar_export import FINGERPRINT_VERSION, _fingerprint_over, connect
+from schurfer_journal.testing_database import integration_database_url
 
 if TYPE_CHECKING:
     from pathlib import Path
 
 # libpq form (no +psycopg): shared by psycopg and DuckDB's postgres attach.
-_PG_DSN = "postgresql://schurfer:schurfer_dev@localhost:5432/schurfer"
+_PG_DSN = integration_database_url()
 _PROBE_TABLE = "timeseries.cbfp_parity_probe"
 
 

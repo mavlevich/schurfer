@@ -10,10 +10,11 @@ from uuid import uuid4
 import pytest
 from schurfer_analytics import source_lead_v2_book_cost_diagnostic as diagnostic
 from schurfer_analytics.source_lead_exit_capture import exit_target_at
+from schurfer_journal.testing_database import integration_database_url
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-TEST_DATABASE_URL = "postgresql+psycopg://schurfer:schurfer_dev@localhost:5432/schurfer"
+TEST_DATABASE_URL = integration_database_url(sqlalchemy=True)
 FINGERPRINT = "ef" * 32
 IDENTITY = "bybit:swap:ABCUSDT:1"
 

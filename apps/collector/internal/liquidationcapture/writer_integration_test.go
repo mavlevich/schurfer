@@ -5,13 +5,21 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/mavlevich/schurfer/collector/internal/testdburl"
 )
 
-const testDatabaseURL = "postgresql://schurfer:schurfer_dev@localhost:5432/schurfer"
+var testDatabaseURL = func() string {
+	url, err := testdburl.URL()
+	if err != nil {
+		panic(err)
+	}
+	return url
+}()
 
 func integrationPool(t *testing.T) *pgxpool.Pool {
 	t.Helper()
@@ -19,15 +27,24 @@ func integrationPool(t *testing.T) *pgxpool.Pool {
 	defer cancel()
 	pool, err := pgxpool.New(ctx, testDatabaseURL)
 	if err != nil {
+		if os.Getenv("REQUIRE_INTEGRATION_DB") == "1" {
+			t.Fatalf("no local postgres reachable: %v", err)
+		}
 		t.Skipf("no local postgres reachable: %v", err)
 	}
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
+		if os.Getenv("REQUIRE_INTEGRATION_DB") == "1" {
+			t.Fatalf("no local postgres reachable: %v", err)
+		}
 		t.Skipf("no local postgres reachable: %v", err)
 	}
 	var exists bool
 	if err := pool.QueryRow(ctx, `SELECT to_regclass('timeseries.liquidation_events') IS NOT NULL`).Scan(&exists); err != nil || !exists {
 		pool.Close()
+		if os.Getenv("REQUIRE_INTEGRATION_DB") == "1" {
+			t.Fatal("migration 0038 is not applied")
+		}
 		t.Skip("migration 0038 is not applied")
 	}
 	t.Cleanup(pool.Close)
