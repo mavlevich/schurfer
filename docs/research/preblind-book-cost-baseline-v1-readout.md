@@ -91,3 +91,7 @@ funding and capacity above $50. They cannot revise the registered cost models
 or verdicts of HYP-012b, HYP-012c, HYP-029, v2 or HYP-015. A future cohort
 can use these distributions to state a break-even target and calculate power
 before collecting new data, with its own prospective execution measurements.
+
+The separate [research options inventory](research-options-2026-10-01.md)
+records possible next data and strategy questions. It is discussion after
+this read, not a registration or a change to any active cohort.
