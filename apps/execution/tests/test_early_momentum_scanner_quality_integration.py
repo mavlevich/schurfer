@@ -21,10 +21,11 @@ import psycopg
 import pytest
 from psycopg.rows import dict_row
 from schurfer_execution import early_momentum
+from schurfer_journal.testing_database import integration_database_url
 from schurfer_market_quality import WindowQualityReason
 from schurfer_market_quality import validate as validate_window_quality
 
-TEST_DATABASE_URL = "postgresql://schurfer:schurfer_dev@localhost:5432/schurfer"
+TEST_DATABASE_URL = integration_database_url()
 _REQUIRED_BUCKETS = early_momentum.EARLY_MOMENTUM_V4_QUALITY_POLICY.required_bucket_count
 
 

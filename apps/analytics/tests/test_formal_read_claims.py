@@ -24,8 +24,9 @@ from schurfer_analytics.source_lead_forward_cohort_repository import (
     RawQualifiedEpisode,
     SourceLeadForwardCohortRepository,
 )
+from schurfer_journal.testing_database import integration_database_url
 
-TEST_DATABASE_URL = "postgresql://schurfer:schurfer_dev@localhost:5432/schurfer"
+TEST_DATABASE_URL = integration_database_url()
 
 
 def test_candidate_hash_ignores_order() -> None:

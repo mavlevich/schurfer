@@ -24,8 +24,9 @@ from schurfer_analytics.cold_bar_gated_deletion_collectors import (
     ColdBarSourceChangedError,
     drop_one_chunk_under_lock,
 )
+from schurfer_journal.testing_database import integration_database_url
 
-_PG_DSN = "postgresql://schurfer:schurfer_dev@localhost:5432/schurfer"
+_PG_DSN = integration_database_url()
 _SCHEMA = "cold_bar_drop_it"
 _HYPERTABLE = f"{_SCHEMA}.bars"
 _D1 = datetime(2026, 1, 1, tzinfo=UTC)

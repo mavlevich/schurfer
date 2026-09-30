@@ -29,8 +29,9 @@ from schurfer_analytics.momentum_flow_hold12h_verdict_report import (
     ProbeClass,
 )
 from schurfer_analytics.momentum_flow_paper_contract import HOLD12H_PAPER_CONTRACT
+from schurfer_journal.testing_database import integration_database_url
 
-_PG_DSN = "postgresql://schurfer:schurfer_dev@localhost:5432/schurfer"
+_PG_DSN = integration_database_url()
 _SCHEMA = "hold12h_verdict_it"
 _SCHEMAS = Schemas(timeseries=_SCHEMA, app=_SCHEMA)
 _D = datetime(2026, 10, 5, 12, 0, tzinfo=UTC)

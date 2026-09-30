@@ -7,7 +7,6 @@ import os
 import uuid
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
-from urllib.parse import urlsplit
 
 import psycopg
 import pytest
@@ -15,10 +14,12 @@ from schurfer_execution import order_attempts
 from schurfer_execution.orders import place_order
 from schurfer_execution.risk import PNL_READY_KEY, TRADING_ENABLED_KEY
 from schurfer_execution.supervisor import WorkerReadinessGate
-
-TEST_DATABASE_URL = os.getenv(
-    "DATABASE_URL", "postgresql://schurfer:schurfer_dev@localhost:5432/schurfer"
+from schurfer_journal.testing_database import (
+    assert_active_test_database_url,
+    integration_database_url,
 )
+
+TEST_DATABASE_URL = integration_database_url()
 
 _ACTIVE_SLOT_COUNT = """
 SELECT count(*)
@@ -36,9 +37,7 @@ FROM (
 
 
 async def _connect_or_skip() -> psycopg.AsyncConnection:
-    parsed = urlsplit(TEST_DATABASE_URL)
-    if parsed.hostname not in {"localhost", "127.0.0.1"} or parsed.port != 5432:
-        raise RuntimeError("portfolio reservation test only permits local PostgreSQL:5432")
+    assert_active_test_database_url(TEST_DATABASE_URL)
     try:
         connection = await psycopg.AsyncConnection.connect(TEST_DATABASE_URL, autocommit=True)
         async with connection.cursor() as cursor:

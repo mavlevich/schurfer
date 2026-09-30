@@ -1,8 +1,9 @@
 """Fail fast if a Python test accidentally reaches an external service.
 
-Integration tests use TCP localhost/127.0.0.1:5432 for PostgreSQL. The database
-guard intentionally rejects IPv6 and Unix-socket DSNs; the generic socket guard
-allows other loopback traffic. Everything external should use a test double.
+CI integration tests use TCP localhost/127.0.0.1:5432 for PostgreSQL; a local
+verify run uses its own loopback-only container and database. The database
+guard rejects IPv6 and Unix-socket DSNs; the generic socket guard allows
+other loopback traffic. Everything external should use a test double.
 In particular, a truthy MagicMock config must never turn a unit test into a
 real database or Telegram request. Imports such as ``from socket import
 getaddrinfo`` made before this fixture runs retain the original function.
@@ -11,15 +12,40 @@ getaddrinfo`` made before this fixture runs retain the original function.
 from __future__ import annotations
 
 import ipaddress
+import os
+import re
 import socket
 from typing import TYPE_CHECKING, Any
 
 import psycopg
 import pytest
 from psycopg.conninfo import conninfo_to_dict
+from schurfer_journal.testing_database import assert_active_test_database_url
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
+
+
+_DATABASE_SKIP = re.compile(r"\b(?:postgres(?:ql)?|database|db|migration)\b", re.IGNORECASE)
+
+
+def _reject_required_database_skip(report: pytest.TestReport) -> None:
+    if os.environ.get("REQUIRE_INTEGRATION_DB") != "1" or not report.skipped:
+        return
+    reason = report.longrepr[2] if isinstance(report.longrepr, tuple) else str(report.longrepr)
+    if _DATABASE_SKIP.search(reason):
+        report.outcome = "failed"
+        report.longrepr = (
+            "REQUIRE_INTEGRATION_DB=1 forbids skipping a database integration test: " + reason
+        )
+
+
+@pytest.hookimpl(hookwrapper=True)
+def pytest_runtest_makereport(  # type: ignore[no-untyped-def]
+    item: pytest.Item, call: pytest.CallInfo[Any]
+):
+    outcome = yield
+    _reject_required_database_skip(outcome.get_result())
 
 
 def _check_test_database(conninfo: str, kwargs: dict[str, Any]) -> None:
@@ -30,10 +56,15 @@ def _check_test_database(conninfo: str, kwargs: dict[str, Any]) -> None:
     host = parts.get("host")
     port = str(parts.get("port", "5432"))
     dbname = parts.get("dbname")
-    if host not in {"localhost", "127.0.0.1"} or port != "5432" or dbname != "schurfer":
+    user = parts.get("user")
+    if parts.get("hostaddr") or parts.get("service"):
+        pytest.fail("test database connection attempted an endpoint override")
+    try:
+        assert_active_test_database_url(f"postgresql://{user}@{host}:{port}/{dbname}")
+    except RuntimeError:
         pytest.fail(
-            "test attempted a database connection outside local schurfer Postgres "
-            "(localhost:5432/schurfer); patch the call or use the integration database",
+            "test attempted a database connection outside the active local test database; "
+            "patch the call or use the integration database",
         )
 
 
@@ -71,6 +102,8 @@ def block_unexpected_external_io(monkeypatch: pytest.MonkeyPatch) -> Iterator[No
         "all_proxy",
     ):
         monkeypatch.delenv(proxy_name, raising=False)
+    for pg_name in ("PGHOST", "PGHOSTADDR", "PGPORT", "PGDATABASE", "PGSERVICE", "PGSERVICEFILE"):
+        monkeypatch.delenv(pg_name, raising=False)
     original_connect = socket.socket.connect
     original_connect_ex = socket.socket.connect_ex
     original_sendto = socket.socket.sendto

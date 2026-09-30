@@ -26,8 +26,9 @@ from datetime import UTC, datetime
 import psycopg
 import pytest
 from schurfer_execution import episodes, journal
+from schurfer_journal.testing_database import integration_database_url
 
-TEST_DATABASE_URL = "postgresql://schurfer:schurfer_dev@localhost:5432/schurfer"
+TEST_DATABASE_URL = integration_database_url()
 _TEST_EXCHANGE = "test_early_momentum_v3"
 _LONG_AGO = datetime(2020, 1, 1, tzinfo=UTC)
 

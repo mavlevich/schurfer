@@ -9,10 +9,11 @@ import pytest
 from schurfer_analytics.radar_outcome_discovery_repository import (
     RadarOutcomeDiscoveryRepository,
 )
+from schurfer_journal.testing_database import integration_database_url
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-TEST_DATABASE_URL = "postgresql+psycopg://schurfer:schurfer_dev@localhost:5432/schurfer"
+TEST_DATABASE_URL = integration_database_url(sqlalchemy=True)
 _EXCHANGE = "test_radar_outcome"
 _MARKET_TYPE = "linear"
 _CAPTURE_VERSION = "test_capture_v1"

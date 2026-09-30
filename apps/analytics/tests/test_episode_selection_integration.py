@@ -19,10 +19,11 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 from schurfer_analytics.episode_selection import episode_decision_query
+from schurfer_journal.testing_database import integration_database_url
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-TEST_DATABASE_URL = "postgresql+psycopg://schurfer:schurfer_dev@localhost:5432/schurfer"
+TEST_DATABASE_URL = integration_database_url(sqlalchemy=True)
 
 _STRATEGY = "test_episode_selection_v1"
 _SINCE = datetime(2026, 3, 1, tzinfo=UTC)

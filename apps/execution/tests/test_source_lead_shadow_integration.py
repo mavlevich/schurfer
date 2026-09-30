@@ -11,8 +11,9 @@ from decimal import Decimal
 import psycopg
 import pytest
 from schurfer_execution import source_lead_shadow as sh
+from schurfer_journal.testing_database import integration_database_url
 
-TEST_DATABASE_URL = "postgresql://schurfer:schurfer_dev@localhost:5432/schurfer"
+TEST_DATABASE_URL = integration_database_url()
 REGISTRY_V4 = "source_lead_identity_registry_v4"
 FINGERPRINT_V4 = "7d5f635a4ed02013ad3bd5fb7bd118f5b80979427bf059a130279fa2c3bee189"
 ENTRY = sh.COHORT_START + timedelta(days=1)

@@ -32,10 +32,11 @@ from schurfer_analytics.momentum_universe_identity_repository import (
     MomentumUniverseIdentityRepository,
 )
 from schurfer_analytics.token_universe_coverage import delisted, mark_currently_ready
+from schurfer_journal.testing_database import integration_database_url
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-TEST_DATABASE_URL = "postgresql+psycopg://schurfer:schurfer_dev@localhost:5432/schurfer"
+TEST_DATABASE_URL = integration_database_url(sqlalchemy=True)
 
 _TEST_EXCHANGE = "test_coverage_repo"
 

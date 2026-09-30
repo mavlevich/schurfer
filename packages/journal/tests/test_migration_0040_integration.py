@@ -11,8 +11,9 @@ import psycopg
 import pytest
 from alembic import command
 from alembic.config import Config
+from schurfer_journal.testing_database import integration_database_url
 
-TEST_DATABASE_URL = "postgresql://schurfer:schurfer_dev@localhost:5432/schurfer"
+TEST_DATABASE_URL = integration_database_url()
 ALEMBIC_INI = Path(__file__).resolve().parents[1] / "alembic.ini"
 
 
@@ -49,10 +50,15 @@ def _connect_or_skip() -> psycopg.Connection:
 
 def _alembic_config() -> Config:
     config = Config(str(ALEMBIC_INI))
-    db_url = os.getenv("DATABASE_URL")
-    if db_url:
-        config.set_main_option("sqlalchemy.url", db_url)
+    config.set_main_option("sqlalchemy.url", integration_database_url(sqlalchemy=True))
     return config
+
+
+def test_migration_config_ignores_ambient_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://schurfer:x@127.0.0.1:15432/production")
+    assert _alembic_config().get_main_option("sqlalchemy.url") == integration_database_url(
+        sqlalchemy=True
+    )
 
 
 def _insert_delivery(

@@ -20,10 +20,11 @@ from datetime import UTC, datetime, timedelta
 import pytest
 from schurfer_analytics.momentum_flow_watch_contract import WatchContract
 from schurfer_analytics.momentum_flow_watch_repository import MomentumFlowWatchRepository
+from schurfer_journal.testing_database import integration_database_url
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-TEST_DATABASE_URL = "postgresql+psycopg://schurfer:schurfer_dev@localhost:5432/schurfer"
+TEST_DATABASE_URL = integration_database_url(sqlalchemy=True)
 
 _TEST_EXCHANGE = "test_price_readiness"
 _TEST_CAPTURE_VERSION = "test_capture_v1"

@@ -36,13 +36,14 @@ from schurfer_analytics import cex_activity_discovery_report as report_module
 from schurfer_analytics.cex_activity_discovery_dataset_artifact import (
     read as read_artifact,
 )
+from schurfer_journal.testing_database import integration_database_url
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-TEST_DATABASE_URL = "postgresql+psycopg://schurfer:schurfer_dev@localhost:5432/schurfer"
+TEST_DATABASE_URL = integration_database_url(sqlalchemy=True)
 
 _TEST_EXCHANGE = "test_cex_activity_report_freeze"
 _TEST_CAPTURE_VERSION = "test_capture_v1"

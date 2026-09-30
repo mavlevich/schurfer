@@ -32,10 +32,11 @@ from schurfer_analytics.exit_liquidity_calibration_repository import (
     map_exit_liquidity_row,
 )
 from schurfer_journal.models import Trade
+from schurfer_journal.testing_database import integration_database_url
 from sqlalchemy import delete, insert, text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
-TEST_DATABASE_URL = "postgresql+psycopg://schurfer:schurfer_dev@localhost:5432/schurfer"
+TEST_DATABASE_URL = integration_database_url(sqlalchemy=True)
 
 
 async def _connect_or_skip() -> AsyncEngine:
