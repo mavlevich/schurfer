@@ -106,3 +106,9 @@ restarting the persistent scanner.
 The result is descriptive and may support a later power calculation. A future
 cohort must still register its own executable side, costs, target effect,
 cluster-aware sample size, calendar limit and one formal read before results.
+
+Read completed once on 2026-09-30 under merged reader `9774c79`. The complete
+funnel, all registered groups and the two artifact hashes are recorded in
+[preblind-book-cost-baseline-v1-readout.md](preblind-book-cost-baseline-v1-readout.md).
+The fixed window contained no $150 lev3 row, so the anticipated second size
+point was unavailable in this read.
