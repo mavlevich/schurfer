@@ -21,7 +21,8 @@ from .outcome_repository import async_database_url
 READER_VERSION = "preblind_book_cost_baseline_v1"
 WINDOW_START = datetime(2026, 8, 1, tzinfo=UTC)
 WINDOW_END = datetime(2026, 9, 29, tzinfo=UTC)
-READ_ENABLED = False
+# The fixed protocol was merged as #477 before this separate results reader.
+READ_ENABLED = True
 MAX_ROWS = 100_000
 FEE_SCENARIOS_BPS = (0.0, 5.5, 10.0)  # each side, hypothetical; not observed fills
 SPREAD_BUCKETS_BPS = (5.0, 20.0, 50.0)
@@ -363,7 +364,7 @@ def _add_costs(bucket: dict[str, list[float]], costs: tuple[float, float, float]
 
 async def load_registered_rows(
     db_url: str,
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, int]]:
+) -> tuple[datetime, list[dict[str, Any]], list[dict[str, Any]], dict[str, int]]:
     """Read a single fixed pre-blind snapshot only after the separate activation PR."""
     if not READ_ENABLED:
         raise RuntimeError("preblind book-cost read is not registered for execution")
@@ -374,6 +375,7 @@ async def load_registered_rows(
                 isolation_level="REPEATABLE READ", postgresql_readonly=True
             )
             async with connection.begin():
+                database_now = (await connection.execute(text("SELECT now()"))).scalar_one()
                 params = {"start": WINDOW_START, "end": WINDOW_END, "limit": MAX_ROWS + 1}
                 paper = [
                     dict(row) for row in (await connection.execute(PAPER_ROWS, params)).mappings()
@@ -386,6 +388,11 @@ async def load_registered_rows(
                 )
                 if len(paper) > MAX_ROWS or len(source) > MAX_ROWS:
                     raise ValueError("book-cost row limit exceeded")
-                return paper, source, {key: int(value) for key, value in excluded.items()}
+                return (
+                    database_now,
+                    paper,
+                    source,
+                    {key: int(value) for key, value in excluded.items()},
+                )
     finally:
         await engine.dispose()
