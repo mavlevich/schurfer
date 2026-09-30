@@ -643,7 +643,7 @@ source-lead-readiness-report:
 			&& printf '%s' '--no-working-tree-dirty' \
 			|| printf '%s' '--working-tree-dirty') $(ARGS)
 
-.PHONY: prod-source-lead-shadow-diagnostic prod-source-lead-shadow-diagnostic-install prod-source-lead-v2-book-cost-diagnostic
+.PHONY: prod-source-lead-shadow-diagnostic prod-source-lead-shadow-diagnostic-install prod-source-lead-v2-book-cost-diagnostic prod-preblind-book-cost-result
 
 source-lead-identity-report:
 	@DATABASE_URL="$${DATABASE_URL:-postgresql://schurfer:schurfer_dev@localhost:5432/schurfer}" \
@@ -1495,6 +1495,16 @@ prod-source-lead-v2-book-cost-diagnostic:
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
 			|| printf '%s' '--working-tree-dirty')
+
+# One registered, pre-blind book-cost read. The persistent analytics service does
+# not need a restart: build its image from merged main, then run this one-shot CLI.
+prod-preblind-book-cost-result:
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: run only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean." && exit 1)
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@$(_PROD) build analytics
+	@$(_PROD) run --rm --no-deps --entrypoint preblind-book-cost-result analytics \
+		--code-revision="$$(git rev-parse HEAD)" --clean-tree
 
 # HYP-012b (docs/research/source-lead-multi-source-hyp012b-v1.md). Read-only. PHASE=all
 # (default) freezes the inputs once, takes the durable claim, then computes the result

@@ -52,12 +52,6 @@ def _source_row(**changes: Any) -> dict[str, Any]:
     return row
 
 
-@pytest.mark.asyncio
-async def test_production_read_is_not_enabled() -> None:
-    with pytest.raises(RuntimeError, match="not registered"):
-        await baseline.load_registered_rows("postgresql://invalid/invalid")
-
-
 def test_break_even_counts_impact_once_and_fees_on_both_sides() -> None:
     expected = ((1.0012 * 1.001) / (0.9982 * 0.999) - 1) * 10_000
     assert baseline.break_even_mid_move_bps(12, 18, 10) == pytest.approx(expected)

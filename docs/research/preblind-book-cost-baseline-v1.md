@@ -1,10 +1,10 @@
 # Pre-blind book-cost baseline v1
 
-Status: PROPOSED 2026-09-30. This protocol and its reader are reviewed before
-any production cost value is read. `READ_ENABLED=False` keeps the reader
-inactive in this PR. A separate results PR may activate the fixed read only
-after this protocol is merged; it must publish one immutable, hashed artifact
-and must not change the population, formula, or groups below.
+Status: REGISTERED 2026-09-30 in #477 (`33cf8da`). The protocol and disabled
+reader were merged before any production cost value was read. This separate
+results PR activates the fixed read and publishes one immutable, hashed result
+only after its own merge. It does not change the population, formula or groups
+below.
 
 ## Question and allowed decision
 
@@ -93,6 +93,15 @@ levels cannot fill a requested size. No scaling curve is inferred here.
   fixed window, row counts and deterministic input digest. The result is
   written once with SHA-256 to `runtime/research/preblind-book-cost-baseline`.
   A retry may verify the existing artifact, never silently replace it.
+
+The results reader first saves the queried rows to a write-once `inputs.json`
+with SHA-256 under that directory. A crash before `result.json` resumes from
+those frozen rows, without querying the database again. A crash between the
+result file and its digest completes only if the file equals a replay from the
+frozen input. Once complete, reruns verify the saved hashes without a database
+read. The production command requires a clean `main` and uses the fixed output
+directory; the analytics image is built for the one-shot command without
+restarting the persistent scanner.
 
 The result is descriptive and may support a later power calculation. A future
 cohort must still register its own executable side, costs, target effect,
