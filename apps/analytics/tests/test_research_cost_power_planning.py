@@ -436,6 +436,14 @@ def test_accrual_reference_requires_the_published_counters(tmp_path: Path) -> No
     doc.write_text("header\n" + plan.AUDIT_ROW_MARKER + "\n")
     verified = plan.accrual_reference(doc)
     assert verified["flow_per_day"] == pytest.approx(42 / 22.8333, rel=1e-4)
+    padded = "|" + " |".join(
+        f" {cell:>12}" for cell in plan.AUDIT_ROW_MARKER.strip("|").split(" | ")
+    )
+    doc.write_text(f"| Window | All |\n| --- | ---: |\n{padded} |\n")
+    assert plan.accrual_reference(doc)["status"] == "verified"
+    doc.write_text(plan.AUDIT_ROW_MARKER.replace("| 42 |", "| 41 |") + "\n")
+    with pytest.raises(plan.ArtifactIntegrityError, match="counters"):
+        plan.accrual_reference(doc)
     doc.write_text("edited counters\n")
     with pytest.raises(plan.ArtifactIntegrityError, match="counters"):
         plan.accrual_reference(doc)

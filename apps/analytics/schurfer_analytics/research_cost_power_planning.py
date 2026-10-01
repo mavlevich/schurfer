@@ -1029,11 +1029,19 @@ def monthly_result_usd(effect_bps: float, entries: float, notional_usd: float) -
     return effect_bps / 10_000 * notional_usd * entries
 
 
+def _table_cells(line: str) -> tuple[str, ...]:
+    """A Markdown table row as its stripped cells, so column padding does not matter."""
+    stripped = line.strip()
+    if not stripped.startswith("|"):
+        return ()
+    return tuple(cell.strip() for cell in stripped.strip("|").split("|"))
+
+
 def accrual_reference(audit_doc: Path) -> dict[str, Any]:
     if not audit_doc.exists():
         return {"status": "missing", "path": str(audit_doc), "flow_per_day": None}
     body = audit_doc.read_bytes()
-    if AUDIT_ROW_MARKER not in body.decode("utf-8"):
+    if _table_cells(AUDIT_ROW_MARKER) not in map(_table_cells, body.decode("utf-8").splitlines()):
         raise ArtifactIntegrityError("the audit document no longer carries the counters")
     return {
         "status": "verified",
