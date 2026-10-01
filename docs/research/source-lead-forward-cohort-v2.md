@@ -30,6 +30,22 @@ register how operational missingness before deployment and the prospective
 post-deploy interval will be reported. Record the deployed revision and exact
 cutover time after deployment.
 
+### Deployment record, 2026-10-01
+
+PR #480 was deployed to the `analytics` service from merged, clean `main` at
+revision `cf0c3dad6de5f09bfed53eefab893c1d060bf8d4`. The replacement
+container started at `2026-10-01T13:45:16.592937953Z`; its scanner logged
+startup at `2026-10-01T13:45:21.360107Z`. Use the latter as the conservative
+start of the corrected capture path when describing operational coverage. The
+registered cohort start and economic rules remain unchanged.
+
+The image reported a 20-second Bybit catalog deadline and the existing
+5-second quote deadline. A separate read-only load of the public Bybit catalog
+from that image completed in 1,311 ms with 3,791 markets. At the immediate
+post-deploy check there were no new source-lead captures, so this smoke does
+not establish a naturally qualified Bybit episode. Database migration `0056`
+was unchanged; no historical qualification was rewritten.
+
 ## What changes from v1
 
 |                 | v1 (closed)                                         | v2                                                              |
