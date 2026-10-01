@@ -72,6 +72,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
 from schurfer_performance import DEFAULT_COSTS, CostParameters, calculate_performance
@@ -89,7 +90,6 @@ from .source_lead_contract import IDENTITY_REGISTRY_V3_START, IDENTITY_REGISTRY_
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
-    from datetime import datetime
 
     from .ohlcv import Candle
 
@@ -109,6 +109,12 @@ CONTRACT_VERSION = "source_lead_forward_cohort_v2"
 # constants can never drift apart.
 SOURCE_LEAD_FORWARD_COHORT_START_V1: datetime = IDENTITY_REGISTRY_V3_START
 SOURCE_LEAD_FORWARD_COHORT_START: datetime = IDENTITY_REGISTRY_V4_START
+# Administrative stop amendment (docs/research/source-lead-forward-cohort-v2-
+# administrative-stop.md), registered before any v2 return was read: captures whose
+# source_first_observed_at is at or after this instant never enter v2, whatever the
+# capture worker keeps doing. A cohort that has not reached its registered checkpoint
+# by then is closed by the administrative stop, never extended.
+COHORT_CAPTURE_DEADLINE: datetime = datetime(2027, 3, 31, tzinfo=UTC)
 
 # --- estimand -----------------------------------------------------------
 
@@ -560,6 +566,7 @@ __all__ = [
     "CHECKPOINT_DATASET_NAME",
     "CHECKPOINT_DATASET_VERSION",
     "CHECKPOINT_SCHEMA_VERSION",
+    "COHORT_CAPTURE_DEADLINE",
     "CONFIDENCE_LEVEL",
     "CONTRACT_VERSION",
     "COSTS",

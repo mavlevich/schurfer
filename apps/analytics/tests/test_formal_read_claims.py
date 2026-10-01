@@ -5,12 +5,13 @@ import asyncio
 import os
 import uuid
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import psycopg
 import pytest
 from schurfer_analytics import source_lead_forward_cohort_report as report_mod
 from schurfer_analytics.formal_read_claims import (
+    FormalReadAdministrativelyStoppedError,
     FormalReadAlreadyClaimedError,
     FormalReadClaim,
     FormalReadLeaseHeldError,
@@ -19,12 +20,18 @@ from schurfer_analytics.formal_read_claims import (
     existing_claim,
     open_claim,
 )
-from schurfer_analytics.source_lead_forward_cohort import SOURCE_LEAD_FORWARD_COHORT_START
+from schurfer_analytics.source_lead_forward_cohort import (
+    COHORT_CAPTURE_DEADLINE,
+    SOURCE_LEAD_FORWARD_COHORT_START,
+)
 from schurfer_analytics.source_lead_forward_cohort_repository import (
     RawQualifiedEpisode,
     SourceLeadForwardCohortRepository,
 )
 from schurfer_journal.testing_database import integration_database_url
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 TEST_DATABASE_URL = integration_database_url()
 
@@ -156,11 +163,13 @@ def _episode(i: int, asset: str, when: datetime) -> RawQualifiedEpisode:
 class _Repo:
     def __init__(self, episodes: list[RawQualifiedEpisode], now: datetime) -> None:
         self.episodes, self.now = episodes, now
+        self.fetch_kwargs: list[dict[str, Any]] = []
 
     async def database_now(self) -> datetime:
         return self.now
 
-    async def fetch_qualified_episodes(self, **_: Any) -> list[RawQualifiedEpisode]:
+    async def fetch_qualified_episodes(self, **kwargs: Any) -> list[RawQualifiedEpisode]:
+        self.fetch_kwargs.append(kwargs)
         return self.episodes
 
 
@@ -188,8 +197,9 @@ def _patch(
     *,
     prior: FormalReadClaim | None = None,
     prefix: int | None = 100,
-) -> None:
-    repo = _Repo(episodes, START + timedelta(days=40))
+    now: datetime | None = None,
+) -> _Repo:
+    repo = _Repo(episodes, now or START + timedelta(days=40))
     monkeypatch.setenv("DATABASE_URL", "postgresql://unused")
     monkeypatch.setattr(
         SourceLeadForwardCohortRepository, "from_url", staticmethod(lambda _u: repo)
@@ -224,6 +234,7 @@ def _patch(
     monkeypatch.setattr(report_mod, "checkpoint_prefix_length_blind", blind)
     monkeypatch.setattr(report_mod, "open_claim", open_)
     monkeypatch.setattr(report_mod, "aggregate_cohort", aggregate)
+    return repo
 
 
 def test_too_few_matured_episodes_refuses_before_any_fetch(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -274,3 +285,90 @@ def test_a_completed_read_refuses_before_any_fetch(monkeypatch: pytest.MonkeyPat
     with pytest.raises(FormalReadAlreadyClaimedError):
         asyncio.run(report_mod.generate_report(_args()))
     assert events == []
+
+
+# --- administrative stop (source-lead-forward-cohort-v2-administrative-stop.md) ---------
+
+
+def test_a_stopped_cohort_refuses_before_loading_any_episode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stopped = FormalReadClaim(id=7, candidate_ids=(1,), status="admin_stopped", resumed=True)
+    events: list[str] = []
+    _patch(monkeypatch, MANY, events, prior=stopped)
+
+    def no_repository(_url: str) -> Any:
+        raise AssertionError("a stopped cohort loaded its episodes")
+
+    monkeypatch.setattr(SourceLeadForwardCohortRepository, "from_url", staticmethod(no_repository))
+    with pytest.raises(FormalReadAdministrativelyStoppedError):
+        asyncio.run(report_mod.generate_report(_args()))
+    assert events == []
+
+
+def test_captures_after_the_deadline_never_enter_the_cohort(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    repo = _patch(monkeypatch, MANY[:50], events)
+    with pytest.raises(ValueError, match="before fetching"):
+        asyncio.run(report_mod.generate_report(_args()))
+    assert repo.fetch_kwargs[0]["until"] == COHORT_CAPTURE_DEADLINE
+
+
+def _deadline_args(tmp_path: Path) -> argparse.Namespace:
+    args = _args()
+    args.administrative_stop_dir = tmp_path
+    return args
+
+
+def _record_stops(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, Any]]:
+    recorded: list[dict[str, Any]] = []
+
+    async def record(_db: str, **kwargs: Any) -> Any:
+        recorded.append(kwargs)
+        return None
+
+    monkeypatch.setattr(report_mod, "record_administrative_stop", record)
+    return recorded
+
+
+SETTLED = COHORT_CAPTURE_DEADLINE + timedelta(hours=24)
+
+
+def test_an_unreached_floor_after_the_deadline_records_the_stop(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    events: list[str] = []
+    _patch(monkeypatch, MANY[:50], events, now=SETTLED)
+    recorded = _record_stops(monkeypatch)
+    with pytest.raises(FormalReadAdministrativelyStoppedError):
+        asyncio.run(report_mod.generate_report(_deadline_args(tmp_path)))
+    assert events == []  # decided from counts, before any exit bar
+    (record,) = recorded
+    assert record["terminal_reason"] == "checkpoint_unreached_at_deadline"
+    assert record["closed_ids"] == [e.capture_id for e in MANY[:50]]
+    assert (tmp_path / "deadline.json").exists()
+
+
+def test_an_unreached_checkpoint_after_the_deadline_records_the_stop(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    events: list[str] = []
+    _patch(monkeypatch, MANY, events, prefix=None, now=SETTLED)
+    recorded = _record_stops(monkeypatch)
+    with pytest.raises(FormalReadAdministrativelyStoppedError):
+        asyncio.run(report_mod.generate_report(_deadline_args(tmp_path)))
+    assert events == ["fetch:120", "blind_checkpoint"]  # resolution status only, no claim
+    assert len(recorded) == 1
+
+
+def test_before_settlement_the_deadline_only_refuses(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    events: list[str] = []
+    _patch(monkeypatch, MANY[:50], events, now=SETTLED - timedelta(minutes=1))
+    recorded = _record_stops(monkeypatch)
+    with pytest.raises(ValueError, match="before fetching"):
+        asyncio.run(report_mod.generate_report(_deadline_args(tmp_path)))
+    assert recorded == [] and not (tmp_path / "deadline.json").exists()

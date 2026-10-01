@@ -346,7 +346,8 @@ class SourceLeadExitObservation(Base, TimestampMixin):
 
 
 class FormalReadClaim(Base):
-    """One durable formal-read claim per registered cohort (migration 0054)."""
+    """One durable formal-read claim per registered cohort (migration 0054); an
+    administrative stop is its third terminal state (migration 0057)."""
 
     __tablename__ = "formal_read_claims"
 
@@ -362,6 +363,7 @@ class FormalReadClaim(Base):
     lease_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     result_fingerprint: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    terminal_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
     candidate_ids_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     code_revision: Mapped[str] = mapped_column(String(64), nullable=False)
     working_tree_dirty: Mapped[bool] = mapped_column(Boolean, nullable=False)
@@ -375,9 +377,11 @@ class FormalReadClaim(Base):
         ),
         CheckConstraint("candidate_count >= 0", name="ck_formal_read_claim_count"),
         CheckConstraint(
-            "(status = 'claimed' AND completed_at IS NULL) OR "
+            "(status = 'claimed' AND completed_at IS NULL AND terminal_reason IS NULL) OR "
             "(status = 'completed' AND completed_at IS NOT NULL "
-            "AND result_fingerprint IS NOT NULL)",
+            "AND result_fingerprint IS NOT NULL AND terminal_reason IS NULL) OR "
+            "(status = 'admin_stopped' AND completed_at IS NOT NULL "
+            "AND result_fingerprint IS NOT NULL AND terminal_reason IS NOT NULL)",
             name="ck_formal_read_claim_status",
         ),
         {"schema": "app"},

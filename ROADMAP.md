@@ -304,7 +304,10 @@ This line takes the single new-discovery slot left free by the negative abnormal
    (2026-09-29, exclusive), write-once with a manifest. It does no analysis.
    - Bars inside the unread HYP-012b holdout (weeks 36-39) are analysed only after the
      HYP-012c read.
-   - Nothing on or after 2026-09-29 is read for any venue before the v2 formal read.
+   - Nothing on or after 2026-09-29 is read for any venue before v2 reaches a terminal
+     state (its formal read or its registered administrative stop). The closed boundary
+     and what becomes readable afterwards are in
+     `docs/research/source-lead-forward-cohort-v2-administrative-stop.md`.
 2. **5m exploratory screen** on the burnt 2026-08-10..31 window, over every MEXC USDT
    perpetual, on a verified archive only (every file `complete` or `empty` and matching its
    sha256). Before any result it reports coverage by symbol and day. It then reports:

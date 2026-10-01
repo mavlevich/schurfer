@@ -33,7 +33,8 @@ from .outcome_repository import async_database_url
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-QUALIFIED_EPISODE_QUERY_VERSION = "source_lead_forward_cohort_qualified_episode_v1"
+# v2: an optional upper bound on the capture time (the administrative stop deadline).
+QUALIFIED_EPISODE_QUERY_VERSION = "source_lead_forward_cohort_qualified_episode_v2"
 
 _QUALIFIED_EPISODES_SQL = text("""
     SELECT
@@ -53,10 +54,51 @@ _QUALIFIED_EPISODES_SQL = text("""
     WHERE q.status = 'qualified'
       AND q.qualification_version = :qualification_version
       AND c.source_first_observed_at >= :since
+      AND (CAST(:until AS timestamptz) IS NULL OR c.source_first_observed_at < :until)
       AND t.status = 'sampled'
     ORDER BY c.source_first_observed_at, c.id
     LIMIT :limit
 """)
+
+ACCRUAL_SNAPSHOT_QUERY_VERSION = "source_lead_forward_cohort_accrual_snapshot_v1"
+
+# Outcome-blind: identities and timestamps only. No book, liquidity, instrument or
+# price column is selected. Qualification rows are insert-only (ON CONFLICT DO
+# NOTHING), so `q.created_at < :as_of` reproduces exactly what existed at `as_of`
+# whenever the snapshot is taken later.
+_ACCRUAL_SNAPSHOT_SQL = text("""
+    SELECT
+        c.id AS capture_id,
+        c.source_first_observed_at,
+        q.canonical_asset_id,
+        q.selected_target_exchange AS target_exchange,
+        t.observed_at
+    FROM app.source_lead_qualifications q
+    JOIN app.source_lead_captures c ON c.id = q.capture_id
+    JOIN app.source_lead_target_observations t
+      ON t.capture_id = q.capture_id
+     AND t.target_exchange = q.selected_target_exchange
+    WHERE q.status = 'qualified'
+      AND q.qualification_version = :qualification_version
+      AND c.source_first_observed_at >= :since
+      AND c.source_first_observed_at < :as_of
+      AND q.created_at < :as_of
+      AND t.status = 'sampled'
+    ORDER BY c.source_first_observed_at, c.id
+    LIMIT :limit
+""")
+
+
+@dataclass(frozen=True)
+class AccrualSnapshotRow:
+    """One qualified v2 episode as it existed at a snapshot instant: identity and
+    timestamps only, never a price."""
+
+    capture_id: int
+    source_first_observed_at: datetime
+    canonical_asset_id: str
+    target_exchange: str
+    observed_at: datetime
 
 
 @dataclass(frozen=True)
@@ -128,6 +170,7 @@ class SourceLeadForwardCohortRepository:
         qualification_version: str,
         since: datetime,
         limit: int,
+        until: datetime | None = None,
     ) -> Sequence[RawQualifiedEpisode]:
         if limit <= 0:
             raise ValueError("limit must be positive")
@@ -138,6 +181,7 @@ class SourceLeadForwardCohortRepository:
                 {
                     "qualification_version": qualification_version,
                     "since": since,
+                    "until": until,
                     "limit": limit,
                 },
             )
@@ -171,6 +215,48 @@ class SourceLeadForwardCohortRepository:
                 )
             )
         return tuple(episodes)
+
+    async def fetch_accrual_snapshot(
+        self,
+        *,
+        qualification_version: str,
+        since: datetime,
+        as_of: datetime,
+        limit: int,
+    ) -> Sequence[AccrualSnapshotRow]:
+        """Qualified episodes captured in [since, as_of) whose qualification existed
+        before `as_of`. Read-only and price-free."""
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        if as_of <= since:
+            raise ValueError("as_of must be after since")
+        async with self._engine.connect() as connection, connection.begin():
+            await connection.execute(text("SET TRANSACTION READ ONLY"))
+            rows = (
+                await connection.execute(
+                    _ACCRUAL_SNAPSHOT_SQL,
+                    {
+                        "qualification_version": qualification_version,
+                        "since": since,
+                        "as_of": as_of,
+                        "limit": limit,
+                    },
+                )
+            ).all()
+        snapshot = []
+        for row in rows:
+            if not isinstance(row.canonical_asset_id, str) or not row.canonical_asset_id:
+                raise ValueError(f"qualified capture_id={row.capture_id} has no canonical_asset_id")
+            snapshot.append(
+                AccrualSnapshotRow(
+                    capture_id=int(row.capture_id),
+                    source_first_observed_at=row.source_first_observed_at,
+                    canonical_asset_id=row.canonical_asset_id,
+                    target_exchange=str(row.target_exchange),
+                    observed_at=row.observed_at,
+                )
+            )
+        return tuple(snapshot)
 
     async def close(self) -> None:
         await self._engine.dispose()
