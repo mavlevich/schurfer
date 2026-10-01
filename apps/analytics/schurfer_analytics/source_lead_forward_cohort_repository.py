@@ -64,8 +64,10 @@ ACCRUAL_SNAPSHOT_QUERY_VERSION = "source_lead_forward_cohort_accrual_snapshot_v1
 
 # Outcome-blind: identities and timestamps only. No book, liquidity, instrument or
 # price column is selected. Qualification rows are insert-only (ON CONFLICT DO
-# NOTHING), so `q.created_at < :as_of` reproduces exactly what existed at `as_of`
-# whenever the snapshot is taken later.
+# NOTHING) and stamp `created_at` with NOW(), the start of their transaction. So the
+# set `q.created_at < :as_of` is final once no transaction that began before
+# `as_of` is still open (`open_transactions_started_before`); from then on every
+# snapshot of it is identical, however late it is taken.
 _ACCRUAL_SNAPSHOT_SQL = text("""
     SELECT
         c.id AS capture_id,
@@ -87,6 +89,30 @@ _ACCRUAL_SNAPSHOT_SQL = text("""
     ORDER BY c.source_first_observed_at, c.id
     LIMIT :limit
 """)
+
+
+# A transaction that began before `as_of` can still insert rows stamped before it. A
+# session whose transaction start this role may not see (insufficient privilege)
+# cannot be ruled out, so it is counted as unverifiable rather than ignored.
+_OPEN_TRANSACTIONS_SQL = text("""
+    SELECT
+        count(*) FILTER (WHERE xact_start < :as_of) AS started_before,
+        count(*) FILTER (WHERE state IS NULL) AS unverifiable
+    FROM pg_stat_activity
+    WHERE datname = current_database()
+      AND backend_type = 'client backend'
+      AND pid <> pg_backend_pid()
+""")
+
+
+@dataclass(frozen=True)
+class OpenTransactions:
+    started_before: int
+    unverifiable: int
+
+    @property
+    def snapshot_final(self) -> bool:
+        return self.started_before == 0 and self.unverifiable == 0
 
 
 @dataclass(frozen=True)
@@ -215,6 +241,13 @@ class SourceLeadForwardCohortRepository:
                 )
             )
         return tuple(episodes)
+
+    async def open_transactions_started_before(self, as_of: datetime) -> OpenTransactions:
+        """Other sessions of this database whose open transaction began before `as_of`,
+        and sessions whose state this role cannot see."""
+        async with self._engine.connect() as connection:
+            row = (await connection.execute(_OPEN_TRANSACTIONS_SQL, {"as_of": as_of})).one()
+        return OpenTransactions(int(row.started_before), int(row.unverifiable))
 
     async def fetch_accrual_snapshot(
         self,

@@ -31,6 +31,7 @@ from schurfer_analytics.source_lead_forward_cohort_repository import (
 )
 from schurfer_journal.testing_database import integration_database_url
 from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.pool import NullPool
 
 TEST_DATABASE_URL = integration_database_url()
 START = datetime(2026, 9, 29, tzinfo=UTC)
@@ -309,3 +310,50 @@ def test_the_snapshot_reproduces_the_state_at_the_checkpoint() -> None:
             assert row.observed_at == before + timedelta(seconds=20)
         finally:
             conn.execute("DELETE FROM app.pump_events WHERE base LIKE %s", (f"SNAP_{tag}",))
+
+
+def test_a_transaction_crossing_the_checkpoint_blocks_the_snapshot_until_it_ends() -> None:
+    """Review repro: NOW() stamps the transaction start, so a transaction begun before C
+    and committed after it changes `created_at < C` between an early and a late run."""
+    _db_or_skip()
+    tag = uuid.uuid4().hex[:8].upper()
+    writer = psycopg.connect(TEST_DATABASE_URL)
+    # NullPool: each asyncio.run below gets fresh connections on its own event loop.
+    engine = create_async_engine(integration_database_url(sqlalchemy=True), poolclass=NullPool)
+    repository = SourceLeadForwardCohortRepository(engine)
+
+    async def state(as_of: datetime) -> tuple[Any, list[int]]:
+        open_transactions = await repository.open_transactions_started_before(as_of)
+        rows = await repository.fetch_accrual_snapshot(
+            qualification_version=_VERSION, since=START, as_of=as_of, limit=100
+        )
+        return open_transactions, [r.capture_id for r in rows]
+
+    try:
+        with writer.transaction():
+            started = writer.execute("SELECT now()").fetchone()
+            assert started is not None
+            checkpoint = started[0] + timedelta(milliseconds=300)
+            capture = _seed(
+                writer,
+                f"XCROSS{tag}",
+                source_at=checkpoint - timedelta(hours=2),
+                qualified_created_at=started[0],  # what NOW() stamps in this transaction
+            )
+            # The checkpoint passes while the transaction is still open.
+            while True:
+                now = writer.execute("SELECT clock_timestamp()").fetchone()
+                assert now is not None
+                if now[0] > checkpoint:
+                    break
+            during, rows_during = asyncio.run(state(checkpoint))
+            assert during.started_before >= 1 and not during.snapshot_final
+            assert capture not in rows_during  # invisible: an early run would miss it
+        after, rows_after = asyncio.run(state(checkpoint))
+        assert after.started_before == during.started_before - 1
+        assert capture in rows_after  # visible: so the early run must not decide
+    finally:
+        writer.close()
+        asyncio.run(repository.close())
+        with psycopg.connect(TEST_DATABASE_URL, autocommit=True) as conn:
+            conn.execute("DELETE FROM app.pump_events WHERE base = %s", (f"XCROSS{tag}",))

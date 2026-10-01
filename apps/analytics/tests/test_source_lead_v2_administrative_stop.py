@@ -14,7 +14,10 @@ from schurfer_analytics.source_lead_forward_cohort import (
     COHORT_CAPTURE_DEADLINE,
     SOURCE_LEAD_FORWARD_COHORT_START,
 )
-from schurfer_analytics.source_lead_forward_cohort_repository import AccrualSnapshotRow
+from schurfer_analytics.source_lead_forward_cohort_repository import (
+    AccrualSnapshotRow,
+    OpenTransactions,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -126,13 +129,22 @@ def test_a_decision_artifact_is_written_once_and_replayed(tmp_path: Path) -> Non
 
 
 class _Repository:
-    def __init__(self, now: datetime, by_checkpoint: dict[datetime, list[AccrualSnapshotRow]]):
+    def __init__(
+        self,
+        now: datetime,
+        by_checkpoint: dict[datetime, list[AccrualSnapshotRow]],
+        open_before: dict[datetime, OpenTransactions] | None = None,
+    ):
         self.now = now
         self.by_checkpoint = by_checkpoint
+        self.open_before = open_before or {}
         self.snapshots: list[datetime] = []
 
     async def database_now(self) -> datetime:
         return self.now
+
+    async def open_transactions_started_before(self, as_of: datetime) -> OpenTransactions:
+        return self.open_before.get(as_of, OpenTransactions(0, 0))
 
     async def fetch_accrual_snapshot(self, *, as_of: datetime, **_: Any) -> Any:
         self.snapshots.append(as_of)
@@ -246,3 +258,32 @@ def test_the_deadline_needs_the_full_floor(monkeypatch: pytest.MonkeyPatch, tmp_
 def test_deadline_settlement() -> None:
     assert not stop.deadline_stop_due(COHORT_CAPTURE_DEADLINE + timedelta(hours=23))
     assert stop.deadline_stop_due(COHORT_CAPTURE_DEADLINE + stop.DEADLINE_SETTLEMENT)
+
+
+@pytest.mark.parametrize("open_tx", [OpenTransactions(1, 0), OpenTransactions(0, 1)])
+def test_a_checkpoint_is_decided_only_on_a_final_snapshot(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, open_tx: OpenTransactions
+) -> None:
+    """Review: a transaction begun before C can still commit rows stamped before C."""
+    recorded = _patch_claims(monkeypatch, None)
+    data = {FIRST: _rows(12, FIRST), SECOND: []}
+    repository = _Repository(SECOND + timedelta(hours=1), data, {SECOND: open_tx})
+    outcome = _run(repository, tmp_path)
+    assert outcome.status == stop.SNAPSHOT_NOT_FINAL
+    assert repository.snapshots == [FIRST]  # the unsettled checkpoint is not even read
+    assert recorded == [] and not (tmp_path / "checkpoint-2026-11-30.json").exists()
+    # Once it settles, the same run decides it.
+    repository.open_before = {}
+    assert _run(repository, tmp_path).status == "stopped"
+
+
+def test_a_stop_lists_the_closed_data_windows() -> None:
+    entry = FIRST - timedelta(hours=5, seconds=10)
+    decision = stop.decide(FIRST, [_row(7, entry)])
+    (window,) = decision.closed_windows
+    assert window.capture_id == 7 and window.start == entry
+    # Exit bar: first 1m boundary at or after entry + 30m, closed one minute later.
+    assert window.end == entry.replace(second=0) + timedelta(minutes=32)
+    payload = stop.decision_payload(decision)
+    assert payload["closed_windows"][0]["canonical_asset_id"] == "asset:7"
+    assert stop.decision_payload(stop.decide(FIRST, _rows(12, FIRST)))["closed_windows"] == []

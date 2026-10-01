@@ -686,10 +686,14 @@ async def _stop_if_deadline_passed(
     if not administrative_stop.deadline_stop_due(database_now):
         return
     closed = [e.capture_id for e in raw_episodes]
+    windows = [
+        administrative_stop.closed_window(e.capture_id, e.canonical_asset_id, e.observed_at)
+        for e in raw_episodes
+    ]
     fingerprint = administrative_stop.persist_decision(
         args.administrative_stop_dir,
         "deadline.json",
-        administrative_stop.deadline_payload(closed, matured),
+        administrative_stop.deadline_payload(windows, matured),
         code_revision=code_revision,
         working_tree_dirty=args.working_tree_dirty,
         evaluated_at=database_now,
@@ -736,6 +740,24 @@ async def generate_report(args: argparse.Namespace) -> SourceLeadForwardCohortRe
             "formal read refused: this cohort's single formal read is already completed"
         )
     repository = SourceLeadForwardCohortRepository.from_url(db_url)
+    if prior is None:
+        # Every due administrative checkpoint is evaluated before the first read, so a
+        # missed checkpoint can never be skipped by running the reader first.
+        administrative = await administrative_stop.evaluate_checkpoints(
+            repository,
+            db_url,
+            None,
+            artifact_dir=args.administrative_stop_dir,
+            code_revision=code_revision,
+            working_tree_dirty=args.working_tree_dirty,
+        )
+        if administrative.status in ("stopped", "already_stopped"):
+            raise stopped_error(FORMAL_READ_STUDY_ID, CONTRACT_VERSION)
+        if administrative.status == administrative_stop.SNAPSHOT_NOT_FINAL:
+            raise ValueError(
+                "formal read refused before loading any episode: a due administrative "
+                f"checkpoint cannot be evaluated yet ({administrative.detail})"
+            )
     database_now = await repository.database_now()
     raw_episodes = await repository.fetch_qualified_episodes(
         qualification_version=QUALIFICATION_VERSION,

@@ -62,13 +62,26 @@ the two cannot drift.
   No book, liquidity, instrument, price, exit bar or return is read. Resolution status,
   which needs exit bars, is deliberately not used: a matured qualified episode is not
   yet a resolved one, so the count is an optimistic upper bound on resolved episodes.
-- **Fixed snapshot per checkpoint.** Qualification rows are insert-only, so the rows
-  with `created_at < C` and capture time in `[2026-09-29, C)` reproduce exactly the state
-  at C. A run made after C uses that snapshot, not the current state.
+- **Fixed snapshot per checkpoint.** The counted set is the qualified rows with
+  `created_at < C` and capture time in `[2026-09-29, C)`. It is defined by the stamp, not
+  by what was visible at C: qualification rows are insert-only, but `created_at` is
+  `NOW()`, the start of the inserting transaction, so a transaction begun before C and
+  committed after it adds a row stamped before C. The set is therefore **final only
+  once no transaction that began before C is still open** in the database. Before
+  evaluating C, the rule checks `pg_stat_activity` for open transactions started before
+  C, and for sessions whose state its role cannot see. If there is either, it decides
+  nothing (`snapshot_not_final`) and must be run again later. Once final, every
+  snapshot of C is identical, however late it is taken.
 - **Missed and repeated runs.** A run evaluates every due checkpoint in order, each on its
-  own snapshot, and records the first one that stops. A late run therefore reaches the
-  same decision as an on-time run, and a rerun replays the stored decision artifacts
-  byte for byte or refuses.
+  own final snapshot, and records the first one that stops. A late run therefore reaches
+  the same decision as an on-time run, and a rerun replays the stored decision artifacts
+  or refuses.
+- **The reader cannot skip a checkpoint.** Before its first read the formal reader runs
+  the same evaluation of every due checkpoint, before it loads any episode, book or quote
+  and before it can claim. A checkpoint that stops the cohort stops it there; one that
+  is not yet final refuses the read. The outcome no longer depends on which command runs
+  first. A claim that already exists is resumed without re-evaluation, because a
+  started read is never rewritten.
 - **Non-tradable qualified rows.** The v2 reader refuses a cohort with a qualified episode
   outside `TRADABLE_VENUES`; the rule refuses the same way rather than counting around it.
 
@@ -94,9 +107,9 @@ A stop is recorded once in `app.formal_read_claims` with status `admin_stopped`,
 - **A started or completed read is never rewritten.** If a formal claim exists, the stop
   is refused and the claim is untouched. A database trigger also forbids any update that
   turns a claim into `admin_stopped` and any update of a terminal row.
-- **The reader refuses first.** The formal reader checks for a stop before it loads any
-  qualified episode, book or quote, and its claim attempt refuses a stopped cohort if a
-  stop lands in between.
+- **The reader refuses first.** The formal reader checks for a recorded stop, then
+  evaluates the due checkpoints, before it loads any qualified episode, book or quote;
+  its claim attempt still refuses a stopped cohort if a stop lands in between.
 - **The closing checkpoint never moves.** A rerun with a different reason or artifact is
   refused.
 
@@ -110,8 +123,9 @@ SHA-256 sidecars, and are covered by the nightly research backup.
   registered floor in time. It says nothing about the sign or size of the edge.
 - **The closed episodes stay closed.** Every qualified v2 capture before the stop's
   boundary (C for a checkpoint stop, the deadline for a deadline stop) is listed in the
-  stop row and its artifact. Their returns are never computed, by v2 or by any other
-  study.
+  stop row and its artifact, together with its **closed data window**: its canonical
+  asset, from its entry to the close of its 30-minute exit bar. Their returns are never
+  computed, by v2 or by any other study.
 - **No reuse as forward evidence.** Closed v2 episodes are not a future cohort's
   confirmatory sample just because their returns were never read. A successor that
   widens the identity universe, adds venues or changes the rule is a new version with its
@@ -127,10 +141,17 @@ If v2 is stopped, that read never happens, so the condition is replaced:
 
 1. **The blind window ends when v2 reaches a terminal state:** its completed formal read,
    or a recorded administrative stop. Until then it stands exactly as before.
-2. **After a stop, the closed set remains unreadable.** Any later study excludes the
-   closed capture ids and, to avoid reading them through another venue, any of its own
-   episodes on the same canonical asset whose decision time falls between a closed
-   episode's entry and the close of its 30-minute exit bar.
+2. **After a stop, the closed data stays unread, through any venue and any window.** No
+   later study may use data of a closed episode's canonical asset, from any venue,
+   timestamped inside a closed data window. An episode of a later study is excluded
+   when **any** window it uses on that asset intersects a closed window: feature
+   lookbacks, labels and outcome horizons alike, not only its decision time. A decision
+   at 12:32 with a one-hour lookback reads 11:32 to 12:32 and is excluded by a closed
+   window 12:00 to 12:31; so is a decision at 11:50 whose outcome horizon reaches 12:10.
+   Excluded episodes are dropped, never imputed. A study that cannot map an instrument to
+   a canonical asset applies the exclusion by base ticker. Cross-sectional inputs mask
+   the closed windows of the affected assets. The windows are listed in the stop
+   artifact (`closed_windows`) so this can be enforced mechanically.
 3. **Other data on or after 2026-09-29 becomes available only to a study registered after
    the terminal state**, under that study's own protocol. Data dated before its
    registration is historical for it (discovery or validation), never prospective.
@@ -142,6 +163,10 @@ If v2 is stopped, that read never happens, so the condition is replaced:
 
 - The rule runs with `make prod-hyp012-v2-administrative-stop` from a clean `main`, on
   or after each checkpoint. It is idempotent; a run before 2026-10-31 evaluates nothing.
+- A run that reports `snapshot_not_final` decided nothing: a transaction begun before
+  the checkpoint (for example a long backup) is still open. Run it again later; if it
+  keeps refusing, inspect `pg_stat_activity`. Every production service connects as the
+  same database role, so the rule can see every session's state.
 - The capture and shadow workers are a separate operational decision for the owner.
   Their continuation never extends v2: the deadline bounds the reader's query.
 - Waiting for passive v2 accrual does not hold the main development slot. The 2026-10-31

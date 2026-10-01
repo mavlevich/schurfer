@@ -5,13 +5,17 @@ administrative-stop.md. The rule is a calendar governance policy. It decides whe
 passive v2 cohort may keep waiting for its registered checkpoint (100 resolved episodes
 over 4 UTC weeks); it never evaluates the hypothesis, and a stop is not a `fail`.
 
-At each checkpoint instant C (00:00 UTC) the rule counts, from a snapshot of the
-database as it existed at C, the qualified v2 episodes on a tradable venue whose exit
-bar had closed by C (`episode_is_matured`). Only identities and timestamps are read: no
-book, price, exit bar or return. The cohort continues when the count reaches the frozen
+At each checkpoint instant C (00:00 UTC) the rule counts the qualified v2 episodes
+captured before C whose qualification is stamped before C, on a tradable venue, with
+an exit bar closed by C (`episode_is_matured`). Only identities and timestamps are
+read: no book, price, exit bar or return. Qualification rows are stamped with their
+transaction's start, so that set is final only once no transaction that began before C
+is still open; until then the checkpoint is not evaluated (`snapshot_not_final`) and
+the run must be repeated. The cohort continues when the count reaches the frozen
 minimum for C and is stopped otherwise. A run evaluates every checkpoint that is due, in
-order, each on its own snapshot, so a late or repeated run reaches the same decision
-as an on-time one.
+order, each on its own final snapshot, so a late or repeated run reaches the same
+decision as an on-time one. The formal reader runs the same evaluation before it loads
+any episode or claims, so a missed checkpoint can never be skipped by reading first.
 
 The minimums come from one Poisson justification: at C the count k continues if
 `k + U(k) / elapsed_days * remaining_days >= 100`, where U(k) is the one-sided 95% upper
@@ -49,10 +53,12 @@ from .source_lead_forward_cohort import (
     COHORT_CAPTURE_DEADLINE,
     CONTRACT_VERSION,
     EVIDENCE_FLOOR,
+    EXIT_BAR_TIMEFRAME_MS,
     QUALIFICATION_VERSION,
     SOURCE_LEAD_FORWARD_COHORT_START,
     TRADABLE_VENUES,
     episode_is_matured,
+    expected_exit_boundary_ms,
 )
 from .source_lead_forward_cohort_repository import (
     ACCRUAL_SNAPSHOT_QUERY_VERSION,
@@ -63,6 +69,8 @@ from .source_lead_multi_source_report import complete_digest, load_verified, wri
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
+
+    from .formal_read_claims import FormalReadClaim
 
 RULE_VERSION = "hyp012_v2_administrative_stop_v1"
 STUDY_ID = "HYP-012"
@@ -130,6 +138,37 @@ def justified_minimum(checkpoint: datetime) -> int:
 
 
 @dataclass(frozen=True)
+class ClosedWindow:
+    """The data a closed episode's outcome depends on: its asset's prices, on any
+    venue, from entry to the close of its exit bar. Later studies exclude every
+    feature, label or outcome window that intersects it."""
+
+    capture_id: int
+    canonical_asset_id: str
+    start: datetime
+    end: datetime
+
+
+def closed_window(capture_id: int, canonical_asset_id: str, entry: datetime) -> ClosedWindow:
+    end_ms = expected_exit_boundary_ms(entry) + EXIT_BAR_TIMEFRAME_MS
+    return ClosedWindow(
+        capture_id, canonical_asset_id, entry, datetime.fromtimestamp(end_ms / 1000, UTC)
+    )
+
+
+def windows_payload(windows: Sequence[ClosedWindow]) -> list[dict[str, Any]]:
+    return [
+        {
+            "capture_id": w.capture_id,
+            "canonical_asset_id": w.canonical_asset_id,
+            "start": w.start.isoformat(),
+            "end": w.end.isoformat(),
+        }
+        for w in windows
+    ]
+
+
+@dataclass(frozen=True)
 class CheckpointDecision:
     checkpoint: datetime
     qualified_in_snapshot: int
@@ -137,6 +176,7 @@ class CheckpointDecision:
     min_to_continue: int
     decision: str
     closed_capture_ids: tuple[int, ...]
+    closed_windows: tuple[ClosedWindow, ...] = ()
 
 
 def decide(checkpoint: datetime, snapshot: Sequence[AccrualSnapshotRow]) -> CheckpointDecision:
@@ -161,6 +201,12 @@ def decide(checkpoint: datetime, snapshot: Sequence[AccrualSnapshotRow]) -> Chec
         min_to_continue=minimum,
         decision=DECISION_STOP if stop else DECISION_CONTINUE,
         closed_capture_ids=tuple(row.capture_id for row in snapshot) if stop else (),
+        closed_windows=tuple(
+            closed_window(row.capture_id, row.canonical_asset_id, row.observed_at)
+            for row in snapshot
+        )
+        if stop
+        else (),
     )
 
 
@@ -185,6 +231,7 @@ def decision_payload(decision: CheckpointDecision) -> dict[str, Any]:
         "decision": decision.decision,
         "closed_capture_ids": list(decision.closed_capture_ids),
         "closed_capture_ids_sha256": candidate_ids_sha256(decision.closed_capture_ids),
+        "closed_windows": windows_payload(decision.closed_windows),
     }
 
 
@@ -231,21 +278,20 @@ class RunOutcome:
     detail: str
 
 
-async def evaluate_due_checkpoints(
+SNAPSHOT_NOT_FINAL = "snapshot_not_final"
+
+
+async def evaluate_checkpoints(
     repository: SourceLeadForwardCohortRepository,
     db_url: str,
+    prior: FormalReadClaim | None,
     *,
     artifact_dir: Path,
     code_revision: str,
     working_tree_dirty: bool,
 ) -> RunOutcome:
-    """Evaluate every due checkpoint in order and record the first stop."""
-    prior = await existing_claim(
-        db_url,
-        study_id=STUDY_ID,
-        contract_version=CONTRACT_VERSION,
-        cohort_start=SOURCE_LEAD_FORWARD_COHORT_START,
-    )
+    """Evaluate every due checkpoint in order, each on its final snapshot, and record
+    the first stop. `prior` is the cohort's claim row as the caller read it."""
     if prior is not None and prior.status != STATUS_ADMIN_STOPPED:
         return RunOutcome(
             "formal_read_started",
@@ -257,6 +303,16 @@ async def evaluate_due_checkpoints(
     for checkpoint in CHECKPOINTS:
         if checkpoint > now:
             break
+        open_transactions = await repository.open_transactions_started_before(checkpoint)
+        if not open_transactions.snapshot_final:
+            return RunOutcome(
+                SNAPSHOT_NOT_FINAL,
+                tuple(decisions),
+                f"{checkpoint:%Y-%m-%d}: {open_transactions.started_before} transaction(s) "
+                f"begun before the checkpoint are still open and "
+                f"{open_transactions.unverifiable} session(s) cannot be inspected; "
+                "nothing was decided, run again later",
+            )
         snapshot = await repository.fetch_accrual_snapshot(
             qualification_version=QUALIFICATION_VERSION,
             since=SOURCE_LEAD_FORWARD_COHORT_START,
@@ -303,7 +359,32 @@ async def evaluate_due_checkpoints(
     return RunOutcome(DECISION_CONTINUE, tuple(decisions), "no due checkpoint stops the cohort")
 
 
-def deadline_payload(closed_capture_ids: Sequence[int], matured: int) -> dict[str, Any]:
+async def evaluate_due_checkpoints(
+    repository: SourceLeadForwardCohortRepository,
+    db_url: str,
+    *,
+    artifact_dir: Path,
+    code_revision: str,
+    working_tree_dirty: bool,
+) -> RunOutcome:
+    """The CLI entry: read the cohort's claim row, then evaluate."""
+    prior = await existing_claim(
+        db_url,
+        study_id=STUDY_ID,
+        contract_version=CONTRACT_VERSION,
+        cohort_start=SOURCE_LEAD_FORWARD_COHORT_START,
+    )
+    return await evaluate_checkpoints(
+        repository,
+        db_url,
+        prior,
+        artifact_dir=artifact_dir,
+        code_revision=code_revision,
+        working_tree_dirty=working_tree_dirty,
+    )
+
+
+def deadline_payload(windows: Sequence[ClosedWindow], matured: int) -> dict[str, Any]:
     """The reader's deadline stop: the capture window closed and the registered
     checkpoint was not reached among its captures (decided without any return)."""
     return {
@@ -316,8 +397,9 @@ def deadline_payload(closed_capture_ids: Sequence[int], matured: int) -> dict[st
         "decision": DECISION_STOP,
         "reason": DEADLINE_CHECKPOINT_UNREACHED,
         "matured_qualified": matured,
-        "closed_capture_ids": list(closed_capture_ids),
-        "closed_capture_ids_sha256": candidate_ids_sha256(closed_capture_ids),
+        "closed_capture_ids": [w.capture_id for w in windows],
+        "closed_capture_ids_sha256": candidate_ids_sha256([w.capture_id for w in windows]),
+        "closed_windows": windows_payload(windows),
     }
 
 
