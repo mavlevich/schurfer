@@ -42,6 +42,7 @@ async def _run(once: bool) -> None:
             target_exchanges=cfg.source_lead_targets,
             target_usd=cfg.source_lead_notional_usd,
             timeout_seconds=cfg.source_lead_timeout_seconds,
+            bybit_catalog_timeout_seconds=cfg.source_lead_bybit_catalog_timeout_seconds,
             queue_size=cfg.source_lead_queue_size,
             shutdown_timeout_seconds=cfg.source_lead_shutdown_timeout_seconds,
             collector_started_at=collector_started_at,

@@ -4,6 +4,32 @@ Status: registered 2026-09-26, before any v2 episode exists.
 Code: `source_lead_forward_cohort.py` (`CONTRACT_VERSION = source_lead_forward_cohort_v2`),
 `source_lead_qualification.py` (qualification v4), migration 0051.
 
+## Capture implementation correction, 2026-10-01
+
+The [outcome-blind accrual audit](source-lead-v2-identity-accrual-audit-2026-10-01.md)
+found zero qualified episodes in the fixed first 59 hours of v2. Of 156 captures,
+101 were rejected for source identity outside the registered universe; four had
+only a Binance route; and the two with registered Bybit routes timed out while
+loading its catalog. Neither Bybit route reached a sampled quote. The immediate
+zero therefore was **not** caused by the timing-field layout below, and this
+correction alone cannot make the registered universe accrue faster.
+
+The capture writer nevertheless stored book timing and `contract_size_source` at
+the top level of `liquidity`, while the registered v4 qualification rule reads
+`liquidity.quote_timing`. A future sampled route would be rejected as
+`target_contract_size_unknown` even with a known contract size. The correction
+stores those fields under `quote_timing`, as this document already specifies.
+A separate bounded timeout for the Bybit market catalog addresses the two
+observed catalog timeouts without extending the quote deadline. It can delay
+the quote after the signal; the existing source-to-observation timestamps
+measure that delay.
+
+Previously written qualifications remain unchanged. The two missed Bybit
+observations must not be retrospectively requalified. Before a formal v2 read,
+register how operational missingness before deployment and the prospective
+post-deploy interval will be reported. Record the deployed revision and exact
+cutover time after deployment.
+
 ## What changes from v1
 
 |                 | v1 (closed)                                         | v2                                                              |

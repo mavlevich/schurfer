@@ -26,3 +26,6 @@ def test_source_lead_capture_bounds_fail_closed() -> None:
 
     with pytest.raises(ValueError, match="unique Binance/Bybit"):
         Config(source_lead_targets=("binance", "binance"))
+
+    with pytest.raises(ValueError, match="bounds must be positive"):
+        Config(source_lead_bybit_catalog_timeout_seconds=0)
