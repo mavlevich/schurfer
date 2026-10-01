@@ -142,11 +142,11 @@ inverse gives the eligible flow needed to finish the research collection within 
 
 | Item                   | Value                                                                                                                                                                    |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Code revision          | `de849c2`, clean tree                                                                                                                                                    |
-| Result                 | [`evidence/cost-power-planning-v1/result.json`](evidence/cost-power-planning-v1/result.json), SHA-256 `dc7c6cf6c39f1afca541a8784f6e36b5cc1a119f6b77f444dcf5f29fcf88726a` |
+| Code revision          | `1bbdd27`, clean tree                                                                                                                                                    |
+| Result                 | [`evidence/cost-power-planning-v1/result.json`](evidence/cost-power-planning-v1/result.json), SHA-256 `add61b989fc2dbc0c66f241a89d5bbdc900ca39e79ad23e5ce67262c9ae10e3b` |
 | Parameters SHA-256     | `21c577ec3d5cd0f212bef6d6944b140352282cd3d58298cbb354f29f9d4c8d40`                                                                                                       |
 | Generated tables       | [`evidence/cost-power-planning-v1/tables.md`](evidence/cost-power-planning-v1/tables.md)                                                                                 |
-| Audit document SHA-256 | recorded in the result (`accrual_reference.sha256`)                                                                                                                      |
+| Audit document SHA-256 | `57b9822fec254ff079f13a60e551ab54e6c6a665dee61e67a6a1c80a3da63dd9` (`accrual_reference` in the result)                                                                   |
 
 All seven artifacts were verified against their sidecars and the published digests,
 and every replay reproduced its published counts and means. The HYP-012b inputs digest

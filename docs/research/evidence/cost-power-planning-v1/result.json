@@ -2,8 +2,8 @@
   "accrual_reference": {
     "flow_per_day": 1.8394160583941608,
     "note": "before target sampling, book and qualification checks; illustration only",
-    "path": "/Users/mavlevich/Desktop/Projects/schurfer/docs/research/source-lead-v2-identity-accrual-audit-2026-10-01.md",
-    "sha256": "c1df81b1d094940aa8883c0d7f689cad27507706cf0da665a7301ab066cdff90",
+    "path": "docs/research/source-lead-v2-identity-accrual-audit-2026-10-01.md",
+    "sha256": "57b9822fec254ff079f13a60e551ab54e6c6a665dee61e67a6a1c80a3da63dd9",
     "source_eligible_captures": 42,
     "status": "verified",
     "window_days": 22.833333333333332
@@ -19417,7 +19417,7 @@
       }
     }
   ],
-  "code_revision": "de849c299df1602f2b48c76e2c8c037e795625a7",
+  "code_revision": "1bbdd274713e1bb02526c5abc6e6ae82c634e61a",
   "economics_usd50": [
     {
       "larger_notionals": "capacity_not_measured",

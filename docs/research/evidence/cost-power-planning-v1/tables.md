@@ -1,4 +1,4 @@
-Report `research_cost_power_planning_v1`, code `de849c299df1602f2b48c76e2c8c037e795625a7` (dirty: False), parameters `21c577ec3d5c`.
+Report `research_cost_power_planning_v1`, code `1bbdd274713e1bb02526c5abc6e6ae82c634e61a` (dirty: False), parameters `21c577ec3d5c`.
 
 ### Inputs
 
