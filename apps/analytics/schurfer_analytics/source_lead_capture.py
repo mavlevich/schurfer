@@ -750,14 +750,12 @@ async def capture_target_observation(
             target_usd=target_usd,
             contract_size=contract_size,
         )
-        liquidity.update(
-            quote_timing(
-                book,
-                ticker,
-                requested_at=requested_at,
-                received_at=received_at,
-                contract_size_known=known_contract_size is not None,
-            )
+        liquidity["quote_timing"] = quote_timing(
+            book,
+            ticker,
+            requested_at=requested_at,
+            received_at=received_at,
+            contract_size_known=known_contract_size is not None,
         )
         price = _finite_float(ticker.get("last"), positive=True)
         if price is None:
@@ -861,12 +859,15 @@ async def capture_claimed_source_leads(
     target_exchanges: tuple[str, ...],
     target_usd: float,
     timeout_seconds: float,
+    bybit_catalog_timeout_seconds: float = 20.0,
     factories: dict[str, ExchangeFactory] | None = None,
     identity_registry: IdentityRegistry | None = None,
 ) -> None:
     """Capture network observations for claims already durable in PostgreSQL."""
     if not claimed:
         return
+    if not math.isfinite(bybit_catalog_timeout_seconds) or bybit_catalog_timeout_seconds <= 0:
+        raise ValueError("source-lead Bybit catalog timeout must be positive and finite")
 
     exchange_factories = factories or EXCHANGE_FACTORIES
     registry = identity_registry or load_identity_registry()
@@ -929,7 +930,14 @@ async def capture_claimed_source_leads(
         exchange = factory()
         exchange_started = time.monotonic()
         try:
-            await asyncio.wait_for(exchange.load_markets(), timeout=timeout_seconds)
+            # Bybit's full ccxt catalog is transport metadata, not the
+            # decision-time quote. Give only that cold load its own budget;
+            # Binance keeps its prior deadline. The ticker/book deadline and
+            # qualification's book-age check remain unchanged.
+            catalog_timeout = (
+                bybit_catalog_timeout_seconds if exchange_name == "bybit" else timeout_seconds
+            )
+            await asyncio.wait_for(exchange.load_markets(), timeout=catalog_timeout)
             for item in network_eligible:
                 observation = await capture_target_observation(
                     exchange_name,
@@ -992,6 +1000,7 @@ class SourceLeadCaptureWorker:
         target_exchanges: tuple[str, ...],
         target_usd: float,
         timeout_seconds: float,
+        bybit_catalog_timeout_seconds: float = 20.0,
         queue_size: int,
         shutdown_timeout_seconds: float,
         collector_started_at: datetime | None = None,
@@ -1004,6 +1013,7 @@ class SourceLeadCaptureWorker:
         self._target_exchanges = target_exchanges
         self._target_usd = target_usd
         self._timeout_seconds = timeout_seconds
+        self._bybit_catalog_timeout_seconds = bybit_catalog_timeout_seconds
         self._shutdown_timeout_seconds = shutdown_timeout_seconds
         self._collector_started_at = collector_started_at or datetime.now(UTC)
         self._factories = factories
@@ -1077,6 +1087,7 @@ class SourceLeadCaptureWorker:
                     target_exchanges=self._target_exchanges,
                     target_usd=self._target_usd,
                     timeout_seconds=self._timeout_seconds,
+                    bybit_catalog_timeout_seconds=self._bybit_catalog_timeout_seconds,
                     factories=self._factories,
                     identity_registry=self._identity_registry,
                 )
@@ -1152,6 +1163,7 @@ async def capture_new_source_leads(
     target_exchanges: tuple[str, ...],
     target_usd: float,
     timeout_seconds: float,
+    bybit_catalog_timeout_seconds: float = 20.0,
     batch_size: int,
     factories: dict[str, ExchangeFactory] | None = None,
     identity_registry: IdentityRegistry | None = None,
@@ -1169,6 +1181,7 @@ async def capture_new_source_leads(
             target_exchanges=target_exchanges,
             target_usd=target_usd,
             timeout_seconds=timeout_seconds,
+            bybit_catalog_timeout_seconds=bybit_catalog_timeout_seconds,
             factories=factories,
             identity_registry=identity_registry,
         )

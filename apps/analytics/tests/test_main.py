@@ -18,6 +18,7 @@ def _config() -> SimpleNamespace:
         source_lead_targets=("binance", "bybit"),
         source_lead_notional_usd=50.0,
         source_lead_timeout_seconds=5.0,
+        source_lead_bybit_catalog_timeout_seconds=20.0,
         source_lead_batch_size=8,
         source_lead_queue_size=16,
         source_lead_shutdown_timeout_seconds=10.0,

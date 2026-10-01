@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock
 
+import pytest
 from schurfer_analytics.source_lead_capture import (
     ClaimedCapture,
     SourceLeadCandidate,
@@ -10,6 +11,7 @@ from schurfer_analytics.source_lead_capture import (
     SourceObservation,
     TargetObservation,
     build_source_lead_candidates,
+    capture_claimed_source_leads,
     capture_new_source_leads,
     capture_target_observation,
     prepare_source_lead_captures,
@@ -221,7 +223,7 @@ class _Exchange:
             "quote": "USDT",
             "settle": "USDT",
             "type": "swap",
-            "info": {"onboardDate": onboarded_at_ms},
+            "info": {"onboardDate": onboarded_at_ms, "launchTime": onboarded_at_ms},
         }
         self.markets = {"ABC/USDT:USDT": market}
         # ccxt's own native-id index, built by load_markets() -- see
@@ -487,6 +489,101 @@ async def test_target_capture_marks_identity_verified_even_when_fetch_fails() ->
     assert result.eligibility_reason == "target_fetch_failed"
     assert result.identity_verified is True
     assert result.identity_match_method == IDENTITY_MATCH_METHOD_REGISTRY_EXACT_V2
+
+
+@pytest.mark.parametrize(
+    ("venue", "catalog_delay", "quote_delay", "status", "reason", "verified"),
+    [
+        pytest.param(
+            "bybit", 0.1, 0, "sampled", "identity_verified", True, id="slow_bybit_catalog"
+        ),
+        pytest.param(
+            "bybit", 0, 0.1, "fetch_failed", "target_fetch_failed", True, id="slow_bybit_quote"
+        ),
+        pytest.param(
+            "binance",
+            0.1,
+            0,
+            "fetch_failed",
+            "target_exchange_unavailable",
+            False,
+            id="slow_binance_catalog",
+        ),
+    ],
+)
+async def test_catalog_and_quote_deadlines_are_independent(
+    monkeypatch: Any,
+    venue: str,
+    catalog_delay: float,
+    quote_delay: float,
+    status: str,
+    reason: str,
+    verified: bool,
+) -> None:
+    """Only Bybit's catalog gets more time; quote freshness and Binance stay bounded."""
+    exchange = _Exchange()
+
+    async def load_catalog() -> dict[str, Any]:
+        await asyncio.sleep(catalog_delay)
+        return exchange.markets
+
+    async def fetch_ticker(_symbol: str) -> dict[str, Any]:
+        await asyncio.sleep(quote_delay)
+        return {"last": 2.0, "timestamp": 1_785_628_799_000}
+
+    exchange.load_markets = AsyncMock(side_effect=load_catalog)
+    exchange.fetch_ticker = AsyncMock(side_effect=fetch_ticker)
+    exchange.fetch_order_book = AsyncMock(
+        side_effect=lambda _symbol, _limit: {
+            "bids": [[1.99, 100]],
+            "asks": [[2.01, 100]],
+            "timestamp": int(datetime.now(UTC).timestamp() * 1000),
+        }
+    )
+    persisted: dict[int, list[TargetObservation]] = {}
+    qualifications: dict[int, QualificationResult] = {}
+
+    async def persist(
+        _db_url: str,
+        results: dict[int, list[TargetObservation]],
+        captured_qualifications: dict[int, QualificationResult],
+        _registry_version: str,
+        _registry_fingerprint: str,
+    ) -> None:
+        persisted.update(results)
+        qualifications.update(captured_qualifications)
+
+    monkeypatch.setattr(
+        "schurfer_analytics.source_lead_capture._persist_target_observations", persist
+    )
+    await capture_claimed_source_leads(
+        "postgresql://test",
+        (
+            ClaimedCapture(
+                capture_id=31,
+                candidate=_candidate(first_seen_at=datetime.now(UTC) - timedelta(seconds=1)),
+            ),
+        ),
+        target_exchanges=(venue,),
+        target_usd=50.0,
+        timeout_seconds=0.05,
+        factories={venue: lambda: exchange},
+        identity_registry=_abc_registry(target_exchange=venue),
+    )
+
+    observation = persisted[31][0]
+    assert (observation.status, observation.eligibility_reason, observation.identity_verified) == (
+        status,
+        reason,
+        verified,
+    )
+    if catalog_delay and venue == "binance":
+        exchange.fetch_ticker.assert_not_awaited()
+    else:
+        exchange.fetch_ticker.assert_awaited_once()
+    if venue == "bybit" and catalog_delay:
+        assert qualifications[31].status == "qualified"
+        assert -1000 <= observation.liquidity["quote_timing"]["book_age_ms"] <= 2000
 
 
 async def test_capture_processes_target_clients_sequentially(monkeypatch: Any) -> None:
@@ -811,13 +908,13 @@ async def test_target_capture_records_book_timing_and_contract_size_source() -> 
         registry=_abc_registry(),
     )
 
-    liquidity = result.liquidity
-    assert liquidity["book_nonce"] == 4242
-    assert liquidity["book_timestamp"].startswith("2026-")
-    assert liquidity["ticker_timestamp"] is not None
-    assert liquidity["book_age_ms"] is not None
-    assert liquidity["contract_size_source"] == "instrument"
-    assert liquidity["quote_requested_at"] <= liquidity["quote_received_at"]
+    timing = result.liquidity["quote_timing"]
+    assert timing["book_nonce"] == 4242
+    assert timing["book_timestamp"].startswith("2026-")
+    assert timing["ticker_timestamp"] is not None
+    assert timing["book_age_ms"] is not None
+    assert timing["contract_size_source"] == "instrument"
+    assert timing["quote_requested_at"] <= timing["quote_received_at"]
 
 
 async def test_target_capture_marks_a_defaulted_contract_size_without_changing_v3() -> None:
@@ -834,8 +931,9 @@ async def test_target_capture_marks_a_defaulted_contract_size_without_changing_v
     )
 
     assert result.status == "sampled"
-    assert result.liquidity["contract_size_source"] == "defaulted"
+    timing = result.liquidity["quote_timing"]
+    assert timing["contract_size_source"] == "defaulted"
     assert result.liquidity["ask_filled_notional_usd"] == 50.0
     # No venue timestamp on this book: the age stays unknown, never invented.
-    assert result.liquidity["book_timestamp"] is None
-    assert result.liquidity["book_age_ms"] is None
+    assert timing["book_timestamp"] is None
+    assert timing["book_age_ms"] is None
