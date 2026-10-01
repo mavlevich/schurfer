@@ -61,6 +61,9 @@ class Config:
     source_lead_timeout_seconds: float = field(
         default_factory=lambda: _float("SOURCE_LEAD_TIMEOUT_SECONDS", 5.0)
     )
+    source_lead_bybit_catalog_timeout_seconds: float = field(
+        default_factory=lambda: _float("SOURCE_LEAD_BYBIT_CATALOG_TIMEOUT_SECONDS", 20.0)
+    )
     source_lead_batch_size: int = field(
         default_factory=lambda: int(os.getenv("SOURCE_LEAD_BATCH_SIZE", "8"))
     )
@@ -94,6 +97,8 @@ class Config:
             or self.source_lead_notional_usd <= 0
             or not math.isfinite(self.source_lead_timeout_seconds)
             or self.source_lead_timeout_seconds <= 0
+            or not math.isfinite(self.source_lead_bybit_catalog_timeout_seconds)
+            or self.source_lead_bybit_catalog_timeout_seconds <= 0
             or self.source_lead_batch_size <= 0
             or self.source_lead_queue_size <= 0
             or not math.isfinite(self.source_lead_shutdown_timeout_seconds)

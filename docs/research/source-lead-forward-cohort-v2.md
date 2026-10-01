@@ -4,6 +4,48 @@ Status: registered 2026-09-26, before any v2 episode exists.
 Code: `source_lead_forward_cohort.py` (`CONTRACT_VERSION = source_lead_forward_cohort_v2`),
 `source_lead_qualification.py` (qualification v4), migration 0051.
 
+## Capture implementation correction, 2026-10-01
+
+The [outcome-blind accrual audit](source-lead-v2-identity-accrual-audit-2026-10-01.md)
+found zero qualified episodes in the fixed first 59 hours of v2. Of 156 captures,
+101 were rejected for source identity outside the registered universe; four had
+only a Binance route; and the two with registered Bybit routes timed out while
+loading its catalog. Neither Bybit route reached a sampled quote. The immediate
+zero therefore was **not** caused by the timing-field layout below, and this
+correction alone cannot make the registered universe accrue faster.
+
+The capture writer nevertheless stored book timing and `contract_size_source` at
+the top level of `liquidity`, while the registered v4 qualification rule reads
+`liquidity.quote_timing`. A future sampled route would be rejected as
+`target_contract_size_unknown` even with a known contract size. The correction
+stores those fields under `quote_timing`, as this document already specifies.
+A separate bounded timeout for the Bybit market catalog addresses the two
+observed catalog timeouts without extending the quote deadline. It can delay
+the quote after the signal; the existing source-to-observation timestamps
+measure that delay.
+
+Previously written qualifications remain unchanged. The two missed Bybit
+observations must not be retrospectively requalified. Before a formal v2 read,
+register how operational missingness before deployment and the prospective
+post-deploy interval will be reported. Record the deployed revision and exact
+cutover time after deployment.
+
+### Deployment record, 2026-10-01
+
+PR #480 was deployed to the `analytics` service from merged, clean `main` at
+revision `cf0c3dad6de5f09bfed53eefab893c1d060bf8d4`. The replacement
+container started at `2026-10-01T13:45:16.592937953Z`; its scanner logged
+startup at `2026-10-01T13:45:21.360107Z`. Use the latter as the conservative
+start of the corrected capture path when describing operational coverage. The
+registered cohort start and economic rules remain unchanged.
+
+The image reported a 20-second Bybit catalog deadline and the existing
+5-second quote deadline. A separate read-only load of the public Bybit catalog
+from that image completed in 1,311 ms with 3,791 markets. At the immediate
+post-deploy check there were no new source-lead captures, so this smoke does
+not establish a naturally qualified Bybit episode. Database migration `0056`
+was unchanged; no historical qualification was rewritten.
+
 ## What changes from v1
 
 |                 | v1 (closed)                                         | v2                                                              |
