@@ -1,2 +1,6 @@
 # Public CoinGecko platform contract address (huobi-token) in identity evidence, not a secret.
 apps/analytics/schurfer_analytics/evidence/source_lead/v4/uni-gate-bybit.json:generic-api-key:168
+# Artifact names ("key": "hyp0...") next to public SHA-256 digests in the cost/power planning result, not secrets.
+docs/research/evidence/cost-power-planning-v1/result.json:generic-api-key:25925
+docs/research/evidence/cost-power-planning-v1/result.json:generic-api-key:25943
+docs/research/evidence/cost-power-planning-v1/result.json:generic-api-key:25961
