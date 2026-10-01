@@ -312,7 +312,8 @@ def test_zero_effect_pass_rate_stays_near_alpha_and_power_rises() -> None:
         assert rates == sorted(rates)
     assert curve[1]["pass_rate"]["25"] > curve[0]["pass_rate"]["25"]
     required = plan.required_from_curve(curve, 25.0, 0.8)
-    assert required is not None and required["episodes"] >= plan.EVIDENCE_FLOOR_RESOLVED
+    assert required["upper"] is not None
+    assert required["lower"] >= plan.EVIDENCE_FLOOR_RESOLVED
 
 
 def test_draw_stops_at_the_first_cluster_that_reaches_the_target() -> None:
@@ -353,34 +354,79 @@ def test_too_few_clusters_gives_no_power_estimate() -> None:
     )
     assert power["simulation"]["asset"]["status"] == "unavailable"
     assert power["bootstrap_calibration"] == []
-    assert plan.conservative_required(power, 50.0, 0.8) is None
+    assert plan.combined_requirement(power, 50.0, 0.8) is None
 
 
 # --- calendar and economics --------------------------------------------------------------
 
 
+def _funnel(flow: float, **overrides: Any) -> dict[str, float]:
+    args: dict[str, Any] = {
+        "rejection_fraction": 0.2,
+        "resolved_fraction": 0.9,
+        "max_concurrent": 1,
+        "hold_minutes": 60,
+    }
+    return plan.funnel(flow, **{**args, **overrides})
+
+
 def test_zero_flow_never_completes_and_needs_no_threshold() -> None:
-    assert plan.calendar_days(100, 0.0, 0.9) is None
-    entries = plan.executable_entries_per_month(
-        0.0, resolved_fraction=0.9, rejection_fraction=0.2, max_concurrent=1, hold_minutes=60
-    )
-    assert entries == 0.0
-    assert plan.required_net_bps(10.0, 0.0, entries, 50.0) is None
+    assert plan.calendar_days(100, 0.0) is None
+    zero = _funnel(0.0)
+    assert zero["opened_per_day"] == 0.0
+    assert plan.required_net_bps(10.0, 0.0, zero["opened_per_day"], 50.0) is None
 
 
 def test_units_bps_percent_and_dollars() -> None:
     assert plan.monthly_result_usd(50.0, 40.0, 50.0) == pytest.approx(10.0)
     assert plan.required_net_bps(10.0, 0.0, 40.0, 50.0) == pytest.approx(50.0)
-    assert plan.calendar_days(180, 2.0, 0.9) == pytest.approx(100.0)
+    assert plan.calendar_days(180, 1.8) == pytest.approx(100.0)
 
 
 def test_concurrency_blocking_uses_erlang_b() -> None:
     assert plan.erlang_b(1, 0.5) == pytest.approx(0.5 / 1.5)
     assert plan.erlang_b(3, 0.0) == 0.0
-    one = plan.executable_entries_per_month(
-        24.0, resolved_fraction=1.0, rejection_fraction=0.0, max_concurrent=1, hold_minutes=60
+    one = _funnel(24.0, rejection_fraction=0.0, resolved_fraction=1.0)
+    assert one["opened_per_day"] == pytest.approx(24.0 * (1 - 0.5))
+
+
+def test_unresolved_positions_still_occupy_slots_and_bear_economics() -> None:
+    # Review P2: resolution is recovered after entry, so it must not thin the slot load.
+    full, partial = _funnel(1.84, resolved_fraction=1.0), _funnel(1.84, resolved_fraction=0.5)
+    assert partial["slot_blocking"] == full["slot_blocking"]
+    assert partial["opened_per_day"] == full["opened_per_day"]
+    assert partial["executable_resolved_per_day"] == pytest.approx(full["opened_per_day"] * 0.5)
+    accepted = 1.84 * 0.8
+    blocking = plan.erlang_b(1, accepted * 60 / 1_440)
+    opened = accepted * (1 - blocking) * plan.DAYS_PER_MONTH
+    assert opened == pytest.approx(42.2, abs=0.05)
+    [row] = plan.economics(
+        [
+            {
+                "flow_per_day": 1.84,
+                "rejection_fraction": 0.2,
+                "resolved_fraction": 0.9,
+                "max_concurrent": 1,
+                "hold_minutes": 60,
+                **_funnel(1.84),
+            }
+        ]
     )
-    assert one == pytest.approx(24.0 * (1 - 0.5) * plan.DAYS_PER_MONTH)
+    assert row["opened_per_month"] == pytest.approx(opened)
+    assert row["opened_unresolved_per_month"] == pytest.approx(opened * 0.1)
+    assert row["required_net_bps_per_opened_trade_at_usd50"]["cost_10_target_0"] == (
+        pytest.approx(10 / (opened * 50) * 10_000)
+    )
+
+
+def test_research_and_executable_calendars_use_their_own_denominators() -> None:
+    # Review P3: refusals delay research collection; slot loss delays executable trades.
+    rates = _funnel(1.84)
+    research = plan.calendar_days(500, rates["research_resolved_per_day"])
+    executable = plan.calendar_days(500, rates["executable_resolved_per_day"])
+    assert research == pytest.approx(500 / (1.84 * 0.8 * 0.9))
+    assert executable == pytest.approx(400.4, abs=0.5)
+    assert research is not None and executable is not None and executable > research
 
 
 def test_accrual_reference_requires_the_published_counters(tmp_path: Path) -> None:
@@ -441,7 +487,11 @@ def test_report_is_reproducible_and_names_what_is_missing(tmp_path: Path) -> Non
     assert report["power"]["hyp012b_discovery_formal"]["status"] == "unavailable"
     assert any("hyp012c" in item for item in report["missing_measurements"])
     assert report["trading_thresholds"]["status"] == "verified"
-    assert any(row["flow_per_day"] == 0.0 for row in report["economics_usd50"])
+    zero = [r for r in report["economics_usd50"] if r["scenario"].startswith("flow_0_")]
+    assert zero and all(r["opened_per_month"] == 0.0 for r in zero)
+    assert all(
+        v is None for r in zero for v in r["required_net_bps_per_opened_trade_at_usd50"].values()
+    )
     markdown = plan.render_markdown(report)
     assert "capacity_not_measured" in markdown and "Missing measurements" in markdown
 
@@ -463,26 +513,6 @@ def test_report_refuses_a_result_that_pins_other_inputs(tmp_path: Path) -> None:
         )
 
 
-def test_sizes_with_few_clusters_per_cohort_neither_qualify_nor_bind() -> None:
-    cells = _normal_cells(40, 10, 50.0, seed=17)
-    curve = plan.power_curve(cells, label="dense", replicates=200, seed=3, sizes=(100, 200, 400))
-    assert [row["evaluable"] for row in curve][:2] == [False, True]
-    required = plan.required_from_curve(curve, 100.0, 0.8)
-    assert required is not None
-    assert required["episodes"] == 200 and required["censored"] is True
-    block = {
-        "simulation": {
-            "asset": {"status": "simulated", "required": {"100": {"0.8": {
-                "episodes": 150, "censored": False, "simulated_power": 0.85,
-                "monte_carlo_se": 0.01, "clusters_drawn": 60.0,
-            }}}},
-            "utc_day": {"status": "simulated", "required": {"100": {"0.8": required}}},
-        }
-    }  # fmt: skip
-    chosen = plan.conservative_required(block, 100.0, 0.8)
-    assert chosen["scheme"] == "asset" and chosen["episodes"] == 150
-
-
 def _row(size: int, evaluable: bool, rate: float) -> dict[str, Any]:
     return {
         "target_episodes": size,
@@ -493,26 +523,83 @@ def _row(size: int, evaluable: bool, rate: float) -> dict[str, Any]:
     }
 
 
-def test_a_requirement_above_the_first_evaluable_size_is_identified() -> None:
-    curve = [_row(100, False, 0.9), _row(125, True, 0.3), _row(600, True, 0.82)]
-    required = plan.required_from_curve(curve, 50.0, 0.8)
-    assert required is not None
-    assert required["episodes"] == 600 and required["censored"] is False
-    hit_first = plan.required_from_curve([_row(100, False, 0.9), _row(125, True, 0.85)], 50, 0.8)
-    assert hit_first is not None and hit_first["censored"] is True
+def test_sizes_with_few_clusters_per_cohort_only_bound_the_requirement() -> None:
+    cells = _normal_cells(40, 10, 50.0, seed=17)
+    curve = plan.power_curve(cells, label="dense", replicates=200, seed=3, sizes=(100, 200, 400))
+    assert [row["evaluable"] for row in curve][:2] == [False, True]
+    required = plan.required_from_curve(curve, 100.0, 0.8)
+    assert (required["status"], required["lower"], required["upper"]) == ("censored", 100, 200)
 
 
-def test_all_censored_schemes_give_an_upper_bound() -> None:
-    cell = {"episodes": 125, "censored": True, "simulated_power": 0.85}
-    block = {
+def test_scheme_bounds_are_identified_censored_or_open() -> None:
+    identified = plan.required_from_curve(
+        [_row(100, False, 0.9), _row(125, True, 0.3), _row(600, True, 0.82)], 50.0, 0.8
+    )
+    assert (identified["status"], identified["lower"], identified["upper"]) == (
+        "identified",
+        126,
+        600,
+    )
+    censored = plan.required_from_curve([_row(100, False, 0.9), _row(125, True, 0.85)], 50, 0.8)
+    assert (censored["status"], censored["lower"], censored["upper"]) == ("censored", 100, 125)
+    at_floor = plan.required_from_curve([_row(100, True, 0.85)], 50.0, 0.8)
+    assert (at_floor["status"], at_floor["lower"], at_floor["upper"]) == ("identified", 100, 100)
+    open_ended = plan.required_from_curve([_row(100, True, 0.2), _row(200, True, 0.5)], 50, 0.8)
+    assert (open_ended["status"], open_ended["lower"], open_ended["upper"]) == (
+        "not_reached",
+        201,
+        None,
+    )
+    nothing = plan.required_from_curve([_row(100, False, 0.9)], 50.0, 0.8)
+    assert (nothing["status"], nothing["upper"]) == ("not_evaluable", None)
+
+
+def _block(asset: dict[str, Any], day: dict[str, Any]) -> dict[str, Any]:
+    return {
         "simulation": {
-            "asset": {"status": "simulated", "required": {"100": {"0.8": cell}}},
-            "utc_day": {
-                "status": "simulated",
-                "required": {"100": {"0.8": {**cell, "episodes": 1_500}}},
-            },
+            "asset": {"status": "simulated", "required": {"50": {"0.8": asset}}},
+            "utc_day": {"status": "simulated", "required": {"50": {"0.8": day}}},
         }
     }
-    bound = plan.conservative_required(block, 100.0, 0.8)
-    assert bound["censored"] is True and bound["episodes"] == 125
-    assert plan._episodes(bound) == "<=125"
+
+
+def _cell(status: str, lower: int, upper: int | None) -> dict[str, Any]:
+    cell: dict[str, Any] = {"status": status, "lower": lower, "upper": upper}
+    if upper is not None:
+        cell.update(simulated_power=0.85, monte_carlo_se=0.01, clusters_drawn=40.0)
+    return cell
+
+
+def test_a_censored_scheme_still_bounds_the_combined_requirement() -> None:
+    # Review P1: asset identified at 500 and day only bounded by 1,500 is 401-1,500, not 500.
+    combined = plan.combined_requirement(
+        _block(_cell("identified", 401, 500), _cell("censored", 100, 1_500)), 50.0, 0.8
+    )
+    assert combined is not None
+    assert (combined["status"], combined["lower"], combined["upper"]) == ("bounded", 401, 1_500)
+    assert combined["binding_scheme"] == "utc_day"
+    assert combined["by_scheme"]["asset"]["upper"] == 500
+    assert plan._interval(combined) == "401-1,500"
+    both_censored = plan.combined_requirement(
+        _block(_cell("censored", 100, 125), _cell("censored", 100, 1_500)), 50.0, 0.8
+    )
+    assert both_censored is not None
+    assert (both_censored["lower"], both_censored["upper"]) == (100, 1_500)
+
+
+def test_an_unbounded_scheme_leaves_the_combined_upper_bound_unknown() -> None:
+    combined = plan.combined_requirement(
+        _block(_cell("identified", 401, 500), _cell("not_reached", 2_001, None)), 50.0, 0.8
+    )
+    assert combined is not None
+    assert (combined["status"], combined["lower"], combined["upper"]) == (
+        "unbounded",
+        2_001,
+        None,
+    )
+    assert plan._interval(combined) == ">2,000"
+    identified = plan.combined_requirement(
+        _block(_cell("identified", 401, 500), _cell("identified", 301, 400)), 50.0, 0.8
+    )
+    assert identified is not None and plan._interval(identified) == "401-500"
+    assert plan._interval({"lower": 100, "upper": 100}) == "100"

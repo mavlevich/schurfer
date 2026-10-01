@@ -700,15 +700,22 @@ def power_curve(
 
 def required_from_curve(
     curve: Sequence[dict[str, Any]], effect_bps: float, target: float
-) -> dict[str, Any] | None:
-    """The first evaluable size at or above the floor that reaches `target`. If that is
-    the first evaluable size and smaller sizes at or above the floor were skipped as not
-    evaluable, the true requirement may be smaller: the cell is `censored` and only
-    bounds the requirement from above."""
-    skipped = False
-    first_evaluable = True
+) -> dict[str, Any]:
+    """Bounds `lower <= R <= upper` on one scheme's required resolved episodes R, never
+    below the evidence floor. Only evaluable sizes inform the bounds:
+
+    - `identified`: the first evaluable size reaching `target`, with every smaller size
+      at or above the floor evaluated below it, so R lies within one grid step;
+    - `censored`: sizes at or above the floor were not evaluable and the first evaluable
+      size already reaches `target`, so only `upper` is known;
+    - `not_reached`: no evaluable size reaches `target` (`upper` is None);
+    - `not_evaluable`: no size at or above the floor is evaluable (`upper` is None).
+    """
+    lower = EVIDENCE_FLOOR_RESOLVED
+    skipped = evaluated = False
     for row in curve:
-        if row["target_episodes"] < EVIDENCE_FLOOR_RESOLVED:
+        size = row["target_episodes"]
+        if size < EVIDENCE_FLOOR_RESOLVED:
             continue
         if not row["evaluable"]:
             skipped = True
@@ -716,14 +723,20 @@ def required_from_curve(
         rate = row["pass_rate"][f"{effect_bps:g}"]
         if rate >= target:
             return {
-                "episodes": row["target_episodes"],
+                "status": "censored" if skipped and not evaluated else "identified",
+                "lower": lower,
+                "upper": size,
                 "simulated_power": rate,
                 "monte_carlo_se": row["monte_carlo_se"][f"{effect_bps:g}"],
                 "clusters_drawn": row["mean_clusters_drawn"],
-                "censored": skipped and first_evaluable,
             }
-        first_evaluable = False
-    return None
+        lower = size + 1
+        evaluated = True
+    return {
+        "status": "not_reached" if evaluated else "not_evaluable",
+        "lower": lower,
+        "upper": None,
+    }
 
 
 def calibrate_against_bootstrap(
@@ -857,7 +870,7 @@ def dataset_power(
     asset = schemes.get("asset", {})
     if asset.get("status") == "simulated" and calibration_replicates > 0:
         anchor = asset["required"][f"{CALIBRATION_EFFECT_BPS:g}"]["0.8"]
-        anchor_n = min(anchor["episodes"] if anchor else CALIBRATION_MAX_N, CALIBRATION_MAX_N)
+        anchor_n = min(anchor["upper"] or CALIBRATION_MAX_N, CALIBRATION_MAX_N)
         cells = cluster_cells([(e.cluster, e.net_bps - mean) for e in episodes])
         calibration = [
             calibrate_against_bootstrap(
@@ -879,27 +892,45 @@ def dataset_power(
     }
 
 
-def conservative_required(power: dict[str, Any], effect_bps: float, target: float) -> Any:
-    """The larger simulated requirement over the cluster schemes that identify it. A
-    censored cell (the scheme is first evaluable above the requirement) does not bind; when
-    every scheme is censored, the smallest censored size is returned as an upper bound, so
-    a censored scheme never binds here either."""
-    found = []
-    censored = []
-    for scheme in CLUSTER_SCHEMES:
-        block = power["simulation"].get(scheme, {})
-        if block.get("status") != "simulated":
-            continue
-        cell = block["required"][f"{effect_bps:g}"][f"{target:g}"]
-        if cell is None:
-            return {"status": "not_reached", "scheme": scheme, "grid_max": SAMPLE_SIZE_GRID[-1]}
-        if cell["censored"]:
-            censored.append({**cell, "scheme": scheme})
-            continue
-        found.append({**cell, "scheme": scheme})
-    if not found:
-        return min(censored, key=lambda cell: cell["episodes"]) if censored else None
-    return max(found, key=lambda cell: cell["episodes"])
+def combined_requirement(
+    power: dict[str, Any], effect_bps: float, target: float
+) -> dict[str, Any] | None:
+    """The requirement that satisfies every simulated cluster scheme: R must reach the
+    largest scheme requirement, so its bounds are the maxima of the scheme bounds. An
+    unbounded scheme leaves the combined upper bound unknown. Each scheme's own bounds are
+    kept in `by_scheme`."""
+    cells = {
+        scheme: block["required"][f"{effect_bps:g}"][f"{target:g}"]
+        for scheme in CLUSTER_SCHEMES
+        if (block := power["simulation"].get(scheme, {})).get("status") == "simulated"
+    }
+    if not cells:
+        return None
+    uppers = [cell["upper"] for cell in cells.values()]
+    upper = None if None in uppers else max(u for u in uppers if u is not None)
+    binding = (
+        None
+        if upper is None
+        else next(scheme for scheme, cell in cells.items() if cell["upper"] == upper)
+    )
+    statuses = {cell["status"] for cell in cells.values()}
+    if upper is None:
+        status = "unbounded"
+    elif statuses == {"identified"}:
+        status = "identified"
+    else:
+        status = "bounded"
+    combined: dict[str, Any] = {
+        "status": status,
+        "lower": max(cell["lower"] for cell in cells.values()),
+        "upper": upper,
+        "binding_scheme": binding,
+        "by_scheme": cells,
+    }
+    if binding is not None:
+        for key in ("simulated_power", "monte_carlo_se", "clusters_drawn"):
+            combined[key] = cells[binding][key]
+    return combined
 
 
 # --- Calendar and economics --------------------------------------------------------------
@@ -915,28 +946,80 @@ def erlang_b(servers: int, offered_load: float) -> float:
     return blocking
 
 
-def calendar_days(episodes: int, flow_per_day: float, resolved_fraction: float) -> float | None:
-    rate = flow_per_day * resolved_fraction
-    return episodes / rate if rate > 0 else None
+def calendar_days(episodes: int, resolved_per_day: float) -> float | None:
+    return episodes / resolved_per_day if resolved_per_day > 0 else None
 
 
-def executable_entries_per_month(
+def funnel(
     flow_per_day: float,
     *,
-    resolved_fraction: float,
     rejection_fraction: float,
+    resolved_fraction: float,
     max_concurrent: int,
     hold_minutes: int,
-) -> float:
-    accepted = flow_per_day * resolved_fraction * (1 - rejection_fraction)
+) -> dict[str, float]:
+    """Daily rates through the collection and execution funnel, in this order:
+
+    1. `flow_per_day` eligible events, as counted before any pre-entry check;
+    2. pre-entry refusals and misses (no route, timeout, book or qualification) remove
+       `rejection_fraction`, leaving `accepted_per_day`;
+    3. research collection (shadow or paper) is not capital-limited: every accepted
+       event is observed, and `research_resolved_per_day` is its resolved share;
+    4. live execution loses accepted events that arrive while every slot is busy
+       (Erlang B on the accepted load); every opened position occupies a slot whether
+       or not its outcome is later recovered, so the resolved fraction applies only
+       after the slots, to `opened_per_day`.
+    """
+    accepted = flow_per_day * (1 - rejection_fraction)
     blocking = erlang_b(max_concurrent, accepted * hold_minutes / 1_440)
-    return accepted * (1 - blocking) * DAYS_PER_MONTH
+    opened = accepted * (1 - blocking)
+    return {
+        "accepted_per_day": accepted,
+        "research_resolved_per_day": accepted * resolved_fraction,
+        "slot_blocking": blocking,
+        "opened_per_day": opened,
+        "executable_resolved_per_day": opened * resolved_fraction,
+        "opened_unresolved_per_day": opened * (1 - resolved_fraction),
+    }
+
+
+def funnel_scenarios(flows: Sequence[float]) -> list[dict[str, Any]]:
+    return [
+        {
+            "flow_per_day": flow,
+            "rejection_fraction": rejection,
+            "resolved_fraction": resolved,
+            "max_concurrent": concurrent,
+            "hold_minutes": hold,
+            **funnel(
+                flow,
+                rejection_fraction=rejection,
+                resolved_fraction=resolved,
+                max_concurrent=concurrent,
+                hold_minutes=hold,
+            ),
+        }
+        for flow in flows
+        for rejection in REJECTION_FRACTION_SCENARIOS
+        for resolved in RESOLVED_FRACTION_SCENARIOS
+        for concurrent in MAX_CONCURRENT_SCENARIOS
+        for hold in HOLD_SCENARIOS_MINUTES
+    ]
+
+
+def scenario_id(row: dict[str, Any]) -> str:
+    return (
+        f"flow_{row['flow_per_day']:g}_rej_{row['rejection_fraction']:g}"
+        f"_res_{row['resolved_fraction']:g}_slots_{row['max_concurrent']}"
+        f"_hold_{row['hold_minutes']}"
+    )
 
 
 def required_net_bps(
     monthly_cost_usd: float, monthly_target_usd: float, entries: float, notional_usd: float
 ) -> float | None:
-    """Mean net bps per executed trade that covers the monthly cost and target."""
+    """Mean net bps per opened trade that covers the monthly cost and target. Every opened
+    trade bears its economics, including those whose outcome is not recovered."""
     if entries <= 0 or notional_usd <= 0:
         return None
     return (monthly_cost_usd + monthly_target_usd) / (entries * notional_usd) * 10_000
@@ -970,77 +1053,87 @@ def flow_scenarios(accrual: dict[str, Any]) -> list[float]:
     return sorted(set(flows))
 
 
-def economics(flows: Sequence[float]) -> list[dict[str, Any]]:
+def economics(scenarios: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     rows = []
-    for flow in flows:
-        for resolved in RESOLVED_FRACTION_SCENARIOS:
-            for rejection in REJECTION_FRACTION_SCENARIOS:
-                for concurrent in MAX_CONCURRENT_SCENARIOS:
-                    for hold in HOLD_SCENARIOS_MINUTES:
-                        entries = executable_entries_per_month(
-                            flow,
-                            resolved_fraction=resolved,
-                            rejection_fraction=rejection,
-                            max_concurrent=concurrent,
-                            hold_minutes=hold,
-                        )
-                        rows.append(
-                            {
-                                "flow_per_day": flow,
-                                "resolved_fraction": resolved,
-                                "rejection_fraction": rejection,
-                                "max_concurrent": concurrent,
-                                "hold_minutes": hold,
-                                "entries_per_month": entries,
-                                "required_net_bps_at_usd50": {
-                                    f"cost_{cost:g}_target_{target:g}": required_net_bps(
-                                        cost, target, entries, 50.0
-                                    )
-                                    for cost in MONTHLY_OPERATING_COST_SCENARIOS_USD
-                                    for target in MONTHLY_TARGET_RESULT_SCENARIOS_USD
-                                },
-                                "monthly_usd_at_usd50": {
-                                    f"{effect:g}": monthly_result_usd(effect, entries, 50.0)
-                                    for effect in EFFECT_GRID_BPS
-                                },
-                                "larger_notionals": "capacity_not_measured",
-                            }
-                        )
+    for scenario in scenarios:
+        opened = scenario["opened_per_day"] * DAYS_PER_MONTH
+        resolved = scenario["executable_resolved_per_day"] * DAYS_PER_MONTH
+        rows.append(
+            {
+                "scenario": scenario_id(scenario),
+                "opened_per_month": opened,
+                "resolved_per_month": resolved,
+                "opened_unresolved_per_month": opened - resolved,
+                "required_net_bps_per_opened_trade_at_usd50": {
+                    f"cost_{cost:g}_target_{target:g}": required_net_bps(cost, target, opened, 50.0)
+                    for cost in MONTHLY_OPERATING_COST_SCENARIOS_USD
+                    for target in MONTHLY_TARGET_RESULT_SCENARIOS_USD
+                },
+                "monthly_usd_at_usd50_if_effect_holds_on_every_opened_trade": {
+                    f"{effect:g}": monthly_result_usd(effect, opened, 50.0)
+                    for effect in EFFECT_GRID_BPS
+                },
+                "measured_part_monthly_usd_at_usd50": {
+                    f"{effect:g}": monthly_result_usd(effect, resolved, 50.0)
+                    for effect in EFFECT_GRID_BPS
+                },
+                "unresolved_open_notional_usd_per_month": (opened - resolved) * 50.0,
+                "larger_notionals": "capacity_not_measured",
+            }
+        )
     return rows
 
 
-def calendar(power: dict[str, dict[str, Any]], flows: Sequence[float]) -> list[dict[str, Any]]:
+def _bounds(required: dict[str, Any] | None) -> tuple[int | None, int | None]:
+    if required is None:
+        return None, None
+    return required["lower"], required["upper"]
+
+
+def calendar(
+    power: dict[str, dict[str, Any]], scenarios: Sequence[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Days to the required resolved episodes, at both bounds, for research collection
+    (pre-entry filters and resolution) and for executable trades (also slot loss)."""
+    research = {
+        f"flow_{s['flow_per_day']:g}_rej_{s['rejection_fraction']:g}"
+        f"_res_{s['resolved_fraction']:g}": s["research_resolved_per_day"]
+        for s in scenarios
+    }
     rows = []
     for dataset, block in power.items():
         if block.get("status") != "available":
             continue
         for effect in EFFECT_GRID_BPS:
             for target in POWER_TARGETS:
-                required = conservative_required(block, effect, target)
-                episodes = required.get("episodes") if isinstance(required, dict) else None
+                required = combined_requirement(block, effect, target)
+                bounds = _bounds(required)
+
+                def days(rate: float, bounds: tuple[int | None, int | None] = bounds) -> list[Any]:
+                    return [calendar_days(b, rate) if b else None for b in bounds]
+
                 rows.append(
                     {
                         "dataset": dataset,
                         "effect_bps": effect,
                         "power_target": target,
                         "required": required,
-                        "days": {
-                            f"flow_{flow:g}_resolved_{resolved:g}": (
-                                calendar_days(episodes, flow, resolved) if episodes else None
-                            )
-                            for flow in flows
-                            for resolved in RESOLVED_FRACTION_SCENARIOS
+                        "research_days": {key: days(rate) for key, rate in research.items()},
+                        "executable_days": {
+                            scenario_id(s): days(s["executable_resolved_per_day"])
+                            for s in scenarios
                         },
-                        "flow_per_day_needed": {
-                            f"days_{days}_resolved_{resolved:g}": (
-                                episodes / (days * resolved) if episodes else None
-                            )
-                            for days in CALENDAR_HORIZONS_DAYS
-                            for resolved in RESOLVED_FRACTION_SCENARIOS
+                        "research_flow_per_day_needed": {
+                            f"days_{horizon}_rej_{rej:g}_res_{res:g}": [
+                                b / (horizon * (1 - rej) * res) if b else None for b in bounds
+                            ]
+                            for horizon in CALENDAR_HORIZONS_DAYS
+                            for rej in REJECTION_FRACTION_SCENARIOS
+                            for res in RESOLVED_FRACTION_SCENARIOS
                         },
-                        "test_result_usd_at_usd50": (
-                            monthly_result_usd(effect, episodes, 50.0) if episodes else None
-                        ),
+                        "measured_test_result_usd_at_usd50": [
+                            monthly_result_usd(effect, b, 50.0) if b else None for b in bounds
+                        ],
                     }
                 )
     return rows
@@ -1154,7 +1247,7 @@ def build_report(
                 seed=SIMULATION_SEED,
             ),
         }
-    flows = flow_scenarios(accrual)
+    scenarios = funnel_scenarios(flow_scenarios(accrual))
     params = {
         **parameters(),
         "replicates": replicates,
@@ -1173,8 +1266,9 @@ def build_report(
         "trading_thresholds": thresholds,
         "unobserved_cost_scenarios": unobserved_cost_scenarios(),
         "power": power,
-        "calendar": calendar(power, flows),
-        "economics_usd50": economics(flows),
+        "funnel_scenarios": [{"scenario": scenario_id(s), **s} for s in scenarios],
+        "calendar": calendar(power, scenarios),
+        "economics_usd50": economics(scenarios),
         "missing_measurements": missing_measurements(thresholds, accrual, power),
     }
 
@@ -1187,30 +1281,45 @@ def _fmt(value: Any, digits: int = 1) -> str:
     return f"{value:,.{digits}f}"
 
 
-def _day_limit(block: dict[str, Any], effect_bps: float) -> list[str]:
-    """Name a day-level dependence that the UTC-day simulation could not size."""
-    schemes = block["dispersion"]["by_cluster_scheme"]
-    if (schemes["utc_day"]["design_effect"] or 0) <= max(schemes["asset"]["design_effect"] or 0, 1):
+# The reference funnel of the generated tables: the audit flow, 20% refused or missed
+# before entry, 90% of outcomes recovered, one open slot and a 60-minute hold.
+REFERENCE_REJECTION = 0.2
+REFERENCE_RESOLVED = 0.9
+REFERENCE_SLOTS = 1
+REFERENCE_HOLD = 60
+
+
+def _scheme_limits(required: dict[str, Any] | None, block: dict[str, Any]) -> list[str]:
+    """Name every scheme that leaves the combined requirement uncertain."""
+    if required is None:
         return []
-    day = block["simulation"].get("utc_day", {})
-    if day.get("status") != "simulated":
-        return [f"day Deff {_fmt(schemes['utc_day']['design_effect'], 2)}, not simulated"]
-    cell = day["required"][f"{effect_bps:g}"]["0.8"]
-    if cell is not None and cell["censored"]:
-        return [
-            f"day Deff {_fmt(schemes['utc_day']['design_effect'], 2)}, day scheme "
-            f"evaluable only from {min(day['evaluable_sizes']):,}"
-        ]
-    return []
+    notes = []
+    for scheme, cell in required["by_scheme"].items():
+        if cell["status"] in ("censored", "not_evaluable"):
+            sizes = block["simulation"][scheme]["evaluable_sizes"]
+            first = f"{min(sizes):,}" if sizes else "no size"
+            notes.append(f"{scheme} evaluable only from {first}")
+    return notes
 
 
-def _episodes(required: Any) -> str:
+def _interval(required: Any) -> str:
     if required is None:
         return "unavailable"
-    if required.get("status") == "not_reached":
-        return f">{required['grid_max']:,}"
-    bound = "<=" if required.get("censored") else ""
-    return f"{bound}{required['episodes']:,}"
+    lower, upper = required["lower"], required["upper"]
+    if upper is None:
+        return f">{lower - 1:,}"
+    return f"{upper:,}" if lower == upper else f"{lower:,}-{upper:,}"
+
+
+def _pair(values: Any, digits: int = 0) -> str:
+    if not values:
+        return "n/a"
+    lower, upper = values
+    if upper is None:
+        return f">{_fmt(lower, digits)}" if lower is not None else "n/a"
+    if lower is None or round(lower, digits) == round(upper, digits):
+        return _fmt(upper, digits)
+    return f"{_fmt(lower, digits)}-{_fmt(upper, digits)}"
 
 
 def render_markdown(report: dict[str, Any]) -> str:
@@ -1317,31 +1426,63 @@ def render_markdown(report: dict[str, Any]) -> str:
             )
 
     reference_flow = report["accrual_reference"]["flow_per_day"] or 1.0
+    reference = {
+        "flow_per_day": reference_flow,
+        "rejection_fraction": REFERENCE_REJECTION,
+        "resolved_fraction": REFERENCE_RESOLVED,
+        "max_concurrent": REFERENCE_SLOTS,
+        "hold_minutes": REFERENCE_HOLD,
+    }
+    reference_id = scenario_id(reference)
+    research_id = reference_id.split("_slots_")[0]
     lines += [
         "",
-        f"### Main table (resolved fraction 0.9, flow {_fmt(reference_flow, 2)}/day)",
+        f"### Funnel at {_fmt(reference_flow, 2)} eligible events/day",
         "",
-        "| Net effect | Dataset | Episodes 80% / 90% (scheme) | Power at n (MC SE) | "
-        "Clusters drawn | Days at flow | Flow/day for 91 / 183 days | "
-        "$ over test at $50 | Limitations |",
-        "| ---: | --- | --- | --- | ---: | ---: | --- | ---: | --- |",
+        "| Refused before entry | Resolved | Slots | Hold min | Accepted/day | "
+        "Research resolved/day | Slot loss | Opened/day | Executable resolved/day |",
+        "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+    ]
+    for row in report["funnel_scenarios"]:
+        if row["flow_per_day"] != reference_flow:
+            continue
+        lines.append(
+            f"| {row['rejection_fraction']:.0%} | {row['resolved_fraction']:.0%} | "
+            f"{row['max_concurrent']} | {row['hold_minutes']} | "
+            f"{_fmt(row['accepted_per_day'], 2)} | {_fmt(row['research_resolved_per_day'], 2)} | "
+            f"{row['slot_blocking']:.1%} | {_fmt(row['opened_per_day'], 2)} | "
+            f"{_fmt(row['executable_resolved_per_day'], 2)} |"
+        )
+    lines += [
+        "",
+        f"### Main table (flow {_fmt(reference_flow, 2)}/day, {REFERENCE_REJECTION:.0%} refused "
+        f"before entry, {REFERENCE_RESOLVED:.0%} resolved; executable: {REFERENCE_SLOTS} slot, "
+        f"{REFERENCE_HOLD} min hold)",
+        "",
+        "| Net effect | Dataset | Episodes 80% | Episodes 90% | "
+        "Scheme setting the upper bound, power there (MC SE) | "
+        "Research days | Executable days | Research flow/day for 91 / 183 days | "
+        "Measured $ over test at $50 | Limitations |",
+        "| ---: | --- | ---: | ---: | --- | ---: | ---: | --- | ---: | --- |",
     ]
     by_key = {(r["dataset"], r["effect_bps"], r["power_target"]): r for r in report["calendar"]}
     for effect in EFFECT_GRID_BPS:
         for key, block in report["power"].items():
             if block["status"] != "available":
-                lines.append(f"| {effect:g} | {key} | unavailable | | | | | | {block['reason']} |")
+                lines.append(
+                    f"| {effect:g} | {key} | unavailable | | | | | | | {block['reason']} |"
+                )
                 continue
             r80, r90 = by_key[(key, effect, 0.8)], by_key[(key, effect, 0.9)]
-            q80, q90 = r80["required"], r90["required"]
-            limits = []
+            q80 = r80["required"]
             dispersion = block["dispersion"]
+            limits = []
             if dispersion["week_dependence"] != "estimable":
                 limits.append(f"{dispersion['utc_weeks']} weeks")
             if (
                 q80
-                and q80.get("clusters_drawn", 0)
-                > dispersion["by_cluster_scheme"]["asset"]["clusters"]
+                and q80.get("clusters_drawn") is not None
+                and q80["clusters_drawn"] > dispersion["by_cluster_scheme"]["asset"]["clusters"]
             ):
                 limits.append("more assets than observed")
             if any(
@@ -1349,54 +1490,54 @@ def render_markdown(report: dict[str, Any]) -> str:
                 for s in block["simulation"].values()
             ):
                 limits.append("null pass rate high")
-            limits.extend(_day_limit(block, effect))
-            reached = q80 is not None and q80.get("episodes") is not None
-            days = r80["days"].get(f"flow_{reference_flow:g}_resolved_0.9") if reached else None
+            limits.extend(_scheme_limits(q80, block))
+            binding = (
+                f"{q80['binding_scheme']}, {_fmt(q80['simulated_power'], 3)} "
+                f"({_fmt(q80['monte_carlo_se'], 3)})"
+                if q80 and q80.get("binding_scheme")
+                else "n/a"
+            )
+            need = r80["research_flow_per_day_needed"]
+            suffix = f"rej_{REFERENCE_REJECTION:g}_res_{REFERENCE_RESOLVED:g}"
             lines.append(
-                f"| {effect:g} | {key} | {_episodes(q80)} / {_episodes(q90)}"
-                f"{' (' + q80['scheme'] + ')' if reached else ''} | "
-                + (
-                    f"{_fmt(q80['simulated_power'], 3)} ({_fmt(q80['monte_carlo_se'], 3)})"
-                    if reached
-                    else "n/a"
-                )
-                + f" | {_fmt(q80['clusters_drawn'], 0) if reached else 'n/a'} | {_fmt(days, 0)} | "
-                f"{_fmt(r80['flow_per_day_needed']['days_91_resolved_0.9'], 1)} / "
-                f"{_fmt(r80['flow_per_day_needed']['days_183_resolved_0.9'], 1)} | "
-                f"{_fmt(r80['test_result_usd_at_usd50'], 0)} | {', '.join(limits) or '-'} |"
+                f"| {effect:g} | {key} | {_interval(q80)} | {_interval(r90['required'])} | "
+                f"{binding} | {_pair(r80['research_days'][research_id])} | "
+                f"{_pair(r80['executable_days'][reference_id])} | "
+                f"{_pair(need[f'days_91_{suffix}'], 1)} / {_pair(need[f'days_183_{suffix}'], 1)} | "
+                f"{_pair(r80['measured_test_result_usd_at_usd50'])} | "
+                f"{', '.join(limits) or '-'} |"
             )
 
+    combos = [
+        (c, t)
+        for c in MONTHLY_OPERATING_COST_SCENARIOS_USD
+        for t in MONTHLY_TARGET_RESULT_SCENARIOS_USD
+    ]
     lines += [
         "",
-        "### Required mean net bps at $50 (resolved 0.9, rejection 0.2, 1 slot, 60 min hold)",
+        f"### Required mean net bps per opened trade at $50 ({REFERENCE_REJECTION:.0%} refused, "
+        f"{REFERENCE_SLOTS} slot, {REFERENCE_HOLD} min hold; unresolved opened trades still "
+        "count)",
         "",
-        "| Flow/day | Entries/month | "
-        + " | ".join(
-            f"cost ${c:g} + target ${t:g}"
-            for c in MONTHLY_OPERATING_COST_SCENARIOS_USD
-            for t in MONTHLY_TARGET_RESULT_SCENARIOS_USD
-        )
+        "| Flow/day | Opened/month | Resolved/month | Opened, outcome unknown/month | "
+        + " | ".join(f"cost ${c:g} + target ${t:g}" for c, t in combos)
         + " |",
-        "| ---: | ---: | "
-        + " | ".join(
-            "---:"
-            for _ in range(
-                len(MONTHLY_OPERATING_COST_SCENARIOS_USD) * len(MONTHLY_TARGET_RESULT_SCENARIOS_USD)
-            )
-        )
-        + " |",
+        "| ---: | ---: | ---: | ---: | " + " | ".join("---:" for _ in combos) + " |",
     ]
     for row in report["economics_usd50"]:
-        if (
-            row["resolved_fraction"],
-            row["rejection_fraction"],
-            row["max_concurrent"],
-            row["hold_minutes"],
-        ) != (0.9, 0.2, 1, 60):
+        if not row["scenario"].endswith(
+            f"_rej_{REFERENCE_REJECTION:g}_res_{REFERENCE_RESOLVED:g}"
+            f"_slots_{REFERENCE_SLOTS}_hold_{REFERENCE_HOLD}"
+        ):
             continue
-        cells = " | ".join(_fmt(v, 0) for v in row["required_net_bps_at_usd50"].values())
+        flow = row["scenario"].split("_")[1]
+        cells = " | ".join(
+            _fmt(v, 0) for v in row["required_net_bps_per_opened_trade_at_usd50"].values()
+        )
         lines.append(
-            f"| {_fmt(row['flow_per_day'], 2)} | {_fmt(row['entries_per_month'], 1)} | {cells} |"
+            f"| {_fmt(float(flow), 2)} | {_fmt(row['opened_per_month'], 1)} | "
+            f"{_fmt(row['resolved_per_month'], 1)} | "
+            f"{_fmt(row['opened_unresolved_per_month'], 1)} | {cells} |"
         )
     lines += ["", "### Missing measurements", ""]
     lines += [f"- {item}" for item in report["missing_measurements"]]
