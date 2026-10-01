@@ -52,14 +52,13 @@ above USD 50. USD 500 and USD 5,000 are reported as `capacity_not_measured`.
 - **Trading threshold:** the gross move that covers entry, exit and the scenarios above.
   The effect grid below is **net of it**: a net effect of 25 bps means a mean gross move
   of the trading threshold plus 25 bps.
-- **Economic threshold:** the mean net bps per executed trade that also covers a monthly
-  operating cost and a monthly target result, at USD 50 per position:
-  `(cost + target) / (entries per month x 50) x 10,000`. Cost (0, 10, 25 USD) and target
-  (0, 10, 50 USD) are not agreed, so every combination is shown and none is chosen.
-  Entries per month apply the resolved fraction, a rejection/miss fraction (0 or 20%)
-  and concurrency loss: with at most `c` open positions, a signal arriving while all
-  slots are busy is lost, which is the Erlang B blocking probability of an M/G/c/c
-  system with offered load `rate x hold`.
+- **Economic threshold:** the mean net bps per **opened** trade that also covers a
+  monthly operating cost and a monthly target result, at USD 50 per position:
+  `(cost + target) / (opened trades per month x 50) x 10,000`. Cost (0, 10, 25 USD) and
+  target (0, 10, 50 USD) are not agreed, so every combination is shown and none is
+  chosen. Opened trades follow the execution funnel in section 4. A trade whose outcome
+  is later not recovered was still opened, occupied a slot and carried its economics; it
+  is reported separately as "opened, outcome unknown", never removed before entry.
 
 ### 3. Power
 
@@ -87,9 +86,24 @@ Two calculations:
 2. **Simulation (primary):** whole clusters of centered returns are drawn with
    replacement until the cohort reaches the target size, the effect is added, and the
    test is applied. Clusters are assets (repeats and asset concentration preserved) and,
-   as a time-dependence check, UTC days. The reported requirement is the larger of the
-   two schemes. 1,000 replicates per grid size; seeds derive from `20261001` and the
-   dataset, scheme and size labels; the Monte Carlo SE is reported with every rate.
+   as a time-dependence check, UTC days. 1,000 replicates per grid size; seeds derive
+   from `20261001` and the dataset, scheme and size labels; the Monte Carlo SE is
+   reported with every rate.
+
+A grid size counts for a scheme only when its simulated cohorts hold at least 20
+clusters on average; with fewer, the normal interval is anticonservative. Each scheme
+therefore gives **bounds** `lower <= R <= upper` on its requirement R, not a point:
+
+- `identified`: R lies within one grid step, between the last evaluable size below the
+  target power and the first one reaching it;
+- `censored`: smaller sizes were not evaluable and the first evaluable size already
+  reaches the target, so only `R <= upper` is known (the floor of 100 is the lower bound);
+- `not_reached` or `not_evaluable`: no upper bound within the grid.
+
+A future cohort must satisfy every scheme, so the combined requirement has
+`lower = max(scheme lowers)` and `upper = max(scheme uppers)`, unknown if any scheme has
+no upper bound. A censored scheme still bounds the result: if assets need 401-500 and
+days are only known to need at most 1,500, the combined requirement is 401-1,500, not 500. Every scheme's own bounds stay in the result (`required.by_scheme`).
 
 The fast test uses the linearized cluster-robust (CR1) standard error, because the
 registered `cluster_bootstrap_mean` is too slow to run inside every replicate. On the
@@ -104,19 +118,32 @@ it; fewer than 8 UTC weeks makes week-level dependence not estimable (every data
 has 3 or 4 weeks); a requirement that draws more distinct assets than the dataset has is
 flagged, because the resampling then repeats observed assets as if they were new ones.
 
-### 4. Calendar
+### 4. Funnel and calendars
 
-Days to the required resolved episodes are `episodes / (events per day x resolved
-fraction)` for flows of 0, 0.5, 1, 1.84, 3 and 5 per day and resolved fractions of 1.0,
-0.9 and 0.7. Zero flow never completes. The inverse gives the event flow needed to
-finish within 91 or 183 days.
+One funnel feeds both the calendars and the economics, in this order:
+
+1. eligible events per day, counted before any pre-entry check (0, 0.5, 1, 1.84, 3, 5);
+2. refusals and misses before entry (no route, timeout, book or qualification): 0 or
+   20%, leaving the accepted events;
+3. **research collection** (shadow or paper) is not capital-limited, so every accepted
+   event is observed; its resolved share (100%, 90%, 70%) gives research outcomes;
+4. **live execution** also loses accepted events that arrive while every slot is busy:
+   with at most `c` open positions (1 or 3) and a 30 or 60 minute hold this is the Erlang
+   B blocking of an M/G/c/c system with offered load `accepted rate x hold`. Every
+   opened position occupies its slot whether or not its outcome is later recovered, so
+   the resolved share applies only after the slots.
+
+Two calendars follow, each at both bounds of the requirement: the research calendar
+(steps 1-3) and the executable calendar (steps 1-4). Zero flow never completes. The
+inverse gives the eligible flow needed to finish the research collection within 91 or
+183 days.
 
 ## Run
 
 | Item                   | Value                                                                                                                                                                    |
 | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Code revision          | `68fe658`, clean tree                                                                                                                                                    |
-| Result                 | [`evidence/cost-power-planning-v1/result.json`](evidence/cost-power-planning-v1/result.json), SHA-256 `cf23468413ac9b846db139ea676fec78990d836b20b202123a3d686591215123` |
+| Code revision          | `de849c2`, clean tree                                                                                                                                                    |
+| Result                 | [`evidence/cost-power-planning-v1/result.json`](evidence/cost-power-planning-v1/result.json), SHA-256 `dc7c6cf6c39f1afca541a8784f6e36b5cc1a119f6b77f444dcf5f29fcf88726a` |
 | Parameters SHA-256     | `21c577ec3d5cd0f212bef6d6944b140352282cd3d58298cbb354f29f9d4c8d40`                                                                                                       |
 | Generated tables       | [`evidence/cost-power-planning-v1/tables.md`](evidence/cost-power-planning-v1/tables.md)                                                                                 |
 | Audit document SHA-256 | recorded in the result (`accrual_reference.sha256`)                                                                                                                      |
@@ -152,8 +179,10 @@ Repeats within an asset matter little at the observed ICC (0.08 and 0.04), but t
 grow with collection length: at 8 episodes per asset the HYP-012b requirement rises by
 59% and the HYP-012c one by 28%. HYP-012b shows same-day dependence (day Deff 1.20,
 lag-1 autocorrelation 0.11) that the day simulation can only size from 1,500 episodes,
-because that dataset has about 73 events per day. Week-level dependence is not
-estimable from 3-4 weeks in any dataset.
+because that dataset has about 73 events per day. Its day ICC is 0.003; if dependence
+were purely within a day, a future flow of 1-2 events per day would carry almost none
+of it. That is a model assumption the data cannot check, so it does not narrow the
+reported bounds. Week-level dependence is not estimable from 3-4 weeks in any dataset.
 
 ### Method checks
 
@@ -165,68 +194,82 @@ a usable stand-in for planning; a formal read still uses the registered bootstra
 
 ### Main table
 
-Required resolved episodes for 80% / 90% power (the larger requirement over the
-cluster schemes that identify it), the calendar at the audit's illustrative
-1.84 events per day with 90% resolved, and the event flow needed to finish in about
-3 or 6 months. "$ over the test" is the net result of all test trades at USD 50 if the
-effect is real.
+Required resolved episodes for 80% power as combined bounds over both cluster schemes,
+with the 90% bounds in the next column. The reference funnel is the audit's
+illustrative 1.84 eligible events per day, 20% refused or missed before entry and 90%
+of outcomes recovered; the executable calendar adds one open slot and a 60-minute hold
+(5.8% slot loss). Every day and flow figure is given at both bounds. "Measured $" is
+the net result of the resolved test trades at USD 50 if the effect is real.
 
-| Net effect | Dispersion | Episodes 80% / 90% | Days at 1.84/day | Flow/day for 91 / 183 days | $ over the test | Main limitation                 |
-| ---------: | ---------- | ------------------ | ---------------: | -------------------------- | --------------: | ------------------------------- |
-|    100 bps | HYP-012b   | <=125 / 150        |               76 | 1.5 / 0.8                  |              62 | 3 weeks; same-day dependence    |
-|    100 bps | HYP-012c   | 200 / 250          |              121 | 2.4 / 1.2                  |             100 | 4 weeks                         |
-|    100 bps | HYP-029    | 1,200 / 1,500      |              725 | 14.7 / 7.3                 |             600 | 81 legs, 46 assets              |
-|     50 bps | HYP-012b   | 500 / 800          |              302 | 6.1 / 3.0                  |             125 | same-day dependence not sized   |
-|     50 bps | HYP-012c   | 800 / 1,000        |              483 | 9.8 / 4.9                  |             200 | needs more assets than observed |
-|     50 bps | HYP-029    | 5,000 / 8,000      |            3,020 | 61.1 / 30.4                |           1,250 | needs more assets than observed |
-|     25 bps | HYP-012b   | 2,500 / 4,000      |            1,510 | 30.5 / 15.2                |             312 | day scheme binds                |
-|     25 bps | HYP-012c   | 3,000 / 4,000      |            1,812 | 36.6 / 18.2                |             375 | needs more assets than observed |
-|     25 bps | HYP-029    | 20,000 / >20,000   |           12,081 | 244 / 121                  |           2,500 | beyond the grid at 90%          |
-|     10 bps | HYP-012b   | 15,000 / 20,000    |            9,061 | 183 / 91                   |             750 | day scheme binds                |
-|     10 bps | HYP-012c   | 20,000 / >20,000   |           12,081 | 244 / 121                  |           1,000 | beyond the grid at 90%          |
-|     10 bps | HYP-029    | >20,000            |              n/a | n/a                        |             n/a | beyond the grid                 |
+| Net effect | Dispersion |  Episodes 80% |  Episodes 90% | Research days | Executable days | Eligible flow/day for 91 / 183 days |  Measured $ | Main limitation                                        |
+| ---------: | ---------- | ------------: | ------------: | ------------: | --------------: | ----------------------------------- | ----------: | ------------------------------------------------------ |
+|    100 bps | HYP-012b   |     100-1,500 |     126-1,500 |      76-1,133 |        80-1,202 | 1.5-22.9 / 0.8-11.4                 |      50-750 | asset scheme evaluable from 125, day scheme from 1,500 |
+|    100 bps | HYP-012c   |       151-250 |       201-250 |       114-189 |         121-200 | 2.3-3.8 / 1.1-1.9                   |      76-125 | day scheme evaluable from 250                          |
+|    100 bps | HYP-029    |   1,001-1,200 |   1,201-1,500 |       756-906 |         802-962 | 15.3-18.3 / 7.6-9.1                 |     500-600 | 81 legs, 46 assets                                     |
+|     50 bps | HYP-012b   |     401-1,500 |     601-1,500 |     303-1,133 |       321-1,202 | 6.1-22.9 / 3.0-11.4                 |     100-375 | day scheme evaluable from 1,500                        |
+|     50 bps | HYP-012c   |       601-800 |     801-1,000 |       454-604 |         482-641 | 9.2-12.2 / 4.6-6.1                  |     150-200 | needs more assets than observed                        |
+|     50 bps | HYP-029    |   4,001-5,000 |   6,001-8,000 |   3,021-3,775 |     3,206-4,007 | 61-76 / 30-38                       | 1,000-1,250 | needs more assets than observed                        |
+|     25 bps | HYP-012b   |   2,001-2,500 |   3,001-4,000 |   1,511-1,888 |     1,604-2,003 | 31-38 / 15-19                       |     250-312 | 3 weeks                                                |
+|     25 bps | HYP-012c   |   2,501-3,000 |   3,001-4,000 |   1,888-2,265 |     2,004-2,404 | 38-46 / 19-23                       |     313-375 | needs more assets than observed                        |
+|     25 bps | HYP-029    | 15,001-20,000 |       >20,000 | 11,327-15,101 |   12,021-16,027 | 229-305 / 114-152                   | 1,875-2,500 | beyond the grid at 90%                                 |
+|     10 bps | HYP-012b   | 12,001-15,000 | 15,001-20,000 |  9,062-11,326 |    9,617-12,021 | 183-229 / 91-114                    |     600-750 | 3 weeks                                                |
+|     10 bps | HYP-012c   | 15,001-20,000 |       >20,000 | 11,327-15,101 |   12,021-16,027 | 229-305 / 114-152                   |   750-1,000 | beyond the grid at 90%                                 |
+|     10 bps | HYP-029    |       >20,000 |       >20,000 |       >15,102 |         >16,028 | >305 / >152                         |      >1,000 | beyond the grid                                        |
 
-`<=125` means both schemes first become evaluable at or above the requirement, so only
-an upper bound is identified. Monte Carlo SE of each reported power is about 0.011.
+An interval with a lower bound of 100 is censored: no cohort smaller than the upper
+bound had enough clusters to evaluate that scheme. Monte Carlo SE of the power at each
+upper bound is at most 0.012. Each dataset also carries its 3-4 week limit.
 
 ### Economics at USD 50
 
-With 90% resolved, 20% refused or missed, one open slot and a 60-minute hold, the
-illustrative 1.84 events per day give about 38 executed trades a month. A real 50 bps
-net effect then earns about USD 9.5 a month. The mean net effect needed per trade:
+With 20% refused or missed before entry, one open slot and a 60-minute hold, the
+illustrative 1.84 eligible events per day open about **42.2 positions a month**. 38.0 of
+them have a recovered outcome and 4.2 do not; those 4.2 still occupied the slot and
+carried about USD 210 of notional a month with unknown economics. A real 50 bps net
+effect earns about USD 10.5 a month on all opened positions, of which USD 9.5 is
+measured. The mean net effect needed per **opened** trade:
 
 | Monthly cost + target              | 1 event/day | 1.84/day |   3/day |   5/day |
 | ---------------------------------- | ----------: | -------: | ------: | ------: |
 | USD 0 + 0 (trading threshold only) |         > 0 |      > 0 |     > 0 |     > 0 |
-| USD 10 + 0                         |      94 bps |   52 bps |  33 bps |  21 bps |
-| USD 10 + 10                        |     188 bps |  105 bps |  66 bps |  42 bps |
-| USD 25 + 50                        |     705 bps |  393 bps | 249 bps | 157 bps |
+| USD 10 + 0                         |      85 bps |   47 bps |  30 bps |  19 bps |
+| USD 10 + 10                        |     170 bps |   95 bps |  60 bps |  38 bps |
+| USD 25 + 50                        |     636 bps |  355 bps | 226 bps | 144 bps |
 
 USD 500 and USD 5,000 are `capacity_not_measured`; no economic figure is given for them.
 
 ## Answer
 
-1. **Effect worth testing.** Only a net effect of about **50 bps or more per trade**,
-   which means a mean gross move of roughly 90 bps on the common 5-20 bps spread books
-   once the 15 bps quote-to-fill scenario is included, can be tested in 3-6 months with
-   a plausible flow. Effects of 10-25 bps need 2,500-20,000 resolved episodes and are
-   not testable on any flow seen so far. A line with HYP-029-like dispersion (60-minute
-   pump legs) needs 100 bps or more.
-2. **Flow that allows the test in 3-6 months.** With 30-minute source-lead-like
-   dispersion and 90% of events resolving: about 1-2.5 eligible events per day for
-   100 bps, and **3-10 per day** for 50 bps. The historical 1.84 per day, measured before target, book and
-   qualification filters, supports only the 100 bps case. The v2 cohort's first 59
-   hours produced two source-eligible registered captures, far below it.
-3. **Costs justified.** At USD 50 a real 50 bps edge returns about USD 125-200 over the
-   whole test and about USD 10 a month afterwards. So a new line is a validation
-   expense, not a profit source: its incremental collection and operating cost should
-   stay near zero until capacity above USD 50 is measured.
+All figures are conditional on the dispersion scenarios and the funnel above.
+
+1. **Effect worth testing.** Below 50 bps net nothing is testable on any flow seen so
+   far: 25 bps already needs 2,001-3,000 resolved episodes (about 15-46 eligible events
+   per day for 3-6 months). 50 bps net, a mean gross move of roughly 90 bps on the
+   common 5-20 bps spread books with the 15 bps quote-to-fill scenario, is the smallest
+   grid effect that some plausible flow could test in 3-6 months. It is not established
+   that 50 bps suffices: its requirement is 601-800 episodes under HYP-012c dispersion
+   but only bounded to 401-1,500 under HYP-012b, whose same-day dependence cannot be
+   sized below 1,500. Under HYP-029 dispersion even 100 bps needs 1,001-1,200.
+2. **Flow that allows the test.** For research collection within 3-6 months at 20%
+   pre-entry refusal and 90% resolution, 50 bps needs about **4.6-12.2** eligible
+   events per day under HYP-012c and **3.0-22.9** under the HYP-012b bounds; 100 bps
+   needs 1.1-3.8 under HYP-012c. Executable trades with one slot and a 60-minute hold
+   take about 6% longer. The historical 1.84 per day, counted before target, book and
+   qualification filters, fits only the 100 bps case under HYP-012c (114-189 research
+   days); 50 bps would take 303-1,133 days. The v2 cohort's first 59 hours produced two
+   source-eligible registered captures, far below 1.84 per day.
+3. **Costs justified.** At USD 50 a real 50 bps edge returns about USD 100-375 of
+   measured result over the whole test and about USD 10 a month afterwards. A new line
+   is a validation expense, not a profit source: its incremental collection and
+   operating cost should stay near zero until capacity above USD 50 is measured.
 4. **The next collection stage is justified only if**, before any outcome is read, the
    candidate (a) states a mechanism for at least 50 bps net beyond the trading
-   threshold, (b) shows from an outcome-blind funnel that its universe yields at least
-   3 eligible events per day across at least several hundred assets, and (c) brings its
-   own execution measurements (fills, latency, quote-to-fill) to replace the 15-30 bps
-   scenarios.
+   threshold, (b) shows from an outcome-blind funnel that its universe yields enough
+   eligible events after its own pre-entry filters (about 4.6-6.1 per day
+   for 50 bps over 6 months under the identified HYP-012c scenario, up to 11.4 under
+   the HYP-012b upper bound) across several hundred assets, and (c) brings its own
+   execution measurements (fills, latency, quote-to-fill, refusal and resolution rates)
+   to replace the scenarios used here.
 
 ## What still blocks a numerical decision
 
@@ -242,6 +285,8 @@ Each item is named in the result's `missing_measurements`:
 - source-lead quote age (unknown for every source-lead group) and an observed
   source-lead exit;
 - week-level dependence (3-4 weeks per dataset, at least 8 needed);
+- the refusal, resolution and slot-loss rates of a real funnel (scenarios here);
+- same-day dependence at a low event rate (HYP-012b sizes it only from 1,500 episodes);
 - the operating budget and target monthly result, which are not agreed.
 
 ## Reproduce
