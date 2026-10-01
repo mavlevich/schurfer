@@ -3,6 +3,7 @@
 .PHONY: momentum-flow-discovery-report prod-momentum-flow-discovery-report
 .PHONY: ai-rules-check verify-body
 .PHONY: early-momentum-unused-flow-features-report prod-early-momentum-unused-flow-features-report
+.PHONY: research-cost-power-planning-report
 .PHONY: hyp-024-orderflow-report prod-hyp-024-orderflow-report net-buy-accumulation-report prod-net-buy-accumulation-report net-buy-accumulation-coverage-funnel prod-net-buy-accumulation-coverage-funnel
 .PHONY: cex-activity-path-coverage-audit-report prod-cex-activity-path-coverage-audit-report
 .PHONY: cex-activity-discovery-report radar-outcome-discovery-report prod-radar-outcome-discovery-report
@@ -873,6 +874,15 @@ hyp-024-orderflow-report:
 # Parquet. Reads FILES, not Postgres -- so it runs locally against cold-bars
 # rsync'd from the server (no DB, no prod host). ARGS must include
 # --cold-bars <dir>, e.g. ARGS="--cold-bars ./cold-bars --format markdown".
+# Offline: reads only saved, hash-verified artifacts under runtime/research and the
+# published v2 audit counters. No database, exchange or production call.
+research-cost-power-planning-report:
+	@uv run --package schurfer-analytics research-cost-power-planning \
+		--code-revision="$$(git rev-parse HEAD)" \
+		$$(test -z "$$(git status --porcelain)" \
+			&& printf '%s' '--no-working-tree-dirty' \
+			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
 net-buy-accumulation-report:
 	@uv run --package schurfer-analytics net-buy-accumulation-report \
 		--code-revision="$$(git rev-parse HEAD)" \

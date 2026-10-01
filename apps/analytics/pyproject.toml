@@ -48,6 +48,7 @@ source-lead-readiness-report = "schurfer_analytics.source_lead_readiness_report:
 source-lead-shadow-diagnostic = "schurfer_analytics.source_lead_shadow_diagnostic:main"
 source-lead-v2-book-cost-diagnostic = "schurfer_analytics.source_lead_v2_book_cost_diagnostic:main"
 preblind-book-cost-result = "schurfer_analytics.preblind_book_cost_result:main"
+research-cost-power-planning = "schurfer_analytics.research_cost_power_planning:main"
 source-lead-bybit-canary = "schurfer_analytics.source_lead_bybit_canary:main"
 bybit-carry-feasibility = "schurfer_analytics.bybit_carry_feasibility:main"
 source-lead-identity-report = "schurfer_analytics.source_lead_identity_report:main"
