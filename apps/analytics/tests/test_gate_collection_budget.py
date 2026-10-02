@@ -65,7 +65,7 @@ def test_a_rate_limit_stops_the_measurement() -> None:
 
 def test_conversion_profile_measures_expansion_and_parquet(tmp_path: Path) -> None:
     rows = "\n".join(f"{1782864000 + i}.123456,{1000 + i},1.0,{(-1) ** i * 3}" for i in range(500))
-    path = tmp_path / "AAA_USDT-202607.csv.gz"
+    path = tmp_path / "a3f0"  # content-addressed name, no extension, like the raw store
     path.write_bytes(gzip.compress((rows + "\n").encode()))
     profile = budget_mod.conversion_profile([path])
     (row,) = profile["files"]

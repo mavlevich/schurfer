@@ -123,7 +123,7 @@ def conversion_profile(files: Sequence[Path]) -> dict[str, Any]:
             source = _sql_literal(str(path))
             sink = _sql_literal(str(target))
             # Both paths are local files of this measurement, quoted by _sql_literal.
-            query = f"COPY (SELECT * FROM read_csv({source}, header=false, columns={columns})) TO {sink} (FORMAT parquet, COMPRESSION zstd)"  # noqa: E501, S608
+            query = f"COPY (SELECT * FROM read_csv({source}, header=false, compression='gzip', columns={columns})) TO {sink} (FORMAT parquet, COMPRESSION zstd)"  # noqa: E501, S608
             duckdb.execute(query)
             seconds = time.perf_counter() - started
             parquet_bytes = target.stat().st_size
