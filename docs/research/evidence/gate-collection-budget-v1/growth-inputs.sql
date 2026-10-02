@@ -1,6 +1,7 @@
 -- Gate collection budget (PR 5): disk growth inputs from database metadata only.
 -- Reads relation and chunk sizes, retention policies and row counts by creation
--- time inside a window that ends before the HYP-012 v2 blind window (2026-09-29).
+-- time inside a window that ends before the HYP-012 v2 blind window (2026-09-29),
+-- and the run history of each retention job.
 -- No value column is read.
 \set window_start '2026-09-15'
 \set window_end '2026-09-29'
@@ -54,8 +55,17 @@ SELECT json_build_object(
             'hypertable', h.hypertable_schema || '.' || h.hypertable_name,
             'bytes', hypertable_size(format('%I.%I', h.hypertable_schema, h.hypertable_name)::regclass),
             'oldest_chunk_start', (SELECT min(range_start) FROM chunk WHERE hypertable = h.hypertable_schema || '.' || h.hypertable_name),
-            'retention_drop_after', (
-                SELECT j.config ->> 'drop_after' FROM timescaledb_information.jobs AS j
+            'retention', (
+                SELECT json_build_object(
+                    'drop_after', j.config ->> 'drop_after',
+                    'schedule_interval', j.schedule_interval,
+                    'last_run_status', s.last_run_status,
+                    'last_successful_finish', s.last_successful_finish,
+                    'total_runs', s.total_runs,
+                    'total_failures', s.total_failures
+                )
+                FROM timescaledb_information.jobs AS j
+                JOIN timescaledb_information.job_stats AS s USING (job_id)
                 WHERE j.proc_name = 'policy_retention'
                   AND j.hypertable_schema = h.hypertable_schema AND j.hypertable_name = h.hypertable_name
             ),

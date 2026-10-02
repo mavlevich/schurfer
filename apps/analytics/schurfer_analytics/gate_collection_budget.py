@@ -277,14 +277,15 @@ def headroom(
     The reserve is never spent: the growth of everything else on the disk and the
     collection both come out of the space above it. `release_gib` is space already
     due to be freed (old hot bars past the retention cutoff). A universe without a
-    complete measurement gets no verdict, and none fits when the disk is already
-    below the reserve."""
+    complete measurement or without any archive gets no verdict, and none fits when
+    the disk is already below the reserve."""
     usable = free_gib + release_gib - reserve_gib
     days = horizon_months * DAYS_PER_MONTH
     out: dict[str, Any] = {}
     for name, row in budget_rows.items():
-        if row["status"] == "insufficient_data":
-            out[name] = {"status": "insufficient_data", "fits": None}
+        if row["status"] in ("insufficient_data", "no_archives"):
+            # Nothing measured to collect is not a collection that fits.
+            out[name] = {"status": row["status"], "fits": None}
             continue
         if usable <= 0:
             out[name] = {"status": "below_reserve", "usable_gib": usable, "fits": False}
@@ -307,18 +308,20 @@ def headroom(
     return out
 
 
-def other_growth(inputs: dict[str, Any]) -> dict[str, Any]:
+def other_growth(inputs: dict[str, Any], *, trust_retention: bool = True) -> dict[str, Any]:
     """Growth of the database outside the hot bars, from metadata (growth-inputs.sql).
 
     Plain tables: mean bytes per row times the rows created per day in the window.
     Hypertables: bytes per day of the chunks lying wholly in the window, except one
-    whose retention already drops its oldest chunks (steady state, no net growth).
-    Bars are excluded: the gated deletion holds them at the retention cutoff."""
+    whose retention is shown to hold it at steady state (`_retention_steady`); with
+    `trust_retention=False` every hypertable keeps its window rate (the conservative
+    scenario). Bars are excluded: the gated deletion holds them at the cutoff."""
     start = datetime.fromisoformat(inputs["window"]["start"]).replace(tzinfo=UTC)
     end = datetime.fromisoformat(inputs["window"]["end"]).replace(tzinfo=UTC)
     window_days = (end - start).total_seconds() / 86400
     measured_at = datetime.fromisoformat(inputs["measured_at"])
     rates: dict[str, float] = {}
+    steady: list[str] = []
     for table in inputs["plain_tables"]:
         per_row = table["bytes"] / table["rows"] if table["rows"] else 0.0
         rates[table["table"]] = per_row * table["rows_in_window"] / window_days
@@ -326,10 +329,9 @@ def other_growth(inputs: dict[str, Any]) -> dict[str, Any]:
         name = table["hypertable"]
         if name == BARS_HYPERTABLE:
             continue
-        drop_after = _days(table["retention_drop_after"])
-        oldest = datetime.fromisoformat(table["oldest_chunk_start"])
-        if drop_after is not None and oldest <= measured_at - timedelta(days=drop_after):
+        if trust_retention and _retention_steady(table, measured_at):
             rates[name] = 0.0
+            steady.append(name)
             continue
         inside = [
             c
@@ -345,7 +347,31 @@ def other_growth(inputs: dict[str, Any]) -> dict[str, Any]:
     return {
         "mib_per_day": {k: v / MIB for k, v in sorted(rates.items())},
         "total_gib_per_day": sum(rates.values()) / GIB,
+        "retention_steady": steady,
     }
+
+
+def _retention_steady(table: dict[str, Any], measured_at: datetime) -> bool:
+    """A hypertable is at steady state only when its retention job is shown working:
+    the last run succeeded within one schedule interval of the measurement, no run
+    has failed, the oldest chunk has reached the drop age at that run, and no chunk
+    the run should have dropped is still there."""
+    retention = table.get("retention")
+    if not retention:
+        return False
+    if retention["last_run_status"] != "Success" or retention["total_failures"]:
+        return False
+    finished = retention["last_successful_finish"]
+    if finished is None:
+        return False
+    last_run = datetime.fromisoformat(finished)
+    if last_run < measured_at - _interval(retention["schedule_interval"]):
+        return False
+    boundary = last_run - timedelta(days=_days(retention["drop_after"]) or 0)
+    chunks = table["chunks"] or []
+    reached = datetime.fromisoformat(table["oldest_chunk_start"]) <= boundary
+    overdue = any(datetime.fromisoformat(c["end"]) <= boundary for c in chunks)
+    return reached and not overdue
 
 
 def bars_release_gib(inputs: dict[str, Any], cutoff_days: int) -> float:
@@ -359,6 +385,12 @@ def bars_release_gib(inputs: dict[str, Any], cutoff_days: int) -> float:
         c["bytes"] for c in bars["chunks"] if datetime.fromisoformat(c["end"]) <= cutoff
     )
     return past / GIB
+
+
+def _interval(value: str) -> timedelta:
+    """PostgreSQL renders a whole-day job interval as '1 day' or '1 day 00:00:00'."""
+    days = _days(" ".join(value.split()[:2]))
+    return timedelta(days=days or 0)
 
 
 def _days(interval: str | None) -> int | None:
@@ -412,6 +444,12 @@ def main(argv: Sequence[str] | None = None) -> None:
     profile = conversion_profile(files)
     growth_inputs = json.loads(args.growth_inputs.read_bytes())
     growth = other_growth(growth_inputs)
+    conservative = other_growth(growth_inputs, trust_retention=False)
+    rates = {
+        "table_growth": growth["total_gib_per_day"],
+        "conservative_growth": conservative["total_gib_per_day"],
+        "no_other_growth": 0.0,
+    }
     release = bars_release_gib(growth_inputs, args.bars_cutoff_days)
     with httpx.Client(headers={"User-Agent": "schurfer-research-probe/1"}) as client:
         sizes, request_log = measure_sizes(client, every)
@@ -423,11 +461,11 @@ def main(argv: Sequence[str] | None = None) -> None:
             rows,
             free_gib=args.free_gib,
             reserve_gib=args.reserve_gib,
-            other_growth_gib_per_day=growth["total_gib_per_day"] if rate == "table_growth" else 0.0,
+            other_growth_gib_per_day=rates[rate],
             release_gib=release if state == "after_bar_release" else 0.0,
         )
         for state in ("now", "after_bar_release")
-        for rate in ("table_growth", "no_other_growth")
+        for rate in rates
     }
     result = {
         "version": VERSION,
@@ -442,6 +480,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "budget": rows,
         "growth_inputs_sha256": hashlib.sha256(args.growth_inputs.read_bytes()).hexdigest(),
         "other_growth": growth,
+        "other_growth_conservative": conservative,
         "bars_cutoff_days": args.bars_cutoff_days,
         "bars_release_gib": release,
         "headroom": scenarios,

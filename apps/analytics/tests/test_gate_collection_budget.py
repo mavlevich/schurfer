@@ -154,7 +154,11 @@ def test_missing_or_unmeasured_data_never_fits() -> None:
     kwargs: dict[str, Any] = {"other_growth_gib_per_day": 0.0}
     absent = budget_mod.budget(sizes, {"u": ["AAA"]}, PROFILE)
     assert absent["u"]["status"] == "no_archives"
-    assert budget_mod.headroom(absent, free_gib=5.0, reserve_gib=10.0, **kwargs)["u"] == {
+    for free in (5.0, 50.0):  # below the reserve or not, no archive is no verdict
+        room = budget_mod.headroom(absent, free_gib=free, reserve_gib=10.0, **kwargs)
+        assert room["u"] == {"status": "no_archives", "fits": None}
+    measured = budget_mod.budget({"AAA": {"202606": GIB, "202607": GIB}}, {"u": ["AAA"]}, PROFILE)
+    assert budget_mod.headroom(measured, free_gib=5.0, reserve_gib=10.0, **kwargs)["u"] == {
         "status": "below_reserve",
         "usable_gib": -5.0,
         "fits": False,
@@ -170,6 +174,15 @@ def test_missing_or_unmeasured_data_never_fits() -> None:
     )
 
 
+RETENTION: dict[str, Any] = {
+    "drop_after": "45 days",
+    "schedule_interval": "1 day",
+    "last_run_status": "Success",
+    "last_successful_finish": "2026-10-02T12:00:00+00:00",
+    "total_runs": 50,
+    "total_failures": 0,
+}
+
 GROWTH_INPUTS: dict[str, Any] = {
     "measured_at": "2026-10-02T17:00:00+00:00",
     "window": {"start": "2026-09-15", "end": "2026-09-29"},
@@ -177,7 +190,7 @@ GROWTH_INPUTS: dict[str, Any] = {
     "hypertables": [
         {
             "hypertable": "ts.growing",
-            "retention_drop_after": "180 days",
+            "retention": {**RETENTION, "drop_after": "180 days"},
             "oldest_chunk_start": "2026-08-25T00:00:00+00:00",
             "chunks": [
                 {
@@ -209,19 +222,24 @@ GROWTH_INPUTS: dict[str, Any] = {
         },
         {
             "hypertable": "ts.steady",
-            "retention_drop_after": "45 days",
+            "retention": RETENTION,
             "oldest_chunk_start": "2026-08-18T00:00:00+00:00",
             "chunks": [
+                {
+                    "start": "2026-08-18T00:00:00+00:00",
+                    "end": "2026-08-19T00:00:00+00:00",
+                    "bytes": 9 * MIB,
+                },
                 {
                     "start": "2026-09-20T00:00:00+00:00",
                     "end": "2026-09-21T00:00:00+00:00",
                     "bytes": 9 * MIB,
-                }
+                },
             ],
         },
         {
             "hypertable": budget_mod.BARS_HYPERTABLE,
-            "retention_drop_after": None,
+            "retention": None,
             "oldest_chunk_start": "2026-09-16T00:00:00+00:00",
             "chunks": [
                 {
@@ -250,9 +268,37 @@ def test_other_growth_from_metadata() -> None:
     assert growth["mib_per_day"] == {
         "app.t": pytest.approx(1.4 * 500 / 14),
         "ts.growing": pytest.approx(5.0),  # only the chunks wholly inside the window
-        "ts.steady": 0.0,  # retention already drops its oldest chunks
+        "ts.steady": 0.0,  # its retention job is shown holding it at the drop age
     }
     assert growth["total_gib_per_day"] == pytest.approx((50.0 + 5.0) / 1024)
+    assert growth["retention_steady"] == ["ts.steady"]
+    conservative = budget_mod.other_growth(GROWTH_INPUTS, trust_retention=False)
+    assert conservative["mib_per_day"]["ts.steady"] == pytest.approx(9.0)
+    assert conservative["retention_steady"] == []
+
+
+def _steady_with(**retention: Any) -> dict[str, Any]:
+    table = next(t for t in GROWTH_INPUTS["hypertables"] if t["hypertable"] == "ts.steady")
+    changed = {**table, "retention": {**RETENTION, **retention}}
+    tables = [changed if t is table else t for t in GROWTH_INPUTS["hypertables"]]
+    return {**GROWTH_INPUTS, "hypertables": tables}
+
+
+@pytest.mark.parametrize(
+    "retention",
+    [
+        {"last_run_status": "Failed"},
+        {"total_failures": 1},
+        {"last_successful_finish": None},
+        {"last_successful_finish": "2026-09-30T12:00:00+00:00"},  # stalled for two days
+        {"drop_after": "30 days"},  # the oldest chunk is overdue: nothing was dropped
+        {"drop_after": "60 days"},  # not at the drop age yet
+    ],
+)
+def test_retention_counts_as_steady_only_when_shown_working(retention: dict[str, Any]) -> None:
+    growth = budget_mod.other_growth(_steady_with(**retention))
+    assert growth["mib_per_day"]["ts.steady"] == pytest.approx(9.0)
+    assert growth["retention_steady"] == []
 
 
 def test_bars_release_counts_chunks_past_the_cutoff() -> None:
