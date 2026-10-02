@@ -12,18 +12,18 @@ budgeted, because PR 3 deferred it (no enforceable request bound).
 
 **Insufficient for a six-month collection on the current disk, for any universe, and
 the reason is not Gate.** The database outside the hot bars grows by about
-**0.25 GiB a day** (measured below) with no retention on its largest tables. At that
-rate the disk reaches its 10 GiB reserve in about **26 days** from now, or about
-**64 days** once the hot bars retention has released the 9.85 GiB already due, with
-or without Gate.
+**0.25 GiB a day** (measured below; 0.33 GiB a day in the conservative scenario) with
+no retention on its largest tables. At that rate the disk reaches its 10 GiB reserve
+in about **24 days** from now, or about **64 days** once the hot bars retention has
+released the 9.85 GiB already due, with or without Gate.
 
 - **Gate itself is small for the registry set.** The 44 registry v4 Gate-to-Bybit
   bases need 0.40 GiB a month at the larger measured month, 2.4 GiB over 6 months
   (about 13 MiB a day). They fit for six months if all other growth stays below
-  **79 MiB a day** after the bars release (24 MiB a day today), against a measured
+  **74 MiB a day** after the bars release (19 MiB a day today), against a measured
   252 MiB a day.
 - **The full 592-base universe does not fit even with no other growth:** 24.1 GiB
-  over 6 months against 16.6 GiB above the reserve after the bars release.
+  over 6 months against 15.7 GiB above the reserve after the bars release.
 - **What makes a collection supportable:** bring the other growth under the
   threshold (retention or an offsite archive for the large `app` tables, the next
   item of the data lifecycle work) or add a volume, then confirm the rate with a
@@ -34,7 +34,7 @@ or without Gate.
 
 | Measurement        | Value                                                                                                                                                        | Source                                            |
 | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------- |
-| Root disk          | 80.3 GB; free **16.16-16.70 GiB** during the day (17.94 GB at 17:08 UTC, used for the budget)                                                                | `df -B1`                                          |
+| Root disk          | 80.3 GB; free **15.86-16.70 GiB** during the day (17.03 GB at 18:28 UTC, used for the budget)                                                                | `df -B1`                                          |
 | Docker data        | 54 GiB under `/var/lib/docker`; local volumes 42.6 GB; build cache 3.5 GB and images 3.2 GB reclaimable                                                      | `du`, `docker system df`                          |
 | Database           | 37.9 GiB: `bybit_momentum_bars_1m` 19 GB, `momentum_flow_watch_evaluations_1m` 4.6 GB, `pump_derivatives_context_samples` 3.6 GiB, `trade_decisions` 2.6 GiB | `pg_database_size`, relation and hypertable sizes |
 | Logical dumps      | 40.5 GB on 09-08, 47.6 on 09-13, 56.5 on 09-20, 66.6 on 09-26, 65.4 on 09-29, 60.6 GB on 10-02                                                               | Borg `db-*` archive stats                         |
@@ -49,29 +49,39 @@ or without Gate.
 Measured by [`growth-inputs.sql`](evidence/gate-collection-budget-v1/growth-inputs.sql)
 (metadata and row counts only, window 2026-09-15 to 2026-09-28, before the blind
 window) into [`growth-inputs.json`](evidence/gate-collection-budget-v1/growth-inputs.json),
-SHA-256 `9447588d5bc4523795ed04b19e01dd88b0caf6ec4dff882f90c07b505144a28b`, and
+SHA-256 `9c60f5a2b15d49c315fdb6a222f3e5442708f273ed84927aaf15f5ec146e66ce`, and
 computed by `other_growth`:
 
 - a plain table grows by its mean bytes per row times the rows created per day in
   the window;
 - a hypertable grows by the bytes per day of its chunks wholly inside the window,
-  unless its retention already drops its oldest chunks (then it is at steady state);
+  unless its retention job is shown holding it at steady state: the last run
+  succeeded within one schedule interval, no run ever failed, the oldest chunk has
+  reached the drop age at that run, and no chunk that run should have dropped is
+  still there;
+- the conservative scenario counts every hypertable at its window rate, retention
+  or not;
 - the hot bars are left out: the gated deletion holds them at the 14-day cutoff.
 
-| Table                                                                |     Size | Rows created in the window |                        Growth |
-| -------------------------------------------------------------------- | -------: | -------------------------: | ----------------------------: |
-| `app.pump_derivatives_context_samples`                               | 3.58 GiB |                      21.9% |                  57.2 MiB/day |
-| `app.trade_decisions`                                                | 2.62 GiB |                      26.4% |                  50.5 MiB/day |
-| `app.momentum_flow_paper_probes`                                     | 2.08 GiB |                      32.6% |                  49.7 MiB/day |
-| `app.live_long_short_ratio` (hypertable, no retention)               |          |                            |                  19.8 MiB/day |
-| `app.funding_rate_snapshots`                                         | 0.76 GiB |                      26.7% |                  14.8 MiB/day |
-| `app.trade_decision_outcomes`                                        | 1.55 GiB |                      10.3% |                  11.7 MiB/day |
-| `timeseries.liquidation_events` (180-day retention, not yet reached) |          |                            |                  11.6 MiB/day |
-| `app.pump_events`, `app.pump_event_sources`                          | 1.22 GiB |                     24-27% |                  22.6 MiB/day |
-| `app.oi_snapshots`                                                   | 0.53 GiB |                      26.5% |                  10.3 MiB/day |
-| three smaller tables                                                 | 0.18 GiB |                     23-48% |                   3.4 MiB/day |
-| `momentum_flow_watch_evaluations_1m` (45-day retention reached)      |   4.6 GB |                            |                             0 |
-| **Total**                                                            |          |                            | **251.6 MiB/day (0.246 GiB)** |
+| Table                                                                |     Size | Rows created in the window |                                                    Growth |
+| -------------------------------------------------------------------- | -------: | -------------------------: | --------------------------------------------------------: |
+| `app.pump_derivatives_context_samples`                               | 3.58 GiB |                      21.9% |                                              57.2 MiB/day |
+| `app.trade_decisions`                                                | 2.62 GiB |                      26.4% |                                              50.5 MiB/day |
+| `app.momentum_flow_paper_probes`                                     | 2.08 GiB |                      32.6% |                                              49.6 MiB/day |
+| `app.live_long_short_ratio` (hypertable, no retention)               |          |                            |                                              19.8 MiB/day |
+| `app.funding_rate_snapshots`                                         | 0.76 GiB |                      26.7% |                                              14.8 MiB/day |
+| `app.trade_decision_outcomes`                                        | 1.55 GiB |                      10.3% |                                              11.7 MiB/day |
+| `timeseries.liquidation_events` (180-day retention, not yet reached) |          |                            |                                              11.6 MiB/day |
+| `app.pump_events`, `app.pump_event_sources`                          | 1.22 GiB |                     24-27% |                                              22.6 MiB/day |
+| `app.oi_snapshots`                                                   | 0.53 GiB |                      26.5% |                                              10.3 MiB/day |
+| three smaller tables                                                 | 0.18 GiB |                     23-48% |                                               3.4 MiB/day |
+| `momentum_flow_watch_evaluations_1m` (45-day retention, see below)   |   4.6 GB |                            |                            0 (conservative: 91.0 MiB/day) |
+| **Total**                                                            |          |                            | **251.5 MiB/day (0.246 GiB); conservative 342.5 MiB/day** |
+
+The watch evaluations retention job ran 50 times without a failure, last succeeding
+at 2026-10-02 11:59 UTC; its oldest chunk (2026-08-18) has reached the 45-day age and
+no older chunk remains. Its first actual drop is due on 2026-10-03, so a drop has not
+yet been observed: the conservative scenario keeps its 91 MiB a day.
 
 The window holds 10-33% of each large table's rows over 14 days, so these tables were
 built at about this rate; none has a retention policy. The mean bytes per row
@@ -82,9 +92,9 @@ before the local dumps moved offsite, so it cannot separate growth from cleanup.
 
 ## Gate trade volume
 
-Measured with `schurfer_analytics.gate_collection_budget` from clean revision `398bc7b`.
+Measured with `schurfer_analytics.gate_collection_budget` from clean revision `6ce027d`.
 Artifact: [`evidence/gate-collection-budget-v1/gate-collection-budget.json`](evidence/gate-collection-budget-v1/gate-collection-budget.json),
-SHA-256 `1bfa698fe42445939271771de8b224c51f28e48ef172204478dd3335bbb50165`.
+SHA-256 `4b204640e293048b50afc9aeb2123be3c00e2551b48be3054f3dfb4aa343d3d5`.
 
 - **Sizes:** `HEAD` of Gate's June and July 2026 trade archive file for every base of
   PR 3's 592-base universe: 1,184 requests, each logged with its status, length,
@@ -115,12 +125,18 @@ collection and all other growth come out of the space above it. The bars release
 the 9.85 GiB of hot bar chunks already past the 14-day cutoff, dropped over about
 11 nights.
 
-| Scenario                                             |    Above reserve | Registry 44: fits 6 months / days to reserve | Full universe | Largest other growth for registry 44 |
-| ---------------------------------------------------- | ---------------: | -------------------------------------------- | ------------- | -----------------------------------: |
-| Now, measured other growth                           |         6.70 GiB | no / 26                                      | no / 18       |                           24 MiB/day |
-| After bars release, measured other growth            |        16.55 GiB | no / 64                                      | no / 44       |                           79 MiB/day |
-| After bars release, no other growth (reference only) |        16.55 GiB | yes / 1,262                                  | no / 125      |                                      |
-| No collection, measured other growth                 | 6.70 / 16.55 GiB | 27 / 67 days                                 |               |                                      |
+| Scenario                                                     | Above reserve | Registry 44: fits 6 months / days to reserve | Full universe: fits / days | Largest other growth for registry 44 |
+| ------------------------------------------------------------ | ------------: | -------------------------------------------- | -------------------------- | -----------------------------------: |
+| Now, measured other growth                                   |      5.86 GiB | no / 23                                      | no / 16                    |                           19 MiB/day |
+| Now, conservative growth                                     |      5.86 GiB | no / 17                                      | no / 13                    |                           19 MiB/day |
+| After bars release, measured other growth                    |     15.71 GiB | no / 61                                      | no / 42                    |                           74 MiB/day |
+| After bars release, conservative growth                      |     15.71 GiB | no / 45                                      | no / 34                    |                           74 MiB/day |
+| After bars release, no other growth (reference only)         |     15.71 GiB | yes / 1,198                                  | no / 119                   |                                      |
+| No collection, measured / conservative growth, now           |      5.86 GiB | 24 / 18 days                                 |                            |                                      |
+| No collection, measured / conservative growth, after release |     15.71 GiB | 64 / 47 days                                 |                            |                                      |
+
+A universe without any archive, or with an unmeasured base, gets no verdict rather
+than a fit.
 
 **Load:** downloading 2.4 GiB a month is negligible for the network. Conversion took
 about 4 minutes of elapsed time per month of the full universe on a workstation;
