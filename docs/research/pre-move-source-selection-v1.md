@@ -198,6 +198,23 @@ same bounds, sample rule and limits. Its universe and sample are recomputed from
 catalogue at run time and compared with run 1. Run 1's artifact is kept unchanged as
 superseded evidence; its unretained inputs are not reconstructed.
 
+## Amendment A2 (after review of run 2, before run 3)
+
+A1 claimed that `from + interval x limit` bounds a Gate `contract_stats` request. It
+does not. Both recorded run 2 requests asked for twelve 5-minute rows from
+2026-07-15 12:00 (derived end 13:00) and received 14 rows through 13:05. Gate
+documents `from` as a start and gives no upper time guarantee, so the same request
+near 31 July could return August rows, and dropping them after receipt does not make
+the probe blind. Run 2 did not cross the boundary (its observed rows end at
+2026-07-15 13:05), but the guard could not prove it.
+
+From A2, `contract_stats` is refused before sending, and probe G4 (historical open
+interest at Gate) is **deferred** until an endpoint with an enforceable upper bound,
+or a documented and tested bound, exists. **Run 3** repeats the registered probes once
+without G4, under the same bounds, sample rule and limits. Run 2's artifact and its
+recorded G4 responses are kept unchanged as superseded evidence with their true
+observed bounds.
+
 ## Report
 
 **Run 2 is the evidence.** It ran on 2026-10-02 at 14:53 UTC from clean revision

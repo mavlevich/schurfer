@@ -45,7 +45,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
 PROTOCOL_VERSION = "pre_move_source_selection_v1"
-PROTOCOL_AMENDMENT = "A1"
+PROTOCOL_AMENDMENT = "A2"
 BOUNDARY = datetime(2026, 8, 1, tzinfo=UTC)
 UNIVERSE_LAUNCHED_BEFORE = datetime(2026, 7, 1, tzinfo=UTC)
 PROBE_DAY = datetime(2026, 7, 15, tzinfo=UTC)
@@ -93,7 +93,6 @@ METADATA_ENDPOINTS: frozenset[str] = frozenset(
 GATE_TRADES = f"{GATE_API}/futures/usdt/trades"
 GATE_CONTRACT_STATS = f"{GATE_API}/futures/usdt/contract_stats"
 BYBIT_OPEN_INTEREST = f"{BYBIT}/v5/market/open-interest"
-CONTRACT_STATS_INTERVAL_SECONDS = {"5m": 300}
 FORBIDDEN_FRAGMENTS: tuple[str, ...] = (
     "/futures/usdt/contracts",
     "/ticker",
@@ -198,13 +197,12 @@ def classify_request(method: str, url: str, params: dict[str, Any] | None) -> Re
             raise ProtocolViolationError("empty or inverted trade window")
         result = RequestClass("historical", datetime.fromtimestamp(end_s, UTC))
     elif url == GATE_CONTRACT_STATS:
-        interval = CONTRACT_STATS_INTERVAL_SECONDS.get(str(params.get("interval")))
-        if interval is None:
-            raise ProtocolViolationError("contract_stats needs a registered interval")
-        from_s, limit = _int_param(params, "from", url), _int_param(params, "limit", url)
-        if limit <= 0 or "to" in params:
-            raise ProtocolViolationError("contract_stats is bounded by from, interval and limit")
-        result = RequestClass("historical", datetime.fromtimestamp(from_s + interval * limit, UTC))
+        # Amendment A2: `from + interval x limit` does not bound the response (run 2
+        # asked for 12:00 to 13:00 and received rows to 13:05), and Gate documents no
+        # upper time bound. Without a provable end, the request is never sent.
+        raise ProtocolViolationError(
+            "contract_stats has no enforceable upper time bound; deferred under A2"
+        )
     elif url == BYBIT_OPEN_INTEREST:
         start_ms = _int_param(params, "startTime", url)
         end_ms = _int_param(params, "endTime", url)
@@ -732,20 +730,8 @@ def gate_probes(p: Prober, sample_bases: Sequence[str]) -> dict[str, Any]:
             "only_rest": len(seen - archive),
             "only_archive": len(archive - seen),
         }
-    out["g4"] = {}
-    for base in chosen[:2]:
-        r = p.request(
-            "gate",
-            "GET",
-            f"{GATE_API}/futures/usdt/contract_stats",
-            params={"contract": f"{base}_USDT", "interval": "5m", "from": lo, "limit": 12},
-        )
-        if r.status == 200:
-            rows = [x for x in _json(r) if x.get("time", 0) < hi]
-            fields = sorted(rows[0]) if rows else []
-            out["g4"][base] = {"status": 200, **series_structure([x["time"] for x in rows], fields)}
-        else:
-            out["g4"][base] = {"status": r.status, "error": r.body[:200].decode(errors="replace")}
+    # G4 is deferred under amendment A2: contract_stats has no enforceable upper bound.
+    out["g4"] = {"status": "deferred", "reason": "no enforceable upper time bound (A2)"}
     out["g5"] = {}
     if chosen:
         base = chosen[0]

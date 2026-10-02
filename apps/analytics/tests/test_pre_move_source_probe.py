@@ -66,12 +66,6 @@ def test_the_window_is_derived_from_the_actual_request() -> None:
         "GET", probe.GATE_TRADES, {"contract": "C98_USDT", "from": JULY_HOUR[0], "to": JULY_HOUR[1]}
     )
     assert trades.window_end == datetime(2026, 7, 15, 13, tzinfo=UTC)
-    stats = c(
-        "GET",
-        probe.GATE_CONTRACT_STATS,
-        {"contract": "C", "interval": "5m", "from": JULY_HOUR[0], "limit": 12},
-    )
-    assert stats.window_end == datetime(2026, 7, 15, 13, tzinfo=UTC)
     day = c(
         "GET",
         f"{probe.BINANCE_ARCHIVE}/data/futures/um/daily/metrics/C98USDT/C98USDT-metrics-2026-07-31.zip.CHECKSUM",
@@ -128,13 +122,13 @@ def test_the_window_is_derived_from_the_actual_request() -> None:
             "GET",
             probe.GATE_CONTRACT_STATS,
             {"contract": "C", "interval": "5m", "from": JULY_HOUR[0], "limit": 10_000},
-            "data window ends",
+            "no enforceable upper time bound",
         ),
         (
             "GET",
             probe.GATE_CONTRACT_STATS,
             {"contract": "C", "interval": "1d", "from": JULY_HOUR[0], "limit": 1},
-            "registered interval",
+            "no enforceable upper time bound",
         ),
         (
             "GET",
@@ -548,3 +542,40 @@ def test_a_chunked_response_replays_without_a_synthesized_length(tmp_path: Path)
         e["method"] == "GET" and e["content_length"] is None for e in artifact["request_log"]
     )
     probe.replay(artifact, raw)
+
+
+# Row timestamps (seconds after `from`) of a recorded run 2 contract_stats response:
+# asked for 12 five-minute rows from 12:00, it returned 14 rows through 13:05.
+RECORDED_STATS_OFFSETS = tuple(range(0, 14 * 300, 300))
+
+
+def test_contract_stats_is_refused_because_its_response_is_not_bounded(tmp_path: Path) -> None:
+    """Review repro (A2): `from + interval x limit` is not an upper bound. The recorded
+    response overshoots it, and the same shape at 31 July 23:00 would reach August."""
+    start = int(datetime(2026, 7, 31, 23, tzinfo=UTC).timestamp())
+    naive_end = start + 300 * 12
+    assert start + max(RECORDED_STATS_OFFSETS) >= naive_end
+    assert start + max(RECORDED_STATS_OFFSETS) >= int(probe.BOUNDARY.timestamp())
+    sent: list[str] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        sent.append(str(request.url))
+        return httpx.Response(200, json=[{"time": start + o} for o in RECORDED_STATS_OFFSETS])
+
+    p, _ = _prober(handle, tmp_path)
+    for params in (
+        {"contract": "C98_USDT", "from": start, "interval": "5m", "limit": 12},
+        {"contract": "C98_USDT", "from": JULY_HOUR[0], "interval": "5m", "limit": 12},
+    ):
+        with pytest.raises(probe.ProtocolViolationError, match="no enforceable upper time bound"):
+            p.request("gate", "GET", probe.GATE_CONTRACT_STATS, params=params)
+    assert sent == []
+
+
+def test_a_run_never_requests_contract_stats(tmp_path: Path) -> None:
+    with httpx.Client(transport=httpx.MockTransport(_handler)) as client:
+        result = probe.run(
+            client, tmp_path / "raw", code_revision="a" * 40, working_tree_dirty=False
+        )
+    assert result["gate"]["g4"]["status"] == "deferred"
+    assert not [e for e in result["request_log"] if e["url"] == probe.GATE_CONTRACT_STATS]
