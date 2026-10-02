@@ -34,7 +34,9 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 # v2: an optional upper bound on the capture time (the administrative stop deadline).
-QUALIFIED_EPISODE_QUERY_VERSION = "source_lead_forward_cohort_qualified_episode_v2"
+# v3: an optional upper bound on the qualification stamp, so a first read's membership
+# is the state at its single clock reading, as in the administrative snapshot.
+QUALIFIED_EPISODE_QUERY_VERSION = "source_lead_forward_cohort_qualified_episode_v3"
 
 _QUALIFIED_EPISODES_SQL = text("""
     SELECT
@@ -55,6 +57,7 @@ _QUALIFIED_EPISODES_SQL = text("""
       AND q.qualification_version = :qualification_version
       AND c.source_first_observed_at >= :since
       AND (CAST(:until AS timestamptz) IS NULL OR c.source_first_observed_at < :until)
+      AND (CAST(:qualified_before AS timestamptz) IS NULL OR q.created_at < :qualified_before)
       AND t.status = 'sampled'
     ORDER BY c.source_first_observed_at, c.id
     LIMIT :limit
@@ -197,6 +200,7 @@ class SourceLeadForwardCohortRepository:
         since: datetime,
         limit: int,
         until: datetime | None = None,
+        qualified_before: datetime | None = None,
     ) -> Sequence[RawQualifiedEpisode]:
         if limit <= 0:
             raise ValueError("limit must be positive")
@@ -208,6 +212,7 @@ class SourceLeadForwardCohortRepository:
                     "qualification_version": qualification_version,
                     "since": since,
                     "until": until,
+                    "qualified_before": qualified_before,
                     "limit": limit,
                 },
             )

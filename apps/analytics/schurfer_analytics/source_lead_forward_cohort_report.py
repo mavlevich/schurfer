@@ -769,6 +769,11 @@ async def generate_report(args: argparse.Namespace) -> SourceLeadForwardCohortRe
         since=args.since,
         limit=args.max_qualified_episodes + 1,
         until=COHORT_CAPTURE_DEADLINE,
+        # A first read's membership is the state at the same clock reading: a
+        # qualification stamped later (even for an older, matured capture) cannot join
+        # a claim that the due checkpoints did not see (review repro). A resumed claim
+        # keeps its stored prefix, so it is not bounded here.
+        qualified_before=database_now if prior is None else None,
     )
     check_qualified_episode_count(len(raw_episodes), args.max_qualified_episodes)
     check_tradable_venues(raw_episodes)

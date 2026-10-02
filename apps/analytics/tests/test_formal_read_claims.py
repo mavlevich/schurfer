@@ -175,7 +175,12 @@ class _Repo:
         # What the administrative snapshot sees; by default the same episodes.
         self.snapshot = episodes if snapshot is None else snapshot
         self.open = OpenTransactions(0, 0)
+        # Qualification stamps (created_at); unlisted episodes are stamped at entry.
+        self.qualified_at: dict[int, datetime] = {}
         self.fetch_kwargs: list[dict[str, Any]] = []
+
+    def _stamp(self, e: RawQualifiedEpisode) -> datetime:
+        return self.qualified_at.get(e.capture_id, e.observed_at)
 
     async def database_now(self) -> datetime:
         # A list of instants plays successive clock readings (the last one repeats).
@@ -199,12 +204,13 @@ class _Repo:
                 observed_at=e.observed_at,
             )
             for e in self.snapshot
-            if e.observed_at - timedelta(seconds=30) < as_of
+            if e.observed_at - timedelta(seconds=30) < as_of and self._stamp(e) < as_of
         ]
 
     async def fetch_qualified_episodes(self, **kwargs: Any) -> list[RawQualifiedEpisode]:
         self.fetch_kwargs.append(kwargs)
-        return self.episodes
+        before = kwargs.get("qualified_before")
+        return [e for e in self.episodes if before is None or self._stamp(e) < before]
 
 
 def _args() -> argparse.Namespace:
@@ -503,3 +509,79 @@ def test_after_the_deadline_ninety_matured_episodes_stop_the_cohort(
     (record,) = recorded
     assert record["terminal_reason"] == "accrual_below_rule:2027-03-31"
     assert len(record["closed_ids"]) == 100
+
+
+def test_a_late_qualification_cannot_join_the_first_read(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Review repro: the clock is read one second before the deadline; ten older,
+    matured captures are qualified after it. They must not lift the first read to 100
+    and open a claim that the deadline snapshot (still 90) would have to stop."""
+    from schurfer_analytics import source_lead_forward_cohort as contract
+    from schurfer_analytics.ohlcv import Candle
+
+    early = MANY[:90]
+    late = [
+        _episode(90 + i, f"B{i}", COHORT_CAPTURE_DEADLINE - timedelta(hours=1)) for i in range(10)
+    ]
+    events: list[str] = []
+    clock = COHORT_CAPTURE_DEADLINE - timedelta(seconds=1)
+    repo = _patch(monkeypatch, early + late, events, now=clock)
+    repo.qualified_at = {e.capture_id: COHORT_CAPTURE_DEADLINE + timedelta(seconds=1) for e in late}
+
+    async def bars(_clients: Any, candidates: list[Any], **_k: Any) -> list[Candle]:
+        events.append(f"fetch:{len(candidates)}")
+        return [
+            Candle(
+                ts_ms=contract.expected_exit_boundary_ms(e.observed_at),
+                open=1.0,
+                high=1.0,
+                low=1.0,
+                close=1.0,
+                volume=1.0,
+            )
+            for e in candidates
+        ]
+
+    monkeypatch.setattr(report_mod, "_fetch_exit_bars_bounded", bars)
+    monkeypatch.setattr(
+        report_mod, "checkpoint_prefix_length_blind", report_mod.checkpoint_prefix_length_blind
+    )
+    recorded = _record_stops(monkeypatch)
+    with pytest.raises(ValueError, match="before fetching"):
+        asyncio.run(report_mod.generate_report(_args()))
+    assert repo.fetch_kwargs[0]["qualified_before"] == clock
+    assert events == [] and recorded == []  # 90 members: no bar, no claim
+
+
+def test_the_late_qualifications_are_stopped_by_the_deadline_checkpoint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The same data read after the deadline: its snapshot at the deadline holds 90."""
+    late = [
+        _episode(90 + i, f"B{i}", COHORT_CAPTURE_DEADLINE - timedelta(hours=1)) for i in range(10)
+    ]
+    events: list[str] = []
+    repo = _patch(
+        monkeypatch, MANY[:90] + late, events, now=COHORT_CAPTURE_DEADLINE + timedelta(minutes=5)
+    )
+    repo.qualified_at = {e.capture_id: COHORT_CAPTURE_DEADLINE + timedelta(seconds=1) for e in late}
+    recorded = _record_stops(monkeypatch)
+    with pytest.raises(FormalReadAdministrativelyStoppedError):
+        asyncio.run(report_mod.generate_report(_args()))
+    (record,) = recorded
+    assert record["terminal_reason"] == "accrual_below_rule:2027-03-31"
+    assert len(record["closed_ids"]) == 90 and repo.fetch_kwargs == []
+
+
+def test_a_resumed_claim_keeps_its_prefix_without_a_membership_bound(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stored = FormalReadClaim(
+        id=7, candidate_ids=tuple(range(5, 105)), status="claimed", resumed=True
+    )
+    events: list[str] = []
+    repo = _patch(monkeypatch, MANY, events, prior=stored)
+    repo.qualified_at = {i: START + timedelta(days=60) for i in range(120)}
+    with pytest.raises(RuntimeError, match="protocol order"):
+        asyncio.run(report_mod.generate_report(_args()))
+    assert repo.fetch_kwargs[0]["qualified_before"] is None
+    assert events == ["fetch:100", "claim:100", "aggregate"]

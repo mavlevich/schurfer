@@ -357,3 +357,58 @@ def test_a_transaction_crossing_the_checkpoint_blocks_the_snapshot_until_it_ends
         asyncio.run(repository.close())
         with psycopg.connect(TEST_DATABASE_URL, autocommit=True) as conn:
             conn.execute("DELETE FROM app.pump_events WHERE base = %s", (f"XCROSS{tag}",))
+
+
+def test_the_first_read_membership_matches_the_snapshot_at_its_clock() -> None:
+    """Review repro on the real join: a qualification stamped after the clock (for a
+    capture before it) is outside the snapshot, so it must be outside the first read."""
+    _db_or_skip()
+    tag = uuid.uuid4().hex[:8].upper()
+    clock = START + timedelta(days=60)
+    with psycopg.connect(TEST_DATABASE_URL, autocommit=True) as conn:
+        try:
+            early = _seed(
+                conn,
+                f"LATEQA{tag}",
+                source_at=clock - timedelta(hours=1),
+                qualified_created_at=clock - timedelta(minutes=45),
+            )
+            late = _seed(
+                conn,
+                f"LATEQB{tag}",
+                source_at=clock - timedelta(hours=1),
+                qualified_created_at=clock + timedelta(seconds=1),
+            )
+
+            async def query() -> tuple[set[int], set[int], set[int]]:
+                engine = create_async_engine(
+                    integration_database_url(sqlalchemy=True), poolclass=NullPool
+                )
+                repository = SourceLeadForwardCohortRepository(engine)
+                try:
+                    snapshot = await repository.fetch_accrual_snapshot(
+                        qualification_version=_VERSION, since=START, as_of=clock, limit=100
+                    )
+                    first_read = await repository.fetch_qualified_episodes(
+                        qualification_version=_VERSION,
+                        since=START,
+                        limit=100,
+                        until=clock,
+                        qualified_before=clock,
+                    )
+                    unbounded = await repository.fetch_qualified_episodes(
+                        qualification_version=_VERSION, since=START, limit=100, until=clock
+                    )
+                    return (
+                        {r.capture_id for r in snapshot},
+                        {r.capture_id for r in first_read},
+                        {r.capture_id for r in unbounded},
+                    )
+                finally:
+                    await repository.close()
+
+            snapshot_ids, first_read_ids, unbounded_ids = asyncio.run(query())
+            assert snapshot_ids == first_read_ids == {early}
+            assert unbounded_ids == {early, late}  # what a resumed claim may still see
+        finally:
+            conn.execute("DELETE FROM app.pump_events WHERE base LIKE %s", (f"LATEQ_{tag}",))

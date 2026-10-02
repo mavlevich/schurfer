@@ -80,10 +80,13 @@ the two cannot drift.
   the same evaluation of every due checkpoint, before it loads any episode, book or quote
   and before it can claim. A checkpoint that stops the cohort stops it there; one that
   is not yet final refuses the read. The reader reads the database clock once and uses
-  that instant both for the due checkpoints and for maturity, so the deadline cannot
-  fall between the two. The outcome no longer depends on which command runs first. A
-  claim that already exists is resumed without re-evaluation, because a started read
-  is never rewritten.
+  that instant for the due checkpoints, for maturity and for membership: a first read
+  admits only qualifications stamped before it, exactly like the administrative
+  snapshot, so a qualification written later (even for an older, matured capture)
+  cannot join a claim the checkpoints did not see. The outcome no longer depends on
+  which command runs first. A claim that already exists is resumed on its stored
+  prefix, without re-evaluation or a membership bound, because a started read is
+  never rewritten.
 - **Non-tradable qualified rows.** The v2 reader refuses a cohort with a qualified episode
   outside `TRADABLE_VENUES`; the rule refuses the same way rather than counting around it.
 
