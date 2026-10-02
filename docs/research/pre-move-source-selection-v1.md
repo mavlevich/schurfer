@@ -200,15 +200,33 @@ superseded evidence; its unretained inputs are not reconstructed.
 
 ## Report
 
-The probes ran once on 2026-10-02 at 12:12 UTC from clean revision `a0465cb`, under the
-protocol above (committed earlier in `47c5d17`). Artifact:
-[`evidence/pre-move-source-selection-v1/probe-result.json`](evidence/pre-move-source-selection-v1/probe-result.json),
-SHA-256 `7a21a1d83944c957d1576ad8f7aefe011b2cd6998f2dde227bc3bf41fec167e8`. It used 81
-requests (Gate 25, Binance 43, Bybit 11, BloFin 1, MEXC 1), 15.7 MB and 54 s, with no
-rate limit, retry exhaustion or stopped source. Every request was metadata, an archive
-request or a historical request ending before 2026-08-01; the only non-200 response is
+**Run 2 is the evidence.** It ran on 2026-10-02 at 14:53 UTC from clean revision
+`9ab5ac4` (protocol `47c5d17`, amendment A1 above). Artifact:
+[`evidence/pre-move-source-selection-v1/run2-probe-result.json`](evidence/pre-move-source-selection-v1/run2-probe-result.json),
+SHA-256 `6c9b15601fe7625944d742aaaa0cf164141b3c01f5b7e30484203cbf016fc62a`. It used 207
+requests (Binance 169, most of them dated archive listings; Gate 25; Bybit 11; BloFin
+1; MEXC 1), 15.3 MB and 89 s, with no rate limit, retry exhaustion or stopped source.
+Every archive and historical request carries a window derived from the request
+itself; the latest ends exactly at 2026-08-01T00:00Z. The only non-200 response is
 the expected 404 of the first Gate order-book name pattern. No current trade, open
 interest, price, funding or book endpoint was called, and the artifact holds no price.
+
+**Reproducibility.** All 207 response bodies are stored by SHA-256 under the
+gitignored `runtime/research/pre-move-source-probe-v1/run2/responses/` of the
+workstation that ran the probes (not yet copied to the backed-up production research
+directory). `python -m schurfer_analytics.pre_move_source_probe --replay <artifact>
+--raw-dir <that directory>` recomputed the whole artifact offline and found it
+identical. The full 592-base universe and each source's presence in it are in the
+artifact.
+
+**Run 1 versus run 2.** Run 1 (`a0465cb`, kept as
+[`run1-probe-result.json`](evidence/pre-move-source-selection-v1/run1-probe-result.json),
+SHA-256 `7a21a1d83944c957d1576ad8f7aefe011b2cd6998f2dde227bc3bf41fec167e8`, 81
+requests) cannot be replayed: its catalogue and REST inputs were not retained. Both
+runs produced the same catalogue counts, universe, sample, coverage and every Gate,
+Binance and Bybit probe result. The one difference is B1: run 2's dated listings end
+on 2026-07-31, where run 1's undated listings reached 2026-10-01. The conclusions
+below rest on run 2.
 
 ### Universe and sample
 

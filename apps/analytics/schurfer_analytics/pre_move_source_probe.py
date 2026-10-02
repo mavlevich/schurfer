@@ -387,7 +387,11 @@ def replay_transport(log: Sequence[dict[str, Any]], raw_dir: Path) -> httpx.Mock
         body = (raw_dir / "responses" / entry["sha256"]).read_bytes()
         if hashlib.sha256(body).hexdigest() != entry["sha256"]:
             raise ValueError(f"recorded response {entry['sha256']} is corrupt")
-        headers = {"content-length": entry["content_length"]} if entry.get("content_length") else {}
+        if entry.get("content_length") is None:
+            # Recorded without a Content-Length (a chunked transfer): stream it so no
+            # length header is synthesized and the replayed log matches the run.
+            return httpx.Response(entry["status"], stream=httpx.ByteStream(body))
+        headers = {"content-length": entry["content_length"]}
         return httpx.Response(entry["status"], headers=headers, content=body)
 
     return httpx.MockTransport(handle)

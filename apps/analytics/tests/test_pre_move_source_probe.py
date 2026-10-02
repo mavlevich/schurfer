@@ -529,3 +529,22 @@ def test_the_artifact_replays_offline_and_refuses_a_corrupt_input(tmp_path: Path
     victim.write_bytes(b"tampered")
     with pytest.raises(ValueError, match="corrupt"):
         probe.replay(artifact, raw)
+
+
+def test_a_chunked_response_replays_without_a_synthesized_length(tmp_path: Path) -> None:
+    """Live chunked responses carry no Content-Length; the replay must not add one."""
+
+    def chunked(request: httpx.Request) -> httpx.Response:
+        response = _handler(request)
+        if request.method == "GET":
+            return httpx.Response(response.status_code, stream=httpx.ByteStream(response.content))
+        return response
+
+    raw = tmp_path / "raw"
+    with httpx.Client(transport=httpx.MockTransport(chunked)) as client:
+        result = probe.run(client, raw, code_revision="a" * 40, working_tree_dirty=False)
+    artifact = json.loads(json.dumps(result))
+    assert any(
+        e["method"] == "GET" and e["content_length"] is None for e in artifact["request_log"]
+    )
+    probe.replay(artifact, raw)
