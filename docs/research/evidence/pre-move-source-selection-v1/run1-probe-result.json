@@ -1,0 +1,1508 @@
+{
+  "binance": {
+    "b1": {
+      "AKT": {
+        "days": 683,
+        "first": "2024-11-18",
+        "last": "2026-10-01"
+      },
+      "BMT": {
+        "days": 564,
+        "first": "2025-03-17",
+        "last": "2026-10-01"
+      },
+      "BTC": {
+        "days": 2467,
+        "first": "2019-12-31",
+        "last": "2026-10-01"
+      },
+      "C98": {
+        "days": 1865,
+        "first": "2021-08-24",
+        "last": "2026-10-01"
+      },
+      "ETH": {
+        "days": 2467,
+        "first": "2019-12-31",
+        "last": "2026-10-01"
+      },
+      "FIGHT": {
+        "days": 252,
+        "first": "2026-01-23",
+        "last": "2026-10-01"
+      },
+      "NAORIS": {
+        "days": 428,
+        "first": "2025-07-31",
+        "last": "2026-10-01"
+      },
+      "PLUME": {
+        "days": 560,
+        "first": "2025-03-21",
+        "last": "2026-10-01"
+      },
+      "PNUT": {
+        "days": 690,
+        "first": "2024-11-11",
+        "last": "2026-10-01"
+      },
+      "SAGA": {
+        "days": 906,
+        "first": "2024-04-09",
+        "last": "2026-10-01"
+      },
+      "VELODROME": {
+        "days": 658,
+        "first": "2024-12-13",
+        "last": "2026-10-01"
+      }
+    },
+    "b2": {
+      "C98": {
+        "agg_ids": {
+          "gaps": 0,
+          "non_increasing": 0
+        },
+        "bytes": 125150,
+        "checksum_ok": true,
+        "header": [
+          "agg_trade_id",
+          "price",
+          "quantity",
+          "first_trade_id",
+          "last_trade_id",
+          "transact_time",
+          "is_buyer_maker"
+        ],
+        "is_buyer_maker_values": {
+          "false": 4603,
+          "true": 3518
+        },
+        "rows": 8121,
+        "sha256": "de682c9b7d284f75e9e353e06e234312900dfa988590c08501d0571038fff7ad",
+        "timestamp_unit": "milliseconds",
+        "timestamps_non_decreasing": true,
+        "underlying_trade_id_gaps": 1
+      },
+      "FIGHT": {
+        "agg_ids": {
+          "gaps": 0,
+          "non_increasing": 0
+        },
+        "bytes": 449733,
+        "checksum_ok": true,
+        "header": [
+          "agg_trade_id",
+          "price",
+          "quantity",
+          "first_trade_id",
+          "last_trade_id",
+          "transact_time",
+          "is_buyer_maker"
+        ],
+        "is_buyer_maker_values": {
+          "false": 15124,
+          "true": 15390
+        },
+        "rows": 30514,
+        "sha256": "7699ac4d97e43f63f565c1d79ccaa1b47b0650139de5744b6a9ed09607d4c755",
+        "timestamp_unit": "milliseconds",
+        "timestamps_non_decreasing": true,
+        "underlying_trade_id_gaps": 0
+      },
+      "VELODROME": {
+        "agg_ids": {
+          "gaps": 0,
+          "non_increasing": 0
+        },
+        "bytes": 132698,
+        "checksum_ok": true,
+        "header": [
+          "agg_trade_id",
+          "price",
+          "quantity",
+          "first_trade_id",
+          "last_trade_id",
+          "transact_time",
+          "is_buyer_maker"
+        ],
+        "is_buyer_maker_values": {
+          "false": 4681,
+          "true": 4203
+        },
+        "rows": 8884,
+        "sha256": "c44eb6da1f9cddf3488475bf3f34eeabb6d59fff5c5ed16c7bc2de84c3966e7f",
+        "timestamp_unit": "milliseconds",
+        "timestamps_non_decreasing": true,
+        "underlying_trade_id_gaps": 0
+      }
+    },
+    "b3": {
+      "C98": {
+        "checksum_ok": true,
+        "empty_cells": 1,
+        "header": [
+          "create_time",
+          "symbol",
+          "sum_open_interest",
+          "sum_open_interest_value",
+          "count_toptrader_long_short_ratio",
+          "sum_toptrader_long_short_ratio",
+          "count_long_short_ratio",
+          "sum_taker_long_short_vol_ratio"
+        ],
+        "rows": 288,
+        "sha256": "a2802f63ce72a8bf24d1c1adee65745de10f15c7558965b4a141929908f95e23",
+        "step_seconds_top": [
+          [
+            300,
+            287
+          ]
+        ],
+        "time_format": "iso"
+      },
+      "FIGHT": {
+        "checksum_ok": true,
+        "empty_cells": 0,
+        "header": [
+          "create_time",
+          "symbol",
+          "sum_open_interest",
+          "sum_open_interest_value",
+          "count_toptrader_long_short_ratio",
+          "sum_toptrader_long_short_ratio",
+          "count_long_short_ratio",
+          "sum_taker_long_short_vol_ratio"
+        ],
+        "rows": 288,
+        "sha256": "bc5d58d30bf76eee903c2b75a0adf34615a888454bfc2c74022a54a25a80d084",
+        "step_seconds_top": [
+          [
+            300,
+            287
+          ]
+        ],
+        "time_format": "iso"
+      },
+      "VELODROME": {
+        "checksum_ok": true,
+        "empty_cells": 0,
+        "header": [
+          "create_time",
+          "symbol",
+          "sum_open_interest",
+          "sum_open_interest_value",
+          "count_toptrader_long_short_ratio",
+          "sum_toptrader_long_short_ratio",
+          "count_long_short_ratio",
+          "sum_taker_long_short_vol_ratio"
+        ],
+        "rows": 288,
+        "sha256": "e5a504355e61815317b483399b9b7a97fe3e71830420bad5582d757740dfe58a",
+        "step_seconds_top": [
+          [
+            300,
+            287
+          ]
+        ],
+        "time_format": "iso"
+      }
+    },
+    "b4": {
+      "VELODROME": {
+        "checksum_ok": true,
+        "empty_cells": 0,
+        "header": [
+          "timestamp",
+          "percentage",
+          "depth",
+          "notional"
+        ],
+        "rows": 34560,
+        "sha256": "72c86d6e9fa65c33610d35855cec0b63186ecf627d9637a911a524b9be079ca7",
+        "step_seconds_top": [
+          [
+            0,
+            31680
+          ],
+          [
+            30,
+            2220
+          ],
+          [
+            29,
+            276
+          ]
+        ],
+        "time_format": "iso"
+      }
+    },
+    "chosen": [
+      "VELODROME",
+      "C98",
+      "FIGHT"
+    ]
+  },
+  "boundary": "2026-08-01T00:00:00+00:00",
+  "budget": {
+    "bytes_downloaded": 15741566,
+    "limits": {
+      "file_bytes": 52428800,
+      "pages": 50,
+      "per_source": 200,
+      "requests": 600,
+      "total_bytes": 314572800,
+      "wall_seconds": 1800
+    },
+    "requests": {
+      "binance": 43,
+      "blofin": 1,
+      "bybit": 11,
+      "gate": 25,
+      "mexc": 1
+    },
+    "requests_total": 81,
+    "stopped": {},
+    "wall_seconds": 53.8
+  },
+  "bybit": {
+    "y1": {
+      "C98": {
+        "bytes": 299290,
+        "status": 200
+      },
+      "FIGHT": {
+        "bytes": 504376,
+        "status": 200
+      },
+      "VELODROME": {
+        "bytes": 130731,
+        "header": [
+          "timestamp",
+          "symbol",
+          "side",
+          "size",
+          "price",
+          "tickDirection",
+          "trdMatchID",
+          "grossValue",
+          "homeNotional",
+          "foreignNotional",
+          "RPI"
+        ],
+        "rows": 2974,
+        "sha256": "fbb15ee4aac9015da78d904c982ed0dccccc8e8d1e2983d8d92442a325113790",
+        "side_values": {
+          "Buy": 1779,
+          "Sell": 1195
+        },
+        "status": 200,
+        "timestamp_unit": "seconds",
+        "timestamps_non_decreasing": true
+      }
+    },
+    "y2": {
+      "C98": {
+        "fields": [
+          "openInterest",
+          "singleOpenInterest",
+          "timestamp"
+        ],
+        "first": 1784100000.0,
+        "last": 1784159700.0,
+        "rows": 200,
+        "status": 200,
+        "step_seconds_top": [
+          [
+            300,
+            199
+          ]
+        ]
+      },
+      "VELODROME": {
+        "fields": [
+          "openInterest",
+          "singleOpenInterest",
+          "timestamp"
+        ],
+        "first": 1784100000.0,
+        "last": 1784159700.0,
+        "rows": 200,
+        "status": 200,
+        "step_seconds_top": [
+          [
+            300,
+            199
+          ]
+        ]
+      }
+    }
+  },
+  "catalogue": {
+    "binance_fields": {
+      "AKT": {
+        "delivery_date": 4133404800000,
+        "onboard_date": 1731929400000,
+        "status": "TRADING",
+        "symbol": "AKTUSDT"
+      },
+      "BMT": {
+        "delivery_date": 4133404800000,
+        "onboard_date": 1742218200000,
+        "status": "TRADING",
+        "symbol": "BMTUSDT"
+      },
+      "BTC": {
+        "delivery_date": 4133404800000,
+        "onboard_date": 1567965300000,
+        "status": "TRADING",
+        "symbol": "BTCUSDT"
+      },
+      "C98": {
+        "delivery_date": 4133404800000,
+        "onboard_date": 1629702000000,
+        "status": "TRADING",
+        "symbol": "C98USDT"
+      },
+      "ETH": {
+        "delivery_date": 4133404800000,
+        "onboard_date": 1574840700000,
+        "status": "TRADING",
+        "symbol": "ETHUSDT"
+      },
+      "FIGHT": {
+        "delivery_date": 4133404800000,
+        "onboard_date": 1769170500000,
+        "status": "TRADING",
+        "symbol": "FIGHTUSDT"
+      },
+      "NAORIS": {
+        "delivery_date": 4133404800000,
+        "onboard_date": 1753965000000,
+        "status": "TRADING",
+        "symbol": "NAORISUSDT"
+      },
+      "PLUME": {
+        "delivery_date": 4133404800000,
+        "onboard_date": 1742562000000,
+        "status": "TRADING",
+        "symbol": "PLUMEUSDT"
+      },
+      "PNUT": {
+        "delivery_date": 4133404800000,
+        "onboard_date": 1731328200000,
+        "status": "TRADING",
+        "symbol": "PNUTUSDT"
+      },
+      "SAGA": {
+        "delivery_date": 4133404800000,
+        "onboard_date": 1712658600000,
+        "status": "TRADING",
+        "symbol": "SAGAUSDT"
+      },
+      "VELODROME": {
+        "delivery_date": 4133404800000,
+        "onboard_date": 1734106500000,
+        "status": "TRADING",
+        "symbol": "VELODROMEUSDT"
+      }
+    },
+    "blofin_fields": {
+      "AKT": {
+        "list_time": "1719399600000",
+        "off_time": "",
+        "state": "live",
+        "symbol": "AKT-USDT"
+      },
+      "BE": {
+        "list_time": "1779963300000",
+        "off_time": "",
+        "state": "live",
+        "symbol": "BE-USDT"
+      },
+      "BTC": {
+        "list_time": "1673517600000",
+        "off_time": "",
+        "state": "live",
+        "symbol": "BTC-USDT"
+      },
+      "C98": {
+        "list_time": "1697617800000",
+        "off_time": "",
+        "state": "live",
+        "symbol": "C98-USDT"
+      },
+      "ETH": {
+        "list_time": "1673517600000",
+        "off_time": "",
+        "state": "live",
+        "symbol": "ETH-USDT"
+      },
+      "FIGHT": {
+        "list_time": "1769171400000",
+        "off_time": "",
+        "state": "live",
+        "symbol": "FIGHT-USDT"
+      },
+      "MNT": {
+        "list_time": "1700123405000",
+        "off_time": "",
+        "state": "live",
+        "symbol": "MNT-USDT"
+      },
+      "MU": {
+        "list_time": "1775569800000",
+        "off_time": "",
+        "state": "live",
+        "symbol": "MU-USDT"
+      },
+      "NAORIS": {
+        "list_time": "1753965900000",
+        "off_time": "",
+        "state": "live",
+        "symbol": "NAORIS-USDT"
+      },
+      "PLUME": {
+        "list_time": "1737718200000",
+        "off_time": "",
+        "state": "live",
+        "symbol": "PLUME-USDT"
+      },
+      "PNUT": {
+        "list_time": "1731319200000",
+        "off_time": "",
+        "state": "live",
+        "symbol": "PNUT-USDT"
+      },
+      "SAGA": {
+        "list_time": "1712662205000",
+        "off_time": "",
+        "state": "live",
+        "symbol": "SAGA-USDT"
+      }
+    },
+    "bybit_instruments": 1906,
+    "mexc_fields": {
+      "AKT": {
+        "state": 0,
+        "symbol": "AKT_USDT"
+      },
+      "BMT": {
+        "state": 0,
+        "symbol": "BMT_USDT"
+      },
+      "BTC": {
+        "state": 0,
+        "symbol": "BTC_USDT"
+      },
+      "C98": {
+        "state": 0,
+        "symbol": "C98_USDT"
+      },
+      "ETH": {
+        "state": 0,
+        "symbol": "ETH_USDT"
+      },
+      "FIGHT": {
+        "state": 0,
+        "symbol": "FIGHT_USDT"
+      },
+      "MNT": {
+        "state": 0,
+        "symbol": "MNT_USDT"
+      },
+      "NAORIS": {
+        "state": 0,
+        "symbol": "NAORIS_USDT"
+      },
+      "PLUME": {
+        "state": 0,
+        "symbol": "PLUME_USDT"
+      },
+      "PNUT": {
+        "state": 0,
+        "symbol": "PNUT_USDT"
+      },
+      "SAGA": {
+        "state": 0,
+        "symbol": "SAGA_USDT"
+      },
+      "VELODROME": {
+        "state": 0,
+        "symbol": "VELODROME_USDT"
+      }
+    },
+    "mexc_host": "https://contract.mexc.com",
+    "sample": [
+      "VELODROME",
+      "C98",
+      "FIGHT",
+      "NAORIS",
+      "MNT",
+      "PLUME",
+      "AKT",
+      "MU",
+      "BMT",
+      "BE",
+      "PNUT",
+      "SAGA",
+      "BTC",
+      "ETH"
+    ],
+    "universe_size": 592
+  },
+  "code_revision": "a0465cbd498959114bee9878365873cc21c1733d",
+  "coverage": {
+    "binance": {
+      "sample_present": [
+        "AKT",
+        "BMT",
+        "BTC",
+        "C98",
+        "ETH",
+        "FIGHT",
+        "NAORIS",
+        "PLUME",
+        "PNUT",
+        "SAGA",
+        "VELODROME"
+      ],
+      "universe_share": 0.7956081081081081
+    },
+    "blofin": {
+      "sample_present": [
+        "AKT",
+        "BE",
+        "BTC",
+        "C98",
+        "ETH",
+        "FIGHT",
+        "MNT",
+        "MU",
+        "NAORIS",
+        "PLUME",
+        "PNUT",
+        "SAGA"
+      ],
+      "universe_share": 0.6908783783783784
+    },
+    "bybit": {
+      "sample_present": [
+        "VELODROME",
+        "C98",
+        "FIGHT",
+        "NAORIS",
+        "MNT",
+        "PLUME",
+        "AKT",
+        "MU",
+        "BMT",
+        "BE",
+        "PNUT",
+        "SAGA",
+        "BTC",
+        "ETH"
+      ],
+      "universe_share": 1.0
+    },
+    "gate": {
+      "sample_present": [
+        "AKT",
+        "BE",
+        "BMT",
+        "BTC",
+        "C98",
+        "ETH",
+        "FIGHT",
+        "MNT",
+        "MU",
+        "NAORIS",
+        "PLUME",
+        "PNUT",
+        "SAGA",
+        "VELODROME"
+      ],
+      "universe_share": null
+    },
+    "mexc": {
+      "sample_present": [
+        "AKT",
+        "BMT",
+        "BTC",
+        "C98",
+        "ETH",
+        "FIGHT",
+        "MNT",
+        "NAORIS",
+        "PLUME",
+        "PNUT",
+        "SAGA",
+        "VELODROME"
+      ],
+      "universe_share": 0.8209459459459459
+    }
+  },
+  "gate": {
+    "chosen": [
+      "VELODROME",
+      "C98",
+      "FIGHT"
+    ],
+    "g1_july_trade_files": {
+      "AKT": 362566,
+      "BE": 4432988,
+      "BMT": 321961,
+      "BTC": 198127085,
+      "C98": 380683,
+      "ETH": 296195736,
+      "FIGHT": 695138,
+      "MNT": 256722,
+      "MU": 32310574,
+      "NAORIS": 1477443,
+      "PLUME": 993903,
+      "PNUT": 788841,
+      "SAGA": 1384789,
+      "VELODROME": 258104
+    },
+    "g2": {
+      "C98": {
+        "bytes": 380683,
+        "columns": 4,
+        "first": 1782864803.685013,
+        "header": null,
+        "ids": {
+          "gaps": 0,
+          "non_increasing": 0
+        },
+        "last": 1785540601.159775,
+        "probe_hour_rows": 84,
+        "rows": 33262,
+        "sha256": "9fb4e9a9f515acd76641a98dfc632a2c3179a95f4620073e6be700d4d39509be",
+        "size_sign": {
+          "negative": 19598,
+          "positive": 13664,
+          "zero": 0
+        },
+        "timestamp_unit": "seconds",
+        "timestamps_non_decreasing": true
+      },
+      "FIGHT": {
+        "bytes": 695138,
+        "columns": 4,
+        "first": 1782864028.032396,
+        "header": null,
+        "ids": {
+          "gaps": 0,
+          "non_increasing": 0
+        },
+        "last": 1785539064.366658,
+        "probe_hour_rows": 209,
+        "rows": 66448,
+        "sha256": "ef0657c60c9b9e4fb050a32cda65d1cf7c76b13c198aabcc273701a43290742d",
+        "size_sign": {
+          "negative": 35190,
+          "positive": 31258,
+          "zero": 0
+        },
+        "timestamp_unit": "seconds",
+        "timestamps_non_decreasing": true
+      },
+      "VELODROME": {
+        "bytes": 258104,
+        "columns": 4,
+        "first": 1782864466.053134,
+        "header": null,
+        "ids": {
+          "gaps": 0,
+          "non_increasing": 0
+        },
+        "last": 1785535054.087911,
+        "probe_hour_rows": 13,
+        "rows": 23774,
+        "sha256": "0dff2e4aae29729405dca73df532a8e4338a3405e454c915d512d0eec7780863",
+        "size_sign": {
+          "negative": 11637,
+          "positive": 12137,
+          "zero": 0
+        },
+        "timestamp_unit": "seconds",
+        "timestamps_non_decreasing": true
+      }
+    },
+    "g3": {
+      "C98": {
+        "archive_rows": 84,
+        "only_archive": 0,
+        "only_rest": 0,
+        "pages": 1,
+        "rest_rows": 84,
+        "status": 200
+      },
+      "FIGHT": {
+        "archive_rows": 209,
+        "only_archive": 0,
+        "only_rest": 0,
+        "pages": 1,
+        "rest_rows": 209,
+        "status": 200
+      },
+      "VELODROME": {
+        "archive_rows": 13,
+        "only_archive": 0,
+        "only_rest": 0,
+        "pages": 1,
+        "rest_rows": 13,
+        "status": 200
+      }
+    },
+    "g4": {
+      "C98": {
+        "fields": [
+          "last_funding_rate",
+          "long_liq_amount",
+          "long_liq_size",
+          "long_liq_usd",
+          "long_liq_usd_new",
+          "long_taker_size",
+          "long_users",
+          "lsr_account",
+          "lsr_taker",
+          "mark_price",
+          "open_interest",
+          "open_interest_usd",
+          "short_liq_amount",
+          "short_liq_size",
+          "short_liq_usd",
+          "short_liq_usd_new",
+          "short_taker_size",
+          "short_users",
+          "time",
+          "top_long_account",
+          "top_long_size",
+          "top_lsr_account",
+          "top_lsr_size",
+          "top_short_account",
+          "top_short_size"
+        ],
+        "first": 1784116800,
+        "last": 1784120100,
+        "rows": 12,
+        "status": 200,
+        "step_seconds_top": [
+          [
+            300,
+            11
+          ]
+        ]
+      },
+      "VELODROME": {
+        "fields": [
+          "last_funding_rate",
+          "long_liq_amount",
+          "long_liq_size",
+          "long_liq_usd",
+          "long_liq_usd_new",
+          "long_taker_size",
+          "long_users",
+          "lsr_account",
+          "lsr_taker",
+          "mark_price",
+          "open_interest",
+          "open_interest_usd",
+          "short_liq_amount",
+          "short_liq_size",
+          "short_liq_usd",
+          "short_liq_usd_new",
+          "short_taker_size",
+          "short_users",
+          "time",
+          "top_long_account",
+          "top_long_size",
+          "top_lsr_account",
+          "top_lsr_size",
+          "top_short_account",
+          "top_short_size"
+        ],
+        "first": 1784116800,
+        "last": 1784120100,
+        "rows": 12,
+        "status": 200,
+        "step_seconds_top": [
+          [
+            300,
+            11
+          ]
+        ]
+      }
+    },
+    "g5": {
+      "futures_usdt/orderbooks/202607/VELODROME_USDT-202607.csv.gz": {
+        "bytes": null,
+        "status": 404
+      },
+      "futures_usdt/orderbooks/202607/VELODROME_USDT-2026071512.csv.gz": {
+        "actions": [
+          "set"
+        ],
+        "bytes": 40154,
+        "columns": 6,
+        "sha256": "265c509c6c4778786316d8e21b2a7dc0cd057618baf9cbd8257379f6339de706",
+        "status": 200,
+        "timestamp_unit": "seconds"
+      }
+    }
+  },
+  "protocol_version": "pre_move_source_selection_v1",
+  "request_log": [
+    {
+      "bytes": 835613,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "bybit",
+      "status": 200,
+      "url": "https://api.bybit.com/v5/market/instruments-info"
+    },
+    {
+      "bytes": 8651,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "bybit",
+      "status": 200,
+      "url": "https://api.bybit.com/v5/market/instruments-info"
+    },
+    {
+      "bytes": 119,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "bybit",
+      "status": 200,
+      "url": "https://api.bybit.com/v5/market/instruments-info"
+    },
+    {
+      "bytes": 937494,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "bybit",
+      "status": 200,
+      "url": "https://api.bybit.com/v5/market/instruments-info"
+    },
+    {
+      "bytes": 8501,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "bybit",
+      "status": 200,
+      "url": "https://api.bybit.com/v5/market/instruments-info"
+    },
+    {
+      "bytes": 1142974,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://fapi.binance.com/fapi/v1/exchangeInfo"
+    },
+    {
+      "bytes": 227189,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "blofin",
+      "status": 200,
+      "url": "https://openapi.blofin.com/api/v1/market/instruments"
+    },
+    {
+      "bytes": 2326855,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "mexc",
+      "status": 200,
+      "url": "https://contract.mexc.com/api/v1/contract/detail"
+    },
+    {
+      "bytes": 0,
+      "kind": "archive",
+      "method": "HEAD",
+      "source": "gate",
+      "status": 200,
+      "url": "https://download.gatedata.org/futures_usdt/trades/202607/VELODROME_USDT-202607.csv.gz"
+    },
+    {
+      "bytes": 0,
+      "kind": "archive",
+      "method": "HEAD",
+      "source": "gate",
+      "status": 200,
+      "url": "https://download.gatedata.org/futures_usdt/trades/202607/C98_USDT-202607.csv.gz"
+    },
+    {
+      "bytes": 0,
+      "kind": "archive",
+      "method": "HEAD",
+      "source": "gate",
+      "status": 200,
+      "url": "https://download.gatedata.org/futures_usdt/trades/202607/FIGHT_USDT-202607.csv.gz"
+    },
+    {
+      "bytes": 0,
+      "kind": "archive",
+      "method": "HEAD",
+      "source": "gate",
+      "status": 200,
+      "url": "https://download.gatedata.org/futures_usdt/trades/202607/NAORIS_USDT-202607.csv.gz"
+    },
+    {
+      "bytes": 0,
+      "kind": "archive",
+      "method": "HEAD",
+      "source": "gate",
+      "status": 200,
+      "url": "https://download.gatedata.org/futures_usdt/trades/202607/MNT_USDT-202607.csv.gz"
+    },
+    {
+      "bytes": 0,
+      "kind": "archive",
+      "method": "HEAD",
+      "source": "gate",
+      "status": 200,
+      "url": "https://download.gatedata.org/futures_usdt/trades/202607/PLUME_USDT-202607.csv.gz"
+    },
+    {
+      "bytes": 0,
+      "kind": "archive",
+      "method": "HEAD",
+      "source": "gate",
+      "status": 200,
+      "url": "https://download.gatedata.org/futures_usdt/trades/202607/AKT_USDT-202607.csv.gz"
+    },
+    {
+      "bytes": 0,
+      "kind": "archive",
+      "method": "HEAD",
+      "source": "gate",
+      "status": 200,
+      "url": "https://download.gatedata.org/futures_usdt/trades/202607/MU_USDT-202607.csv.gz"
+    },
+    {
+      "bytes": 0,
+      "kind": "archive",
+      "method": "HEAD",
+      "source": "gate",
+      "status": 200,
+      "url": "https://download.gatedata.org/futures_usdt/trades/202607/BMT_USDT-202607.csv.gz"
+    },
+    {
+      "bytes": 0,
+      "kind": "archive",
+      "method": "HEAD",
+      "source": "gate",
+      "status": 200,
+      "url": "https://download.gatedata.org/futures_usdt/trades/202607/BE_USDT-202607.csv.gz"
+    },
+    {
+      "bytes": 0,
+      "kind": "archive",
+      "method": "HEAD",
+      "source": "gate",
+      "status": 200,
+      "url": "https://download.gatedata.org/futures_usdt/trades/202607/PNUT_USDT-202607.csv.gz"
+    },
+    {
+      "bytes": 0,
+      "kind": "archive",
+      "method": "HEAD",
+      "source": "gate",
+      "status": 200,
+      "url": "https://download.gatedata.org/futures_usdt/trades/202607/SAGA_USDT-202607.csv.gz"
+    },
+    {
+      "bytes": 0,
+      "kind": "archive",
+      "method": "HEAD",
+      "source": "gate",
+      "status": 200,
+      "url": "https://download.gatedata.org/futures_usdt/trades/202607/BTC_USDT-202607.csv.gz"
+    },
+    {
+      "bytes": 0,
+      "kind": "archive",
+      "method": "HEAD",
+      "source": "gate",
+      "status": 200,
+      "url": "https://download.gatedata.org/futures_usdt/trades/202607/ETH_USDT-202607.csv.gz"
+    },
+    {
+      "bytes": 258104,
+      "kind": "archive",
+      "method": "GET",
+      "source": "gate",
+      "status": 200,
+      "url": "https://download.gatedata.org/futures_usdt/trades/202607/VELODROME_USDT-202607.csv.gz"
+    },
+    {
+      "bytes": 380683,
+      "kind": "archive",
+      "method": "GET",
+      "source": "gate",
+      "status": 200,
+      "url": "https://download.gatedata.org/futures_usdt/trades/202607/C98_USDT-202607.csv.gz"
+    },
+    {
+      "bytes": 695138,
+      "kind": "archive",
+      "method": "GET",
+      "source": "gate",
+      "status": 200,
+      "url": "https://download.gatedata.org/futures_usdt/trades/202607/FIGHT_USDT-202607.csv.gz"
+    },
+    {
+      "bytes": 1730,
+      "kind": "historical",
+      "method": "GET",
+      "source": "gate",
+      "status": 200,
+      "url": "https://api.gateio.ws/api/v4/futures/usdt/trades"
+    },
+    {
+      "bytes": 10686,
+      "kind": "historical",
+      "method": "GET",
+      "source": "gate",
+      "status": 200,
+      "url": "https://api.gateio.ws/api/v4/futures/usdt/trades"
+    },
+    {
+      "bytes": 27127,
+      "kind": "historical",
+      "method": "GET",
+      "source": "gate",
+      "status": 200,
+      "url": "https://api.gateio.ws/api/v4/futures/usdt/trades"
+    },
+    {
+      "bytes": 7954,
+      "kind": "historical",
+      "method": "GET",
+      "source": "gate",
+      "status": 200,
+      "url": "https://api.gateio.ws/api/v4/futures/usdt/contract_stats"
+    },
+    {
+      "bytes": 8081,
+      "kind": "historical",
+      "method": "GET",
+      "source": "gate",
+      "status": 200,
+      "url": "https://api.gateio.ws/api/v4/futures/usdt/contract_stats"
+    },
+    {
+      "bytes": 0,
+      "kind": "archive",
+      "method": "HEAD",
+      "source": "gate",
+      "status": 404,
+      "url": "https://download.gatedata.org/futures_usdt/orderbooks/202607/VELODROME_USDT-202607.csv.gz"
+    },
+    {
+      "bytes": 0,
+      "kind": "archive",
+      "method": "HEAD",
+      "source": "gate",
+      "status": 200,
+      "url": "https://download.gatedata.org/futures_usdt/orderbooks/202607/VELODROME_USDT-2026071512.csv.gz"
+    },
+    {
+      "bytes": 40154,
+      "kind": "archive",
+      "method": "GET",
+      "source": "gate",
+      "status": 200,
+      "url": "https://download.gatedata.org/futures_usdt/orderbooks/202607/VELODROME_USDT-2026071512.csv.gz"
+    },
+    {
+      "bytes": 361564,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 118250,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 273273,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 280850,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 312639,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 263515,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 184322,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 314638,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 365367,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 44177,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 344591,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 132339,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 360855,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 46538,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 346653,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 138344,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 308269,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 295212,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 274035,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 275037,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 282386,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 296493,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 338705,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 273699,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 274974,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 282734,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 296566,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 338803,
+      "kind": "metadata",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://s3-ap-northeast-1.amazonaws.com/data.binance.vision"
+    },
+    {
+      "bytes": 132698,
+      "kind": "archive",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/VELODROMEUSDT/VELODROMEUSDT-aggTrades-2026-07-15.zip"
+    },
+    {
+      "bytes": 105,
+      "kind": "archive",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/VELODROMEUSDT/VELODROMEUSDT-aggTrades-2026-07-15.zip.CHECKSUM"
+    },
+    {
+      "bytes": 10593,
+      "kind": "archive",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://data.binance.vision/data/futures/um/daily/metrics/VELODROMEUSDT/VELODROMEUSDT-metrics-2026-07-15.zip"
+    },
+    {
+      "bytes": 103,
+      "kind": "archive",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://data.binance.vision/data/futures/um/daily/metrics/VELODROMEUSDT/VELODROMEUSDT-metrics-2026-07-15.zip.CHECKSUM"
+    },
+    {
+      "bytes": 125150,
+      "kind": "archive",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/C98USDT/C98USDT-aggTrades-2026-07-15.zip"
+    },
+    {
+      "bytes": 99,
+      "kind": "archive",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/C98USDT/C98USDT-aggTrades-2026-07-15.zip.CHECKSUM"
+    },
+    {
+      "bytes": 10531,
+      "kind": "archive",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://data.binance.vision/data/futures/um/daily/metrics/C98USDT/C98USDT-metrics-2026-07-15.zip"
+    },
+    {
+      "bytes": 97,
+      "kind": "archive",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://data.binance.vision/data/futures/um/daily/metrics/C98USDT/C98USDT-metrics-2026-07-15.zip.CHECKSUM"
+    },
+    {
+      "bytes": 449733,
+      "kind": "archive",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/FIGHTUSDT/FIGHTUSDT-aggTrades-2026-07-15.zip"
+    },
+    {
+      "bytes": 101,
+      "kind": "archive",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://data.binance.vision/data/futures/um/daily/aggTrades/FIGHTUSDT/FIGHTUSDT-aggTrades-2026-07-15.zip.CHECKSUM"
+    },
+    {
+      "bytes": 11034,
+      "kind": "archive",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://data.binance.vision/data/futures/um/daily/metrics/FIGHTUSDT/FIGHTUSDT-metrics-2026-07-15.zip"
+    },
+    {
+      "bytes": 99,
+      "kind": "archive",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://data.binance.vision/data/futures/um/daily/metrics/FIGHTUSDT/FIGHTUSDT-metrics-2026-07-15.zip.CHECKSUM"
+    },
+    {
+      "bytes": 488980,
+      "kind": "archive",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/VELODROMEUSDT/VELODROMEUSDT-bookDepth-2026-07-15.zip"
+    },
+    {
+      "bytes": 105,
+      "kind": "archive",
+      "method": "GET",
+      "source": "binance",
+      "status": 200,
+      "url": "https://data.binance.vision/data/futures/um/daily/bookDepth/VELODROMEUSDT/VELODROMEUSDT-bookDepth-2026-07-15.zip.CHECKSUM"
+    },
+    {
+      "bytes": 0,
+      "kind": "archive",
+      "method": "HEAD",
+      "source": "bybit",
+      "status": 200,
+      "url": "https://public.bybit.com/trading/VELODROMEUSDT/VELODROMEUSDT2026-07-15.csv.gz"
+    },
+    {
+      "bytes": 130731,
+      "kind": "archive",
+      "method": "GET",
+      "source": "bybit",
+      "status": 200,
+      "url": "https://public.bybit.com/trading/VELODROMEUSDT/VELODROMEUSDT2026-07-15.csv.gz"
+    },
+    {
+      "bytes": 0,
+      "kind": "archive",
+      "method": "HEAD",
+      "source": "bybit",
+      "status": 200,
+      "url": "https://public.bybit.com/trading/C98USDT/C98USDT2026-07-15.csv.gz"
+    },
+    {
+      "bytes": 0,
+      "kind": "archive",
+      "method": "HEAD",
+      "source": "bybit",
+      "status": 200,
+      "url": "https://public.bybit.com/trading/FIGHTUSDT/FIGHTUSDT2026-07-15.csv.gz"
+    },
+    {
+      "bytes": 19589,
+      "kind": "historical",
+      "method": "GET",
+      "source": "bybit",
+      "status": 200,
+      "url": "https://api.bybit.com/v5/market/open-interest"
+    },
+    {
+      "bytes": 19937,
+      "kind": "historical",
+      "method": "GET",
+      "source": "bybit",
+      "status": 200,
+      "url": "https://api.bybit.com/v5/market/open-interest"
+    }
+  ],
+  "started_at": "2026-10-02T12:12:47.769194+00:00",
+  "working_tree_dirty": false
+}
