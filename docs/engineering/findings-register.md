@@ -314,6 +314,16 @@ smallest fix at the owning boundary and add a regression test for the exact fail
 - **Promotion threshold:** at least 30% end-to-end wall-time reduction or at least 40%
   peak-RSS reduction for a report that currently blocks iteration, without weakening
   reproducibility. A library-only microbenchmark is insufficient.
+- **2026-10-02 intake:** the MEXC archive reader uses `gzip.decompress` and creates a
+  Python object per JSONL row (`mexc_kline_archive.read_rows`). Profile one existing
+  permitted consumer before selecting a change. Compare the current reader/query
+  with a derived Parquet cache and DuckDB, preserving the original archive and its
+  manifest hashes. Include conversion, validation, hash checking, query and output
+  costs, peak RSS and extra disk use; separate first-use and repeated-use results.
+  Polars is an additional candidate only if a specific remaining transformation
+  warrants it. No 10–15-second whole-backtest or 20–50x gain has been measured by
+  this intake. The [MEXC audit](../research/mexc-pre-move-data-feasibility-v1.md)
+  describes missing trades/OI/depth; changing an engine cannot supply them.
 
 ### ENG-015 — Benchmark and version any binary NATS market-data contract
 
@@ -901,6 +911,133 @@ verify` accepts, and the tree passes it with no baseline file or blanket nolint.
   nor AMEMECOIN appears in the momentum universe at all (zero watch states, zero paper
   probes): those strategies cover bybit and binance, these tokens live on bingx, lbank
   and mexc.
+
+## October tooling intake — 2026-10-02
+
+Scope: documentation and local code inspection at `origin/main` revision `3a47d07`.
+No performance test, production check, protected cohort reading, or dependency
+installation was performed for this intake. The
+[roadmap queue](../../ROADMAP.md#priority-queue-and-improvement-gates--2026-10-02)
+owns scheduling. Existing ENG-014 owns DuckDB/Polars; existing ENG-007 owns the
+`msgspec` parser proposal. The cards below do not authorize implementation merely
+because a package was proposed.
+
+### ENG-032 — Generate web types from a verified API contract
+
+- **Status / priority:** `reported` maintainability risk, `P2`; a pilot is conditional
+  support work, not an observed wire-schema failure or a performance claim.
+- **Evidence:** `useTradesData.ts` and `useDecisionsData.ts` define response types
+  manually. The public gateway is Go/chi (`apps/api-gateway/cmd/api-gateway/main.go`);
+  no OpenAPI/Swagger specification was found. The execution service's FastAPI schema
+  alone would not describe the gateway's research/trades read endpoints.
+- **Start gate:** an active API change duplicates schema work or a reproduced contract
+  mismatch creates enough maintenance cost to justify one endpoint pilot. It follows
+  current evidence and confirmed reliability blockers in the support queue.
+- **Bounded comparison:** current hand-maintained GET `/api/trades` types versus a
+  versioned gateway OpenAPI contract and generated TypeScript types. Compare the work
+  needed to maintain one intentional field/nullability/status change. Select a
+  generator only after the contract and exact dependency version are reviewed.
+- **Acceptance:** deterministic generation; CI detects stale generated output; a
+  response-contract test binds real gateway responses to the specification, including
+  nullability and accounting status; a deliberate incompatible schema change breaks
+  the appropriate check. Generated compile-time types alone do not validate JSON at
+  runtime. Preserve authorization and existing HTTP error behavior.
+- **Stop condition:** retain the current types if the source-of-truth contract cannot
+  be kept in sync or the pilot adds more maintenance than it removes. No new SDK,
+  request wrapper or whole-API conversion is required by this card.
+
+### ENG-033 — Virtualize tables only after measuring rendering cost
+
+- **Status / priority:** `reported` UX performance claim, `P3`; not scheduled.
+- **Evidence:** `TradesPage.tsx` and `DecisionsPage.tsx` both use `PAGE_SIZE = 50`
+  and server-side limit/offset pagination. The claim that thousands of stored trades
+  necessarily create thousands of DOM rows does not describe the current pages.
+- **Start gate:** a reproducible trace shows table rendering/scrolling blocks the
+  current 50-row workflow, or a separately justified long-list workflow is approved.
+  Diagnose API/SQL/network delay separately; a virtualizer does not fix it.
+- **Comparison / acceptance:** pin browser, viewport, hardware, filters and dataset;
+  compare current pagination with `@tanstack/react-virtual` in the rendering component,
+  recording DOM row count, long tasks, frame times, interaction latency and memory.
+  Declare the interaction target before the comparison. Promote only if it meets
+  that target and preserves sorting, pagination, row identity, keyboard navigation
+  and accessibility. Do not replace data hooks solely to add virtualization.
+- **Stop condition:** park if the present workflow meets its target or the delay is
+  outside rendering. No "zero lag at any size" guarantee is registered.
+
+### ENG-034 — Persist chart history only for a measured reload/offline need
+
+- **Status / priority:** `reported` UX performance claim, `P3`; not scheduled.
+- **Evidence:** `useOHLCV.ts` already uses React Query with a five-minute `staleTime`
+  and clears previous candles across token/interval/source changes. This is an
+  in-memory cache, not persistent history across a page reload.
+- **Start gate:** representative reload/revisit measurements show network history
+  loading is a material delay, or an explicit offline chart workflow is required.
+  Address ENG-027 finite retries/cancellation and ENG-005 session handling first.
+- **Comparison / acceptance:** current in-memory cache versus a bounded IndexedDB
+  history cache (Dexie is one candidate), measuring first usable chart, correct-source
+  chart, render time, bytes fetched, storage and stale-data duration for reload,
+  source switch, correction and offline cases. Define targets before implementation.
+  Keys bind canonical instrument, venue, market type, interval and data/schema version;
+  refresh the unfinished bar and permit historical corrections. Show cache age/staleness,
+  enforce eviction/quota handling, and clear account-scoped state at logout.
+- **Stop condition:** park if current revisit latency is adequate or cache complexity
+  exceeds the measured benefit. No 0.01-second complete-chart claim is accepted.
+
+### ENG-035 — Preserve existing `uv` and `ruff` adoption
+
+- **Status / priority:** missing-tooling claim `rejected`, `P3`; no implementation slot.
+- **Evidence:** `uv.lock` and workspace `pyproject.toml` already exist;
+  `apps/analytics/Dockerfile` and `apps/execution/Dockerfile` install their packages
+  with `uv sync --no-dev --frozen --no-editable`. Ruff lint/format hooks and the Python
+  verification gates are already configured. `pip install uv` bootstraps the tool;
+  it does not mean application dependencies still use a pip install workflow.
+- **Revisit gate:** only a measured build bottleneck warrants a separate cache/layer
+  change. Pin the revision, build platform, network policy and image; compare cold and
+  warm complete builds, including base image, OS packages, dependency sync and export.
+  Preserve lock reproducibility and runtime import checks. Package-install time alone
+  cannot establish a 5–10-second full Docker build.
+
+### Parser proposal amendment — ENG-007
+
+The proposed `msgspec` adoption remains `measuring`, `P3`, under ENG-007 rather than
+opening a second parser workstream. Local inspection found Pydantic request models in
+execution's HTTP routers and CCXT async exchange clients, not a Schurfer-owned raw
+Bybit/MEXC WebSocket path validating every tick with Pydantic. That alleged hot path
+is rejected for this snapshot. If a real parsing bottleneck appears, first identify
+who owns decoding and profile receive-to-intent latency by stage. A candidate must
+preserve numeric precision, accepted/rejected payloads and error handling and improve
+the full owning workflow; this card does not authorize replacing CCXT or weakening
+order, mode, identity or durability checks.
+
+### Measurement result record
+
+Before a benchmark, record the work it unblocks, start trigger, cost/timebox and
+acceptance target. Reuse the existing deferred queue's thresholds for ENG-014 and
+other existing cards; do not lower them after seeing a result. For a new UX workflow,
+freeze its target after the baseline trace and before implementing an alternative.
+Use permitted historical or synthetic inputs; data in blind windows stays unread.
+The benchmark does not select hypothesis parameters or retune a closed strategy.
+
+Store durable, sanitized result summaries in `docs/engineering/benchmarks/` with raw
+artifact paths and hashes; large raw traces stay in gitignored `runtime/research/`
+and their retention/recovery requirements must be stated. Use this record for both
+successful and unsuccessful experiments:
+
+| Field                  | Required content                                                                                                                                                |
+| ---------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Identity               | ENG id, baseline/candidate revisions, exact commands and dependency versions                                                                                    |
+| Inputs and environment | Manifest/corpus hashes and bounds; host/browser/container limits; concurrency; permitted research window                                                        |
+| Workload               | Actual user/report workflow, input size, phase breakdown, cold/warm definitions and setup/conversion cost                                                       |
+| Measurements           | At least five full CLI runs per mode with median/range; adequate trace samples for UI p95/frame targets; peak RSS, disk/bytes and failures as applicable        |
+| Integrity              | Identical selected rows/order, gaps, units, UTC/window boundaries and registered numerical contract; intentional nondeterministic metadata listed separately    |
+| Cost and decision      | Actual engineering hours, added recurring cost/dependencies, baseline/after values, raw artifact paths/hashes, promote/retain/park decision and revisit trigger |
+
+Hash each mode's stable outputs, not just one successful run. For a derived Parquet
+cache, verify row counts, uniqueness, source hashes and coverage; retain raw inputs.
+Measure cold conversion separately from repeated queries and report the number of
+reuses needed to repay conversion cost. Cache benchmark reads must preserve their
+existing integrity checks. A faster warm query with unacceptable first-run cost,
+storage use or different evidence is not a successful improvement.
 
 ## Promotion summary
 

@@ -3,7 +3,7 @@
 .PHONY: momentum-flow-discovery-report prod-momentum-flow-discovery-report
 .PHONY: ai-rules-check verify-body
 .PHONY: early-momentum-unused-flow-features-report prod-early-momentum-unused-flow-features-report
-.PHONY: research-cost-power-planning-report
+.PHONY: research-cost-power-planning-report prod-hyp012-v2-administrative-stop
 .PHONY: hyp-024-orderflow-report prod-hyp-024-orderflow-report net-buy-accumulation-report prod-net-buy-accumulation-report net-buy-accumulation-coverage-funnel prod-net-buy-accumulation-coverage-funnel
 .PHONY: cex-activity-path-coverage-audit-report prod-cex-activity-path-coverage-audit-report
 .PHONY: cex-activity-discovery-report radar-outcome-discovery-report prod-radar-outcome-discovery-report
@@ -2161,6 +2161,17 @@ prod-maker-entry-report:
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
 			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+# HYP-012 v2 administrative stop (docs/research/source-lead-forward-cohort-v2-
+# administrative-stop.md). Outcome-blind: counts qualified, matured episodes at each due
+# checkpoint from a price-free snapshot and records the registered stop, if any, in
+# app.formal_read_claims. Safe to rerun: every due checkpoint replays identically.
+prod-hyp012-v2-administrative-stop:
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: run only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean." && exit 1)
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	@$(_PROD) run --rm --no-deps --entrypoint hyp012-v2-administrative-stop analytics \
+		--code-revision="$$(git rev-parse HEAD)" --clean-tree
 
 prod-source-lead-forward-cohort-report:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)

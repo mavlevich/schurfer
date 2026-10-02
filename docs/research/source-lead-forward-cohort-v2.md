@@ -216,6 +216,16 @@ A live broker (`LIVE_PROBE`) is a separate change with its own order-lifecycle r
 How this timing chain is decomposed and reported, registered before any shadow metric was
 viewed: `source-lead-v2-latency-diagnostic-v1.md`. It never changes this cohort.
 
+## Amendment: capture deadline and administrative stop
+
+Registered before any v2 return was read:
+[source-lead-forward-cohort-v2-administrative-stop.md](source-lead-forward-cohort-v2-administrative-stop.md).
+Captures on or after 2027-03-31T00:00Z never enter v2. An outcome-blind accrual rule,
+checked at fixed monthly checkpoints, can close the cohort earlier, and a cohort that
+has not reached its checkpoint by the deadline is closed rather than extended. A stop is
+not a `fail`; the closed episodes are never read. The amendment also defines the end of
+the v2 blind window. Every evaluation rule above is unchanged.
+
 ## v1 is closed without a formal read
 
 The v1 cohort reached 15 of its 100 required episodes. Its only venue, Binance, is not

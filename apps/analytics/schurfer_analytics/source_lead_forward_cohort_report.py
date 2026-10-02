@@ -115,15 +115,20 @@ import os
 import sys
 from collections import Counter
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from . import source_lead_v2_administrative_stop as administrative_stop
 from .clustered_inference import ClusterObservation, cluster_bootstrap_mean
 from .exchange_registry import EXCHANGE_FACTORIES
 from .formal_read_claims import (
+    STATUS_ADMIN_STOPPED,
     FormalReadAlreadyClaimedError,
     complete_claim,
     existing_claim,
     open_claim,
+    record_administrative_stop,
+    stopped_error,
 )
 from .market_path_cache import MarketPathCacheCorruptError
 from .momentum_flow_bidirectional_burst_study import utc_week_key
@@ -141,6 +146,7 @@ from .source_lead_forward_cohort import (
     CHECKPOINT_DATASET_NAME,
     CHECKPOINT_DATASET_VERSION,
     CHECKPOINT_SCHEMA_VERSION,
+    COHORT_CAPTURE_DEADLINE,
     CONFIDENCE_LEVEL,
     CONTRACT_VERSION,
     ESTIMAND_VERSION,
@@ -667,6 +673,46 @@ def aggregate_cohort(
 FORMAL_READ_STUDY_ID = "HYP-012"
 
 
+async def _stop_if_deadline_passed(
+    args: argparse.Namespace,
+    raw_episodes: Sequence[RawQualifiedEpisode],
+    matured: int,
+    database_now: datetime,
+    code_revision: str,
+) -> None:
+    """After the capture deadline (plus settlement) a missing checkpoint can no longer
+    be reached: record the registered administrative stop instead of waiting forever.
+    Decided from counts and resolution status only, never from a return."""
+    if not administrative_stop.deadline_stop_due(database_now):
+        return
+    closed = [e.capture_id for e in raw_episodes]
+    windows = [
+        administrative_stop.closed_window(e.capture_id, e.canonical_asset_id, e.observed_at)
+        for e in raw_episodes
+    ]
+    fingerprint = administrative_stop.persist_decision(
+        args.administrative_stop_dir,
+        "deadline.json",
+        administrative_stop.deadline_payload(windows, matured),
+        code_revision=code_revision,
+        working_tree_dirty=args.working_tree_dirty,
+        evaluated_at=database_now,
+    )
+    await record_administrative_stop(
+        os.environ["DATABASE_URL"],
+        study_id=FORMAL_READ_STUDY_ID,
+        contract_version=CONTRACT_VERSION,
+        cohort_start=SOURCE_LEAD_FORWARD_COHORT_START,
+        database_now=database_now,
+        closed_ids=closed,
+        terminal_reason=administrative_stop.DEADLINE_CHECKPOINT_UNREACHED,
+        result_fingerprint=fingerprint,
+        code_revision=code_revision,
+        working_tree_dirty=args.working_tree_dirty,
+    )
+    raise stopped_error(FORMAL_READ_STUDY_ID, CONTRACT_VERSION)
+
+
 async def generate_report(args: argparse.Namespace) -> SourceLeadForwardCohortReport:
     if args.since != SOURCE_LEAD_FORWARD_COHORT_START:
         raise ValueError(
@@ -675,19 +721,11 @@ async def generate_report(args: argparse.Namespace) -> SourceLeadForwardCohortRe
             "exactly one cohort boundary, not an arbitrary window"
         )
     code_revision = normalize_code_revision(args.code_revision)
-    repository = SourceLeadForwardCohortRepository.from_url(os.environ["DATABASE_URL"])
-    database_now = await repository.database_now()
-    raw_episodes = await repository.fetch_qualified_episodes(
-        qualification_version=QUALIFICATION_VERSION,
-        since=args.since,
-        limit=args.max_qualified_episodes + 1,
-    )
-    check_qualified_episode_count(len(raw_episodes), args.max_qualified_episodes)
-    check_tradable_venues(raw_episodes)
     # One formal read per cohort (formal_read_claims.py). The registered checkpoint
     # is located first WITHOUT computing any return (resolution status depends only
     # on the exit bar's presence and gap), the claim then stores that exact prefix,
-    # and a run that fails after claiming resumes the same prefix.
+    # and a run that fails after claiming resumes the same prefix. A completed or
+    # administratively stopped cohort is refused before any book or quote is loaded.
     db_url = os.environ["DATABASE_URL"]
     prior = await existing_claim(
         db_url,
@@ -695,10 +733,50 @@ async def generate_report(args: argparse.Namespace) -> SourceLeadForwardCohortRe
         contract_version=CONTRACT_VERSION,
         cohort_start=SOURCE_LEAD_FORWARD_COHORT_START,
     )
+    if prior is not None and prior.status == STATUS_ADMIN_STOPPED:
+        raise stopped_error(FORMAL_READ_STUDY_ID, CONTRACT_VERSION)
     if prior is not None and prior.status == "completed":
         raise FormalReadAlreadyClaimedError(
             "formal read refused: this cohort's single formal read is already completed"
         )
+    repository = SourceLeadForwardCohortRepository.from_url(db_url)
+    # One clock for the whole run: the checkpoints that are due and the episodes that
+    # count as matured are both judged at this instant. A second reading taken after
+    # the checkpoint evaluation could cross the deadline and count episodes that
+    # matured after it, skipping the deadline checkpoint (review repro).
+    database_now = await repository.database_now()
+    if prior is None:
+        # Every due administrative checkpoint is evaluated before the first read, so a
+        # missed checkpoint can never be skipped by running the reader first.
+        administrative = await administrative_stop.evaluate_checkpoints(
+            repository,
+            db_url,
+            None,
+            artifact_dir=args.administrative_stop_dir,
+            code_revision=code_revision,
+            working_tree_dirty=args.working_tree_dirty,
+            now=database_now,
+        )
+        if administrative.status in ("stopped", "already_stopped"):
+            raise stopped_error(FORMAL_READ_STUDY_ID, CONTRACT_VERSION)
+        if administrative.status == administrative_stop.SNAPSHOT_NOT_FINAL:
+            raise ValueError(
+                "formal read refused before loading any episode: a due administrative "
+                f"checkpoint cannot be evaluated yet ({administrative.detail})"
+            )
+    raw_episodes = await repository.fetch_qualified_episodes(
+        qualification_version=QUALIFICATION_VERSION,
+        since=args.since,
+        limit=args.max_qualified_episodes + 1,
+        until=COHORT_CAPTURE_DEADLINE,
+        # A first read's membership is the state at the same clock reading: a
+        # qualification stamped later (even for an older, matured capture) cannot join
+        # a claim that the due checkpoints did not see (review repro). A resumed claim
+        # keeps its stored prefix, so it is not bounded here.
+        qualified_before=database_now if prior is None else None,
+    )
+    check_qualified_episode_count(len(raw_episodes), args.max_qualified_episodes)
+    check_tradable_venues(raw_episodes)
     if prior is not None:
         by_id = {e.capture_id: e for e in raw_episodes}
         missing = [i for i in prior.candidate_ids if i not in by_id]
@@ -712,6 +790,9 @@ async def generate_report(args: argparse.Namespace) -> SourceLeadForwardCohortRe
             len(matured_all) < EVIDENCE_FLOOR["min_resolved_episodes"]
             or len(matured_weeks) < EVIDENCE_FLOOR["min_distinct_utc_weeks"]
         ):
+            await _stop_if_deadline_passed(
+                args, raw_episodes, len(matured_all), database_now, code_revision
+            )
             raise ValueError(
                 "formal read refused before fetching: only "
                 f"{len(matured_all)} matured episodes over {len(matured_weeks)} weeks; run "
@@ -733,6 +814,9 @@ async def generate_report(args: argparse.Namespace) -> SourceLeadForwardCohortRe
     if prior is None:
         prefix_length = checkpoint_prefix_length_blind(candidates, exit_bars)
         if prefix_length is None:
+            await _stop_if_deadline_passed(
+                args, raw_episodes, len(candidates), database_now, code_revision
+            )
             raise ValueError(
                 "formal read refused before claiming: the registered checkpoint (first "
                 f"{EVIDENCE_FLOOR['min_resolved_episodes']} resolved episodes over "
@@ -1012,6 +1096,12 @@ def build_parser() -> argparse.ArgumentParser:
         required=True,
     )
     parser.add_argument("--format", choices=("markdown", "json"), default="markdown")
+    parser.add_argument(
+        "--administrative-stop-dir",
+        type=Path,
+        default=administrative_stop.ARTIFACT_DIR,
+        help="where the deadline stop decision is written (only after the capture deadline)",
+    )
     return parser
 
 

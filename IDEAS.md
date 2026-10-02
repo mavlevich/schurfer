@@ -14,6 +14,12 @@ does not need the freeze to lift — register it in
 result. What the freeze blocks is building new production-facing signal
 infrastructure before an existing lane clears Confirmation.
 
+Engineering/tooling proposals have a separate intake in the
+[engineering findings register](docs/engineering/findings-register.md#october-tooling-intake--2026-10-02).
+Their start conditions and delivery order are in the
+[current priority queue](ROADMAP.md#priority-queue-and-improvement-gates--2026-10-02).
+Keeping them there does not lift this catalog's signal-infrastructure freeze.
+
 ---
 
 ## Cross-market signals (CEX spot and DEX)

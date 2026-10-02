@@ -33,7 +33,10 @@ from .outcome_repository import async_database_url
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-QUALIFIED_EPISODE_QUERY_VERSION = "source_lead_forward_cohort_qualified_episode_v1"
+# v2: an optional upper bound on the capture time (the administrative stop deadline).
+# v3: an optional upper bound on the qualification stamp, so a first read's membership
+# is the state at its single clock reading, as in the administrative snapshot.
+QUALIFIED_EPISODE_QUERY_VERSION = "source_lead_forward_cohort_qualified_episode_v3"
 
 _QUALIFIED_EPISODES_SQL = text("""
     SELECT
@@ -53,10 +56,78 @@ _QUALIFIED_EPISODES_SQL = text("""
     WHERE q.status = 'qualified'
       AND q.qualification_version = :qualification_version
       AND c.source_first_observed_at >= :since
+      AND (CAST(:until AS timestamptz) IS NULL OR c.source_first_observed_at < :until)
+      AND (CAST(:qualified_before AS timestamptz) IS NULL OR q.created_at < :qualified_before)
       AND t.status = 'sampled'
     ORDER BY c.source_first_observed_at, c.id
     LIMIT :limit
 """)
+
+ACCRUAL_SNAPSHOT_QUERY_VERSION = "source_lead_forward_cohort_accrual_snapshot_v1"
+
+# Outcome-blind: identities and timestamps only. No book, liquidity, instrument or
+# price column is selected. Qualification rows are insert-only (ON CONFLICT DO
+# NOTHING) and stamp `created_at` with NOW(), the start of their transaction. So the
+# set `q.created_at < :as_of` is final once no transaction that began before
+# `as_of` is still open (`open_transactions_started_before`); from then on every
+# snapshot of it is identical, however late it is taken.
+_ACCRUAL_SNAPSHOT_SQL = text("""
+    SELECT
+        c.id AS capture_id,
+        c.source_first_observed_at,
+        q.canonical_asset_id,
+        q.selected_target_exchange AS target_exchange,
+        t.observed_at
+    FROM app.source_lead_qualifications q
+    JOIN app.source_lead_captures c ON c.id = q.capture_id
+    JOIN app.source_lead_target_observations t
+      ON t.capture_id = q.capture_id
+     AND t.target_exchange = q.selected_target_exchange
+    WHERE q.status = 'qualified'
+      AND q.qualification_version = :qualification_version
+      AND c.source_first_observed_at >= :since
+      AND c.source_first_observed_at < :as_of
+      AND q.created_at < :as_of
+      AND t.status = 'sampled'
+    ORDER BY c.source_first_observed_at, c.id
+    LIMIT :limit
+""")
+
+
+# A transaction that began before `as_of` can still insert rows stamped before it. A
+# session whose transaction start this role may not see (insufficient privilege)
+# cannot be ruled out, so it is counted as unverifiable rather than ignored.
+_OPEN_TRANSACTIONS_SQL = text("""
+    SELECT
+        count(*) FILTER (WHERE xact_start < :as_of) AS started_before,
+        count(*) FILTER (WHERE state IS NULL) AS unverifiable
+    FROM pg_stat_activity
+    WHERE datname = current_database()
+      AND backend_type = 'client backend'
+      AND pid <> pg_backend_pid()
+""")
+
+
+@dataclass(frozen=True)
+class OpenTransactions:
+    started_before: int
+    unverifiable: int
+
+    @property
+    def snapshot_final(self) -> bool:
+        return self.started_before == 0 and self.unverifiable == 0
+
+
+@dataclass(frozen=True)
+class AccrualSnapshotRow:
+    """One qualified v2 episode as it existed at a snapshot instant: identity and
+    timestamps only, never a price."""
+
+    capture_id: int
+    source_first_observed_at: datetime
+    canonical_asset_id: str
+    target_exchange: str
+    observed_at: datetime
 
 
 @dataclass(frozen=True)
@@ -128,6 +199,8 @@ class SourceLeadForwardCohortRepository:
         qualification_version: str,
         since: datetime,
         limit: int,
+        until: datetime | None = None,
+        qualified_before: datetime | None = None,
     ) -> Sequence[RawQualifiedEpisode]:
         if limit <= 0:
             raise ValueError("limit must be positive")
@@ -138,6 +211,8 @@ class SourceLeadForwardCohortRepository:
                 {
                     "qualification_version": qualification_version,
                     "since": since,
+                    "until": until,
+                    "qualified_before": qualified_before,
                     "limit": limit,
                 },
             )
@@ -171,6 +246,55 @@ class SourceLeadForwardCohortRepository:
                 )
             )
         return tuple(episodes)
+
+    async def open_transactions_started_before(self, as_of: datetime) -> OpenTransactions:
+        """Other sessions of this database whose open transaction began before `as_of`,
+        and sessions whose state this role cannot see."""
+        async with self._engine.connect() as connection:
+            row = (await connection.execute(_OPEN_TRANSACTIONS_SQL, {"as_of": as_of})).one()
+        return OpenTransactions(int(row.started_before), int(row.unverifiable))
+
+    async def fetch_accrual_snapshot(
+        self,
+        *,
+        qualification_version: str,
+        since: datetime,
+        as_of: datetime,
+        limit: int,
+    ) -> Sequence[AccrualSnapshotRow]:
+        """Qualified episodes captured in [since, as_of) whose qualification existed
+        before `as_of`. Read-only and price-free."""
+        if limit <= 0:
+            raise ValueError("limit must be positive")
+        if as_of <= since:
+            raise ValueError("as_of must be after since")
+        async with self._engine.connect() as connection, connection.begin():
+            await connection.execute(text("SET TRANSACTION READ ONLY"))
+            rows = (
+                await connection.execute(
+                    _ACCRUAL_SNAPSHOT_SQL,
+                    {
+                        "qualification_version": qualification_version,
+                        "since": since,
+                        "as_of": as_of,
+                        "limit": limit,
+                    },
+                )
+            ).all()
+        snapshot = []
+        for row in rows:
+            if not isinstance(row.canonical_asset_id, str) or not row.canonical_asset_id:
+                raise ValueError(f"qualified capture_id={row.capture_id} has no canonical_asset_id")
+            snapshot.append(
+                AccrualSnapshotRow(
+                    capture_id=int(row.capture_id),
+                    source_first_observed_at=row.source_first_observed_at,
+                    canonical_asset_id=row.canonical_asset_id,
+                    target_exchange=str(row.target_exchange),
+                    observed_at=row.observed_at,
+                )
+            )
+        return tuple(snapshot)
 
     async def close(self) -> None:
         await self._engine.dispose()
