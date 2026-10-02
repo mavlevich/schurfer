@@ -217,33 +217,42 @@ observed bounds.
 
 ## Report
 
-**Run 2 is the evidence.** It ran on 2026-10-02 at 14:53 UTC from clean revision
-`9ab5ac4` (protocol `47c5d17`, amendment A1 above). Artifact:
-[`evidence/pre-move-source-selection-v1/run2-probe-result.json`](evidence/pre-move-source-selection-v1/run2-probe-result.json),
-SHA-256 `6c9b15601fe7625944d742aaaa0cf164141b3c01f5b7e30484203cbf016fc62a`. It used 207
-requests (Binance 169, most of them dated archive listings; Gate 25; Bybit 11; BloFin
-1; MEXC 1), 15.3 MB and 89 s, with no rate limit, retry exhaustion or stopped source.
-Every archive and historical request carries a window derived from the request
-itself; the latest ends exactly at 2026-08-01T00:00Z. The only non-200 response is
-the expected 404 of the first Gate order-book name pattern. No current trade, open
-interest, price, funding or book endpoint was called, and the artifact holds no price.
+**Run 3 is the evidence.** It ran on 2026-10-02 at 15:10 UTC from clean revision
+`dd4765b` (protocol `47c5d17`, amendments A1 and A2 above). Artifact:
+[`evidence/pre-move-source-selection-v1/run3-probe-result.json`](evidence/pre-move-source-selection-v1/run3-probe-result.json),
+SHA-256 `fc4a89e3705e2d5202526063000ecf7c30e5415cc22cb8ffdcd0fd00e02d5d2f`. It used 205
+requests (Binance 169, most of them dated archive listings; Gate 23; Bybit 11; BloFin
+1; MEXC 1), 15.3 MB and 91 s, with no rate limit, retry exhaustion or stopped source,
+and no `contract_stats` request. Every archive and historical request carries a
+window derived from the request itself; the latest ends exactly at 2026-08-01T00:00Z.
+The only non-200 response is the expected 404 of the first Gate order-book name
+pattern. No current trade, open interest, price, funding or book endpoint was called,
+and the artifact holds no price.
 
-**Reproducibility.** All 207 response bodies are stored by SHA-256 under the
-gitignored `runtime/research/pre-move-source-probe-v1/run2/responses/` of the
-workstation that ran the probes (not yet copied to the backed-up production research
-directory). `python -m schurfer_analytics.pre_move_source_probe --replay <artifact>
---raw-dir <that directory>` recomputed the whole artifact offline and found it
-identical. The full 592-base universe and each source's presence in it are in the
-artifact.
+**Reproducibility and backup.** Each run's response bodies are stored by SHA-256 under
+`runtime/research/pre-move-source-probe-v1/` (run 1's archives at the top level,
+`run2/responses/`, `run3/responses/`). The directory was copied on 2026-10-02 to
+`/opt/schurfer/runtime/research/pre-move-source-probe-v1/` on the production host,
+which the nightly offsite research backup covers (33 MB). A fresh copy fetched back
+from there had every response file matching its hash, and all 12 archive hashes of
+run 1. From that copy, `--replay` reproduced run 3 identically at `dd4765b` and run 2
+identically at its own code (`f7caafa`; the final code refuses run 2's G4 requests by
+design). The full 592-base universe and each source's presence in it are in the
+artifacts.
 
-**Run 1 versus run 2.** Run 1 (`a0465cb`, kept as
+**Earlier runs.** Run 1 (`a0465cb`,
 [`run1-probe-result.json`](evidence/pre-move-source-selection-v1/run1-probe-result.json),
 SHA-256 `7a21a1d83944c957d1576ad8f7aefe011b2cd6998f2dde227bc3bf41fec167e8`, 81
-requests) cannot be replayed: its catalogue and REST inputs were not retained. Both
-runs produced the same catalogue counts, universe, sample, coverage and every Gate,
-Binance and Bybit probe result. The one difference is B1: run 2's dated listings end
-on 2026-07-31, where run 1's undated listings reached 2026-10-01. The conclusions
-below rest on run 2.
+requests) cannot be replayed: its catalogue and REST inputs were not retained, and its
+undated Binance listings received the sizes of files dated up to 2026-10-01 (A1). Run 2
+(`9ab5ac4`,
+[`run2-probe-result.json`](evidence/pre-move-source-selection-v1/run2-probe-result.json),
+SHA-256 `6c9b15601fe7625944d742aaaa0cf164141b3c01f5b7e30484203cbf016fc62a`, 207
+requests) made the two G4 requests that A2 found unbounded; their recorded rows end at
+2026-07-15 13:05, before the boundary. All three runs produced the same catalogue
+counts, universe, sample, coverage and Gate trade, archive, REST and order-book,
+Binance and Bybit results, apart from B1's dates in run 1 and G4, which only run 3
+omits. The conclusions below rest on run 3.
 
 ### Universe and sample
 
@@ -258,24 +267,24 @@ is only a candidate route.
 `pass` is verified by a probe or a committed artifact; `doc` is documentation only and
 must be verified by a registered canary; `fail` and `unknown` are as stated.
 
-| Criterion                    | Gate                                                                                                                 | Binance                                                                                                                                                     | BloFin                                                  | MEXC                                                  | Bybit (control)                                            |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------- |
-| P1 trades, native time, side | pass: archive `timestamp` in seconds with microseconds, signed `size`; REST and WebSocket doc                        | pass: `aggTrades` with `transact_time` (ms) and `is_buyer_maker`; stream doc                                                                                | doc: WebSocket `side`, `ts`                             | doc: `push.deal` `T` (side meaning unverified)        | pass: daily dump `side`, `timestamp`                       |
-| P2 bounded universe          | doc: contracts carry `status`, `create_time`, `delisting_time` (endpoint carries prices, not called)                 | pass: `exchangeInfo` with `status`, `onboardDate`                                                                                                           | pass: `instruments` with `listTime`, `offTime`, `state` | pass: `contract/detail` with `state`, no listing time | pass: `instruments-info` with `launchTime`, `deliveryTime` |
-| P3 gaps                      | pass: `dealid` contiguous per contract, 0 gaps over 23,774 to 66,448 July rows                                       | pass: `agg_trade_id` contiguous; first/last trade ids                                                                                                       | doc: `tradeId` present, continuity unknown              | fail (doc): deal push has no trade id                 | pass: `trdMatchID`                                         |
-| P4 identity beyond ticker    | pass: approved registry v4 by contract address, 44 Gate-to-Bybit routes, extension tooling exists                    | unknown: the implemented Binance/Bybit rule promotes established assets by ticker (an accepted simplification); no public contract-address source evaluated | fail: no identity source                                | fail: no approved registry                            | trivial (execution venue)                                  |
-| H1 history with integrity    | pass: July archive; REST and archive agree exactly for the probe hour (84, 209, 13 trades)                           | pass: checksums verified; ids contiguous (1 underlying trade-id gap in C98)                                                                                 | fail: last 100 trades only                              | fail: no history                                      | pass                                                       |
-| H2 delisted in history       | unknown: not probed                                                                                                  | unknown: not probed                                                                                                                                         | fail                                                    | fail                                                  | not probed                                                 |
-| H3 usable at its timestamp   | pass for trades; unknown for `contract_stats` (whether `time` opens or closes the 5-minute bucket)                   | pass for trades; unknown for `metrics` `create_time`                                                                                                        | n/a                                                     | n/a                                                   | pass for trades; OI timestamp semantics unverified         |
-| Open interest history        | pass: `contract_stats` 5 m for July with `open_interest` (contracts), `open_interest_usd`, taker sizes, liquidations | pass: `metrics` 5 m with `sum_open_interest` and `_value`                                                                                                   | fail                                                    | fail                                                  | pass: 5 min REST                                           |
-| Depth history                | pass: hourly order-book logs (`BASE_USDT-YYYYMMDDHH.csv.gz`, documented full snapshot plus 100 ms updates)           | pass: `bookDepth` by percent band about every 30 s                                                                                                          | fail                                                    | fail                                                  | not probed                                                 |
+| Criterion                    | Gate                                                                                                                                     | Binance                                                                                                                                                     | BloFin                                                  | MEXC                                                  | Bybit (control)                                            |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ----------------------------------------------------- | ---------------------------------------------------------- |
+| P1 trades, native time, side | pass: archive `timestamp` in seconds with microseconds, signed `size`; REST and WebSocket doc                                            | pass: `aggTrades` with `transact_time` (ms) and `is_buyer_maker`; stream doc                                                                                | doc: WebSocket `side`, `ts`                             | doc: `push.deal` `T` (side meaning unverified)        | pass: daily dump `side`, `timestamp`                       |
+| P2 bounded universe          | doc: contracts carry `status`, `create_time`, `delisting_time` (endpoint carries prices, not called)                                     | pass: `exchangeInfo` with `status`, `onboardDate`                                                                                                           | pass: `instruments` with `listTime`, `offTime`, `state` | pass: `contract/detail` with `state`, no listing time | pass: `instruments-info` with `launchTime`, `deliveryTime` |
+| P3 gaps                      | pass: `dealid` contiguous per contract, 0 gaps over 23,774 to 66,448 July rows                                                           | pass: `agg_trade_id` contiguous; first/last trade ids                                                                                                       | doc: `tradeId` present, continuity unknown              | fail (doc): deal push has no trade id                 | pass: `trdMatchID`                                         |
+| P4 identity beyond ticker    | pass: approved registry v4 by contract address, 44 Gate-to-Bybit routes, extension tooling exists                                        | unknown: the implemented Binance/Bybit rule promotes established assets by ticker (an accepted simplification); no public contract-address source evaluated | fail: no identity source                                | fail: no approved registry                            | trivial (execution venue)                                  |
+| H1 history with integrity    | pass: July archive; REST and archive agree exactly for the probe hour (84, 209, 13 trades)                                               | pass: checksums verified; ids contiguous (1 underlying trade-id gap in C98)                                                                                 | fail: last 100 trades only                              | fail: no history                                      | pass                                                       |
+| H2 delisted in history       | unknown: not probed                                                                                                                      | unknown: not probed                                                                                                                                         | fail                                                    | fail                                                  | not probed                                                 |
+| H3 usable at its timestamp   | pass for trades; open interest deferred (A2)                                                                                             | pass for trades; unknown for `metrics` `create_time`                                                                                                        | n/a                                                     | n/a                                                   | pass for trades; OI timestamp semantics unverified         |
+| Open interest history        | deferred (A2): `contract_stats` has no enforceable end bound; superseded run 2 saw 5 m rows with `open_interest` and `open_interest_usd` | pass: `metrics` 5 m with `sum_open_interest` and `_value`                                                                                                   | fail                                                    | fail                                                  | pass: 5 min REST                                           |
+| Depth history                | pass: hourly order-book logs (`BASE_USDT-YYYYMMDDHH.csv.gz`, documented full snapshot plus 100 ms updates)                               | pass: `bookDepth` by percent band about every 30 s                                                                                                          | fail                                                    | fail                                                  | not probed                                                 |
 
 ### Selection
 
 1. **Selectable (P1-P4):** only **Gate**. Binance fails the rule on P4 (`unknown`), BloFin
    and MEXC fail P4, and MEXC also fails P3. Bybit is the control row.
-2. Gate also passes H1, so the line can be tested on history before new collection;
-   H2 and the open-interest part of H3 remain open.
+2. Gate also passes H1 for trades, so a trade-based line can be tested on history before
+   new collection; H2 and Gate open interest (deferred under A2) remain open.
 
 **Selected source: Gate USDT perpetuals, executed on Bybit.** This is a capability
 result only. It does not show that any precursor predicts anything, and it is not
@@ -301,9 +310,11 @@ Bybit routes; it would then compete on the same criteria with wider verified cov
 1. **Trades:** Gate's monthly archive (`futures_usdt/trades/YYYYMM/BASE_USDT-YYYYMM.csv.gz`:
    `timestamp, dealid, price, size`), which already holds history and future months once
    published; REST or WebSocket only if the archive's publication lag is too long.
-2. **Open interest and flow:** `contract_stats` at 5 minutes (`open_interest`,
-   `open_interest_usd`, `long_taker_size`, `short_taker_size`, liquidations). It has no
-   archive, so its retained depth and bucket semantics are open.
+2. **Open interest: not in the minimal set yet.** Gate's `contract_stats` (5-minute
+   `open_interest`, `open_interest_usd`, taker sizes, liquidations) has no archive and
+   no enforceable request end bound (A2). It may enter only after a bounded historical
+   source or a documented, tested bound exists, or as prospective collection once the
+   blind window allows it, with its bucket semantics verified.
 3. **Instrument and identity log:** contract `status`, `create_time` and delisting times
    with every inclusion, exclusion and identity decision, versioned with the registry.
 4. **Depth:** not in the minimal set. One hourly log of a quiet small cap is about 40 KB
@@ -315,16 +326,17 @@ Bybit routes; it would then compete on the same criteria with wider verified cov
 July trade files of the 12 non-anchor sample bases range 0.26-32.3 MB compressed
 (median 0.74, mean 3.64); BTC and ETH add 0.49 GB. For the 592-base universe this
 is about **0.4-2.2 GB a month** compressed for trades, plus about 0.5 GB for the
-anchors. `contract_stats` at 5 minutes is about 8,640 rows per contract per month.
-Polling it for the universe is about 600 requests every 5 minutes; its rate limits and
-history depth are unmeasured.
+anchors. If Gate open interest is later collected prospectively at 5 minutes, it is
+about 8,640 rows per contract per month and about 600 requests every 5 minutes for the
+universe; its rate limits are unmeasured.
 
 ### What is still missing
 
 - Gate archive publication lag and completeness for a high-volume month (REST and
   archive were compared only on three quiet hours below the 1,000-row page);
 - delisted contracts in the Gate archive (H2);
-- `contract_stats` bucket semantics, retained history depth and rate limits (H3);
+- a Gate open-interest source with an enforceable end bound, its bucket semantics,
+  retained history depth and rate limits (deferred under A2);
 - order-book log semantics beyond the first 50 lines (`set` snapshot only so far);
 - identity approvals for quiet Gate-and-Bybit assets;
 - the live meaning of the stream fields, to be checked by a registered canary only after
