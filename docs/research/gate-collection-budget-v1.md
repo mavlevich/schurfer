@@ -4,58 +4,129 @@ Status: **measurement and decision for PR 5 of the priority queue.** It sizes th
 collection of Gate's trade archives chosen by
 [PR 3](pre-move-source-selection-v1.md) and records whether the current server can
 carry it. It starts no collector, changes no retention, deletes nothing and reads no
-market value: only archive sizes, disk and database sizes, and backup metadata. Gate
-open interest is not budgeted, because PR 3 deferred it (no enforceable request bound).
+market value: only archive sizes, disk, relation and chunk sizes, row counts by
+creation time before the blind window, and backup metadata. Gate open interest is not
+budgeted, because PR 3 deferred it (no enforceable request bound).
+
+## Decision
+
+**Insufficient for a six-month collection on the current disk, for any universe, and
+the reason is not Gate.** The database outside the hot bars grows by about
+**0.25 GiB a day** (measured below) with no retention on its largest tables. At that
+rate the disk reaches its 10 GiB reserve in about **26 days** from now, or about
+**64 days** once the hot bars retention has released the 9.85 GiB already due, with
+or without Gate.
+
+- **Gate itself is small for the registry set.** The 44 registry v4 Gate-to-Bybit
+  bases need 0.40 GiB a month at the larger measured month, 2.4 GiB over 6 months
+  (about 13 MiB a day). They fit for six months if all other growth stays below
+  **79 MiB a day** after the bars release (24 MiB a day today), against a measured
+  252 MiB a day.
+- **The full 592-base universe does not fit even with no other growth:** 24.1 GiB
+  over 6 months against 16.6 GiB above the reserve after the bars release.
+- **What makes a collection supportable:** bring the other growth under the
+  threshold (retention or an offsite archive for the large `app` tables, the next
+  item of the data lifecycle work) or add a volume, then confirm the rate with a
+  seven-day series of free disk and database size outside the bars. Until then
+  overall feasibility is unresolved and no collector starts.
 
 ## Server measurements (2026-10-02, read-only)
 
-| Measurement        | Value                                                                                                                                                   | Source                                            |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| Root disk          | 80.3 GB total, 59.6 GB used, **17.35 GB free (16.16 GiB)**, 78%                                                                                         | `df`                                              |
-| Docker data        | 54 GiB under `/var/lib/docker`; local volumes 42.6 GB; build cache 3.5 GB and images 3.2 GB reclaimable                                                 | `du`, `docker system df`                          |
-| Database           | 38 GB: `bybit_momentum_bars_1m` 19 GB, `momentum_flow_watch_evaluations_1m` 4.6 GB, `pump_derivatives_context_samples` 3.7 GB, `trade_decisions` 2.7 GB | `pg_database_size`, hypertable and relation sizes |
-| Database growth    | dump (uncompressed) 40.5 GB on 09-08, 47.6 on 09-13, 56.5 on 09-20, 66.6 on 09-26, then 65.4 on 09-29 and **60.6 GB on 10-02**                          | Borg `db-*` archive stats                         |
-| Hot bars retention | 14-day cutoff active; the gated deletion of older bars runs nightly                                                                                     | `runtime/cold-bar-cutoff-days`, timers            |
-| `runtime/research` | 876 MB (research archive 1.04 GB, 0.80 GB compressed)                                                                                                   | `du`, Borg `research-*`                           |
-| CPU and memory     | 4 cores, load average 4.3-5.0; 7.6 GiB RAM, 3.6-3.7 GiB available, 1.4 GiB swap in use                                                                  | `uptime`, `free`                                  |
-| Offsite repository | 51.2 GB unique compressed on a 1 TB Storage Box BX11 (about 4 EUR a month, ADR-0010)                                                                    | `borg info`                                       |
-| Backup retention   | `db-*` 7 daily, 4 weekly, 6 monthly; `research-*` 7 daily, 8 weekly, 24 monthly; `bars-*` never pruned                                                  | `infra/scripts/offsite-backup.sh`                 |
+| Measurement        | Value                                                                                                                                                        | Source                                            |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------- |
+| Root disk          | 80.3 GB; free **16.16-16.70 GiB** during the day (17.94 GB at 17:08 UTC, used for the budget)                                                                | `df -B1`                                          |
+| Docker data        | 54 GiB under `/var/lib/docker`; local volumes 42.6 GB; build cache 3.5 GB and images 3.2 GB reclaimable                                                      | `du`, `docker system df`                          |
+| Database           | 37.9 GiB: `bybit_momentum_bars_1m` 19 GB, `momentum_flow_watch_evaluations_1m` 4.6 GB, `pump_derivatives_context_samples` 3.6 GiB, `trade_decisions` 2.6 GiB | `pg_database_size`, relation and hypertable sizes |
+| Logical dumps      | 40.5 GB on 09-08, 47.6 on 09-13, 56.5 on 09-20, 66.6 on 09-26, 65.4 on 09-29, 60.6 GB on 10-02                                                               | Borg `db-*` archive stats                         |
+| Hot bars           | 37 daily chunks (08-27 to 10-02) for a 14-day cutoff; the gated deletion drops up to 3 verified days a night                                                 | chunk metadata, deletion journal                  |
+| `runtime/research` | 876 MB (research archive 1.04 GB, 0.80 GB compressed)                                                                                                        | `du`, Borg `research-*`                           |
+| CPU and memory     | 4 cores, load average 4.3-5.0; 7.6 GiB RAM, 3.6-3.7 GiB available, 1.4 GiB swap in use                                                                       | `uptime`, `free`                                  |
+| Offsite repository | 51.2 GB unique compressed on a 1 TB Storage Box BX11 (about 4 EUR a month, ADR-0010)                                                                         | `borg info`                                       |
+| Backup retention   | `db-*` 7 daily, 4 weekly, 6 monthly; `research-*` 7 daily, 8 weekly, 24 monthly; `bars-*` never pruned                                                       | `infra/scripts/offsite-backup.sh`                 |
 
-The database grew about 1.4 GB a day in September and has shrunk since the 14-day hot
-bars cutoff began converging; the disk has not yet gained back that space. Growth
-outside the bars tables was not separated and is the main unmeasured load on the
-disk.
+## Growth of everything else
+
+Measured by [`growth-inputs.sql`](evidence/gate-collection-budget-v1/growth-inputs.sql)
+(metadata and row counts only, window 2026-09-15 to 2026-09-28, before the blind
+window) into [`growth-inputs.json`](evidence/gate-collection-budget-v1/growth-inputs.json),
+SHA-256 `9447588d5bc4523795ed04b19e01dd88b0caf6ec4dff882f90c07b505144a28b`, and
+computed by `other_growth`:
+
+- a plain table grows by its mean bytes per row times the rows created per day in
+  the window;
+- a hypertable grows by the bytes per day of its chunks wholly inside the window,
+  unless its retention already drops its oldest chunks (then it is at steady state);
+- the hot bars are left out: the gated deletion holds them at the 14-day cutoff.
+
+| Table                                                                |     Size | Rows created in the window |                        Growth |
+| -------------------------------------------------------------------- | -------: | -------------------------: | ----------------------------: |
+| `app.pump_derivatives_context_samples`                               | 3.58 GiB |                      21.9% |                  57.2 MiB/day |
+| `app.trade_decisions`                                                | 2.62 GiB |                      26.4% |                  50.5 MiB/day |
+| `app.momentum_flow_paper_probes`                                     | 2.08 GiB |                      32.6% |                  49.7 MiB/day |
+| `app.live_long_short_ratio` (hypertable, no retention)               |          |                            |                  19.8 MiB/day |
+| `app.funding_rate_snapshots`                                         | 0.76 GiB |                      26.7% |                  14.8 MiB/day |
+| `app.trade_decision_outcomes`                                        | 1.55 GiB |                      10.3% |                  11.7 MiB/day |
+| `timeseries.liquidation_events` (180-day retention, not yet reached) |          |                            |                  11.6 MiB/day |
+| `app.pump_events`, `app.pump_event_sources`                          | 1.22 GiB |                     24-27% |                  22.6 MiB/day |
+| `app.oi_snapshots`                                                   | 0.53 GiB |                      26.5% |                  10.3 MiB/day |
+| three smaller tables                                                 | 0.18 GiB |                     23-48% |                   3.4 MiB/day |
+| `momentum_flow_watch_evaluations_1m` (45-day retention reached)      |   4.6 GB |                            |                             0 |
+| **Total**                                                            |          |                            | **251.6 MiB/day (0.246 GiB)** |
+
+The window holds 10-33% of each large table's rows over 14 days, so these tables were
+built at about this rate; none has a retention policy. The mean bytes per row
+includes indexes and any bloat, which can overstate a table whose old rows are wider
+than new ones. A disk-level cross-check was not possible: the only earlier byte-level
+`df` reading (2026-09-07) was taken during a cleanup that freed 3 GB within a minute,
+before the local dumps moved offsite, so it cannot separate growth from cleanup.
 
 ## Gate trade volume
 
-Measured with `schurfer_analytics.gate_collection_budget` from clean revision `6a6ccfe`.
+Measured with `schurfer_analytics.gate_collection_budget` from clean revision `398bc7b`.
 Artifact: [`evidence/gate-collection-budget-v1/gate-collection-budget.json`](evidence/gate-collection-budget-v1/gate-collection-budget.json),
-SHA-256 `cc1b6c7534529319c7e743918aaf3a67c95cfa82712c2b54fe284d9a1a37bd55`.
+SHA-256 `1bfa698fe42445939271771de8b224c51f28e48ef172204478dd3335bbb50165`.
 
 - **Sizes:** `HEAD` of Gate's June and July 2026 trade archive file for every base of
-  PR 3's 592-base universe (1,184 requests). Each request passed PR 3's window guard,
-  so nothing after 2026-08-01 was touched. 65 Bybit bases have no same-named Gate file,
-  mostly multiplier-prefixed names (`1000PEPE`, `1000BONK`, ...); they need name and
-  identity mapping, not just a download, and count as absent here.
-- **Expansion and conversion:** PR 3's three July files (C98, FIGHT, VELODROME): CSV
-  is **3.58 x** the gzip; Parquet (zstd) is **0.68 x** the gzip; DuckDB converts
-  straight from the gzip at about 111 s per GiB of gzip on a workstation.
+  PR 3's 592-base universe: 1,184 requests, each logged with its status, length,
+  checked window end and time. 1,055 returned 200 with a size and 129 a 404; any
+  other outcome would have stopped the run. Each request passed PR 3's window guard,
+  so nothing after 2026-08-01 was touched. 64 bases have no Gate file in either
+  month, mostly multiplier-prefixed names (`1000PEPE`, `1000BONK`, ...) that need
+  name and identity mapping; MVLL has only July and its July counts.
+- **Planning month:** June and July totals differ by up to 2x for the registry set,
+  so the budget plans on the larger month, not the mean.
+- **Expansion and conversion:** PR 3's three July files: CSV is **3.58 x** the gzip;
+  Parquet (zstd) is **0.68 x** the gzip; DuckDB converts straight from the gzip in
+  about 111 s of elapsed time per GiB of gzip on a workstation.
 
-| Universe                    | Bases with both months | Raw gzip per month | Parquet per month | Kept per month | Kept after 3 / 6 months | Largest file | Scratch (stream / gunzip) |
-| --------------------------- | ---------------------: | -----------------: | ----------------: | -------------: | ----------------------: | -----------: | ------------------------- |
-| Registry v4 Gate-to-Bybit   |               44 of 44 |           0.17 GiB |          0.12 GiB |   **0.29 GiB** |     0.87 / **1.75 GiB** |     0.07 GiB | 0.05 / 0.24 GiB           |
-| Full universe               |             527 of 592 |           2.38 GiB |          1.62 GiB |   **4.00 GiB** |     12.0 / **24.0 GiB** |     0.28 GiB | 0.19 / 1.02 GiB           |
-| Full without the 10 largest |             517 of 582 |           1.49 GiB |          1.02 GiB |   **2.51 GiB** |      7.5 / **15.1 GiB** |     0.04 GiB | 0.03 / 0.13 GiB           |
+| Universe                    | Bases with a file | Raw gzip per month | Parquet per month | Kept per month | Kept after 3 / 6 months | Scratch (stream / gunzip) |
+| --------------------------- | ----------------: | -----------------: | ----------------: | -------------: | ----------------------: | ------------------------- |
+| Registry v4 Gate-to-Bybit   |          44 of 44 |           0.24 GiB |          0.16 GiB |   **0.40 GiB** |       1.2 / **2.4 GiB** | 0.08 / 0.45 GiB           |
+| Full universe               |        528 of 592 |           2.39 GiB |          1.63 GiB |   **4.02 GiB** |     12.1 / **24.1 GiB** | 0.20 / 1.05 GiB           |
+| Full without the 10 largest |        518 of 582 |           1.57 GiB |          1.07 GiB |   **2.64 GiB** |      7.9 / **15.9 GiB** | 0.03 / 0.18 GiB           |
 
-The 10 largest by July and June mean are ETH, BTC, LAB, H, SNDK, AKE, SKHYNIX, SOL,
-ESPORTS and BANK. June and July differ by up to a factor of two for the registry set,
-so a monthly figure is a two-month mean, not a forecast.
+The 10 largest by their larger month are ETH, BTC, H, AKE, SNDK, LAB, BANK, SKHYNIX,
+BEAT and DEXE.
 
-**Load:** downloading 2.4 GiB a month is negligible for the network. Conversion is
-about 4.4 CPU minutes a month for the full universe on the workstation; the server is
-already near 4 load on 4 cores, so the job must run niced, one file at a time, and
-may take several times longer there. Streaming conversion needs scratch space for one
-Parquet file only; a gunzip-first step would need up to 1 GiB.
+## Headroom
+
+The 10 GiB reserve stays free (deploy image builds, build cache, dumps in flight);
+collection and all other growth come out of the space above it. The bars release is
+the 9.85 GiB of hot bar chunks already past the 14-day cutoff, dropped over about
+11 nights.
+
+| Scenario                                             |    Above reserve | Registry 44: fits 6 months / days to reserve | Full universe | Largest other growth for registry 44 |
+| ---------------------------------------------------- | ---------------: | -------------------------------------------- | ------------- | -----------------------------------: |
+| Now, measured other growth                           |         6.70 GiB | no / 26                                      | no / 18       |                           24 MiB/day |
+| After bars release, measured other growth            |        16.55 GiB | no / 64                                      | no / 44       |                           79 MiB/day |
+| After bars release, no other growth (reference only) |        16.55 GiB | yes / 1,262                                  | no / 125      |                                      |
+| No collection, measured other growth                 | 6.70 / 16.55 GiB | 27 / 67 days                                 |               |                                      |
+
+**Load:** downloading 2.4 GiB a month is negligible for the network. Conversion took
+about 4 minutes of elapsed time per month of the full universe on a workstation;
+server conversion time and memory were not measured, and the server already runs
+near 4 load on 4 cores, so a collector must run niced, one file at a time, and record
+its own CPU time and memory.
 
 ## Recovery evidence
 
@@ -66,63 +137,43 @@ Parquet file only; a gunzip-first step would need up to 1 GiB.
 - **Research files (this PR):** from `research-2026-10-02T11:06:49`, `borg extract`
   of `hyp029`, `preblind-book-cost-baseline` and `hyp012c` into a throwaway directory
   on the server took 1.2 s for 30 MB. All 6 files with a `.sha256` sidecar matched
-  both their sidecar and the live file; the directory was then removed. At that rate,
-  6 months of the full universe (24 GiB) would restore in about 16 minutes, before
-  verification.
+  both their sidecar and the live file; the directory was then removed.
 - **Pre-move probe inputs (PR 3):** copied to the backed-up research directory and
   fetched back with every hash matching and an identical offline replay.
 
 ## Limits for a collection
 
-- **Disk reserve:** keep at least **10 GiB free** at all times, for image rebuilds
-  during deploys (build cache alone is 3.5 GB) and the unmeasured database growth
-  outside bars. With 16.16 GiB free, **6.16 GiB** are usable for collection.
+- **Disk reserve:** at least **10 GiB free** at all times; the reserve is never
+  budgeted for growth.
+- **Growth:** a collector starts only when the measured other growth leaves the
+  six-month budget of its registered universe inside the space above the reserve.
 - **Retention:** native gzip archives are the evidence of record. A local copy may be
   removed only after a verified offsite archive under a never-pruned prefix (the
   `bars-*` pattern); `research-*` monthly archives expire after 24 months and are not
   enough. Parquet is a rebuildable cache.
 - **Load:** one file at a time, `nice`/`ionice` idle, outside the backup window
-  (about 04:00-04:30 UTC), with the job's CPU time and duration logged.
+  (about 04:00-04:30 UTC), with CPU time, memory and duration logged.
 - **Gaps:** per included contract and month, a missing file or any `dealid` gap is
   logged with its reason; more than 5% of included contracts missing a month stops the
   collection for review.
-- **Stop conditions:** free disk below 10 GiB, or projected below it within 30 days;
-  a failed offsite archive or restore check; a missing month above the 5% threshold;
-  or a collector run outside its registered universe.
-
-## Decision
-
-- **Supported now:** the **registry v4 Gate-to-Bybit set (44 bases)** with raw gzip
-  and Parquet kept on the server: 0.29 GiB a month, 1.75 GiB after 6 months, about 21
-  months to reach the reserve. This is also the only set with approved identity today
-  (PR 3).
-- **Not supported on the current disk:** the **full 592-base universe** (24 GiB after
-  6 months, the usable 6.16 GiB lasts about 1.5 months) and the full universe without
-  its 10 largest bases (15.1 GiB; about 2.5 months). The reason is the server's free
-  disk above the reserve, not bandwidth, CPU or offsite capacity (the Storage Box has
-  about 950 GB free at a fixed price).
-- **Ways to support the full universe**, an owner decision when identity work extends
-  the universe:
-  1. keep only Parquet locally and the raw archives offsite under a never-pruned
-     prefix with gated local deletion: about 9.7 GiB for 6 months, still above the
-     usable space;
-  2. also hold only the last 3 months of Parquet locally: about 4.9 GiB, fits;
-  3. add a server volume: public price listings checked on 2026-10-02 give about
-     0.044-0.052 EUR per GB a month excluding VAT, so about 2.2-2.6 EUR a month for
-     50 GB; the current price is confirmed in the Hetzner console before ordering.
+- **Stop conditions:** free disk below 10 GiB, or projected below it within 30 days at
+  the measured total growth; a failed offsite archive or restore check; a missing
+  month above the 5% threshold; or a collector run outside its registered universe.
 
 ## Not measured
 
-- database growth outside the bars tables, which the 10 GiB reserve covers;
+- a disk-level growth series (only the table-level estimate above);
+- conversion time, CPU and memory on the server itself;
 - Gate's archive publication lag and whether delisted contracts appear (PR 3, H2);
-- conversion time on the server itself (measured on a workstation);
 - more than two months of archive sizes;
-- the 65 multiplier-prefixed names.
+- the 64 bases without a same-named Gate file.
 
 ## Requirements for the collector PR
 
-Register its universe (start: the 44 registry bases), months and budget before it
-runs; download by `HEAD`-checked size against these limits; keep native gzip with
+Before it runs: the other growth brought under the threshold and confirmed by seven
+days of free disk and database size outside the bars, or a volume added (an owner
+decision); its universe (start: the 44 registry bases), months and budget registered.
+Then: download by `HEAD`-checked size against these limits; keep native gzip with
 SHA-256 and a per-month manifest; convert by streaming to Parquet; log gaps; archive
 offsite under a never-pruned prefix before any local deletion; verify a restore of one
 month; and stop on the conditions above. Collection itself still waits for the
