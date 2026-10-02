@@ -5,7 +5,7 @@ import hashlib
 import io
 import json
 import zipfile
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -38,34 +38,154 @@ PRICE = "98765.4321"  # a sentinel price that must never reach the artifact
 )
 def test_current_data_endpoints_are_refused_even_for_history(url: str) -> None:
     with pytest.raises(probe.ProtocolViolationError, match="forbidden"):
-        probe.check_request("GET", url, data_end=JULY_END)
+        probe.classify_request("GET", url, {"from": 1, "to": 2})
 
 
-def test_only_registered_endpoints_with_a_data_end_before_the_boundary_pass() -> None:
+JULY_HOUR = (
+    int(datetime(2026, 7, 15, 12, tzinfo=UTC).timestamp()),
+    int(datetime(2026, 7, 15, 13, tzinfo=UTC).timestamp()),
+)
+GATE_JULY = f"{probe.GATE_ARCHIVE}/futures_usdt/trades/202607/C98_USDT-202607.csv.gz"
+
+
+def test_the_window_is_derived_from_the_actual_request() -> None:
+    c = probe.classify_request
     assert (
-        probe.check_request("GET", f"{probe.BYBIT}/v5/market/instruments-info", data_end=None)
+        c("GET", f"{probe.BYBIT}/v5/market/instruments-info", {"category": "linear"}).kind
         == "metadata"
     )
-    assert (
-        probe.check_request("HEAD", f"{probe.GATE_ARCHIVE}/futures_usdt/trades/x", data_end=None)
-        == "archive"
+    july = c("HEAD", GATE_JULY, None)
+    assert (july.kind, july.window_end) == ("archive", JULY_END)
+    hour = c(
+        "GET",
+        f"{probe.GATE_ARCHIVE}/futures_usdt/orderbooks/202607/C98_USDT-2026071512.csv.gz",
+        None,
     )
-    assert (
-        probe.check_request("GET", f"{probe.GATE_API}/futures/usdt/trades", data_end=JULY_END)
-        == "historical"
+    assert hour.window_end == datetime(2026, 7, 15, 13, tzinfo=UTC)
+    trades = c(
+        "GET", probe.GATE_TRADES, {"contract": "C98_USDT", "from": JULY_HOUR[0], "to": JULY_HOUR[1]}
     )
-    with pytest.raises(probe.ProtocolViolationError, match="before boundary"):
-        probe.check_request("GET", f"{probe.GATE_ARCHIVE}/futures_usdt/trades/x", data_end=None)
-    with pytest.raises(probe.ProtocolViolationError, match="before the boundary"):
-        probe.check_request(
+    assert trades.window_end == datetime(2026, 7, 15, 13, tzinfo=UTC)
+    stats = c(
+        "GET",
+        probe.GATE_CONTRACT_STATS,
+        {"contract": "C", "interval": "5m", "from": JULY_HOUR[0], "limit": 12},
+    )
+    assert stats.window_end == datetime(2026, 7, 15, 13, tzinfo=UTC)
+    day = c(
+        "GET",
+        f"{probe.BINANCE_ARCHIVE}/data/futures/um/daily/metrics/C98USDT/C98USDT-metrics-2026-07-31.zip.CHECKSUM",
+        None,
+    )
+    assert day.window_end == JULY_END
+    listing = c(
+        "GET",
+        probe.BINANCE_LISTING,
+        {"prefix": "data/futures/um/daily/aggTrades/C98USDT/C98USDT-aggTrades-2026-07"},
+    )
+    assert listing.window_end == JULY_END
+
+
+@pytest.mark.parametrize(
+    ("method", "url", "params", "message"),
+    [
+        # Review repro: an October trade window behind a declared August boundary.
+        ("GET", probe.GATE_TRADES, {"contract": "BTC_USDT", "to": 1790899200}, "integer `from`"),
+        (
             "GET",
-            f"{probe.GATE_API}/futures/usdt/trades",
-            data_end=JULY_END + timedelta(seconds=1),
+            probe.GATE_TRADES,
+            {"contract": "BTC_USDT", "from": 1790895600, "to": 1790899200},
+            "data window ends",
+        ),
+        # Review repro: a September archive file.
+        (
+            "GET",
+            f"{probe.GATE_ARCHIVE}/futures_usdt/trades/202609/BTC_USDT-202609.csv.gz",
+            None,
+            "data window ends",
+        ),
+        # A HEAD returns the size of a file in the blind window: refused too.
+        (
+            "HEAD",
+            f"{probe.GATE_ARCHIVE}/futures_usdt/trades/202608/BTC_USDT-202608.csv.gz",
+            None,
+            "data window ends",
+        ),
+        (
+            "HEAD",
+            f"{probe.GATE_ARCHIVE}/futures_usdt/trades/202607/BTC_USDT-202608.csv.gz",
+            None,
+            "disagree",
+        ),
+        ("GET", f"{probe.GATE_ARCHIVE}/futures_usdt/trades/x", None, "registered date"),
+        (
+            "GET",
+            f"{probe.BYBIT_ARCHIVE}/trading/C98USDT/C98USDT2026-09-30.csv.gz",
+            None,
+            "data window ends",
+        ),
+        (
+            "GET",
+            probe.GATE_CONTRACT_STATS,
+            {"contract": "C", "interval": "5m", "from": JULY_HOUR[0], "limit": 10_000},
+            "data window ends",
+        ),
+        (
+            "GET",
+            probe.GATE_CONTRACT_STATS,
+            {"contract": "C", "interval": "1d", "from": JULY_HOUR[0], "limit": 1},
+            "registered interval",
+        ),
+        (
+            "GET",
+            probe.BYBIT_OPEN_INTEREST,
+            {"symbol": "C", "startTime": 1, "endTime": 1790899200000},
+            "data window ends",
+        ),
+        # Listings return a size per key: only dated prefixes up to July 2026.
+        (
+            "GET",
+            probe.BINANCE_LISTING,
+            {"prefix": "data/futures/um/daily/aggTrades/C98USDT/"},
+            "dated year or month",
+        ),
+        (
+            "GET",
+            probe.BINANCE_LISTING,
+            {"prefix": "data/futures/um/daily/aggTrades/C98USDT/C98USDT-aggTrades-2026"},
+            "data window ends",
+        ),
+        (
+            "GET",
+            probe.BINANCE_LISTING,
+            {"prefix": "data/futures/um/daily/aggTrades/C98USDT/C98USDT-aggTrades-2026-08"},
+            "data window ends",
+        ),
+        ("GET", f"{probe.BINANCE_FAPI}/fapi/v1/exchangeInfo?x=1", None, "separately"),
+        ("POST", f"{probe.BINANCE_FAPI}/fapi/v1/exchangeInfo", None, "must be a GET"),
+        ("GET", "https://example.com/data", None, "not in the registered protocol"),
+    ],
+)
+def test_requests_outside_the_window_are_refused(
+    method: str, url: str, params: dict[str, Any] | None, message: str
+) -> None:
+    with pytest.raises(probe.ProtocolViolationError, match=message):
+        probe.classify_request(method, url, params)
+
+
+def test_a_refused_request_is_never_sent(tmp_path: Path) -> None:
+    sent: list[str] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        sent.append(str(request.url))
+        return httpx.Response(200, json=[])
+
+    p, _ = _prober(handle, tmp_path)
+    with pytest.raises(probe.ProtocolViolationError):
+        p.request(
+            "gate", "GET", probe.GATE_TRADES, params={"contract": "BTC_USDT", "to": 1790899200}
         )
-    with pytest.raises(probe.ProtocolViolationError, match="plain GET"):
-        probe.check_request("GET", f"{probe.BINANCE_FAPI}/fapi/v1/exchangeInfo", data_end=JULY_END)
-    with pytest.raises(probe.ProtocolViolationError, match="not in the registered protocol"):
-        probe.check_request("GET", "https://example.com/data", data_end=JULY_END)
+    assert sent == [] and p.budget.requests["gate"] == 0
     # The boundary also keeps the unread HYP-012b holdout (from 2026-08-31) out.
     assert datetime(2026, 8, 31, tzinfo=UTC) > probe.BOUNDARY
 
@@ -108,6 +228,59 @@ def test_request_and_byte_limits(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         p.request("bybit", "GET", META)
     with pytest.raises(probe.ProtocolViolationError, match="over 5 bytes"):
         p.request("binance", "GET", f"{probe.BINANCE_FAPI}/fapi/v1/exchangeInfo", max_bytes=5)
+
+
+def test_partial_downloads_count_toward_the_byte_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Review repro: retried partial streams transferred bytes the ledger never saw."""
+    monkeypatch.setattr(probe, "MAX_TOTAL_BYTES", 6)
+    transferred: list[int] = []
+
+    class BrokenStream(httpx.SyncByteStream):
+        def __iter__(self) -> Any:
+            transferred.append(4)
+            yield b"1234"
+            raise httpx.ReadError("synthetic midstream disconnect")
+
+    p, _ = _prober(lambda _r: httpx.Response(200, stream=BrokenStream()), tmp_path)
+    with pytest.raises(probe.SourceStoppedError, match="byte limit"):
+        p.request("gate", "GET", GATE_JULY)
+    # Both partial attempts are counted; the second one crosses the cap and stops.
+    assert sum(transferred) == 8 and p.budget.bytes_downloaded == 8
+    assert [e.get("bytes") for e in p.budget.log] == [4, 4]
+
+
+def test_the_wall_limit_applies_during_a_stream(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clock = [0.0]
+    monkeypatch.setattr("schurfer_analytics.pre_move_source_probe.time.monotonic", lambda: clock[0])
+
+    class SlowStream(httpx.SyncByteStream):
+        def __iter__(self) -> Any:
+            clock[0] = probe.MAX_WALL_SECONDS + 1
+            yield b"1234"
+
+    p, _ = _prober(lambda _r: httpx.Response(200, stream=SlowStream()), tmp_path)
+    with pytest.raises(probe.SourceStoppedError, match="wall"):
+        p.request("gate", "GET", GATE_JULY)
+
+
+def test_a_retry_never_sleeps_past_the_wall_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clock = [0.0]
+    monkeypatch.setattr("schurfer_analytics.pre_move_source_probe.time.monotonic", lambda: clock[0])
+
+    def handle(_r: httpx.Request) -> httpx.Response:
+        clock[0] = probe.MAX_WALL_SECONDS - 0.5
+        return httpx.Response(503)
+
+    p, sleeps = _prober(handle, tmp_path)
+    with pytest.raises(probe.SourceStoppedError, match="wall"):
+        p.request("bybit", "GET", META)
+    assert sleeps == []
 
 
 # --- selection ---------------------------------------------------------------------------
@@ -278,9 +451,10 @@ def _handler(request: httpx.Request) -> httpx.Response:
         )
     if "s3-ap-northeast-1" in url:
         prefix = request.url.params["prefix"]
-        symbol = prefix.rstrip("/").rsplit("/", 1)[-1]
-        keys = "".join(
-            f"<Key>{prefix}{symbol}-aggTrades-2026-07-{d:02d}.zip</Key>" for d in (14, 15)
+        keys = (
+            "".join(f"<Key>{prefix}-{d:02d}.zip</Key>" for d in (14, 15))
+            if prefix.endswith("-2026-07")
+            else ""
         )
         return httpx.Response(
             200,
@@ -334,3 +508,24 @@ def test_a_full_run_respects_the_protocol_and_keeps_no_price(tmp_path: Path) -> 
     artifact = json.dumps(result)
     assert PRICE not in artifact  # prices are parsed for structure only, never kept
     assert any((tmp_path / "raw").iterdir())  # raw files stay in the gitignored directory
+
+
+def test_the_artifact_replays_offline_and_refuses_a_corrupt_input(tmp_path: Path) -> None:
+    raw = tmp_path / "raw"
+    client = httpx.Client(transport=httpx.MockTransport(_handler))
+    result = probe.run(client, raw, code_revision="a" * 40, working_tree_dirty=False)
+    artifact = json.loads(json.dumps(result))
+    log = artifact["request_log"]
+    assert artifact["catalogue"]["universe"] == sorted(artifact["catalogue"]["universe"])
+    assert len(artifact["catalogue"]["universe"]) == artifact["catalogue"]["universe_size"]
+    assert all("params" in e and "sha256" in e for e in log)
+    assert all(e["window_end"] for e in log if e["kind"] != "metadata")
+    assert all(
+        e["window_end"] for e in log if e["url"] == probe.BINANCE_LISTING
+    )  # listings are dated too
+    again = probe.replay(artifact, raw)  # no network: the transport only serves the log
+    assert json.loads(json.dumps(probe.replayable(again))) == probe.replayable(artifact)
+    victim = raw / "responses" / log[0]["sha256"]
+    victim.write_bytes(b"tampered")
+    with pytest.raises(ValueError, match="corrupt"):
+        probe.replay(artifact, raw)

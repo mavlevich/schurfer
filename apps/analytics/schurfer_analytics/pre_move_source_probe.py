@@ -1,15 +1,21 @@
 """Bounded, outcome-blind probes for docs/research/pre-move-source-selection-v1.md.
 
-Runs once from a workstation against public endpoints. It enforces the registered
-protocol rather than trusting the caller:
+Runs from a workstation against public endpoints and enforces the registered protocol
+(with amendment A1) rather than trusting the caller:
 
-- a request is either an allowed price-free metadata request (catalogues, archive
-  listings, HEAD) or a value-bearing historical request whose data ends no later than
-  BOUNDARY (2026-08-01T00:00:00Z); forbidden current-data endpoints are refused;
-- hard limits on requests (total and per source), pages, bytes per file and in total,
-  retries and wall time; a 429 or 418 stops that source;
-- raw downloads are kept under the gitignored runtime directory with SHA-256, and the
-  artifact holds only structure, counts, sizes and hashes, never a price or a return.
+- every request is classified from its actual URL and parameters before it is sent:
+  an allowed price-free metadata request, or an archive or historical request whose
+  data window, derived from the file name or the query bounds, ends no later than
+  BOUNDARY (2026-08-01T00:00:00Z). A request without a derivable upper bound, with a
+  bound after BOUNDARY, or to a current-data endpoint is refused and never sent. This
+  covers HEAD requests and archive listings, whose sizes are themselves data;
+- hard limits on requests (total and per source), pages, bytes (counted per received
+  chunk, failed attempts included) and wall time (checked during transfers too);
+  a 429 or 418 stops that source;
+- every response body is recorded under the gitignored runtime directory by its
+  SHA-256, and the request log keeps method, URL, parameters, window end, status and
+  hash, so `--replay` recomputes the whole artifact offline from those inputs. The
+  artifact holds structure, counts, sizes and hashes only, never a price or a return.
 """
 
 from __future__ import annotations
@@ -24,7 +30,7 @@ import re
 import sys
 import time
 import zipfile
-from collections import Counter
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from itertools import pairwise
@@ -39,6 +45,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
 PROTOCOL_VERSION = "pre_move_source_selection_v1"
+PROTOCOL_AMENDMENT = "A1"
 BOUNDARY = datetime(2026, 8, 1, tzinfo=UTC)
 UNIVERSE_LAUNCHED_BEFORE = datetime(2026, 7, 1, tzinfo=UTC)
 PROBE_DAY = datetime(2026, 7, 15, tzinfo=UTC)
@@ -47,6 +54,10 @@ SAMPLE_SALT = "pre-move-source-selection-v1:"
 SAMPLE_SIZE = 12
 ANCHORS = ("BTC", "ETH")
 SOURCES = ("gate", "binance", "blofin", "mexc", "bybit")
+# Binance archive listings are asked per year, then per month in 2026, so no key
+# (and no size) dated after the boundary month is ever returned.
+LISTING_YEARS: tuple[int, ...] = tuple(range(2019, 2026))
+LISTING_MONTHS_2026: tuple[int, ...] = tuple(range(1, 8))
 
 MAX_REQUESTS = 600
 MAX_REQUESTS_PER_SOURCE = 200
@@ -68,22 +79,21 @@ GATE_API = "https://api.gateio.ws/api/v4"
 GATE_ARCHIVE = "https://download.gatedata.org"
 BYBIT_ARCHIVE = "https://public.bybit.com"
 
-# Price-free metadata (documented responses carry no price, volume, OI, funding or
-# trade field) and archive hosts, where listings and HEAD are metadata.
-METADATA_PREFIXES: tuple[str, ...] = (
-    f"{BYBIT}/v5/market/instruments-info",
-    f"{BINANCE_FAPI}/fapi/v1/exchangeInfo",
-    f"{BLOFIN}/api/v1/market/instruments",
-    *(f"{host}/api/v1/contract/detail" for host in MEXC_HOSTS),
-    BINANCE_LISTING,
+# Price-free metadata: the documented responses carry no price, volume, OI, funding
+# or trade field. Exact endpoints only.
+METADATA_ENDPOINTS: frozenset[str] = frozenset(
+    {
+        f"{BYBIT}/v5/market/instruments-info",
+        f"{BINANCE_FAPI}/fapi/v1/exchangeInfo",
+        f"{BLOFIN}/api/v1/market/instruments",
+        *(f"{host}/api/v1/contract/detail" for host in MEXC_HOSTS),
+        BINANCE_LISTING,
+    }
 )
-ARCHIVE_PREFIXES: tuple[str, ...] = (BINANCE_ARCHIVE, GATE_ARCHIVE, BYBIT_ARCHIVE)
-# Historical value endpoints, allowed only with an explicit data end before BOUNDARY.
-HISTORICAL_PREFIXES: tuple[str, ...] = (
-    f"{GATE_API}/futures/usdt/trades",
-    f"{GATE_API}/futures/usdt/contract_stats",
-    f"{BYBIT}/v5/market/open-interest",
-)
+GATE_TRADES = f"{GATE_API}/futures/usdt/trades"
+GATE_CONTRACT_STATS = f"{GATE_API}/futures/usdt/contract_stats"
+BYBIT_OPEN_INTEREST = f"{BYBIT}/v5/market/open-interest"
+CONTRACT_STATS_INTERVAL_SECONDS = {"5m": 300}
 FORBIDDEN_FRAGMENTS: tuple[str, ...] = (
     "/futures/usdt/contracts",
     "/ticker",
@@ -97,6 +107,17 @@ FORBIDDEN_FRAGMENTS: tuple[str, ...] = (
     "/market/trades",
     "/market/recent-trade",
 )
+_GATE_FILE = re.compile(
+    r"^/futures_usdt/(trades|orderbooks)/(\d{6})/[A-Z0-9]+_USDT-(\d{6}|\d{10})\.csv\.gz$"
+)
+_BINANCE_FILE = re.compile(
+    r"^/data/futures/um/daily/(aggTrades|metrics|bookDepth)/([A-Z0-9]+)/"
+    r"\2-\1-(\d{4}-\d{2}-\d{2})\.zip(?:\.CHECKSUM)?$"
+)
+_BYBIT_FILE = re.compile(r"^/trading/([A-Z0-9]+)/\1(\d{4}-\d{2}-\d{2})\.csv\.gz$")
+_BINANCE_PREFIX = re.compile(
+    r"^data/futures/um/daily/aggTrades/([A-Z0-9]+)/\1-aggTrades-(\d{4})(?:-(\d{2}))?$"
+)
 
 
 class ProtocolViolationError(RuntimeError):
@@ -104,49 +125,128 @@ class ProtocolViolationError(RuntimeError):
 
 
 class SourceStoppedError(RuntimeError):
-    """The source hit a rate-limit stop or its request budget."""
+    """The source hit a rate-limit stop, a request or byte budget, or the wall time."""
 
 
-def check_request(method: str, url: str, *, data_end: datetime | None) -> str:
-    """Classify a request as `metadata`, `archive` or `historical`, or refuse it."""
-    base = url.split("?", 1)[0]
-    if any(fragment in base for fragment in FORBIDDEN_FRAGMENTS) and not base.startswith(
-        ARCHIVE_PREFIXES
+@dataclass(frozen=True)
+class RequestClass:
+    kind: str  # metadata, archive or historical
+    window_end: datetime | None
+
+
+def _month_end(yyyymm: str) -> datetime:
+    year, month = int(yyyymm[:4]), int(yyyymm[4:])
+    return datetime(year + month // 12, month % 12 + 1, 1, tzinfo=UTC)
+
+
+def _int_param(params: dict[str, Any], key: str, url: str) -> int:
+    try:
+        return int(params[key])
+    except (KeyError, TypeError, ValueError):
+        raise ProtocolViolationError(f"{url} needs an integer `{key}` bound") from None
+
+
+def _archive_window_end(url: str, path: str) -> datetime:
+    if url.startswith(GATE_ARCHIVE) and (match := _GATE_FILE.match(path)):
+        directory, stamp = match.group(2), match.group(3)
+        if not stamp.startswith(directory):
+            raise ProtocolViolationError(f"archive file and directory disagree: {url}")
+        if len(stamp) == 6:
+            return _month_end(stamp)
+        hour = datetime.strptime(stamp, "%Y%m%d%H").replace(tzinfo=UTC)
+        return hour + timedelta(hours=1)
+    if url.startswith(BINANCE_ARCHIVE) and (match := _BINANCE_FILE.match(path)):
+        return datetime.fromisoformat(match.group(3)).replace(tzinfo=UTC) + timedelta(days=1)
+    if url.startswith(BYBIT_ARCHIVE) and (match := _BYBIT_FILE.match(path)):
+        return datetime.fromisoformat(match.group(2)).replace(tzinfo=UTC) + timedelta(days=1)
+    raise ProtocolViolationError(f"archive path without a registered date: {url}")
+
+
+def _listing_window_end(params: dict[str, Any]) -> datetime:
+    match = _BINANCE_PREFIX.match(str(params.get("prefix", "")))
+    if match is None:
+        raise ProtocolViolationError("archive listing needs a dated year or month prefix")
+    year, month = int(match.group(2)), match.group(3)
+    if month is None:
+        return datetime(year + 1, 1, 1, tzinfo=UTC)
+    return _month_end(f"{year}{month}")
+
+
+def classify_request(method: str, url: str, params: dict[str, Any] | None) -> RequestClass:
+    """Derive the request's data window from its actual URL and parameters and refuse
+    anything outside the protocol. Nothing is trusted from the caller."""
+    params = params or {}
+    if "?" in url:
+        raise ProtocolViolationError("query parameters must be passed separately")
+    parsed = httpx.URL(url)
+    if any(fragment in parsed.path for fragment in FORBIDDEN_FRAGMENTS) and not url.startswith(
+        (BINANCE_ARCHIVE, GATE_ARCHIVE, BYBIT_ARCHIVE)
     ):
-        raise ProtocolViolationError(f"forbidden current-data endpoint: {base}")
-    if base.startswith(METADATA_PREFIXES):
-        if method != "GET" or data_end is not None:
-            raise ProtocolViolationError(f"metadata request must be a plain GET: {base}")
-        return "metadata"
-    if base.startswith(ARCHIVE_PREFIXES):
-        if method == "HEAD":
-            return "archive"
-        if data_end is None or data_end > BOUNDARY:
-            raise ProtocolViolationError(
-                f"archive download without a data end before boundary: {base}"
-            )
-        return "archive"
-    if base.startswith(HISTORICAL_PREFIXES):
-        if method != "GET" or data_end is None or data_end > BOUNDARY:
-            raise ProtocolViolationError(f"historical request must end before the boundary: {base}")
-        return "historical"
-    raise ProtocolViolationError(f"endpoint not in the registered protocol: {base}")
+        raise ProtocolViolationError(f"forbidden current-data endpoint: {url}")
+    if url in METADATA_ENDPOINTS:
+        if method != "GET":
+            raise ProtocolViolationError(f"metadata request must be a GET: {url}")
+        listing_end = _listing_window_end(params) if url == BINANCE_LISTING else None
+        result = RequestClass("metadata", listing_end)
+    elif url.startswith((BINANCE_ARCHIVE, GATE_ARCHIVE, BYBIT_ARCHIVE)):
+        if method not in ("GET", "HEAD") or params:
+            raise ProtocolViolationError(f"archive request must be a plain GET or HEAD: {url}")
+        result = RequestClass("archive", _archive_window_end(url, parsed.path))
+    elif url == GATE_TRADES:
+        start_s, end_s = _int_param(params, "from", url), _int_param(params, "to", url)
+        if start_s >= end_s:
+            raise ProtocolViolationError("empty or inverted trade window")
+        result = RequestClass("historical", datetime.fromtimestamp(end_s, UTC))
+    elif url == GATE_CONTRACT_STATS:
+        interval = CONTRACT_STATS_INTERVAL_SECONDS.get(str(params.get("interval")))
+        if interval is None:
+            raise ProtocolViolationError("contract_stats needs a registered interval")
+        from_s, limit = _int_param(params, "from", url), _int_param(params, "limit", url)
+        if limit <= 0 or "to" in params:
+            raise ProtocolViolationError("contract_stats is bounded by from, interval and limit")
+        result = RequestClass("historical", datetime.fromtimestamp(from_s + interval * limit, UTC))
+    elif url == BYBIT_OPEN_INTEREST:
+        start_ms = _int_param(params, "startTime", url)
+        end_ms = _int_param(params, "endTime", url)
+        if start_ms >= end_ms:
+            raise ProtocolViolationError("empty or inverted open-interest window")
+        result = RequestClass("historical", datetime.fromtimestamp(end_ms / 1000, UTC))
+    else:
+        raise ProtocolViolationError(f"endpoint not in the registered protocol: {url}")
+    if method != "GET" and result.kind != "archive":
+        raise ProtocolViolationError(f"only GET is registered for {url}")
+    if result.window_end is not None and result.window_end > BOUNDARY:
+        raise ProtocolViolationError(f"data window ends {result.window_end.isoformat()}: {url}")
+    if result.kind != "metadata" and result.window_end is None:
+        raise ProtocolViolationError(f"no derivable data window: {url}")
+    return result
 
 
 @dataclass
 class Budget:
-    started: float = field(default_factory=time.monotonic)
+    started: float = field(default_factory=lambda: time.monotonic())
     requests: Counter[str] = field(default_factory=Counter)
     bytes_downloaded: int = 0
     stopped: dict[str, str] = field(default_factory=dict)
-    errors: list[dict[str, Any]] = field(default_factory=list)
     log: list[dict[str, Any]] = field(default_factory=list)
+
+    def remaining(self) -> float:
+        return MAX_WALL_SECONDS - (time.monotonic() - self.started)
+
+    def check_time(self) -> None:
+        if self.remaining() <= 0:
+            raise SourceStoppedError("wall-time limit reached")
+
+    def take_bytes(self, count: int) -> None:
+        """Count every received chunk, failed attempts included, then stop past the cap."""
+        self.bytes_downloaded += count
+        if self.bytes_downloaded > MAX_TOTAL_BYTES:
+            raise SourceStoppedError("total byte limit reached")
 
     def admit(self, source: str) -> None:
         if source in self.stopped:
             raise SourceStoppedError(f"{source} stopped: {self.stopped[source]}")
-        if time.monotonic() - self.started > MAX_WALL_SECONDS:
-            raise SourceStoppedError("wall-time limit reached")
+        self.check_time()
         if sum(self.requests.values()) >= MAX_REQUESTS:
             raise SourceStoppedError("total request limit reached")
         if self.requests[source] >= MAX_REQUESTS_PER_SOURCE:
@@ -162,6 +262,10 @@ class Response:
     body: bytes
 
 
+def _canonical_params(params: dict[str, Any] | None) -> dict[str, str]:
+    return {k: str(v) for k, v in sorted((params or {}).items())}
+
+
 class Prober:
     def __init__(
         self,
@@ -175,6 +279,27 @@ class Prober:
         self.budget = Budget()
         self.sleep = sleep
 
+    def record(self, body: bytes) -> str:
+        """Content-addressed store of a response body, for offline replay."""
+        digest = hashlib.sha256(body).hexdigest()
+        target = self.raw_dir / "responses" / digest
+        if not target.exists():
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(body)
+        return digest
+
+    def keep(self, _name: str, body: bytes) -> str:
+        return self.record(body)
+
+    def _retry(self, attempt: int) -> bool:
+        if attempt >= len(RETRY_BACKOFF_SECONDS):
+            return False
+        delay = RETRY_BACKOFF_SECONDS[attempt]
+        if self.budget.remaining() <= delay:
+            raise SourceStoppedError("wall-time limit reached")
+        self.sleep(delay)
+        return True
+
     def request(
         self,
         source: str,
@@ -182,61 +307,90 @@ class Prober:
         url: str,
         *,
         params: dict[str, Any] | None = None,
-        data_end: datetime | None = None,
         max_bytes: int = MAX_FILE_BYTES,
     ) -> Response:
-        kind = check_request(method, url, data_end=data_end)
+        cls = classify_request(method, url, params)
         attempt = 0
         while True:
             self.budget.admit(source)
-            entry: dict[str, Any] = {"source": source, "method": method, "kind": kind}
-            entry["url"] = url
+            entry: dict[str, Any] = {
+                "source": source,
+                "method": method,
+                "url": url,
+                "params": _canonical_params(params),
+                "kind": cls.kind,
+                "window_end": cls.window_end.isoformat() if cls.window_end else None,
+            }
+            received = 0
             try:
+                timeout = min(TIMEOUT_SECONDS, self.budget.remaining())
                 if method == "HEAD":
-                    raw = self.client.head(url, params=params, timeout=TIMEOUT_SECONDS)
+                    raw = self.client.head(url, timeout=timeout)
                     body = b""
                 else:
-                    with self.client.stream(
-                        "GET", url, params=params, timeout=TIMEOUT_SECONDS
-                    ) as streamed:
+                    with self.client.stream("GET", url, params=params, timeout=timeout) as streamed:
                         raw = streamed
                         chunks: list[bytes] = []
-                        size = 0
                         for chunk in streamed.iter_bytes():
-                            size += len(chunk)
-                            if size > max_bytes:
+                            received += len(chunk)
+                            self.budget.take_bytes(len(chunk))
+                            self.budget.check_time()
+                            if received > max_bytes:
                                 raise ProtocolViolationError(f"response over {max_bytes} bytes")
-                            if self.budget.bytes_downloaded + size > MAX_TOTAL_BYTES:
-                                raise SourceStoppedError("total byte limit reached")
                             chunks.append(chunk)
                         body = b"".join(chunks)
-                self.budget.bytes_downloaded += len(body)
-                entry.update(status=raw.status_code, bytes=len(body))
-                self.budget.log.append(entry)
-                if raw.status_code in STOP_STATUSES:
-                    self.budget.stopped[source] = f"HTTP {raw.status_code}"
-                    raise SourceStoppedError(f"{source} rate-limited: HTTP {raw.status_code}")
-                if raw.status_code >= 500 and attempt < len(RETRY_BACKOFF_SECONDS):
-                    self.sleep(RETRY_BACKOFF_SECONDS[attempt])
-                    attempt += 1
-                    continue
-                return Response(
-                    raw.status_code, {k.lower(): v for k, v in raw.headers.items()}, body
-                )
             except httpx.TransportError as error:
-                entry.update(status=None, error=type(error).__name__)
+                entry.update(status=None, error=type(error).__name__, bytes=received)
                 self.budget.log.append(entry)
-                if attempt < len(RETRY_BACKOFF_SECONDS):
-                    self.sleep(RETRY_BACKOFF_SECONDS[attempt])
+                if self._retry(attempt):
                     attempt += 1
                     continue
                 raise
+            except (SourceStoppedError, ProtocolViolationError) as error:
+                entry.update(status=None, error=str(error), bytes=received)
+                self.budget.log.append(entry)
+                raise
+            headers = {k.lower(): v for k, v in raw.headers.items()}
+            entry.update(
+                status=raw.status_code,
+                bytes=received,
+                sha256=self.record(body),
+                content_length=headers.get("content-length"),
+            )
+            self.budget.log.append(entry)
+            if raw.status_code in STOP_STATUSES:
+                self.budget.stopped[source] = f"HTTP {raw.status_code}"
+                raise SourceStoppedError(f"{source} rate-limited: HTTP {raw.status_code}")
+            if raw.status_code >= 500 and self._retry(attempt):
+                attempt += 1
+                continue
+            return Response(raw.status_code, headers, body)
 
-    def keep(self, name: str, body: bytes) -> str:
-        digest = hashlib.sha256(body).hexdigest()
-        self.raw_dir.mkdir(parents=True, exist_ok=True)
-        (self.raw_dir / name).write_bytes(body)
-        return digest
+
+def replay_transport(log: Sequence[dict[str, Any]], raw_dir: Path) -> httpx.MockTransport:
+    """Serve the recorded responses in their original order, offline. A request that
+    was not recorded fails, so a replay cannot silently differ from the run."""
+    queues: dict[tuple[str, str, str], list[dict[str, Any]]] = defaultdict(list)
+    for entry in log:
+        key = (entry["method"], entry["url"], json.dumps(entry["params"], sort_keys=True))
+        queues[key].append(entry)
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        url = str(request.url.copy_with(query=None))
+        params = {k: v for k, v in sorted(request.url.params.multi_items())}
+        key = (request.method, url, json.dumps(params, sort_keys=True))
+        if not queues.get(key):
+            raise AssertionError(f"request not in the recorded log: {request.method} {request.url}")
+        entry = queues[key].pop(0)
+        if entry.get("status") is None:
+            raise httpx.ReadError(str(entry.get("error")), request=request)
+        body = (raw_dir / "responses" / entry["sha256"]).read_bytes()
+        if hashlib.sha256(body).hexdigest() != entry["sha256"]:
+            raise ValueError(f"recorded response {entry['sha256']} is corrupt")
+        headers = {"content-length": entry["content_length"]} if entry.get("content_length") else {}
+        return httpx.Response(entry["status"], headers=headers, content=body)
+
+    return httpx.MockTransport(handle)
 
 
 # --- catalogue and sample --------------------------------------------------------------
@@ -517,7 +671,6 @@ def _first_present(order: Sequence[str], present: set[str], k: int) -> list[str]
 
 
 def gate_probes(p: Prober, sample_bases: Sequence[str]) -> dict[str, Any]:
-    month_end = BOUNDARY
     sizes: dict[str, int | None] = {}
     for base in sample_bases:
         url = f"{GATE_ARCHIVE}/futures_usdt/trades/202607/{base}_USDT-202607.csv.gz"
@@ -534,7 +687,7 @@ def gate_probes(p: Prober, sample_bases: Sequence[str]) -> dict[str, Any]:
     hour_ids: dict[str, set[int]] = {}
     for base in chosen:
         url = f"{GATE_ARCHIVE}/futures_usdt/trades/202607/{base}_USDT-202607.csv.gz"
-        r = p.request("gate", "GET", url, data_end=month_end)
+        r = p.request("gate", "GET", url)
         digest = p.keep(f"gate-trades-{base}-202607.csv.gz", r.body)
         structure, ids = gate_trades_structure(r.body, PROBE_HOUR)
         out["g2"][base] = {"sha256": digest, "bytes": len(r.body), **structure}
@@ -557,7 +710,6 @@ def gate_probes(p: Prober, sample_bases: Sequence[str]) -> dict[str, Any]:
                     "limit": 1000,
                     "offset": page * 1000,
                 },
-                data_end=PROBE_HOUR[1],
             )
             status = r.status
             pages += 1
@@ -583,7 +735,6 @@ def gate_probes(p: Prober, sample_bases: Sequence[str]) -> dict[str, Any]:
             "GET",
             f"{GATE_API}/futures/usdt/contract_stats",
             params={"contract": f"{base}_USDT", "interval": "5m", "from": lo, "limit": 12},
-            data_end=PROBE_HOUR[1],
         )
         if r.status == 200:
             rows = [x for x in _json(r) if x.get("time", 0) < hi]
@@ -602,7 +753,7 @@ def gate_probes(p: Prober, sample_bases: Sequence[str]) -> dict[str, Any]:
             size = int(r.headers.get("content-length", 0)) if r.status == 200 else None
             out["g5"][pattern] = {"status": r.status, "bytes": size}
             if r.status == 200 and size is not None and size <= MAX_FILE_BYTES:
-                g = p.request("gate", "GET", f"{GATE_ARCHIVE}/{pattern}", data_end=BOUNDARY)
+                g = p.request("gate", "GET", f"{GATE_ARCHIVE}/{pattern}")
                 digest = p.keep(pattern.replace("/", "-"), g.body)
                 head = gzip.decompress(g.body).decode().splitlines()[:50]
                 rows = list(csv.reader(head))
@@ -644,11 +795,9 @@ def binance_probes(p: Prober, cat: dict[str, Any], sample_bases: Sequence[str]) 
     out: dict[str, Any] = {"b1": {}}
     for base in present:
         symbol = symbols[base]["symbol"]
-        keys = [
-            k
-            for k in _listing(p, f"data/futures/um/daily/aggTrades/{symbol}/")
-            if k.endswith(".zip")
-        ]
+        prefix = f"data/futures/um/daily/aggTrades/{symbol}/{symbol}-aggTrades-"
+        periods = [str(y) for y in LISTING_YEARS] + [f"2026-{m:02d}" for m in LISTING_MONTHS_2026]
+        keys = [k for period in periods for k in _listing(p, prefix + period) if k.endswith(".zip")]
         days = sorted(k.rsplit("-aggTrades-", 1)[-1].removesuffix(".zip") for k in keys)
         out["b1"][base] = {
             "days": len(days),
@@ -657,15 +806,12 @@ def binance_probes(p: Prober, cat: dict[str, Any], sample_bases: Sequence[str]) 
         }
     chosen = _first_present(sample_bases, set(present), 3)
     day = PROBE_DAY.date().isoformat()
-    day_end = PROBE_DAY + timedelta(days=1)
 
     def archive(kind: str, base: str) -> tuple[bytes, str, bool]:
         symbol = symbols[base]["symbol"]
         url = f"{BINANCE_ARCHIVE}/data/futures/um/daily/{kind}/{symbol}/{symbol}-{kind}-{day}.zip"
-        body = p.request("binance", "GET", url, data_end=day_end).body
-        checksum = (
-            p.request("binance", "GET", url + ".CHECKSUM", data_end=day_end).body.decode().split()
-        )
+        body = p.request("binance", "GET", url).body
+        checksum = p.request("binance", "GET", url + ".CHECKSUM").body.decode().split()
         digest = p.keep(f"binance-{kind}-{symbol}-{day}.zip", body)
         return body, digest, bool(checksum) and checksum[0] == digest
 
@@ -703,7 +849,7 @@ def bybit_probes(p: Prober, sample_bases: Sequence[str]) -> dict[str, Any]:
         size = int(r.headers.get("content-length", 0)) if r.status == 200 else None
         out["y1"][base] = {"status": r.status, "bytes": size}
         if not downloaded and size is not None and size <= MAX_FILE_BYTES:
-            g = p.request("bybit", "GET", url, data_end=PROBE_DAY + timedelta(days=1))
+            g = p.request("bybit", "GET", url)
             out["y1"][base].update(
                 sha256=p.keep(f"bybit-trades-{symbol}-{day}.csv.gz", g.body),
                 **bybit_trades_structure(g.body),
@@ -723,7 +869,6 @@ def bybit_probes(p: Prober, sample_bases: Sequence[str]) -> dict[str, Any]:
                 "endTime": end - 1,
                 "limit": 200,
             },
-            data_end=PROBE_DAY + timedelta(days=1),
         )
         rows = (_json(r).get("result") or {}).get("list") or [] if r.status == 200 else []
         fields = sorted(rows[0]) if rows else []
@@ -734,23 +879,41 @@ def bybit_probes(p: Prober, sample_bases: Sequence[str]) -> dict[str, Any]:
     return out
 
 
+RUN_FIELDS = ("code_revision", "working_tree_dirty", "started_at", "wall_seconds")
+
+
 def run(
-    client: httpx.Client, raw_dir: Path, *, code_revision: str, working_tree_dirty: bool
+    client: httpx.Client,
+    raw_dir: Path,
+    *,
+    code_revision: str,
+    working_tree_dirty: bool,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> dict[str, Any]:
-    p = Prober(client, raw_dir)
+    p = Prober(client, raw_dir, sleep=sleep)
     result: dict[str, Any] = {
         "protocol_version": PROTOCOL_VERSION,
+        "protocol_amendment": PROTOCOL_AMENDMENT,
         "boundary": BOUNDARY.isoformat(),
-        "code_revision": normalize_code_revision(code_revision),
-        "working_tree_dirty": working_tree_dirty,
-        "started_at": datetime.now(UTC).isoformat(),
+        "run_info": {
+            "code_revision": normalize_code_revision(code_revision),
+            "working_tree_dirty": working_tree_dirty,
+            "started_at": datetime.now(UTC).isoformat(),
+        },
     }
     cat = catalogues(p)
+    universe = set(cat["universe"])
     result["catalogue"] = {
         "bybit_instruments": cat["bybit_instruments"],
         "universe_size": cat["universe_size"],
+        "universe": cat["universe"],
         "sample": cat["sample"],
         "mexc_host": cat["mexc"].get("host"),
+        "universe_present": {
+            "binance": sorted(universe & set(cat["binance"])),
+            "blofin": sorted(universe & set(cat["blofin"])),
+            "mexc": sorted(universe & set(cat["mexc"].get("symbols", {}))),
+        },
         "binance_fields": {b: v for b, v in cat["binance"].items() if b in cat["sample"]},
         "blofin_fields": {b: v for b, v in cat["blofin"].items() if b in cat["sample"]},
         "mexc_fields": {
@@ -785,21 +948,60 @@ def run(
             "total_bytes": MAX_TOTAL_BYTES,
             "wall_seconds": MAX_WALL_SECONDS,
         },
-        "wall_seconds": round(time.monotonic() - p.budget.started, 1),
     }
+    result["run_info"]["wall_seconds"] = round(time.monotonic() - p.budget.started, 1)
     result["request_log"] = p.budget.log
     return result
 
 
+def replayable(result: dict[str, Any]) -> dict[str, Any]:
+    """The artifact without its run-specific fields."""
+    return {k: v for k, v in result.items() if k != "run_info"}
+
+
+def replay(artifact: dict[str, Any], raw_dir: Path) -> dict[str, Any]:
+    """Recompute the artifact offline from its recorded responses; refuse a mismatch."""
+    transport = replay_transport(artifact["request_log"], raw_dir)
+    with httpx.Client(transport=transport) as client:
+        again = run(
+            client,
+            raw_dir,
+            code_revision=artifact["run_info"]["code_revision"],
+            working_tree_dirty=artifact["run_info"]["working_tree_dirty"],
+            sleep=lambda _seconds: None,
+        )
+    # Compared in JSON form: the artifact on disk has lists where a run has tuples.
+    if json.loads(json.dumps(replayable(again))) != json.loads(json.dumps(replayable(artifact))):
+        raise ValueError("offline replay differs from the recorded artifact")
+    return again
+
+
+def _write(path: Path, payload: dict[str, Any]) -> str:
+    body = json.dumps(payload, indent=2, sort_keys=True).encode() + b"\n"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(body)
+    digest = hashlib.sha256(body).hexdigest()
+    path.with_name(path.name + ".sha256").write_text(digest + "\n")
+    return digest
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--code-revision", required=True)
+    parser.add_argument("--code-revision")
     parser.add_argument("--clean-tree", action="store_true")
     parser.add_argument(
         "--raw-dir", type=Path, default=Path("runtime/research/pre-move-source-probe-v1")
     )
-    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--replay", type=Path, help="recompute this artifact offline")
     args = parser.parse_args(argv)
+    if args.replay is not None:
+        artifact = json.loads(args.replay.read_bytes())
+        replay(artifact, args.raw_dir)
+        sys.stdout.write(json.dumps({"replay": "identical", "artifact": str(args.replay)}) + "\n")
+        return
+    if not args.code_revision or args.output is None:
+        parser.error("--code-revision and --output are required for a live run")
     with httpx.Client(
         follow_redirects=False, headers={"User-Agent": "schurfer-research-probe/1"}
     ) as client:
@@ -809,17 +1011,13 @@ def main(argv: Sequence[str] | None = None) -> None:
             code_revision=args.code_revision,
             working_tree_dirty=not args.clean_tree,
         )
-    body = json.dumps(result, indent=2, sort_keys=True).encode() + b"\n"
-    args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_bytes(body)
-    args.output.with_name(args.output.name + ".sha256").write_text(
-        hashlib.sha256(body).hexdigest() + "\n"
-    )
+    digest = _write(args.output, result)
     sys.stdout.write(
         json.dumps(
             {
                 "requests": result["budget"]["requests_total"],
                 "bytes": result["budget"]["bytes_downloaded"],
+                "sha256": digest,
             }
         )
         + "\n"

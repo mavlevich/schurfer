@@ -158,6 +158,46 @@ source and minimal data set or the no-go; and requirements for a future collecti
 (native payload, event and receive time, units, side semantics, gap log, inclusion log,
 identity log, bounded universe and hard budgets).
 
+## Amendment A1 (after review of run 1, before run 2)
+
+The review of the first run found three defects in the probe tool, all in its
+enforcement rather than in the protocol's bounds:
+
+1. **The window guard trusted a declared date.** It accepted a caller-supplied
+   `data_end` instead of the request itself. No request in run 1 crossed the boundary
+   (every logged URL and query was within July), but the guard could not prove it.
+   From A1, the window is derived from the actual request before it is sent: the
+   month or hour in a Gate file name (which must match its directory), the date in a
+   Binance or Bybit file name, `from`/`to` for Gate trades, `from + interval x limit`
+   for `contract_stats` (5 m only, no `to`), and `startTime`/`endTime` for Bybit open
+   interest. A request without a derivable upper bound, or one ending after
+   2026-08-01, is refused unsent, **HEAD requests included**.
+2. **Inputs were not retained.** Run 1 kept the downloaded archives but not the
+   catalogue responses, the historical REST responses or the request parameters, so
+   its universe, sample, coverage and REST-to-archive comparison cannot be replayed.
+   From A1, every response body is stored by SHA-256 under the gitignored runtime
+   directory; the request log records method, URL, parameters, derived window end,
+   status and hash; the artifact holds the full universe and its per-source presence;
+   and `--replay` recomputes the artifact offline from those inputs, refusing any
+   missing or altered response.
+3. **Budgets were incomplete.** Bytes were counted only for completed responses and
+   wall time only before a request. From A1, every received chunk counts, failed
+   attempts included, the wall limit is checked during transfers and before any retry
+   sleep, and a request timeout never exceeds the remaining time.
+
+**A disclosure the review did not raise.** Run 1 listed Binance's archive per symbol
+with an undated prefix. An S3 listing returns each key's size and modification time,
+so run 1 received the sizes of daily files dated after the boundary (up to
+2026-10-01), although the tool kept only key names and used none of those sizes.
+Under the protocol, receipt itself is not blind. From A1, listings are requested per
+year (2019 to 2025) and per month (January to July 2026), so no key or size after
+July 2026 is returned, and an undated prefix is refused.
+
+**Run 2** repeats the registered probes once with the corrected tool, within the
+same bounds, sample rule and limits. Its universe and sample are recomputed from the
+catalogue at run time and compared with run 1. Run 1's artifact is kept unchanged as
+superseded evidence; its unretained inputs are not reconstructed.
+
 ## Report
 
 The probes ran once on 2026-10-02 at 12:12 UTC from clean revision `a0465cb`, under the
