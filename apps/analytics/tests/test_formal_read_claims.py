@@ -168,7 +168,7 @@ class _Repo:
     def __init__(
         self,
         episodes: list[RawQualifiedEpisode],
-        now: datetime,
+        now: Any,
         snapshot: list[RawQualifiedEpisode] | None = None,
     ) -> None:
         self.episodes, self.now = episodes, now
@@ -178,7 +178,13 @@ class _Repo:
         self.fetch_kwargs: list[dict[str, Any]] = []
 
     async def database_now(self) -> datetime:
-        return self.now
+        # A list of instants plays successive clock readings (the last one repeats).
+        now: datetime = (
+            (self.now.pop(0) if len(self.now) > 1 else self.now[0])
+            if isinstance(self.now, list)
+            else self.now
+        )
+        return now
 
     async def open_transactions_started_before(self, _as_of: datetime) -> OpenTransactions:
         return self.open
@@ -226,7 +232,7 @@ def _patch(
     *,
     prior: FormalReadClaim | None = None,
     prefix: int | None = 100,
-    now: datetime | None = None,
+    now: Any = None,
     snapshot: list[RawQualifiedEpisode] | None = None,
 ) -> _Repo:
     repo = _Repo(episodes, now or START + timedelta(days=40), snapshot)
@@ -453,3 +459,47 @@ def test_a_resumed_claim_is_not_re_evaluated(monkeypatch: pytest.MonkeyPatch) ->
     with pytest.raises(RuntimeError, match="protocol order"):
         asyncio.run(report_mod.generate_report(_args()))
     assert events == ["fetch:100", "claim:100", "aggregate"]
+
+
+# 90 episodes matured by the deadline that pass every earlier checkpoint, plus 10 that
+# enter 30m30s before it: their exit bar closes one minute after the deadline.
+_AT_DEADLINE = [
+    _episode(i, f"A{i % 8}", START + timedelta(days=1 + 1.8 * i)) for i in range(90)
+] + [
+    _episode(90 + i, f"B{i}", COHORT_CAPTURE_DEADLINE - timedelta(minutes=30, seconds=30))
+    for i in range(10)
+]
+
+
+def test_the_deadline_cannot_fall_between_the_checkpoints_and_maturity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Review repro: checkpoints judged just before the deadline, maturity counted on a
+    second clock reading just after it, opened a claim with 100 'matured' episodes
+    although only 90 had matured at the deadline."""
+    events: list[str] = []
+    clock = [
+        COHORT_CAPTURE_DEADLINE - timedelta(seconds=1),
+        COHORT_CAPTURE_DEADLINE + timedelta(minutes=1),
+    ]
+    _patch(monkeypatch, _AT_DEADLINE, events, now=clock)
+    recorded = _record_stops(monkeypatch)
+    with pytest.raises(ValueError, match="before fetching"):
+        asyncio.run(report_mod.generate_report(_args()))
+    assert events == [] and recorded == []  # no exit bar, no claim
+
+
+def test_after_the_deadline_ninety_matured_episodes_stop_the_cohort(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+    repo = _patch(
+        monkeypatch, _AT_DEADLINE, events, now=COHORT_CAPTURE_DEADLINE + timedelta(minutes=1)
+    )
+    recorded = _record_stops(monkeypatch)
+    with pytest.raises(FormalReadAdministrativelyStoppedError):
+        asyncio.run(report_mod.generate_report(_args()))
+    assert events == [] and repo.fetch_kwargs == []
+    (record,) = recorded
+    assert record["terminal_reason"] == "accrual_below_rule:2027-03-31"
+    assert len(record["closed_ids"]) == 100

@@ -79,9 +79,11 @@ the two cannot drift.
 - **The reader cannot skip a checkpoint.** Before its first read the formal reader runs
   the same evaluation of every due checkpoint, before it loads any episode, book or quote
   and before it can claim. A checkpoint that stops the cohort stops it there; one that
-  is not yet final refuses the read. The outcome no longer depends on which command runs
-  first. A claim that already exists is resumed without re-evaluation, because a
-  started read is never rewritten.
+  is not yet final refuses the read. The reader reads the database clock once and uses
+  that instant both for the due checkpoints and for maturity, so the deadline cannot
+  fall between the two. The outcome no longer depends on which command runs first. A
+  claim that already exists is resumed without re-evaluation, because a started read
+  is never rewritten.
 - **Non-tradable qualified rows.** The v2 reader refuses a cohort with a qualified episode
   outside `TRADABLE_VENUES`; the rule refuses the same way rather than counting around it.
 

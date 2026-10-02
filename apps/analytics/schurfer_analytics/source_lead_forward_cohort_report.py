@@ -740,6 +740,11 @@ async def generate_report(args: argparse.Namespace) -> SourceLeadForwardCohortRe
             "formal read refused: this cohort's single formal read is already completed"
         )
     repository = SourceLeadForwardCohortRepository.from_url(db_url)
+    # One clock for the whole run: the checkpoints that are due and the episodes that
+    # count as matured are both judged at this instant. A second reading taken after
+    # the checkpoint evaluation could cross the deadline and count episodes that
+    # matured after it, skipping the deadline checkpoint (review repro).
+    database_now = await repository.database_now()
     if prior is None:
         # Every due administrative checkpoint is evaluated before the first read, so a
         # missed checkpoint can never be skipped by running the reader first.
@@ -750,6 +755,7 @@ async def generate_report(args: argparse.Namespace) -> SourceLeadForwardCohortRe
             artifact_dir=args.administrative_stop_dir,
             code_revision=code_revision,
             working_tree_dirty=args.working_tree_dirty,
+            now=database_now,
         )
         if administrative.status in ("stopped", "already_stopped"):
             raise stopped_error(FORMAL_READ_STUDY_ID, CONTRACT_VERSION)
@@ -758,7 +764,6 @@ async def generate_report(args: argparse.Namespace) -> SourceLeadForwardCohortRe
                 "formal read refused before loading any episode: a due administrative "
                 f"checkpoint cannot be evaluated yet ({administrative.detail})"
             )
-    database_now = await repository.database_now()
     raw_episodes = await repository.fetch_qualified_episodes(
         qualification_version=QUALIFICATION_VERSION,
         since=args.since,

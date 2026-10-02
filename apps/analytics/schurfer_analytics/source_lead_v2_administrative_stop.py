@@ -289,16 +289,20 @@ async def evaluate_checkpoints(
     artifact_dir: Path,
     code_revision: str,
     working_tree_dirty: bool,
+    now: datetime | None = None,
 ) -> RunOutcome:
     """Evaluate every due checkpoint in order, each on its final snapshot, and record
-    the first stop. `prior` is the cohort's claim row as the caller read it."""
+    the first stop. `prior` is the cohort's claim row as the caller read it. `now` is
+    the caller's single database clock reading: the formal reader passes the same
+    instant it later uses for maturity, so no checkpoint can fall between the two."""
     if prior is not None and prior.status != STATUS_ADMIN_STOPPED:
         return RunOutcome(
             "formal_read_started",
             (),
             f"the formal read is {prior.status}; the administrative rule no longer applies",
         )
-    now = await repository.database_now()
+    if now is None:
+        now = await repository.database_now()
     decisions: list[CheckpointDecision] = []
     for checkpoint in CHECKPOINTS:
         if checkpoint > now:
