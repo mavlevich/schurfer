@@ -1,0 +1,18 @@
+{
+  "measured_at": "2026-10-03T22:19:56.737219+00:00",
+  "note": "Second reading of the eleven plain tables of growth-inputs.json (first: its measured_at, 2026-10-02T18:28:09Z). Relation sizes only; no row value read.",
+  "query": "SELECT now(), c.relname, pg_total_relation_size(c.oid) FROM pg_class c JOIN pg_stat_user_tables s ON s.relid = c.oid WHERE s.schemaname = 'app' AND c.relname IN (...)",
+  "total_relation_bytes": {
+    "funding_rate_snapshots": 822067200,
+    "momentum_flow_paper_outcomes": 22937600,
+    "momentum_flow_paper_probes": 2236129280,
+    "oi_snapshots": 574054400,
+    "pump_derivatives_context_runs": 105324544,
+    "pump_derivatives_context_samples": 3842564096,
+    "pump_event_snapshots": 64290816,
+    "pump_event_sources": 628908032,
+    "pump_events": 680247296,
+    "trade_decision_outcomes": 1692983296,
+    "trade_decisions": 2840756224
+  }
+}
