@@ -67,6 +67,23 @@ def _connect() -> psycopg.Connection[Any]:
     return conn
 
 
+def _forget_test_archives(conn: psycopg.Connection[Any]) -> None:
+    """Test-only cleanup of this disposable database. The catalog and fence guards forbid
+    deleting rows or lowering a fence, which is the point in production; here they are
+    bypassed for the session (`session_replication_role = replica` skips triggers), so
+    later migration round-trip tests find no archive rows and no raised fence."""
+    with conn.transaction():
+        conn.execute("SET LOCAL session_replication_role = replica")
+        conn.execute(
+            "DELETE FROM app.history_archive_datasets "
+            "WHERE dataset LIKE 'lsr\\_it\\_%' OR dataset = 'lsr_history'"
+        )
+        conn.execute(
+            "UPDATE app.history_archive_fences SET closed_before = '-infinity' "
+            "WHERE dataset = 'lsr_history'"
+        )
+
+
 @pytest.fixture
 def db() -> Any:
     conn = _connect()
@@ -76,6 +93,7 @@ def db() -> Any:
     conn.execute(drop)
     yield conn
     conn.execute(drop)
+    _forget_test_archives(conn)
     conn.close()
 
 

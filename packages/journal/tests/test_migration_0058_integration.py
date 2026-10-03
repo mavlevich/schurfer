@@ -64,6 +64,25 @@ def _dataset() -> str:
     return f"m0058_{uuid.uuid4().hex[:10]}"
 
 
+@pytest.fixture(autouse=True)
+def _forget_test_rows() -> Any:
+    """Test-only cleanup: the guards forbid deleting catalog or fence rows, so they are
+    bypassed for this session on the disposable database, keeping later migration
+    round-trip tests free of archive rows."""
+    yield
+    try:
+        conn = psycopg.connect(TEST_DATABASE_URL, autocommit=True)
+    except psycopg.OperationalError:
+        return
+    with conn:
+        if conn.execute("SELECT to_regclass('app.history_archive_datasets')").fetchone() == (None,):
+            return
+        with conn.transaction():
+            conn.execute("SET LOCAL session_replication_role = replica")
+            conn.execute("DELETE FROM app.history_archive_datasets WHERE dataset LIKE 'm0058\\_%'")
+            conn.execute("DELETE FROM app.history_archive_fences WHERE dataset LIKE 'm0058\\_%'")
+
+
 def test_rows_move_forward_only_with_their_evidence() -> None:
     with _connect_or_skip() as conn:
         row_id = _insert(conn, _dataset())
