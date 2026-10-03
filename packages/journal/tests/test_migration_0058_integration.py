@@ -148,6 +148,31 @@ def test_rows_move_forward_only_with_their_evidence() -> None:
             conn.execute("DELETE FROM app.history_archive_datasets WHERE id = %s", (row_id,))
 
 
+@pytest.mark.parametrize(
+    "proof",
+    [
+        "verified_sha256 = NULL, verified_fingerprint = content_fingerprint",
+        "verified_sha256 = file_sha256, verified_fingerprint = NULL",
+        "verified_sha256 = NULL, verified_fingerprint = NULL",
+    ],
+)
+def test_verified_needs_both_extraction_proofs(proof: str) -> None:
+    """A CHECK that evaluates to NULL passes, so each proof is required explicitly."""
+    with _connect_or_skip() as conn:
+        row_id = _insert(conn, _dataset())
+        conn.execute(
+            "UPDATE app.history_archive_datasets SET state = 'archived', borg_archive = 'a', "
+            "archived_at = now() WHERE id = %s",
+            (row_id,),
+        )
+        with pytest.raises(psycopg.errors.CheckViolation):
+            conn.execute(
+                "UPDATE app.history_archive_datasets SET state = 'verified', "  # noqa: S608
+                f"verified_at = now(), {proof} WHERE id = %s",
+                (row_id,),
+            )
+
+
 def test_one_live_revision_per_range() -> None:
     with _connect_or_skip() as conn:
         dataset = _dataset()

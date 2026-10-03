@@ -7,8 +7,10 @@ Create Date: 2026-10-04
 `app.history_archive_datasets` records each exported range of a history dataset
 (docs/runbooks/history-archive-design-v1.md). A row only moves forward:
 `exported -> archived -> verified`, or to `superseded` from any live state, and each
-state carries its own evidence (CHECK). Content columns never change once written and
-rows are never deleted, so the catalog is an audit trail of what left the database.
+state carries its own evidence (CHECK; every proof column is required explicitly with
+IS NOT NULL, because a CHECK that evaluates to NULL passes). Content columns never
+change once written and rows are never deleted, so the catalog is an audit trail of
+what left the database.
 One live (not superseded) revision exists per dataset and range.
 
 `app.history_archive_fences` holds, per dataset, the instant below which the source
@@ -104,7 +106,9 @@ def upgrade() -> None:
                 OR (state = 'archived' AND borg_archive IS NOT NULL AND archived_at IS NOT NULL
                     AND verified_at IS NULL AND superseded_reason IS NULL)
                 OR (state = 'verified' AND borg_archive IS NOT NULL AND archived_at IS NOT NULL
-                    AND verified_at IS NOT NULL AND verified_sha256 = file_sha256
+                    AND verified_at IS NOT NULL
+                    AND verified_sha256 IS NOT NULL AND verified_sha256 = file_sha256
+                    AND verified_fingerprint IS NOT NULL
                     AND verified_fingerprint = content_fingerprint
                     AND superseded_reason IS NULL)
                 OR (state = 'superseded' AND superseded_reason IS NOT NULL)

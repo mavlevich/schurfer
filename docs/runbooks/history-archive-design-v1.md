@@ -147,9 +147,12 @@ Written beside the file and stored in the catalog.
   the archive listing. It is serialized by an flock, the same way as cold bars.
 - The `history-*` prefix is never pruned. A test asserts that no prune glob in
   `offsite-backup.sh` matches it.
-- Verification extracts the member from that named archive into a temporary
-  directory and rechecks the SHA-256 and the content fingerprint. Only then does the
-  catalog row move to `verified`. Local Parquet is removed only after that.
+- Verification extracts the Parquet and its manifest from that named archive into a
+  temporary directory. The Parquet must match the catalog's SHA-256 and content
+  fingerprint; the manifest must match the catalog's manifest SHA-256 and describe the
+  same contract, range, file and content. Only then does the catalog row move to
+  `verified` (the database requires both extraction proofs, each `IS NOT NULL`).
+  Local Parquet is removed only after that.
 
 **Research access:** an explicit `fetch` downloads one dataset range from its
 recorded archive into a cache with a byte cap and least-recently-used eviction. It
@@ -235,6 +238,15 @@ The deletion PR then only wires step 3 into a CLI.
 - The pilot adds `read_lsr(start, end)`. It reads `verified` archive ranges below
   the fence from fetched Parquet and the rest from PostgreSQL. The fence guarantees
   the two never overlap.
+- The fence, the catalog and the live rows come from one snapshot. A prune commits
+  its drop and its fence move together, so the reader reads the fence again after the
+  snapshot; if it moved, the whole read is repeated (at most three times), never
+  returned short.
+- Below the fence the verified ranges must tile the requested interval exactly; a gap
+  or an overlap is an error, not a shorter result. A week without any chunk has no
+  catalog row and is therefore a gap: recording an empty week as evidence belongs to
+  the deletion PR, together with the rule that the fence moves only over a contiguous
+  verified prefix.
 - A test fails the build if any analytics module other than the archive module
   queries `app.live_long_short_ratio` directly, so a new research reader cannot
   bypass the archive.

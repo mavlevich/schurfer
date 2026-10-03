@@ -414,11 +414,12 @@ class CatalogRow:
     file_sha256: str
     content_fingerprint: str
     borg_archive: str | None
+    manifest_sha256: str = ""
 
 
 _CATALOG_COLUMNS = (
     "id, state, chunk_name, range_start, range_end, revision, row_count, file_name, "
-    "file_bytes, file_sha256, content_fingerprint, borg_archive"
+    "file_bytes, file_sha256, content_fingerprint, borg_archive, manifest_sha256"
 )
 
 
@@ -436,6 +437,7 @@ def _row(values: Sequence[Any]) -> CatalogRow:
         str(values[9]),
         str(values[10]),
         values[11],
+        str(values[12]),
     )
 
 
@@ -620,7 +622,7 @@ def run_archive(
             if not parquet.exists() or sha256_of(parquet) != row.file_sha256:
                 report.failed.append(f"{row.file_name}: missing or changed since export")
                 continue
-            members += [row.file_name, row.file_name.removesuffix(".parquet") + ".manifest.json"]
+            members += [row.file_name, manifest_member(row.file_name)]
         if not members:
             if not report.failed:
                 report.skipped.append("nothing exported to archive")
@@ -683,6 +685,7 @@ def run_verify(
                             f"extracted content {rows} rows / {fingerprint} != catalog "
                             f"{row.row_count} / {row.content_fingerprint}"
                         )
+                    _verify_archived_manifest(contract, row, repo, env, Path(tmp))
             except (ArchiveError, FetchError) as exc:
                 report.failed.append(f"{row.file_name} in {row.borg_archive}: {exc}")
                 continue
@@ -695,6 +698,48 @@ def run_verify(
             (out_dir / row.file_name).unlink(missing_ok=True)
             report.done.append(f"{row.file_name}: verified from {row.borg_archive}")
     return report
+
+
+MAX_MANIFEST_BYTES = 1024 * 1024
+
+
+def manifest_member(file_name: str) -> str:
+    return file_name.removesuffix(".parquet") + ".manifest.json"
+
+
+def _verify_archived_manifest(
+    contract: DatasetContract, row: CatalogRow, repo: str, env: Mapping[str, str], tmp: Path
+) -> None:
+    """The manifest in the same archive must be the one the catalog recorded (SHA-256)
+    and must describe this exact range, file and content."""
+    member = manifest_member(row.file_name)
+    extracted = tmp / member
+    sha = stream_member(
+        repo, str(row.borg_archive), member, extracted, dict(env), MAX_MANIFEST_BYTES
+    )
+    if sha != row.manifest_sha256:
+        raise ArchiveError(f"extracted manifest sha256 {sha} != catalog {row.manifest_sha256}")
+    try:
+        payload = json.loads(extracted.read_text())
+    except ValueError as exc:
+        raise ArchiveError(f"extracted manifest {member} is not JSON") from exc
+    expected = {
+        "dataset": contract.dataset,
+        "contract_version": contract.contract_version,
+        "schema_version": contract.schema_version,
+        "source_table": contract.table,
+        "chunk_name": row.chunk_name,
+        "range_start": row.range_start.isoformat(),
+        "range_end": row.range_end.isoformat(),
+        "row_count": row.row_count,
+        "file_name": row.file_name,
+        "file_bytes": row.file_bytes,
+        "file_sha256": row.file_sha256,
+        "content_fingerprint": row.content_fingerprint,
+    }
+    wrong = sorted(k for k, v in expected.items() if payload.get(k) != v)
+    if wrong:
+        raise ArchiveError(f"extracted manifest {member} disagrees with the catalog on {wrong}")
 
 
 # ---------- research access: fetch into a bounded cache, read ----------
@@ -785,6 +830,35 @@ def fence_of(conn: Any, contract: DatasetContract) -> datetime | None:
     return fence
 
 
+READ_ATTEMPTS = 3
+
+
+def covering_ranges(
+    catalog: Mapping[datetime, CatalogRow], start: datetime, split: datetime
+) -> list[CatalogRow]:
+    """The verified ranges that tile `[start, split)` exactly, or an error naming the
+    first gap or overlap. A week without a verified range is a gap even if it held no
+    rows: emptiness needs its own evidence, which the pilot does not record."""
+    verified = sorted(
+        (
+            r
+            for r in catalog.values()
+            if r.state == "verified" and r.range_start < split and r.range_end > start
+        ),
+        key=lambda r: r.range_start,
+    )
+    cursor = start
+    for index, row in enumerate(verified):
+        if row.range_start > cursor:
+            raise ArchiveError(f"no verified archive covers [{cursor}, {row.range_start})")
+        if index > 0 and row.range_start < cursor:
+            raise ArchiveError(f"verified archives overlap at {row.range_start}")
+        cursor = row.range_end
+    if cursor < split:
+        raise ArchiveError(f"no verified archive covers [{cursor}, {split})")
+    return verified
+
+
 def read_lsr(
     dsn: str,
     start: datetime,
@@ -796,41 +870,52 @@ def read_lsr(
 ) -> Any:
     """All rows of `[start, end)` as a DuckDB relation with the archive's column types.
 
-    Rows below the fence come from verified archive files (fetched on demand); rows at or
-    above it come from PostgreSQL, read the same way export reads them, so both halves
-    carry identical types and values. The fence is what makes the halves disjoint."""
+    The fence, the catalog and the live rows come from ONE snapshot, so the split and
+    the live half agree. Below the fence, the verified ranges must tile the interval
+    exactly and every one of their files must be present. A prune commits its chunk
+    drop and its fence move together, so if the fence read again after the snapshot
+    differs, a prune may have removed live rows this read relied on: the whole read is
+    repeated (at most `READ_ATTEMPTS` times) rather than returned short."""
     import duckdb
     import psycopg
 
-    with psycopg.connect(dsn, autocommit=True) as conn:
-        fence = fence_of(conn, contract)
-    split = start if fence is None else min(max(fence, start), end)
-    connection = duckdb.connect()
+    cache_dir.mkdir(parents=True, exist_ok=True)
     columns = ", ".join(f"{c.name} {_DUCK_TYPES[c.kind]}" for c in contract.columns)
-    connection.execute(f"CREATE TABLE lsr ({columns})")
-    # Both halves are copied into the connection, so a later cache eviction cannot pull
-    # a file out from under the returned relation.
-    if split > start:
-        files = fetcher(start, split)
-        if not files:
-            raise ArchiveError(f"no verified archive covers [{start}, {split})")
-        listing = ", ".join(_sql_str(str(p)) for p in files)
-        connection.execute(
-            f"INSERT INTO lsr SELECT * FROM read_parquet([{listing}]) "  # noqa: S608
-            f"WHERE {contract.time_column} >= {_sql_str(start.isoformat())}::TIMESTAMPTZ "
-            f"AND {contract.time_column} < {_sql_str(split.isoformat())}::TIMESTAMPTZ"
-        )
-    if end > split:
-        cache_dir.mkdir(parents=True, exist_ok=True)
+    for _ in range(READ_ATTEMPTS):
+        # Both halves are copied into the connection, so a later cache eviction cannot
+        # pull a file out from under the returned relation.
+        connection = duckdb.connect()
+        connection.execute(f"CREATE TABLE lsr ({columns})")
         with tempfile.TemporaryDirectory(dir=cache_dir) as tmp:
             live = Path(tmp) / "live.csv.gz"
             with _snapshot(dsn) as conn:
-                _copy_rows_gz(conn, contract, split, end, live)
-            parquet = Path(tmp) / "live.parquet"
-            _csv_to_parquet(contract, live, parquet)
-            source = f"read_parquet({_sql_str(str(parquet))})"
-            connection.execute(f"INSERT INTO lsr SELECT * FROM {source}")  # noqa: S608
-    return connection.table("lsr")
+                fence = fence_of(conn, contract)
+                split = start if fence is None else min(max(fence, start), end)
+                catalog = live_rows(conn, contract)
+                if end > split:
+                    _copy_rows_gz(conn, contract, split, end, live)
+            if split > start:
+                ranges = covering_ranges(catalog, start, split)
+                by_name = {p.name: p for p in fetcher(start, split)}
+                missing = [r.file_name for r in ranges if r.file_name not in by_name]
+                if missing:
+                    raise ArchiveError(f"the fetch did not return {missing}")
+                listing = ", ".join(_sql_str(str(by_name[r.file_name])) for r in ranges)
+                connection.execute(
+                    f"INSERT INTO lsr SELECT * FROM read_parquet([{listing}]) "  # noqa: S608
+                    f"WHERE {contract.time_column} >= {_sql_str(start.isoformat())}::TIMESTAMPTZ "
+                    f"AND {contract.time_column} < {_sql_str(split.isoformat())}::TIMESTAMPTZ"
+                )
+            if end > split:
+                parquet = Path(tmp) / "live.parquet"
+                _csv_to_parquet(contract, live, parquet)
+                source = f"read_parquet({_sql_str(str(parquet))})"
+                connection.execute(f"INSERT INTO lsr SELECT * FROM {source}")  # noqa: S608
+        with psycopg.connect(dsn, autocommit=True) as conn:
+            if fence_of(conn, contract) == fence:
+                return connection.table("lsr")
+        connection.close()
+    raise ArchiveError(f"the fence kept moving during {READ_ATTEMPTS} reads; try again later")
 
 
 # ---------- deletion dry-run ----------

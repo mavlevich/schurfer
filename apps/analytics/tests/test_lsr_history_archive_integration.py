@@ -13,6 +13,7 @@ import os
 import stat
 import sys
 import uuid
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -82,6 +83,7 @@ def _forget_test_archives(conn: psycopg.Connection[Any]) -> None:
             "UPDATE app.history_archive_fences SET closed_before = '-infinity' "
             "WHERE dataset = 'lsr_history'"
         )
+        conn.execute("DELETE FROM app.history_archive_fences WHERE dataset LIKE 'lsr\\_it\\_%'")
 
 
 @pytest.fixture
@@ -473,3 +475,146 @@ def _chunk_count(conn: psycopg.Connection[Any], start: datetime) -> int:
 def _as_text(row: tuple[Any, ...]) -> tuple[Any, ...]:
     ts = row[0].astimezone(UTC).isoformat()
     return (ts, *[None if v is None else str(v) for v in row[1:]])
+
+
+# ---------- review 2 regressions ----------
+
+
+def _verified(
+    db: Any, out: Path, repo: str, env: dict[str, str], weeks: int
+) -> archive.DatasetContract:
+    contract = _contract()
+    _insert(db, [r for w in range(weeks) for r in _rows(W1 + w * WEEK, 5)])
+    archive.run_export(
+        DSN, contract, out, code_revision="t", now=NOW, max_chunks=weeks, reserve_bytes=0
+    )
+    archive.run_archive(DSN, contract, out, repo=repo, env=env, now=NOW)
+    assert not archive.run_verify(
+        DSN, contract, out, repo=repo, env=env, now=NOW, reserve_bytes=0
+    ).failed
+    return contract
+
+
+def _set_fence(db: Any, contract: archive.DatasetContract, at: datetime | str) -> None:
+    db.execute(
+        "INSERT INTO app.history_archive_fences (dataset, source_table, closed_before) "
+        "VALUES (%s, %s, %s) ON CONFLICT (dataset) "
+        "DO UPDATE SET closed_before = excluded.closed_before",
+        (contract.dataset, contract.table, at),
+    )
+
+
+def _prune(dsn: str, contract: archive.DatasetContract, start: datetime) -> None:
+    """The deletion protocol's commit as another session would make it."""
+    with psycopg.connect(dsn, autocommit=True) as other, other.transaction():
+        other.execute("LOCK TABLE app.live_long_short_ratio IN SHARE MODE")
+        other.execute(
+            "SELECT drop_chunks('app.live_long_short_ratio', older_than => %s, newer_than => %s)",
+            (start + WEEK, start),
+        )
+        other.execute(
+            "UPDATE app.history_archive_fences SET closed_before = %s WHERE dataset = %s",
+            (start + WEEK, contract.dataset),
+        )
+
+
+def _reader(contract: archive.DatasetContract, cache: Path, repo: str, env: dict[str, str]) -> Any:
+    return lambda s, e: archive.fetch(
+        DSN, contract, s, e, cache, repo=repo, env=env, reserve_bytes=0
+    )
+
+
+def test_a_corrupted_offsite_manifest_is_never_verified(
+    db: Any, tmp_path: Path, borg: tuple[str, dict[str, str]]
+) -> None:
+    repo, env = borg
+    contract = _contract()
+    _insert(db, _rows(W1, 5))
+    out = tmp_path / "out"
+    archive.run_export(
+        DSN, contract, out, code_revision="t", now=NOW, max_chunks=1, reserve_bytes=0
+    )
+    archive.run_archive(DSN, contract, out, repo=repo, env=env, now=NOW)
+    row = archive.live_rows(db, contract)[W1]
+    (Path(repo) / str(row.borg_archive) / archive.manifest_member(row.file_name)).write_text("{}")
+    report = archive.run_verify(DSN, contract, out, repo=repo, env=env, now=NOW, reserve_bytes=0)
+    assert len(report.failed) == 1 and "manifest sha256" in report.failed[0]
+    assert archive.live_rows(db, contract)[W1].state == "archived"
+    assert (out / row.file_name).exists()
+
+
+def test_a_missing_archive_week_fails_the_read_instead_of_shortening_it(
+    db: Any, tmp_path: Path, borg: tuple[str, dict[str, str]]
+) -> None:
+    repo, env = borg
+    contract = _verified(db, tmp_path / "out", repo, env, weeks=2)
+    archive.supersede(db, archive.live_rows(db, contract)[W1 + WEEK].id, "replacement pending")
+    _set_fence(db, contract, W1 + 2 * WEEK)
+    cache = tmp_path / "cache"
+    with pytest.raises(archive.ArchiveError, match="no verified archive covers"):
+        archive.read_lsr(
+            DSN,
+            W1,
+            W1 + 2 * WEEK,
+            cache_dir=cache,
+            contract=contract,
+            fetcher=_reader(contract, cache, repo, env),
+        )
+
+
+def test_a_prune_before_the_snapshot_is_read_from_the_archive(
+    db: Any, tmp_path: Path, borg: tuple[str, dict[str, str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo, env = borg
+    contract = _verified(db, tmp_path / "out", repo, env, weeks=1)
+    _set_fence(db, contract, "-infinity")
+    original = archive._snapshot
+
+    @contextmanager
+    def after_a_concurrent_prune(dsn: str) -> Any:
+        _prune(dsn, contract, W1)
+        with original(dsn) as conn:
+            yield conn
+
+    monkeypatch.setattr(archive, "_snapshot", after_a_concurrent_prune)
+    cache = tmp_path / "cache"
+    relation = archive.read_lsr(
+        DSN,
+        W1,
+        W1 + WEEK,
+        cache_dir=cache,
+        contract=contract,
+        fetcher=_reader(contract, cache, repo, env),
+    )
+    assert _one(relation.count("*").fetchone()) == 8
+
+
+def test_a_prune_during_the_read_repeats_the_read(
+    db: Any, tmp_path: Path, borg: tuple[str, dict[str, str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo, env = borg
+    contract = _verified(db, tmp_path / "out", repo, env, weeks=2)
+    _set_fence(db, contract, "-infinity")
+    expected = len(_source_text(db, W1, W1 + 2 * WEEK))
+    original = archive._copy_rows_gz
+    calls: list[int] = []
+
+    def copy_after_a_prune(conn: Any, *args: Any) -> None:
+        # The snapshot and the fence are already taken; the prune commits in between.
+        if not calls:
+            _prune(DSN, contract, W1)
+        calls.append(1)
+        original(conn, *args)
+
+    monkeypatch.setattr(archive, "_copy_rows_gz", copy_after_a_prune)
+    cache = tmp_path / "cache"
+    relation = archive.read_lsr(
+        DSN,
+        W1,
+        W1 + 2 * WEEK,
+        cache_dir=cache,
+        contract=contract,
+        fetcher=_reader(contract, cache, repo, env),
+    )
+    assert len(calls) == 2  # the first read saw the fence move and was repeated
+    assert _one(relation.count("*").fetchone()) == expected

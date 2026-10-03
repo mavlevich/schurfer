@@ -159,3 +159,21 @@ def test_no_prune_rule_reaches_history_archives() -> None:
     assert globs  # the parse found the rules it guards against
     name = archive.ARCHIVE_PREFIX + "2026-10-04T00:00:00"
     assert [g for g in globs if fnmatch(name, g)] == []
+
+
+def test_covering_ranges_tile_the_interval_exactly() -> None:
+    rows = {_chunk(i).range_start: _row(i) for i in range(3)}
+    start, split = _chunk(0).range_start + timedelta(days=2), _chunk(2).range_start
+    assert [r.id for r in archive.covering_ranges(rows, start, split)] == [0, 1]
+    gap = {k: v for k, v in rows.items() if v.id != 1}
+    with pytest.raises(archive.ArchiveError, match="no verified archive covers"):
+        archive.covering_ranges(gap, start, split)
+    unverified = {**rows, _chunk(1).range_start: _row(1, state="archived")}
+    with pytest.raises(archive.ArchiveError, match="no verified archive covers"):
+        archive.covering_ranges(unverified, start, split)
+    with pytest.raises(archive.ArchiveError, match="no verified archive covers"):
+        archive.covering_ranges(rows, start, _chunk(3).range_end)  # past the last range
+    shifted = replace(_row(2), range_start=_chunk(1).range_start + timedelta(days=1))
+    overlap = {**rows, shifted.range_start: shifted}
+    with pytest.raises(archive.ArchiveError, match="overlap"):
+        archive.covering_ranges(overlap, start, _chunk(2).range_end)
