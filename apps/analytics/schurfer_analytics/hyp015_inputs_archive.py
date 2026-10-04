@@ -61,6 +61,7 @@ from .history_archive import (
     pg_fingerprint_sql,
     pg_fingerprint_where_sql,
     record_export,
+    require_reserve,
     restore_into,
     run_archive,
     run_export,
@@ -579,77 +580,89 @@ def take_snapshot_set(
     for the archive, and catalogue the set as `building` and its members as `exported`.
     A preliminary set pins the verified prefix of the window and counts decisions only
     up to it; a final set needs the whole window."""
-    with archiver_session(dsn, WATCH_CONTRACT, out_dir) as writer:
-        with _snapshot(dsn) as conn:
-            snapshot_at = conn.execute("SELECT now()").fetchone()[0].astimezone(UTC)
-            set_id = f"hyp015-{snapshot_at:%Y%m%dT%H%M%S}Z"
-            pinned, coverage_end = pin_watch_chunks(conn, final=final)
-            reference = composition(conn, Schemas(), decision_window_end(coverage_end))
-            manifests = [
-                export_snapshot_member(
-                    conn,
-                    contract,
-                    out_dir,
-                    set_id=set_id,
-                    revision=1,
-                    snapshot_at=snapshot_at,
-                    code_revision=code_revision,
-                    reserve_bytes=reserve_bytes,
-                )
-                for contract in PLAIN_CONTRACTS
+    written: list[Path] = []  # every file of this set, removed if it is not catalogued
+    try:
+        with archiver_session(dsn, WATCH_CONTRACT, out_dir) as writer:
+            with _snapshot(dsn) as conn:
+                snapshot_at = conn.execute("SELECT now()").fetchone()[0].astimezone(UTC)
+                set_id = f"hyp015-{snapshot_at:%Y%m%dT%H%M%S}Z"
+                pinned, coverage_end = pin_watch_chunks(conn, final=final)
+                reference = composition(conn, Schemas(), decision_window_end(coverage_end))
+                manifests = []
+                for contract in PLAIN_CONTRACTS:
+                    written += [out_dir / n for n in snapshot_file_names(contract, set_id, 1)]
+                    manifests.append(
+                        export_snapshot_member(
+                            conn,
+                            contract,
+                            out_dir,
+                            set_id=set_id,
+                            revision=1,
+                            snapshot_at=snapshot_at,
+                            code_revision=code_revision,
+                            reserve_bytes=reserve_bytes,
+                        )
+                    )
+            digest = reference_sha256(reference)
+            kind = "final" if final else "preliminary"
+            members = [
+                {
+                    "dataset": m.dataset,
+                    "file_name": m.file_name,
+                    "file_sha256": m.file_sha256,
+                    "manifest_sha256": sha256_of(out_dir / snapshot_file_names(c, set_id, 1)[1]),
+                    "content_fingerprint": m.content_fingerprint,
+                    "row_count": m.row_count,
+                }
+                for c, m in zip(PLAIN_CONTRACTS, manifests, strict=True)
             ]
-        digest = reference_sha256(reference)
-        kind = "final" if final else "preliminary"
-        members = [
-            {
-                "dataset": m.dataset,
-                "file_name": m.file_name,
-                "file_sha256": m.file_sha256,
-                "manifest_sha256": sha256_of(out_dir / snapshot_file_names(c, set_id, 1)[1]),
-                "content_fingerprint": m.content_fingerprint,
-                "row_count": m.row_count,
+            set_manifest = {
+                "set_id": set_id,
+                "purpose": PURPOSE,
+                "kind": kind,
+                "snapshot_at": snapshot_at.isoformat(),
+                "coverage_end": coverage_end.isoformat(),
+                "code_revision": code_revision,
+                "contract_version": CONTRACT_VERSION,
+                "pinned_chunks": pinned,
+                "reference": reference,
+                "reference_sha256": digest,
+                "members": members,
             }
-            for c, m in zip(PLAIN_CONTRACTS, manifests, strict=True)
-        ]
-        set_manifest = {
-            "set_id": set_id,
-            "purpose": PURPOSE,
-            "kind": kind,
-            "snapshot_at": snapshot_at.isoformat(),
-            "coverage_end": coverage_end.isoformat(),
-            "code_revision": code_revision,
-            "contract_version": CONTRACT_VERSION,
-            "pinned_chunks": pinned,
-            "reference": reference,
-            "reference_sha256": digest,
-            "members": members,
-        }
-        manifest_path = out_dir / set_manifest_name(set_id)
-        manifest_path.write_text(json.dumps(set_manifest, indent=2, sort_keys=True) + "\n")
-        manifest_sha = sha256_of(manifest_path)
-        with writer.transaction():
-            writer.execute(
-                "INSERT INTO app.history_archive_snapshot_sets (set_id, purpose, "
-                "required_datasets, snapshot_at, kind, coverage_end, code_revision, "
-                "pinned_chunks, reference, reference_sha256, manifest_sha256, state) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'building')",
-                (
-                    set_id,
-                    PURPOSE,
-                    [c.dataset for c in PLAIN_CONTRACTS],
-                    snapshot_at,
-                    kind,
-                    coverage_end,
-                    code_revision,
-                    json.dumps(pinned),
-                    json.dumps(reference, sort_keys=True),
-                    digest,
-                    manifest_sha,
-                ),
-            )
-            for contract, manifest in zip(PLAIN_CONTRACTS, manifests, strict=True):
-                manifest_path = out_dir / snapshot_file_names(contract, set_id, 1)[1]
-                record_export(writer, contract, manifest, sha256_of(manifest_path), 1)
+            manifest_path = out_dir / set_manifest_name(set_id)
+            written.append(manifest_path)
+            manifest_path.write_text(json.dumps(set_manifest, indent=2, sort_keys=True) + "\n")
+            manifest_sha = sha256_of(manifest_path)
+            # Nothing is catalogued unless the reserve still holds with every file written.
+            require_reserve(out_dir, reserve_bytes, f"snapshot set {set_id}")
+            with writer.transaction():
+                writer.execute(
+                    "INSERT INTO app.history_archive_snapshot_sets (set_id, purpose, "
+                    "required_datasets, snapshot_at, kind, coverage_end, code_revision, "
+                    "pinned_chunks, reference, reference_sha256, manifest_sha256, state) "
+                    "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'building')",
+                    (
+                        set_id,
+                        PURPOSE,
+                        [c.dataset for c in PLAIN_CONTRACTS],
+                        snapshot_at,
+                        kind,
+                        coverage_end,
+                        code_revision,
+                        json.dumps(pinned),
+                        json.dumps(reference, sort_keys=True),
+                        digest,
+                        manifest_sha,
+                    ),
+                )
+                for contract, manifest in zip(PLAIN_CONTRACTS, manifests, strict=True):
+                    manifest_path = out_dir / snapshot_file_names(contract, set_id, 1)[1]
+                    record_export(writer, contract, manifest, sha256_of(manifest_path), 1)
+    except BaseException:
+        # A set that is not catalogued is never archived; its files would only take space.
+        for path in written:
+            path.unlink(missing_ok=True)
+        raise
     return SetReport(
         set_id=set_id,
         snapshot_at=snapshot_at.isoformat(),

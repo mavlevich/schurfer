@@ -334,16 +334,73 @@ def _copy_where_gz(
                     )
 
 
-def _csv_to_parquet(contract: DatasetContract, csv_gz: Path, parquet: Path) -> None:
+def _csv_to_parquet(
+    contract: DatasetContract, csv_gz: Path, parquet: Path, *, connection: Any = None
+) -> None:
     import duckdb
 
     columns = "{" + ", ".join(f"'{c.name}': '{duck_type(c)}'" for c in contract.columns) + "}"
-    duckdb.connect().execute(
+    (connection or duckdb.connect()).execute(
         f"COPY (SELECT * FROM read_csv({_sql_str(str(csv_gz))}, header = false, "  # noqa: S608
         "delim = ',', quote = '\"', escape = '\"', allow_quoted_nulls = false, "
         f"auto_detect = false, compression = 'gzip', columns = {columns})) "
         f"TO {_sql_str(str(parquet))} (FORMAT parquet, COMPRESSION zstd)"
     )
+
+
+RESERVE_POLL_SECONDS = 0.2
+
+
+def require_reserve(path: Path, reserve_bytes: int, what: str) -> None:
+    """Fail when the free space at `path` is below the reserve (0 disables)."""
+    if not reserve_bytes:
+        return
+    free = shutil.disk_usage(path).free
+    if free < reserve_bytes:
+        raise ArchiveError(f"{what}: free space {free} is below the {reserve_bytes}-byte reserve")
+
+
+def _convert_within_reserve(
+    contract: DatasetContract, csv_gz: Path, parquet: Path, reserve_bytes: int
+) -> None:
+    """Convert to Parquet while watching the free space: the conversion runs in a worker
+    thread and is interrupted when the space falls below the reserve; once it finishes,
+    the reserve is checked again before the result may be kept."""
+    if not reserve_bytes:
+        _csv_to_parquet(contract, csv_gz, parquet)
+        return
+    import threading
+
+    import duckdb
+
+    connection = duckdb.connect()
+    errors: list[BaseException] = []
+
+    def convert() -> None:
+        try:
+            _csv_to_parquet(contract, csv_gz, parquet, connection=connection)
+        except BaseException as exc:  # re-raised in the caller's thread
+            errors.append(exc)
+
+    worker = threading.Thread(target=convert, daemon=True)
+    worker.start()
+    breached = False
+    while worker.is_alive():
+        worker.join(RESERVE_POLL_SECONDS)
+        if worker.is_alive() and shutil.disk_usage(parquet.parent).free < reserve_bytes:
+            breached = True
+            connection.interrupt()
+            worker.join()
+    connection.close()
+    if breached:
+        parquet.unlink(missing_ok=True)
+        raise ArchiveError(
+            f"{parquet.name}: free space fell below the {reserve_bytes}-byte reserve while "
+            "converting; stopped"
+        )
+    if errors:
+        raise errors[0]
+    require_reserve(parquet.parent, reserve_bytes, f"{parquet.name} after conversion")
 
 
 def export_chunk(
@@ -398,7 +455,7 @@ def export_chunk(
                 staging_csv,
                 reserve_bytes=reserve_bytes,
             )
-        _csv_to_parquet(contract, staging_csv, staging_parquet)
+        _convert_within_reserve(contract, staging_csv, staging_parquet, reserve_bytes)
         written_rows, file_fp = parquet_fingerprint(contract, staging_parquet)
         if written_rows != row_count or file_fp != source_fp:
             raise ArchiveError(
@@ -505,7 +562,7 @@ def export_snapshot_member(
     staging_parquet = out_dir / f".{parquet_name}.partial"
     try:
         _copy_where_gz(conn, contract, where, staging_csv, reserve_bytes=reserve_bytes)
-        _csv_to_parquet(contract, staging_csv, staging_parquet)
+        _convert_within_reserve(contract, staging_csv, staging_parquet, reserve_bytes)
         written_rows, file_fp = parquet_fingerprint(contract, staging_parquet)
         if written_rows != row_count or file_fp != source_fp:
             raise ArchiveError(

@@ -579,3 +579,165 @@ def test_an_unarchived_set_manifest_blocks_verification(
     engine.run_verify(DSN, h.ALL_CONTRACTS, out, repo=repo, env=env, now=_tick(), reserve_bytes=0)
     with pytest.raises(engine.ArchiveError, match="no archived manifest"):
         h.verify_set(DSN, made.set_id, now=NOW, repo=repo, env=env, work_dir=out)
+
+
+# ---------- code review 2 regressions ----------
+
+
+def test_a_reserve_lost_during_the_last_conversion_catalogues_nothing(
+    db: Any, tmp_path: Path, borg: tuple[str, dict[str, str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo, env = borg
+    out = tmp_path / "out"
+    _seed(db)
+    _export_watch(out)
+    _archive_all(repo, env, out)
+    before = {p.name for p in out.iterdir()}
+    original = engine._csv_to_parquet
+    reserve = 10**6
+    space = {"free": 10**12, "conversions": 0}
+
+    def convert(contract: Any, source: Path, target: Path, **kwargs: Any) -> None:
+        original(contract, source, target, **kwargs)
+        space["conversions"] += 1
+        if space["conversions"] == len(h.PLAIN_CONTRACTS):
+            space["free"] = reserve - 1  # another disk user, during the last conversion
+
+    monkeypatch.setattr(shutil, "disk_usage", lambda _p: type("U", (), {"free": space["free"]})())
+    monkeypatch.setattr(engine, "_csv_to_parquet", convert)
+    with pytest.raises(engine.ArchiveError, match="reserve"):
+        h.take_snapshot_set(DSN, out, code_revision="test", reserve_bytes=reserve)
+    assert db.execute("SELECT count(*) FROM app.history_archive_snapshot_sets").fetchone() == (0,)
+    assert {p.name for p in out.iterdir()} == before  # nothing of the set is left behind
+
+
+def test_a_set_that_fails_halfway_leaves_no_files(
+    db: Any, tmp_path: Path, borg: tuple[str, dict[str, str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from schurfer_analytics.cold_bar_fetch import FetchError, ensure_reserve
+
+    repo, env = borg
+    out = tmp_path / "out"
+    _seed(db)
+    _export_watch(out)
+    _archive_all(repo, env, out)
+    before = {p.name for p in out.iterdir()}
+    original = ensure_reserve
+    calls: list[int] = []
+
+    def second_member_refused(*args: Any) -> None:
+        calls.append(1)
+        if len(calls) == 2:
+            raise FetchError("another disk user exhausted the reserve")
+        original(*args)
+
+    monkeypatch.setattr(engine, "ensure_reserve", second_member_refused)
+    with pytest.raises(engine.ArchiveError, match="reserve"):
+        h.take_snapshot_set(DSN, out, code_revision="test", reserve_bytes=0)
+    assert db.execute("SELECT count(*) FROM app.history_archive_snapshot_sets").fetchone() == (0,)
+    assert {p.name for p in out.iterdir()} == before
+    monkeypatch.setattr(engine, "ensure_reserve", original)
+    made = _verified_set(repo, env, out)  # a retry starts clean and completes
+    assert made.kind == "final"
+
+
+def test_the_conversion_is_interrupted_when_the_reserve_goes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import gzip
+
+    contract = h.PLAIN_CONTRACTS[-1]
+    source = tmp_path / "big.csv.gz"
+    row = ",".join(f'"{i}"' for i in range(len(contract.columns))) + "\n"
+    with gzip.open(source, "wt", compresslevel=1) as sink:
+        for _ in range(400):
+            sink.write(row * 5000)
+    polls: list[int] = []
+
+    def shrinking(_p: Any) -> Any:
+        polls.append(1)
+        return type("U", (), {"free": 10**12 if len(polls) < 2 else 0})()
+
+    monkeypatch.setattr(shutil, "disk_usage", shrinking)
+    monkeypatch.setattr(engine, "RESERVE_POLL_SECONDS", 0.001)
+    target = tmp_path / "out.parquet"
+    with pytest.raises(engine.ArchiveError, match="while converting"):
+        engine._convert_within_reserve(contract, source, target, 10**6)
+    assert not target.exists()
+
+
+@pytest.mark.parametrize("member_first", [True, False])
+def test_a_waiting_statement_rechecks_after_the_other_commits(db: Any, member_first: bool) -> None:
+    """The colleague's form of the race: the second statement waits on the lock and is
+    let through by the first commit, then decides on what was committed."""
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    dataset = f"hyp015_race_{uuid.uuid4().hex[:8]}"
+    set_id = f"hyp015-race-{uuid.uuid4().hex[:8]}"
+    db.execute(
+        "INSERT INTO app.history_archive_snapshot_sets (set_id, purpose, required_datasets, "
+        "snapshot_at, kind, coverage_end, code_revision, pinned_chunks, reference, "
+        "reference_sha256, manifest_sha256, manifest_archive, state) VALUES (%s, %s, %s, %s, "
+        "'final', %s, 'r', '[]', '{}', %s, %s, 'sets-a', 'building')",
+        (set_id, h.PURPOSE, [dataset], D0, D0, "a" * 64, "a" * 64),
+    )
+    row_id = db.execute(
+        "INSERT INTO app.history_archive_datasets (dataset, contract_version, source_table, "
+        "revision, state, row_count, file_name, file_bytes, file_sha256, content_fingerprint, "
+        "manifest_sha256, snapshot_at, code_revision, unit, snapshot_set, borg_archive, "
+        "archived_at, verified_at, verified_sha256, verified_fingerprint) VALUES (%s, 'v1', "
+        "'app.t', 1, 'exported', 1, 'f', 1, %s, %s, %s, now(), 'r', 'snapshot', %s, NULL, NULL, "
+        "NULL, NULL, NULL) RETURNING id",
+        (dataset, "a" * 64, "hafp_v1:" + "b" * 64, "a" * 64, set_id),
+    ).fetchone()[0]
+    db.execute(
+        "UPDATE app.history_archive_datasets SET state = 'archived', borg_archive = 'a', "
+        "archived_at = now() WHERE id = %s",
+        (row_id,),
+    )
+    db.execute(
+        "UPDATE app.history_archive_datasets SET state = 'verified', verified_at = now(), "
+        "verified_sha256 = file_sha256, verified_fingerprint = content_fingerprint WHERE id = %s",
+        (row_id,),
+    )
+    verify = (
+        "UPDATE app.history_archive_snapshot_sets SET state = 'verified', verified_at = now() "
+        "WHERE set_id = %s",
+        set_id,
+    )
+    retire = (
+        "UPDATE app.history_archive_datasets SET state = 'superseded', "
+        "superseded_reason = 'retry' WHERE id = %s",
+        row_id,
+    )
+    first, second = (retire, verify) if member_first else (verify, retire)
+
+    def waiting(started: Event, pid: list[int]) -> str:
+        with psycopg.connect(DSN, autocommit=True) as conn:
+            conn.execute("SET statement_timeout = '5s'")
+            pid.append(conn.info.backend_pid)
+            started.set()
+            try:
+                conn.execute(second[0], (second[1],))
+            except psycopg.errors.RaiseException as exc:
+                return str(exc)
+            return "committed"
+
+    with psycopg.connect(DSN) as one, ThreadPoolExecutor(max_workers=1) as pool:
+        one.execute(first[0], (first[1],))
+        started, pid = Event(), list[int]()
+        pending = pool.submit(waiting, started, pid)
+        assert started.wait(2)
+        for _ in range(200):
+            state = db.execute(
+                "SELECT wait_event_type FROM pg_stat_activity WHERE pid = %s", (pid[0],)
+            ).fetchone()
+            if state and state[0] == "Lock":
+                break
+            db.execute("SELECT pg_sleep(0.01)")
+        else:
+            pytest.fail("the second statement never waited on a lock")
+        one.commit()
+        result = pending.result(timeout=7)
+    assert ("lacks verified members" if member_first else "belongs to verified set") in result

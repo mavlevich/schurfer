@@ -215,6 +215,16 @@ Real PostgreSQL/TimescaleDB:
   SHA-256 is on the set row, the archive name is recorded once, and the database
   refuses a verified set without it); the restore check compares it with the catalog.
 
+## Code review 2 folded in
+
+- **Reserve during conversion:** the Parquet conversion runs in a worker thread while
+  the free space is polled; DuckDB is interrupted when it falls below the reserve, and
+  the reserve is checked again after the conversion and once more before a set is
+  catalogued.
+- **No leftovers:** every file a snapshot set writes is tracked and removed if the set
+  is not catalogued (any failure, including the final reserve check), so a retry starts
+  clean.
+
 ## Running
 
 Manual make targets on the production host after migrations 0058 and 0059 are
