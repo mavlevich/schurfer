@@ -1,153 +1,198 @@
-# Realtime market capture: venue adapters, streaming triggers, shadow scanner v1
+# Realtime market capture: venue codecs, streaming triggers, one MEXC canary v1
 
-Status: **DRAFT for design review.** No code. Runs as a shadow beside today's
-pipeline; changes nothing that HYP-012 v2 or HYP-015 depend on.
+Status: **DRAFT, design review 1 folded in.** No code. Proposes one change to the
+agreed order, which needs the owner's decision (below).
 
 ## Why
 
-Today's detection is late by design, and the measurements in
-[edge-loss-decomposition-v1](../research/edge-loss-decomposition-v1.md) show where:
+Today's detection is late by construction (see the measurements in
+[edge-loss-decomposition-v1](../research/edge-loss-decomposition-v1.md)):
 
-- the pump scanner polls 16 exchanges over REST through ccxt;
-- it recreates every client (and reloads every market catalogue) each cycle;
-- its real cycle is 101 s;
-- it fires at a 24h change of +20%.
+- REST polling of 16 exchanges through ccxt;
+- clients and market catalogues rebuilt every cycle;
+- a 101 s real cycle;
+- a +20% 24h trigger.
 
-59% of pumps happen on one venue only, and MEXC is first in 68% of the pumps it sees.
-The owner can trade MEXC futures. MEXC keeps no historical trade tape (the MEXC
-feasibility audit), so the only way to measure seconds-level early detection there is
-to start recording now; every week we wait is data we will never have.
+The Bybit momentum line adds a fixed 30 s settle and two polling hops before an entry.
 
-What we want is one architecture where adding a venue is an adapter, not a new
-service, and where an event becomes a signal in milliseconds, with every timestamp kept
-so latency is measured, not assumed.
+59% of pumps happen on one venue only, MEXC is first in 68% of the pumps it sees, and
+the owner can trade MEXC futures (API trading permission still to be confirmed). MEXC
+keeps no historical trade tape, so seconds-level data on MEXC exists only if we record
+it.
+
+## Proposed change to the agreed order (owner decision)
+
+The ROADMAP allows **one** new bounded collector, after the 2026-10-31 direction
+decision and the source and budget gates. This design proposes to move that single
+slot forward to a **MEXC canary**: one venue and a registered universe, recording
+before 2026-10-31. Everything else stays where it is:
+
+- LBank and BingX are later conditional tasks;
+- the Gate collector (PR 6) is still decided on 2026-10-31.
+
+The canary may start before 2026-10-31 only under the sealed protocol below. If the
+owner does not accept that protocol, the canary starts after 2026-10-31 as the ROADMAP
+slot, and this design is otherwise unchanged.
+
+**Sealed protocol (before HYP-012 v2 is terminal):**
+
+- **What may be viewed:** operational counters only: message and byte rates,
+  receive-minus-event lag percentiles, reconnects, gaps, queue overflow counts, bytes on
+  disk.
+- **What is never shown:** no code path prints, logs, plots or summarizes a price,
+  size, side or signal content. The health endpoint and the daily summary carry
+  counters only; a test asserts this.
+- **Signals:** the trigger engine runs; signal rows are written, sealed, and counted,
+  not inspected.
+- **Status of the data:** exploration only. After v2 is terminal it may be read for
+  discovery, with the v2 closed-window exclusions honoured. It can never be the
+  confirmatory sample: a signal chosen from it needs a new, untouched forward period.
+
+This differs from the PR 3 probe rule ("discarding values after receipt does not count
+as blind") on purpose. That rule governs research probes whose operator sees responses;
+here no one sees values until the blind ends. Whether that is acceptable is the
+owner's and the reviewer's call.
 
 ## Scope and non-goals
 
-- **In:** venue adapters (MEXC first, then LBank and BingX), a shared streaming
-  runtime, normalized events, an in-process trigger engine, recording within a disk
-  budget, latency and completeness telemetry.
-- **Out, each a separate decision:**
-  - order execution (it waits for a registered signal and MEXC API trading permission);
-  - replacing the old scanner (only after HYP-012 v2 is terminal);
-  - reading outcomes of captured events before HYP-012 v2 is terminal (the moves are
-    shared with that cohort).
-
-## Builds on what exists
-
-`apps/collector` already has:
-
-- the venue-agnostic capability interfaces (`momentumsource`: universe, trades,
-  ticker, open interest, with an `Envelope` carrying `EventAt`, `ReceivedAt` and
-  `SessionID`);
-- the fail-closed capability matrix (`momentumvenue`, where MEXC is `not_audited`);
-- websocket liveness helpers (`wsstream`);
-- the Bybit and Binance adapters.
-
-The design extends these; it does not start a parallel framework.
+- **In:** a shared streaming runtime, a MEXC codec, an event-driven trigger engine, a
+  bounded recorder with a file-archive contract, latency and completeness telemetry.
+- **Out:**
+  - order execution;
+  - changes to the old scanner, watch or paper (until v2 is terminal and HYP-015 is
+    read);
+  - LBank and BingX;
+  - migrating the existing Bybit and Binance sources.
 
 ## Architecture
 
 ```
-venue websocket(s) ──> adapter (parse, normalize) ──> runtime (sharded connections,
-     reconnect, sequence and clock checks, bounded queues)
-         │
-         ├──> trigger engine (per-instrument ring buffers, 1 s buckets) ──> signal
-         │        └──> NATS JetStream `signals.*` + durable signal row (Postgres)
-         ├──> recorder (1 s bars for all, raw trades around signals) ──> history archive
-         └──> telemetry (rates, lags, gaps, uptime) ──> Redis health + daily summary
+MEXC websocket(s) ─> runtime (owns connections: shards, ping, reconnect, resubscribe)
+      │  frames
+      ▼
+   codec (subscribe/ping frames, parse, units)  ─> canonical events + lifecycle events
+      │                                                (in-band, same ordered stream)
+      ▼
+   trigger engine (incremental per event) ─> signal ─> durable signal row (+ JetStream)
+      │
+   recorder (rolling raw segments, pinned windows) ─> segment files ─> archive catalog
+   telemetry (counters only) ─> Redis health, daily summary
 ```
 
-1. **Adapter, one per venue.** Each adapter implements only the capabilities it has,
-   from the `momentumsource` interfaces plus a new `BookTopSource` for best bid and
-   ask:
-   - **Universe:** native contract ids from the venue's own contract list, snapshotted
-     and versioned; never `base + "/USDT:USDT"` string building.
-   - **Trades:** with the venue's trade id and taker side.
-   - **Ticker or book top:** best bid and ask.
-   - **Open interest:** where the venue streams it.
+1. **The runtime owns every connection; a venue is a codec.**
+   - The runtime dials, shards instruments within the codec's declared limits, sends the
+     codec's subscribe and ping frames, detects liveness, reconnects with jittered
+     backoff, resubscribes, and assigns a session id per dial.
+   - A codec builds subscribe, unsubscribe and ping frames, parses frames into canonical
+     events, and declares limits and unit rules. It never dials.
+   - **Lifecycle events** travel in-band on the same ordered stream as data:
+     `Connected`, `Subscribed`, `Disconnected`, `Resubscribed`, `SequenceGap` and
+     `Overflow`. So a consumer learns of a break at once, not at the next trade.
+   - The existing `momentumsource` sources (Bybit, Binance), which manage their own
+     connections, are untouched; migrating them is a separate later decision.
+2. **Completeness is part of the data.**
+   - After any `Disconnected`, `SequenceGap` or `Overflow`, the affected instruments are
+     marked **incomplete** for the trigger engine's longest lookback.
+   - No signal fires on an incomplete window, and recorded segments carry the gap
+     bounds.
+   - A counter alone is not enough: the incomplete state is what blocks.
+   - Queues are bounded and never block a reader. An overflow drops data and marks the
+     instruments incomplete; it is never silent.
+3. **MEXC codec contract** (from the official contract API documentation, every point
+   confirmed by the probe before use):
+   - **Trades:** subscribe to deals with `compress=false`. MEXC aggregates by default;
+     an aggregated stream is not comparable on trade counts and is refused.
+   - **Fields:** price, volume in contracts, taker direction (buy or sell, by the
+     documented code), and the exchange timestamp in ms.
+   - **Units:** base quantity = contracts x `contractSize` from the contract-detail
+     snapshot; notional (USDT) = price x base quantity. The contract snapshot is
+     versioned with the universe.
+   - **Times:** `EventAt` is the exchange time; `ReceivedAt` is the local receive time
+     with the host clock disciplined by chrony; `ProcessedAt` is set after parsing.
+     None substitutes for another.
+   - **Universe:** native contract ids from the contract list, registered and versioned
+     before collection. No symbol string building.
+4. **Trigger engine: evaluated on every event, incrementally.**
+   - Per instrument, a ring of 1-second buckets plus the open partial bucket. Every
+     trade updates the running window sums in O(1) and re-checks the registered
+     conditions at once, so a crossing never waits for a bucket to close.
+   - Latency is measured in three segments, on every signal:
+     - receive to processed;
+     - condition crossing to signal emitted;
+     - signal to durable write.
+   - The target, measured and not assumed: p99 under 50 ms for the first two segments
+     on the canary universe.
+5. **Recorder: a bounded pre-buffer and pinned windows.**
+   - Raw canonical events of every instrument are written continuously to rolling local
+     segments of 10 minutes. That is the pre-buffer: a signal's 30 minutes of history
+     already sit on disk, not in RAM.
+   - A signal pins the segments covering 30 minutes before to 4 hours after it.
+     Overlapping windows merge; unpinned segments older than the pre-buffer are
+     deleted.
+   - **Caps** (sized from the probe and the storage-budget PR):
+     - process RSS;
+     - total local raw bytes;
+     - pinned bytes per day.
+   - **At a cap:** new windows are not pinned. A signal still fires, but its row says
+     "window not recorded". The pre-buffer keeps rolling.
+   - **Mass-signal load:** the probe's message rate times the worst plausible number of
+     simultaneous windows gives the bound. If pinned windows would approach the full
+     tape, the full tape for the canary universe is the honest alternative, and the
+     budget decides.
+   - Separately, 1-second bars for every instrument (small) are kept for the analysis.
+6. **File-archive contract** (new; today's archive engine only exports PostgreSQL
+   tables).
+   - Each closed segment is a zstd NDJSON file with a manifest: venue, codec and
+     contract versions, universe version, time coverage, line count, gap bounds and
+     SHA-256.
+   - A migration (0060) adds a catalog unit `segment` with a coverage range. The
+     existing archive and verify steps carry segments: the archive takes the files, and
+     verify extracts and rechecks the SHA-256, the line count and the manifest.
+   - A segment's local file is deleted only once its catalog row is `verified`, never by
+     age. A restore check reads segments back into the analysis cache.
+7. **Telemetry: counters only** (see the sealed protocol): rates, lags, reconnects,
+   gaps, overflows, incomplete instrument-minutes, bytes, and the three latency
+   segments. They go to Redis health, as the other workers do, and to a daily summary
+   file.
 
-   It parses the venue's message format into the canonical events and declares its
-   limits (subscriptions per connection, ping protocol, rate limits) as data. Adding a
-   venue means: an adapter, its capability-matrix entry with probe evidence, and
-   fixture tests.
+## Technology choices (agreed with the reviewer)
 
-2. **Streaming runtime (shared).** It does the connection work every adapter needs:
-   - shards instruments across connections within the venue's limits;
-   - venue-specific ping and liveness;
-   - reconnect with jittered backoff and resubscribe;
-   - a new session id per dial;
-   - sequence-gap detection where the venue gives sequences;
-   - clock-offset estimation against the venue's server time (plus chrony on the
-     host);
-   - bounded queues that never block a reader. An overflow is counted, never silent.
-3. **Canonical event.** The existing `Envelope` plus `Sequence` and `ProcessedAt`, with
-   a schema version.
-   - On the hot path, events stay in process (Go structs). NATS JetStream is the
-     fan-out to other consumers.
-   - Encoding starts as versioned JSON; protobuf only if the measured throughput needs
-     it.
-4. **Trigger engine.**
-   - It keeps per-instrument ring buffers of 1-second buckets (price, buy and sell
-     notional, trade count) for the last hour, and evaluates registered trigger
-     definitions on every bucket close. The first versions are the T1/T2 families of
-     the decomposition study.
-   - A signal carries the triggering event's times and the engine's own, so
-     event-to-signal latency is measured on every signal.
-   - Signals go to JetStream and to a durable Postgres row. Postgres is never on the
-     per-event path.
-5. **Recorder.**
-   - Writes 1-second bars for every instrument, and raw trades and book tops from
-     30 minutes before to 4 hours after each signal.
-   - Writes as hourly files handed to the history-archive engine (`history_archive`)
-     for the Storage Box. The server keeps a bounded hot window.
-   - Full raw tape for a subset only if the disk budget (the storage-budget PR, about
-     2026-10-12) allows it.
-6. **Telemetry.**
-   - Per venue and connection: message rate, `ReceivedAt - EventAt` percentiles, gaps,
-     reconnects, queue drops and uptime.
-   - Per signal: event-to-signal latency.
-   - Health in Redis, as the other workers do; a daily summary file next to the
-     disk-growth readings.
+| Area                | Choice                                                                                             |
+| ------------------- | -------------------------------------------------------------------------------------------------- |
+| Hot path            | Go, structs in memory, bounded queues; no PostgreSQL and no serialization between codec and engine |
+| JetStream           | Signals and quality events first; the full tape only if a proven need appears                      |
+| Historical analysis | Verified Parquet cache plus DuckDB; the initial conversion measured separately                     |
+| Polars              | Only for a remaining measured bottleneck                                                           |
+| JSON or protobuf    | Start with the current parser; change only after a whole-process profile                           |
+| msgspec             | Not on the Go path; a Python parser changes only by its own profile                                |
+| uv, ruff, UI work   | Already accepted or deferred on their own terms; they do not speed this up                         |
 
-## Performance targets (measured, not assumed)
-
-- Event received to signal emitted: p99 < 250 ms in process.
-- Reconnect gap: recorded with its bounds. An instrument with a gap in a trigger window
-  produces no signal: the trigger fails closed.
-- CPU and memory limits are sized from a probe. The service runs in its own container
-  with its own limits, not under the analytics container's single core.
+The largest expected gain is removing deliberate waits and extra hops, not parsing
+speed. The full path is measured first, then its largest part is optimized.
 
 ## Rollout
 
-1. **MEXC probe** (read-only, 30 minutes): connect, subscribe to every USDT perpetual,
-   count messages, measure lags and limits. It stores counts and timings only, never
-   values. This gives the sizing and the capability-matrix evidence.
-2. **MEXC adapter, runtime, trigger engine, recorder and telemetry**, in shadow:
-   - fixture tests and a fake websocket server (reconnect, gaps, overflow);
-   - a replay benchmark;
-   - deploy as its own service.
-3. **LBank and BingX adapters**, each with its probe and matrix entry.
-4. **After HYP-012 v2 is terminal (2026-10-31 checkpoint at the earliest):** analysis
-   of the recorded events against the decomposition study's decision rule, and the
-   old scanner's fixes or replacement.
-5. **MEXC execution adapter:** a separate, gated PR after a registered signal and a
-   confirmed API trading permission.
-
-## Risks
-
-- **MEXC API terms:** public websocket limits and futures API trading permission must
-  be confirmed by probe and by the owner's API key settings.
-- **Disk:** the recorder is budgeted from the measured series; until then it records
-  1-second bars and signal windows only.
-- **Host load:** the host runs near 4 load on 4 cores. The daily readings and the probe
-  decide whether a larger server is needed (an owner decision, about EUR 10-20 a month).
+1. **MEXC probe** (30 minutes, sealed): message and byte rates, lags, connection
+   limits, `compress=false` behaviour, and the field semantics against the
+   documentation. It gives the sizing and the capability-matrix evidence. It stores
+   counters only.
+2. **MEXC canary** (runtime, codec, trigger engine, recorder, file archive, telemetry):
+   fixture tests, a fake websocket server (reconnects, gaps, overflow, mass signals),
+   a replay benchmark of the three latency segments, and its own container and limits.
+3. **After HYP-012 v2 is terminal:**
+   - discovery reads of the canary data under the exclusions;
+   - the old scanner's fixes or replacement;
+   - the analytics container's CPU limit.
+4. **After a registered signal and confirmed API trading permission:** a MEXC execution
+   adapter, separately gated.
+5. **LBank and BingX:** later, each conditional on its own probe and the canary's
+   results.
 
 ## Questions for review
 
-1. Is extending `momentumsource` with `BookTopSource` and a shared runtime the right
-   seam, or should the runtime live in its own package used by the existing Bybit and
-   Binance adapters too (a later migration)?
-2. Should JetStream carry every canonical event (replayable, heavier) or only signals
-   (lighter), with recording done in process?
-3. Recorder retention on the server before the archive takes over: 3 days?
+1. Is the sealed protocol acceptable for starting the canary before 2026-10-31, or does
+   it start on 2026-10-31?
+2. Pre-buffer sizing: are 10-minute segments with a 30-minute pre-buffer and 4-hour
+   windows a sensible start?
+3. Is `segment` as a third catalog unit the right extension, or should segments get
+   their own catalog?
