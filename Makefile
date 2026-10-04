@@ -1211,7 +1211,7 @@ prod-deploy:
 	@# database's alembic revision is below the newest migration file. Revisions are
 	@# zero-padded and linear, so a string comparison is enough. If the database
 	@# revision cannot be read, the backup runs: when in doubt, back up.
-	@head=$$(grep -h '^revision' packages/journal/migrations/versions/*.py | sed -E 's/.*"([0-9]+)".*/\1/' | sort | tail -1); \
+	@head=$$(grep -h '^revision: str = "' packages/journal/migrations/versions/*.py | sed -E 's/.*"([0-9]+)".*/\1/' | sort | tail -1); \
 	current=$$(docker exec schurfer-postgres psql -U schurfer -d schurfer -Atc "SELECT version_num FROM app.alembic_version" 2>/dev/null || true); \
 	if [ -n "$$current" ] && [ -n "$$head" ] && [ "$$current" = "$$head" ]; then \
 		echo "   schema at $$current = head: no migration, backup skipped (nightly offsite backup covers it)"; \
