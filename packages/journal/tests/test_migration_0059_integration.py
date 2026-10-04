@@ -107,9 +107,15 @@ def _set(conn: psycopg.Connection[Any], purpose: str, members: list[str], at: da
     set_id = _name()
     conn.execute(
         "INSERT INTO app.history_archive_snapshot_sets (set_id, purpose, required_datasets, "
-        "snapshot_at, code_revision, pinned_chunks, reference, reference_sha256, state) "
-        "VALUES (%s, %s, %s, %s, 'rev', '[]', '{}', %s, 'building')",
-        (set_id, purpose, members, at, SHA),
+        "snapshot_at, kind, coverage_end, code_revision, pinned_chunks, reference, "
+        "reference_sha256, manifest_sha256, state) "
+        "VALUES (%s, %s, %s, %s, 'final', %s, 'rev', '[]', '{}', %s, %s, 'building')",
+        (set_id, purpose, members, at, at, SHA, SHA),
+    )
+    conn.execute(
+        "UPDATE app.history_archive_snapshot_sets SET manifest_archive = 'sets-a' "
+        "WHERE set_id = %s",
+        (set_id,),
     )
     return set_id
 
@@ -252,3 +258,101 @@ def test_downgrade_refuses_while_snapshots_exist() -> None:
             "SELECT count(*) FROM information_schema.columns WHERE table_schema = 'app' "
             "AND table_name = 'history_archive_datasets' AND column_name = 'unit'"
         ).fetchone() == (1,)
+
+
+def test_a_set_records_its_manifest_archive_once_and_needs_it() -> None:
+    with _connect_or_skip() as conn:
+        set_id = _name()
+        conn.execute(
+            "INSERT INTO app.history_archive_snapshot_sets (set_id, purpose, required_datasets, "
+            "snapshot_at, kind, coverage_end, code_revision, pinned_chunks, reference, "
+            "reference_sha256, manifest_sha256, state) VALUES (%s, %s, %s, %s, 'preliminary', "
+            "%s, 'rev', '[]', '{}', %s, %s, 'building')",
+            (set_id, _name(), [_name()], T0, T0, SHA, SHA),
+        )
+        # Verified without a manifest archive (guard bypassed): the CHECK still refuses.
+        with pytest.raises(psycopg.errors.CheckViolation), conn.transaction():
+            conn.execute("SET LOCAL session_replication_role = replica")
+            conn.execute(
+                "UPDATE app.history_archive_snapshot_sets SET state = 'verified', "
+                "verified_at = now() WHERE set_id = %s",
+                (set_id,),
+            )
+        conn.execute(
+            "UPDATE app.history_archive_snapshot_sets SET manifest_archive = 'sets-1' "
+            "WHERE set_id = %s",
+            (set_id,),
+        )
+        with pytest.raises(psycopg.errors.RaiseException, match="already names its manifest"):
+            conn.execute(
+                "UPDATE app.history_archive_snapshot_sets SET manifest_archive = 'sets-2' "
+                "WHERE set_id = %s",
+                (set_id,),
+            )
+        with pytest.raises(psycopg.errors.CheckViolation):
+            conn.execute(
+                "INSERT INTO app.history_archive_snapshot_sets (set_id, purpose, "
+                "required_datasets, snapshot_at, kind, coverage_end, code_revision, "
+                "pinned_chunks, reference, reference_sha256, manifest_sha256, state) VALUES "
+                "(%s, 'p', %s, %s, 'partial', %s, 'r', '[]', '{}', %s, %s, 'building')",
+                (_name(), ["d"], T0, T0, SHA, SHA),
+            )
+
+
+def test_member_supersession_cannot_race_set_verification() -> None:
+    """Either order of the two transactions ends consistent: never a verified set with
+    a superseded required member."""
+    with _connect_or_skip() as conn:
+        # Member superseded first and left open: verification waits on the set row.
+        dataset = _name()
+        set_id = _set(conn, _name(), [dataset], T0)
+        row_id = _snapshot_row(conn, dataset, set_id)
+        _verify_row(conn, row_id)
+        with psycopg.connect(TEST_DATABASE_URL) as a:
+            a.execute(
+                "UPDATE app.history_archive_datasets SET state = 'superseded', "
+                "superseded_reason = 'retry' WHERE id = %s",
+                (row_id,),
+            )
+            with psycopg.connect(TEST_DATABASE_URL, autocommit=True) as b:
+                b.execute("SET lock_timeout = '300ms'")
+                with pytest.raises(psycopg.errors.LockNotAvailable):
+                    b.execute(
+                        "UPDATE app.history_archive_snapshot_sets SET state = 'verified', "
+                        "verified_at = now() WHERE set_id = %s",
+                        (set_id,),
+                    )
+            a.commit()
+        with pytest.raises(psycopg.errors.RaiseException, match="lacks verified members"):
+            conn.execute(
+                "UPDATE app.history_archive_snapshot_sets SET state = 'verified', "
+                "verified_at = now() WHERE set_id = %s",
+                (set_id,),
+            )
+
+        # Verification first and left open: the supersession waits, then sees it.
+        dataset = _name()
+        set_id = _set(conn, _name(), [dataset], T0)
+        row_id = _snapshot_row(conn, dataset, set_id)
+        _verify_row(conn, row_id)
+        with psycopg.connect(TEST_DATABASE_URL) as b:
+            b.execute(
+                "UPDATE app.history_archive_snapshot_sets SET state = 'verified', "
+                "verified_at = now() WHERE set_id = %s",
+                (set_id,),
+            )
+            with psycopg.connect(TEST_DATABASE_URL, autocommit=True) as a2:
+                a2.execute("SET lock_timeout = '300ms'")
+                with pytest.raises(psycopg.errors.LockNotAvailable):
+                    a2.execute(
+                        "UPDATE app.history_archive_datasets SET state = 'superseded', "
+                        "superseded_reason = 'retry' WHERE id = %s",
+                        (row_id,),
+                    )
+            b.commit()
+        with pytest.raises(psycopg.errors.RaiseException, match="belongs to verified set"):
+            conn.execute(
+                "UPDATE app.history_archive_datasets SET state = 'superseded', "
+                "superseded_reason = 'retry' WHERE id = %s",
+                (row_id,),
+            )

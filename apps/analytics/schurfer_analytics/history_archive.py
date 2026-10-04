@@ -31,6 +31,7 @@ import fcntl
 import gzip
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 from contextlib import contextmanager
@@ -289,16 +290,27 @@ def _snapshot(dsn: str) -> Iterator[Any]:
 
 
 def _copy_rows_gz(
-    conn: Any, contract: DatasetContract, start: datetime, end: datetime, out: Path
+    conn: Any,
+    contract: DatasetContract,
+    start: datetime,
+    end: datetime,
+    out: Path,
+    *,
+    reserve_bytes: int = 0,
 ) -> None:
     where = (
         f"{contract.time_column} >= '{start.isoformat()}' "
         f"AND {contract.time_column} < '{end.isoformat()}'"
     )
-    _copy_where_gz(conn, contract, where, out)
+    _copy_where_gz(conn, contract, where, out, reserve_bytes=reserve_bytes)
 
 
-def _copy_where_gz(conn: Any, contract: DatasetContract, where: str, out: Path) -> None:
+RESERVE_CHECK_EVERY = 64  # COPY blocks between free-space checks while writing
+
+
+def _copy_where_gz(
+    conn: Any, contract: DatasetContract, where: str, out: Path, *, reserve_bytes: int = 0
+) -> None:
     # Every column but a timestamp is selected as `::text`, the exact text the content
     # fingerprint hashes (COPY's own output differs for some types, e.g. boolean `t`
     # against `true`), so the file and the fingerprint agree by construction.
@@ -310,8 +322,16 @@ def _copy_where_gz(conn: Any, contract: DatasetContract, where: str, out: Path) 
         "TO STDOUT (FORMAT csv, FORCE_QUOTE *)"
     )
     with gzip.open(out, "wb", compresslevel=3) as sink, conn.cursor().copy(query) as copy:
-        for block in copy:
+        for index, block in enumerate(copy):
             sink.write(bytes(block))
+            # The upfront estimate can be wrong; the reserve must hold while writing too.
+            if reserve_bytes and index % RESERVE_CHECK_EVERY == 0:
+                free = shutil.disk_usage(out.parent).free
+                if free < reserve_bytes:
+                    raise ArchiveError(
+                        f"{out.name}: free space {free} fell below the {reserve_bytes}-byte "
+                        "reserve while writing; stopped"
+                    )
 
 
 def _csv_to_parquet(contract: DatasetContract, csv_gz: Path, parquet: Path) -> None:
@@ -370,7 +390,14 @@ def export_chunk(
             keys = _data_keys(
                 conn, contract, _time_where(contract), (chunk.range_start, chunk.range_end)
             )
-            _copy_rows_gz(conn, contract, chunk.range_start, chunk.range_end, staging_csv)
+            _copy_rows_gz(
+                conn,
+                contract,
+                chunk.range_start,
+                chunk.range_end,
+                staging_csv,
+                reserve_bytes=reserve_bytes,
+            )
         _csv_to_parquet(contract, staging_csv, staging_parquet)
         written_rows, file_fp = parquet_fingerprint(contract, staging_parquet)
         if written_rows != row_count or file_fp != source_fp:
@@ -447,6 +474,7 @@ def export_snapshot_member(
     revision: int,
     snapshot_at: datetime,
     code_revision: str,
+    reserve_bytes: int = DEFAULT_RESERVE_BYTES,
 ) -> Manifest:
     """Write the rows `contract.snapshot_filter` selects, as the caller's open REPEATABLE
     READ snapshot sees them, to Parquet with a manifest. All members of one snapshot set
@@ -456,6 +484,14 @@ def export_snapshot_member(
         raise ArchiveError(f"{contract.dataset} is not a snapshot dataset")
     out_dir.mkdir(parents=True, exist_ok=True)
     check_columns(conn, contract)
+    # The table's on-disk size bounds the staging space (gzip CSV plus Parquet).
+    estimate = conn.execute(
+        "SELECT pg_total_relation_size(%s::regclass)", (contract.table,)
+    ).fetchone()[0]
+    try:
+        ensure_reserve(out_dir, int(estimate), reserve_bytes)
+    except FetchError as exc:
+        raise ArchiveError(f"{contract.dataset}: {exc}") from exc
     where = contract.snapshot_filter
     parquet_name, manifest_name = snapshot_file_names(contract, set_id, revision)
     count_row = conn.execute(
@@ -468,7 +504,7 @@ def export_snapshot_member(
     staging_csv = out_dir / f".{parquet_name}.csv.gz.partial"
     staging_parquet = out_dir / f".{parquet_name}.partial"
     try:
-        _copy_where_gz(conn, contract, where, staging_csv)
+        _copy_where_gz(conn, contract, where, staging_csv, reserve_bytes=reserve_bytes)
         _csv_to_parquet(contract, staging_csv, staging_parquet)
         written_rows, file_fp = parquet_fingerprint(contract, staging_parquet)
         if written_rows != row_count or file_fp != source_fp:

@@ -16,11 +16,15 @@ Plain tables are archived as point-in-time snapshots, not chunks
 revision exists per dataset and range (chunks) or per dataset and set (snapshots).
 
 `app.history_archive_snapshot_sets` groups the snapshots taken from one database
-snapshot, with the pinned revisions of the time-series chunks they depend on and a
-blind composition reference. A set moves `building -> verified` only when every
+snapshot, with the pinned revisions of the time-series chunks they depend on, a blind
+composition reference, whether the set is `preliminary` (its pinned chunks cover the
+window only up to `coverage_end`) or `final`, and the SHA-256 of the set's own manifest,
+which must be in an archive (`manifest_archive`, recorded once) before the set is
+verified. A set moves `building -> verified` only when every
 required member dataset has a verified snapshot row in it, `building -> abandoned`
 with a reason, and `verified -> superseded` only in favour of a verified set of the
-same purpose. A snapshot row of a verified set cannot be superseded. Nothing is ever
+same purpose. A snapshot row of a verified set cannot be superseded; that check locks
+the set row, so it cannot interleave with the set's verification. Nothing is ever
 deleted.
 """
 
@@ -72,8 +76,24 @@ BEGIN
 END $$;
 """
 
+_SNAPSHOT_MEMBER_RULE = """    IF NEW.state = 'superseded' AND OLD.unit = 'snapshot' THEN
+        -- FOR SHARE serializes this with the set's own UPDATE (verification takes the
+        -- row lock): whichever commits first, the other then sees its result.
+        SELECT s.state INTO set_state FROM app.history_archive_snapshot_sets s
+        WHERE s.set_id = OLD.snapshot_set FOR SHARE;
+        IF set_state = 'verified' THEN
+            RAISE EXCEPTION 'history archive row % belongs to verified set %',
+                OLD.id, OLD.snapshot_set;
+        END IF;
+    END IF;
+"""
+
 _GUARD_0059 = (
     _GUARD_0058.replace(
+        "LANGUAGE plpgsql AS $$\nBEGIN",
+        "LANGUAGE plpgsql AS $$\nDECLARE\n    set_state TEXT;\nBEGIN",
+    )
+    .replace(
         "NEW.manifest_sha256, NEW.snapshot_at, NEW.code_revision, NEW.created_at)\n       IS",
         "NEW.manifest_sha256, NEW.snapshot_at, NEW.code_revision, NEW.created_at,\n"
         "        NEW.unit, NEW.snapshot_set)\n       IS",
@@ -85,14 +105,7 @@ _GUARD_0059 = (
     )
     .replace(
         "    IF NOT (\n        (OLD.state = 'exported'",
-        "    IF NEW.state = 'superseded' AND OLD.unit = 'snapshot' AND EXISTS (\n"
-        "        SELECT 1 FROM app.history_archive_snapshot_sets\n"
-        "        WHERE set_id = OLD.snapshot_set AND state = 'verified'\n"
-        "    ) THEN\n"
-        "        RAISE EXCEPTION 'history archive row % belongs to verified set %',\n"
-        "            OLD.id, OLD.snapshot_set;\n"
-        "    END IF;\n"
-        "    IF NOT (\n        (OLD.state = 'exported'",
+        _SNAPSHOT_MEMBER_RULE + "    IF NOT (\n        (OLD.state = 'exported'",
     )
 )
 
@@ -100,6 +113,7 @@ _GUARD_0059 = (
 def upgrade() -> None:
     assert _GUARD_0059.count("NEW.unit, NEW.snapshot_set") == 1
     assert _GUARD_0059.count("belongs to verified set") == 1
+    assert _GUARD_0059.count("set_state TEXT") == 1
     op.execute(
         r"""
         ALTER TABLE app.history_archive_datasets
@@ -130,10 +144,14 @@ def upgrade() -> None:
             purpose TEXT NOT NULL,
             required_datasets TEXT[] NOT NULL,
             snapshot_at TIMESTAMPTZ NOT NULL,
+            kind TEXT NOT NULL,
+            coverage_end TIMESTAMPTZ NOT NULL,
             code_revision TEXT NOT NULL,
             pinned_chunks JSONB NOT NULL,
             reference JSONB NOT NULL,
             reference_sha256 TEXT NOT NULL,
+            manifest_sha256 TEXT NOT NULL,
+            manifest_archive TEXT,
             state TEXT NOT NULL,
             verified_at TIMESTAMPTZ,
             superseded_by TEXT REFERENCES app.history_archive_snapshot_sets (set_id),
@@ -144,7 +162,11 @@ def upgrade() -> None:
                 cardinality(required_datasets) > 0
             ),
             CONSTRAINT ck_history_archive_set_reference CHECK (
-                reference_sha256 ~ '^[0-9a-f]{64}$'
+                reference_sha256 ~ '^[0-9a-f]{64}$' AND manifest_sha256 ~ '^[0-9a-f]{64}$'
+            ),
+            CONSTRAINT ck_history_archive_set_kind CHECK (kind IN ('preliminary', 'final')),
+            CONSTRAINT ck_history_archive_set_manifest CHECK (
+                state NOT IN ('verified', 'superseded') OR manifest_archive IS NOT NULL
             ),
             CONSTRAINT ck_history_archive_set_state CHECK (
                 (state = 'building' AND verified_at IS NULL AND superseded_by IS NULL
@@ -166,17 +188,26 @@ def upgrade() -> None:
             IF TG_OP = 'DELETE' THEN
                 RAISE EXCEPTION 'snapshot set % is never deleted', OLD.set_id;
             END IF;
-            IF (NEW.set_id, NEW.purpose, NEW.required_datasets, NEW.snapshot_at,
-                NEW.code_revision, NEW.pinned_chunks, NEW.reference, NEW.reference_sha256,
-                NEW.created_at)
+            IF (NEW.set_id, NEW.purpose, NEW.required_datasets, NEW.snapshot_at, NEW.kind,
+                NEW.coverage_end, NEW.code_revision, NEW.pinned_chunks, NEW.reference,
+                NEW.reference_sha256, NEW.manifest_sha256, NEW.created_at)
                IS DISTINCT FROM
-               (OLD.set_id, OLD.purpose, OLD.required_datasets, OLD.snapshot_at,
-                OLD.code_revision, OLD.pinned_chunks, OLD.reference, OLD.reference_sha256,
-                OLD.created_at)
+               (OLD.set_id, OLD.purpose, OLD.required_datasets, OLD.snapshot_at, OLD.kind,
+                OLD.coverage_end, OLD.code_revision, OLD.pinned_chunks, OLD.reference,
+                OLD.reference_sha256, OLD.manifest_sha256, OLD.created_at)
             THEN
                 RAISE EXCEPTION 'snapshot set % content is immutable', OLD.set_id;
             END IF;
-            IF OLD.state = 'building' AND NEW.state = 'verified' THEN
+            IF OLD.manifest_archive IS NOT NULL
+               AND NEW.manifest_archive IS DISTINCT FROM OLD.manifest_archive THEN
+                RAISE EXCEPTION 'snapshot set % already names its manifest archive', OLD.set_id;
+            END IF;
+            IF OLD.state = 'building' AND NEW.state = 'building' THEN
+                IF NOT (OLD.manifest_archive IS NULL AND NEW.manifest_archive IS NOT NULL) THEN
+                    RAISE EXCEPTION 'snapshot set % may only record its manifest archive',
+                        OLD.set_id;
+                END IF;
+            ELSIF OLD.state = 'building' AND NEW.state = 'verified' THEN
                 SELECT array_agg(d) INTO missing FROM unnest(OLD.required_datasets) AS d
                 WHERE NOT EXISTS (
                     SELECT 1 FROM app.history_archive_datasets r

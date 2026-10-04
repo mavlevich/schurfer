@@ -210,12 +210,12 @@ def test_export_reads_one_snapshot_and_a_later_row_is_detected(
     late = (W1 + timedelta(days=3), "LATE", "binance", "9", "9", "9")
     original = archive._copy_rows_gz
 
-    def copy_after_a_concurrent_commit(conn: Any, *args: Any) -> None:
+    def copy_after_a_concurrent_commit(conn: Any, *args: Any, **kwargs: Any) -> None:
         # Committed by another session after the count and fingerprint were read but
         # before the COPY: one snapshot means the file must not contain it.
         with psycopg.connect(DSN, autocommit=True) as other:
             _insert(other, [late])
-        original(conn, *args)
+        original(conn, *args, **kwargs)
 
     monkeypatch.setattr(engine, "_copy_rows_gz", copy_after_a_concurrent_commit)
     manifest = engine.export_chunk(
@@ -600,12 +600,12 @@ def test_a_prune_during_the_read_repeats_the_read(
     original = archive._copy_rows_gz
     calls: list[int] = []
 
-    def copy_after_a_prune(conn: Any, *args: Any) -> None:
+    def copy_after_a_prune(conn: Any, *args: Any, **kwargs: Any) -> None:
         # The snapshot and the fence are already taken; the prune commits in between.
         if not calls:
             _prune(DSN, contract, W1)
         calls.append(1)
-        original(conn, *args)
+        original(conn, *args, **kwargs)
 
     monkeypatch.setattr(archive, "_copy_rows_gz", copy_after_a_prune)
     cache = tmp_path / "cache"

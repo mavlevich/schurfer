@@ -14,6 +14,7 @@ from __future__ import annotations
 import ast
 import json
 import os
+import shutil
 import stat
 import sys
 import uuid
@@ -288,18 +289,19 @@ def _tick() -> datetime:
 
 
 def _archive_all(repo: str, env: dict[str, str], out: Path) -> None:
-    for step in (engine.run_archive, engine.run_verify):
-        kwargs: dict[str, Any] = {"repo": repo, "env": env, "now": _tick()}
-        if step is engine.run_verify:
-            kwargs["reserve_bytes"] = 0
-        report = step(DSN, h.ALL_CONTRACTS, out, **kwargs)
-        assert not report.failed, report
+    archived = h.archive_inputs(DSN, out, repo=repo, env=env, now=_tick())
+    _tick()  # the set-manifest archive took the next second
+    assert not archived.failed, archived
+    verified = engine.run_verify(
+        DSN, h.ALL_CONTRACTS, out, repo=repo, env=env, now=_tick(), reserve_bytes=0
+    )
+    assert not verified.failed, verified
 
 
 def _verified_set(repo: str, env: dict[str, str], out: Path) -> h.SetReport:
-    made = h.take_snapshot_set(DSN, out, code_revision="test")
+    made = h.take_snapshot_set(DSN, out, code_revision="test", reserve_bytes=0)
     _archive_all(repo, env, out)
-    h.verify_set(DSN, made.set_id, now=NOW)
+    h.verify_set(DSN, made.set_id, now=NOW, repo=repo, env=env, work_dir=out)
     return made
 
 
@@ -347,7 +349,7 @@ def test_a_late_watch_row_forces_a_new_revision_before_a_set(
     late_day = datetime(2026, 10, 9, tzinfo=UTC)
     _watch(db, late_day + timedelta(hours=3), "ITXLATE", eligible=False)
     with pytest.raises(engine.ArchiveError, match="changed since export"):
-        h.take_snapshot_set(DSN, out, code_revision="test")
+        h.take_snapshot_set(DSN, out, code_revision="test", reserve_bytes=0)
     assert db.execute("SELECT count(*) FROM app.history_archive_snapshot_sets").fetchone() == (0,)
     row = engine.live_rows(db, h.WATCH_CONTRACT)[late_day]
     engine.supersede(db, row.id, "late insert after export")
@@ -382,11 +384,17 @@ def test_an_incomplete_set_is_never_verified_and_a_newer_one_replaces_the_old(
     out = tmp_path / "out"
     _export_watch(out)
     _archive_all(repo, env, out)
-    first = h.take_snapshot_set(DSN, out, code_revision="test")
+    first = h.take_snapshot_set(DSN, out, code_revision="test", reserve_bytes=0)
+    # Members and the set manifest archived, members not yet verified by extraction.
+    assert not h.archive_inputs(DSN, out, repo=repo, env=env, now=_tick()).failed
+    _tick()
     with pytest.raises(psycopg.errors.RaiseException, match="lacks verified members"):
-        h.verify_set(DSN, first.set_id, now=NOW)
-    _archive_all(repo, env, out)
-    assert h.verify_set(DSN, first.set_id, now=NOW) == []
+        h.verify_set(DSN, first.set_id, now=NOW, repo=repo, env=env, work_dir=out)
+    verified = engine.run_verify(
+        DSN, h.ALL_CONTRACTS, out, repo=repo, env=env, now=_tick(), reserve_bytes=0
+    )
+    assert not verified.failed
+    assert h.verify_set(DSN, first.set_id, now=NOW, repo=repo, env=env, work_dir=out) == []
     second = _verified_set(repo, env, out)
     states = dict(
         db.execute(
@@ -473,3 +481,101 @@ def test_the_formal_path_is_not_reachable_from_the_module() -> None:
     }
     assert names & forbidden == set()
     assert "--formal-run" not in Path(h.__file__).read_text()
+
+
+# ---------- review 3 regressions ----------
+
+
+def test_the_snapshot_export_keeps_the_disk_reserve(
+    db: Any, tmp_path: Path, borg: tuple[str, dict[str, str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo, env = borg
+    _seed(db)
+    out = tmp_path / "out"
+    _export_watch(out)
+    _archive_all(repo, env, out)
+    with pytest.raises(engine.ArchiveError, match="reserve"):
+        h.take_snapshot_set(DSN, out, code_revision="test", reserve_bytes=1 << 60)
+    assert not list(out.glob("*-hyp015-*"))  # no member file was written
+    assert db.execute("SELECT count(*) FROM app.history_archive_snapshot_sets").fetchone() == (0,)
+
+    # The upfront estimate can be wrong: free space is watched while writing too.
+    free = [10**12, 10**12]
+
+    def shrinking(_path: Any) -> Any:
+        free.append(free[-1] // 1000)
+        return type("Usage", (), {"free": free[-1]})()
+
+    monkeypatch.setattr(shutil, "disk_usage", shrinking)
+    monkeypatch.setattr(engine, "ensure_reserve", lambda *_a: None)
+    monkeypatch.setattr(engine, "RESERVE_CHECK_EVERY", 1)
+    with pytest.raises(engine.ArchiveError, match="fell below"):
+        h.take_snapshot_set(DSN, out, code_revision="test", reserve_bytes=10**10)
+
+
+def test_a_preliminary_set_pins_the_verified_prefix(
+    db: Any, tmp_path: Path, borg: tuple[str, dict[str, str]]
+) -> None:
+    repo, env = borg
+    seeded = _seed(db)
+    out = tmp_path / "out"
+    early = engine.run_export(
+        DSN,
+        h.WATCH_CONTRACT,
+        out,
+        code_revision="test",
+        now=D0 + timedelta(days=4),
+        max_chunks=40,
+        reserve_bytes=0,
+    )
+    assert len(early.done) == 3  # 10-04, 10-05, 10-06 have closed
+    _archive_all(repo, env, out)
+    with pytest.raises(engine.ArchiveError, match="no verified archive covers"):
+        h.take_snapshot_set(DSN, out, code_revision="test", reserve_bytes=0)  # final
+    made = h.take_snapshot_set(DSN, out, code_revision="test", final=False, reserve_bytes=0)
+    assert (made.kind, made.pinned_chunks) == ("preliminary", 3)
+    assert made.coverage_end == (D0 + timedelta(days=3)).isoformat()
+    _archive_all(repo, env, out)
+    h.verify_set(DSN, made.set_id, now=NOW, repo=repo, env=env, work_dir=out)
+    report = h.restore_check(
+        DSN, DSN, made.set_id, tmp_path / "work", repo=repo, env=env, reserve_bytes=0
+    )
+    assert report.ok, report.failures
+    assert report.readiness["total_watches"] == 2  # the two WATCH of 10-06; 10-20 is later
+    assert seeded["eligible"] == 3
+
+
+def test_the_set_manifest_is_offsite_and_checked(
+    db: Any, tmp_path: Path, borg: tuple[str, dict[str, str]]
+) -> None:
+    repo, env = borg
+    _seed(db)
+    out = tmp_path / "out"
+    _export_watch(out)
+    _archive_all(repo, env, out)
+    made = _verified_set(repo, env, out)
+    archived = [json.loads(p.read_text()) for p in Path(repo).glob("*/*.set.manifest.json")]
+    assert [m["set_id"] for m in archived] == [made.set_id]
+    assert archived[0]["pinned_chunks"] and archived[0]["reference"]
+    assert {m["dataset"] for m in archived[0]["members"]} == {c.dataset for c in h.PLAIN_CONTRACTS}
+    copy = next(Path(repo).glob(f"*/{made.set_id}.set.manifest.json"))
+    copy.write_text(copy.read_text().replace('"final"', '"other"'))
+    with pytest.raises(engine.ArchiveError, match="archived manifest"):
+        h.restore_check(
+            DSN, DSN, made.set_id, tmp_path / "work", repo=repo, env=env, reserve_bytes=0
+        )
+
+
+def test_an_unarchived_set_manifest_blocks_verification(
+    db: Any, tmp_path: Path, borg: tuple[str, dict[str, str]]
+) -> None:
+    repo, env = borg
+    _seed(db)
+    out = tmp_path / "out"
+    _export_watch(out)
+    _archive_all(repo, env, out)
+    made = h.take_snapshot_set(DSN, out, code_revision="test", reserve_bytes=0)
+    engine.run_archive(DSN, h.ALL_CONTRACTS, out, repo=repo, env=env, now=_tick())
+    engine.run_verify(DSN, h.ALL_CONTRACTS, out, repo=repo, env=env, now=_tick(), reserve_bytes=0)
+    with pytest.raises(engine.ArchiveError, match="no archived manifest"):
+        h.verify_set(DSN, made.set_id, now=NOW, repo=repo, env=env, work_dir=out)

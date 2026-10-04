@@ -1856,12 +1856,12 @@ prod-hyp015-snapshot-set:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	@test -z "$$(git status --porcelain)" || (echo "ERROR: dirty working tree; the manifest records the revision" && exit 1)
 	@mkdir -p /opt/schurfer/runtime/history-archive/hyp015
-	@$(_HYP015) snapshot-set --out-dir /hyp015 --code-revision "$$(git rev-parse HEAD)"
+	@$(_HYP015) snapshot-set --out-dir /hyp015 --code-revision "$$(git rev-parse HEAD)" $(ARGS)
 
 prod-hyp015-verify-set:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	@test -n "$(SET)" || (echo "ERROR: SET=<set id> is required" && exit 1)
-	@$(_HYP015) verify-set --out-dir /hyp015 --set-id $(SET)
+	@$(_HYP015) verify-set --out-dir /hyp015 --backup-env /backup.env --set-id $(SET)
 
 prod-hyp015-restore-check:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)

@@ -197,6 +197,24 @@ Real PostgreSQL/TimescaleDB:
   in the reference (the reader resolves identity in its own session); they follow from
   the restored universe tables, whose content fingerprints must match.
 
+## Code review 1 folded in
+
+- **Race:** superseding a snapshot row locks its set row (`FOR SHARE`), and verifying
+  the set takes that row's lock, so the two serialize; whichever commits first, the
+  other sees it. Both orders are tested with two connections.
+- **Disk reserve:** a snapshot member checks the reserve against its table's size
+  before writing, and every export (snapshots and chunks) rechecks free space while it
+  writes; `--reserve-bytes` reaches the snapshot step.
+- **Preliminary sets:** `snapshot-set --preliminary` pins the contiguous verified prefix
+  of the window and records its `coverage_end`; the reference, the restored WATCH
+  denominator, readiness and health all use decisions up to that end. A final set
+  still needs the whole window (`kind` is stored on the set).
+- **Set manifest offsite:** each set writes `<set>.set.manifest.json` (reference,
+  pinned watch revisions, member files and hashes), archived by the archive step in a
+  `history-hyp015-sets-*` archive. Verifying a set extracts and checks it (its
+  SHA-256 is on the set row, the archive name is recorded once, and the database
+  refuses a verified set without it); the restore check compares it with the catalog.
+
 ## Running
 
 Manual make targets on the production host after migrations 0058 and 0059 are
@@ -204,9 +222,11 @@ deployed; no timers.
 
 1. `make prod-hyp015-watch-export`: closed watch chunks of the window (up to 7 a run).
 2. `make prod-hyp015-archive`, then `make prod-hyp015-verify`.
-3. `make prod-hyp015-snapshot-set`: pins and rechecks the watch revisions, records the
-   reference, exports the plain inputs; prints the set id and `formal_ready`.
-4. `make prod-hyp015-archive`, `make prod-hyp015-verify`, then
-   `make prod-hyp015-verify-set SET=<id>` (older verified sets give way to it).
+3. `make prod-hyp015-snapshot-set` (add `ARGS=--preliminary` for an early set on the
+   verified prefix): pins and rechecks the watch revisions, records the reference,
+   exports the plain inputs, writes the set manifest; prints the set id, kind,
+   coverage end and `formal_ready`.
+4. `make prod-hyp015-archive` (members and the set manifest), `make prod-hyp015-verify`,
+   then `make prod-hyp015-verify-set SET=<id>` (older verified sets give way to it).
 5. `make prod-hyp015-restore-check SET=<id>`: throwaway container, report as JSON;
    exit status 0 only when every check passes.

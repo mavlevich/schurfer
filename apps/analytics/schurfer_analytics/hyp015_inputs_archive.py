@@ -32,18 +32,23 @@ import json
 import os
 import re
 import sys
+import tempfile
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from .cold_bar_fetch import FetchError, sha256_of
+from .cold_bar_fetch import FetchError, sha256_of, stream_member
+from .cold_bar_gated_deletion_collectors import borg_list_members_args, parse_short_list
 from .history_archive import (
     DEFAULT_RESERVE_BYTES,
     FINGERPRINT_VERSION,
+    MAX_MANIFEST_BYTES,
     ArchiveError,
     CatalogRow,
     DatasetContract,
+    StepReport,
+    _run,
     _snapshot,
     archiver_session,
     borg_env,
@@ -264,17 +269,22 @@ PLAIN_CONTRACTS = (
 )
 ALL_CONTRACTS = (WATCH_CONTRACT, *PLAIN_CONTRACTS)
 
+
 # The reader's WATCH denominator in DuckDB syntax, for picking the restored rows out of
 # the archived chunks. The same constants as `_watch_filter_sql`.
-DENOMINATOR_DUCK = (
-    "decision_status = 'watch' "
-    f"AND watch_version = '{HOLD12H_PAPER_CONTRACT.watch_version}' "
-    f"AND exchange = '{HOLD12H_PAPER_CONTRACT.source_exchange}' "
-    f"AND market_type = '{HOLD12H_PAPER_CONTRACT.market_type}' "
-    "AND watch_id IS NOT NULL AND episode_id IS NOT NULL "
-    f"AND decision_at >= '{COHORT_START.isoformat()}'::TIMESTAMPTZ "
-    f"AND decision_at < '{DECISION_PREFIX_END.isoformat()}'::TIMESTAMPTZ"
-)
+def denominator_duck(window_end: datetime) -> str:
+    """The reader's WATCH denominator in DuckDB syntax, up to `window_end`, for picking
+    the restored rows out of the archived chunks. The same constants as
+    `_watch_filter_sql`."""
+    return (
+        "decision_status = 'watch' "
+        f"AND watch_version = '{HOLD12H_PAPER_CONTRACT.watch_version}' "
+        f"AND exchange = '{HOLD12H_PAPER_CONTRACT.source_exchange}' "
+        f"AND market_type = '{HOLD12H_PAPER_CONTRACT.market_type}' "
+        "AND watch_id IS NOT NULL AND episode_id IS NOT NULL "
+        f"AND decision_at >= '{COHORT_START.isoformat()}'::TIMESTAMPTZ "
+        f"AND decision_at < '{window_end.isoformat()}'::TIMESTAMPTZ"
+    )
 
 
 # ---------- blind composition ----------
@@ -286,13 +296,13 @@ def _psycopg(sql: str) -> str:
     return re.sub(r"(?<!:):([a-z_]+)", r"%(\1)s", sql)
 
 
-def _params() -> dict[str, Any]:
+def _params(window_end: datetime) -> dict[str, Any]:
     return {
-        **_watch_params(COHORT_START, DECISION_PREFIX_END),
+        **_watch_params(COHORT_START, window_end),
         "base": FROZEN_PAPER_CONTRACT.paper_version,
         "hold": HOLD12H_PAPER_CONTRACT.paper_version,
         "fv": ACTUAL_FUNDING_VERSION,
-        "lag_cutoff": DECISION_PREFIX_END - HEALTH_FUNDING_LAG,
+        "lag_cutoff": window_end - HEALTH_FUNDING_LAG,
         "horizons": list(REQUIRED_HORIZONS),
     }
 
@@ -301,12 +311,14 @@ def _counts(conn: Any, sql: str, params: Mapping[str, Any]) -> dict[str, int]:
     return {str(k): int(v) for k, v in conn.execute(sql, params).fetchall()}
 
 
-def composition(conn: Any, schemas: Schemas) -> dict[str, Any]:
+def composition(
+    conn: Any, schemas: Schemas, window_end: datetime = DECISION_PREFIX_END
+) -> dict[str, Any]:
     """Ids, counts, statuses, horizons and coverage of the cohort's inputs. Never a
     return, fee, funding amount, price or PnL. Identical SQL runs on the source (inside
     the snapshot set's transaction) and on a restored copy."""
     ts, app = schemas.timeseries, schemas.app
-    p = _params()
+    p = _params(window_end)
     w = f"WITH w AS (SELECT w.watch_id {_psycopg(_watch_filter_sql(ts))})"
     probes = (
         f"{w}, p AS (SELECT p.* FROM {app}.momentum_flow_paper_probes p "
@@ -376,7 +388,7 @@ def composition(conn: Any, schemas: Schemas) -> dict[str, Any]:
     ).fetchone()
     by = "coalesce(%s::text, 'NULL')"
     return {
-        "window": [COHORT_START.isoformat(), DECISION_PREFIX_END.isoformat()],
+        "window": [COHORT_START.isoformat(), window_end.isoformat()],
         "eligible_watches": {"count": int(eligible[0]), "ids_sha256": eligible[1]},
         "hold12h_probes": {"count": int(cohort[0]), "ids_sha256": cohort[1]},
         "probe_status": {
@@ -479,13 +491,33 @@ def _catalog_row_by_id(conn: Any, row_id: int) -> CatalogRow:
     )
 
 
-def pin_watch_chunks(conn: Any) -> list[dict[str, Any]]:
-    """The verified watch revisions that tile the window, each re-fingerprinted from the
-    source in the caller's snapshot. A changed chunk fails: re-export it first. A chunk
-    already dropped by retention cannot be rechecked, so it fails too: a set must be
-    taken while the source still holds the window."""
+def verified_prefix_end(catalog: Mapping[datetime, CatalogRow]) -> datetime | None:
+    """The end of the contiguous run of verified watch ranges from the window start."""
+    cursor = WATCH_WINDOW[0]
+    reached = None
+    for start in sorted(catalog):
+        row = catalog[start]
+        if row.state != "verified" or row.range_start != cursor:
+            break
+        cursor = reached = row.range_end
+    return reached
+
+
+def pin_watch_chunks(conn: Any, *, final: bool) -> tuple[list[dict[str, Any]], datetime]:
+    """The verified watch revisions that tile the window (final) or its verified prefix
+    (preliminary), each re-fingerprinted from the source in the caller's snapshot.
+    Returns them with the coverage end. A changed chunk fails: re-export it first. A
+    chunk already dropped by retention cannot be rechecked, so it fails too: a set must
+    be taken while the source still holds what it pins."""
+    catalog = live_rows(conn, WATCH_CONTRACT)
     start, end = WATCH_WINDOW
-    rows = covering_ranges(live_rows(conn, WATCH_CONTRACT), start, end)
+    if not final:
+        prefix = verified_prefix_end(catalog)
+        # A preliminary set must cover at least one decision day of the cohort.
+        if prefix is None or prefix <= COHORT_START:
+            raise ArchiveError("no verified watch chunk covers a cohort day yet")
+        end = min(prefix, end)
+    rows = covering_ranges(catalog, start, end)
     present = {c.range_start for c in list_chunks(conn, WATCH_CONTRACT)}
     pinned: list[dict[str, Any]] = []
     for row in rows:
@@ -507,29 +539,52 @@ def pin_watch_chunks(conn: Any) -> list[dict[str, Any]]:
                 "content_fingerprint": row.content_fingerprint,
             }
         )
-    return pinned
+    return pinned, end
+
+
+def decision_window_end(coverage_end: datetime) -> datetime:
+    """Decisions counted by a set: up to the registered prefix end, or up to the pinned
+    coverage for a preliminary set (a decision never precedes its bucket, so every
+    decision before the coverage end lies in a pinned chunk)."""
+    return min(DECISION_PREFIX_END, coverage_end)
+
+
+def set_manifest_name(set_id: str) -> str:
+    return f"{set_id}.set.manifest.json"
 
 
 @dataclass
 class SetReport:
     set_id: str
     snapshot_at: str
+    kind: str
+    coverage_end: str
     members: dict[str, int]
     pinned_chunks: int
     formal_ready: bool
     reference_sha256: str
 
 
-def take_snapshot_set(dsn: str, out_dir: Path, *, code_revision: str) -> SetReport:
+def take_snapshot_set(
+    dsn: str,
+    out_dir: Path,
+    *,
+    code_revision: str,
+    final: bool = True,
+    reserve_bytes: int = DEFAULT_RESERVE_BYTES,
+) -> SetReport:
     """One snapshot set: pin and recheck the watch revisions, record the composition
     reference and export every plain input, all in one REPEATABLE READ snapshot; then
-    catalogue the set as `building` and its members as `exported`."""
+    write the set's own manifest (the reference, the pinned revisions and every member)
+    for the archive, and catalogue the set as `building` and its members as `exported`.
+    A preliminary set pins the verified prefix of the window and counts decisions only
+    up to it; a final set needs the whole window."""
     with archiver_session(dsn, WATCH_CONTRACT, out_dir) as writer:
         with _snapshot(dsn) as conn:
             snapshot_at = conn.execute("SELECT now()").fetchone()[0].astimezone(UTC)
             set_id = f"hyp015-{snapshot_at:%Y%m%dT%H%M%S}Z"
-            pinned = pin_watch_chunks(conn)
-            reference = composition(conn, Schemas())
+            pinned, coverage_end = pin_watch_chunks(conn, final=final)
+            reference = composition(conn, Schemas(), decision_window_end(coverage_end))
             manifests = [
                 export_snapshot_member(
                     conn,
@@ -539,24 +594,57 @@ def take_snapshot_set(dsn: str, out_dir: Path, *, code_revision: str) -> SetRepo
                     revision=1,
                     snapshot_at=snapshot_at,
                     code_revision=code_revision,
+                    reserve_bytes=reserve_bytes,
                 )
                 for contract in PLAIN_CONTRACTS
             ]
         digest = reference_sha256(reference)
+        kind = "final" if final else "preliminary"
+        members = [
+            {
+                "dataset": m.dataset,
+                "file_name": m.file_name,
+                "file_sha256": m.file_sha256,
+                "manifest_sha256": sha256_of(out_dir / snapshot_file_names(c, set_id, 1)[1]),
+                "content_fingerprint": m.content_fingerprint,
+                "row_count": m.row_count,
+            }
+            for c, m in zip(PLAIN_CONTRACTS, manifests, strict=True)
+        ]
+        set_manifest = {
+            "set_id": set_id,
+            "purpose": PURPOSE,
+            "kind": kind,
+            "snapshot_at": snapshot_at.isoformat(),
+            "coverage_end": coverage_end.isoformat(),
+            "code_revision": code_revision,
+            "contract_version": CONTRACT_VERSION,
+            "pinned_chunks": pinned,
+            "reference": reference,
+            "reference_sha256": digest,
+            "members": members,
+        }
+        manifest_path = out_dir / set_manifest_name(set_id)
+        manifest_path.write_text(json.dumps(set_manifest, indent=2, sort_keys=True) + "\n")
+        manifest_sha = sha256_of(manifest_path)
         with writer.transaction():
             writer.execute(
                 "INSERT INTO app.history_archive_snapshot_sets (set_id, purpose, "
-                "required_datasets, snapshot_at, code_revision, pinned_chunks, reference, "
-                "reference_sha256, state) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'building')",
+                "required_datasets, snapshot_at, kind, coverage_end, code_revision, "
+                "pinned_chunks, reference, reference_sha256, manifest_sha256, state) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'building')",
                 (
                     set_id,
                     PURPOSE,
                     [c.dataset for c in PLAIN_CONTRACTS],
                     snapshot_at,
+                    kind,
+                    coverage_end,
                     code_revision,
                     json.dumps(pinned),
                     json.dumps(reference, sort_keys=True),
                     digest,
+                    manifest_sha,
                 ),
             )
             for contract, manifest in zip(PLAIN_CONTRACTS, manifests, strict=True):
@@ -565,6 +653,8 @@ def take_snapshot_set(dsn: str, out_dir: Path, *, code_revision: str) -> SetRepo
     return SetReport(
         set_id=set_id,
         snapshot_at=snapshot_at.isoformat(),
+        kind=kind,
+        coverage_end=coverage_end.isoformat(),
         members={m.dataset: m.row_count for m in manifests},
         pinned_chunks=len(pinned),
         formal_ready=formal_ready(reference),
@@ -572,11 +662,95 @@ def take_snapshot_set(dsn: str, out_dir: Path, *, code_revision: str) -> SetRepo
     )
 
 
-def verify_set(dsn: str, set_id: str, *, now: datetime) -> list[str]:
-    """Mark a set verified (the database refuses unless every member is verified), then
-    retire older verified sets of the same purpose in its favour. Returns retired ids."""
+def archive_set_manifests(
+    dsn: str, out_dir: Path, *, repo: str, env: Mapping[str, str], now: datetime
+) -> list[str]:
+    """Put the manifests of building sets not yet offsite into one new archive, accept
+    it only if its listing is exact, and record the archive on each set."""
+    with archiver_session(dsn, WATCH_CONTRACT, out_dir) as conn:
+        pending = conn.execute(
+            "SELECT set_id, manifest_sha256 FROM app.history_archive_snapshot_sets "
+            "WHERE purpose = %s AND state = 'building' AND manifest_archive IS NULL",
+            (PURPOSE,),
+        ).fetchall()
+        members = []
+        for set_id, sha in pending:
+            path = out_dir / set_manifest_name(str(set_id))
+            if not path.exists() or sha256_of(path) != sha:
+                raise ArchiveError(f"set manifest of {set_id} is missing or changed")
+            members.append((str(set_id), path.name))
+        if not members:
+            return []
+        archive = f"{ARCHIVE_PREFIX}sets-{now:%Y-%m-%dT%H:%M:%S}"
+        names = [name for _, name in members]
+        _run(
+            ["borg", "create", "--compression", "zstd,3", f"{repo}::{archive}", *names],
+            env,
+            cwd=out_dir,
+        )
+        listed = parse_short_list(_run(borg_list_members_args(repo, archive), env))
+        if listed != frozenset(names):
+            raise ArchiveError(f"{archive} lists {sorted(listed)}, expected {sorted(names)}")
+        for set_id, _ in members:
+            conn.execute(
+                "UPDATE app.history_archive_snapshot_sets SET manifest_archive = %s "
+                "WHERE set_id = %s AND manifest_archive IS NULL",
+                (archive, set_id),
+            )
+        return [set_id for set_id, _ in members]
+
+
+def archive_inputs(
+    dsn: str, out_dir: Path, *, repo: str, env: Mapping[str, str], now: datetime
+) -> StepReport:
+    """The archive step: every exported input, then the manifests of new sets (in an
+    archive of their own, one second later so the names differ)."""
+    report = run_archive(dsn, ALL_CONTRACTS, out_dir, repo=repo, env=env, now=now)
+    if not report.failed:
+        later = now + timedelta(seconds=1)
+        for set_id in archive_set_manifests(dsn, out_dir, repo=repo, env=env, now=later):
+            report.done.append(f"set manifest {set_id} archived")
+    return report
+
+
+def _extracted_set_manifest(
+    conn: Any, set_id: str, work_dir: Path, *, repo: str, env: Mapping[str, str]
+) -> dict[str, Any]:
+    """The set's manifest extracted from its archive, checked against the recorded
+    SHA-256."""
+    row = conn.execute(
+        "SELECT manifest_archive, manifest_sha256 FROM app.history_archive_snapshot_sets "
+        "WHERE set_id = %s",
+        (set_id,),
+    ).fetchone()
+    if row is None or row[0] is None:
+        raise ArchiveError(f"snapshot set {set_id} has no archived manifest")
+    work_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=work_dir) as tmp:
+        path = Path(tmp) / set_manifest_name(set_id)
+        sha = stream_member(repo, str(row[0]), path.name, path, dict(env), MAX_MANIFEST_BYTES)
+        if sha != row[1]:
+            raise ArchiveError(f"archived manifest of {set_id}: sha256 {sha} != {row[1]}")
+        payload: dict[str, Any] = json.loads(path.read_text())
+    return payload
+
+
+def verify_set(
+    dsn: str,
+    set_id: str,
+    *,
+    now: datetime,
+    repo: str,
+    env: Mapping[str, str],
+    work_dir: Path,
+) -> list[str]:
+    """Mark a set verified once its own manifest is extracted from its archive and
+    matches (the database also refuses unless every member is verified), then retire
+    older verified sets of the same purpose in its favour. Returns retired ids."""
     import psycopg
 
+    with psycopg.connect(dsn, autocommit=True) as conn:
+        _extracted_set_manifest(conn, set_id, work_dir, repo=repo, env=env)
     with psycopg.connect(dsn, autocommit=True) as conn, conn.transaction():
         updated = conn.execute(
             "UPDATE app.history_archive_snapshot_sets SET state = 'verified', verified_at = %s "
@@ -615,15 +789,15 @@ class RestoreReport:
         return json.dumps({**asdict(self), "ok": self.ok}, indent=1, default=str) + "\n"
 
 
-def _load_set(conn: Any, set_id: str) -> tuple[list[dict[str, Any]], dict[str, Any], str]:
+def _load_set(conn: Any, set_id: str) -> tuple[list[dict[str, Any]], dict[str, Any], str, datetime]:
     row = conn.execute(
-        "SELECT pinned_chunks, reference, state FROM app.history_archive_snapshot_sets "
-        "WHERE set_id = %s AND purpose = %s",
+        "SELECT pinned_chunks, reference, state, coverage_end "
+        "FROM app.history_archive_snapshot_sets WHERE set_id = %s AND purpose = %s",
         (set_id, PURPOSE),
     ).fetchone()
     if row is None:
         raise ArchiveError(f"snapshot set {set_id} does not exist")
-    return list(row[0]), dict(row[1]), str(row[2])
+    return list(row[0]), dict(row[1]), str(row[2]), row[3].astimezone(UTC)
 
 
 def restore_check(
@@ -648,14 +822,18 @@ def restore_check(
     report = RestoreReport(set_id=set_id)
     work_dir.mkdir(parents=True, exist_ok=True)
     with psycopg.connect(dsn, autocommit=True) as catalog:
-        pinned, reference, state = _load_set(catalog, set_id)
+        pinned, reference, state, coverage_end = _load_set(catalog, set_id)
         if state != "verified":
             raise ArchiveError(f"snapshot set {set_id} is {state}, not verified")
+        set_manifest = _extracted_set_manifest(catalog, set_id, work_dir, repo=repo, env=env)
         watch_rows = [_catalog_row_by_id(catalog, int(p["id"])) for p in pinned]
         members = {
             c.dataset: [r for r in snapshot_rows(catalog, c) if r.snapshot_set == set_id]
             for c in PLAIN_CONTRACTS
         }
+    window_end = decision_window_end(coverage_end)
+    denominator = denominator_duck(window_end)
+    report.failures += _manifest_disagreements(set_manifest, pinned, reference, members)
     with psycopg.connect(target_dsn, autocommit=True) as target:
         for schema in (RESTORED.timeseries, RESTORED.app):
             target.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
@@ -679,7 +857,7 @@ def restore_check(
                     WATCH_CONTRACT,
                     path,
                     watch_table,
-                    where=DENOMINATOR_DUCK,
+                    where=denominator,
                     create=index == 0,
                 )
                 source = "read_parquet('" + str(path).replace("'", "''") + "')"
@@ -688,7 +866,7 @@ def restore_check(
                     for h in duckdb.connect()
                     .execute(
                         f"SELECT sha256({duck_row_text(WATCH_CONTRACT)}) FROM {source} "
-                        f"WHERE {DENOMINATOR_DUCK}"
+                        f"WHERE {denominator}"
                     )
                     .fetchall()
                 ]
@@ -734,22 +912,51 @@ def restore_check(
                 report.failures.append(f"{contract.dataset}: restored content differs")
         if report.failures:
             return report
-        restored_reference = composition(target, RESTORED)
+        restored_reference = composition(target, RESTORED, window_end)
         if restored_reference != reference:
             differ = sorted(k for k in reference if restored_reference.get(k) != reference[k])
             report.failures.append(f"composition differs from the reference on {differ}")
-    _check_reader(report, target_dsn, reference)
+    _check_reader(report, target_dsn, reference, window_end)
     report.formal_ready = formal_ready(reference)
     return report
 
 
-def _check_reader(report: RestoreReport, target_dsn: str, reference: Mapping[str, Any]) -> None:
+def _manifest_disagreements(
+    manifest: Mapping[str, Any],
+    pinned: Sequence[Mapping[str, Any]],
+    reference: Mapping[str, Any],
+    members: Mapping[str, Sequence[Any]],
+) -> list[str]:
+    """The archived set manifest must say what the catalog says: the same pinned watch
+    revisions, the same reference and the same member files."""
+    wrong = []
+    if manifest.get("pinned_chunks") != list(pinned):
+        wrong.append("pinned watch revisions")
+    if manifest.get("reference") != dict(reference):
+        wrong.append("composition reference")
+    listed = {m["dataset"]: (m["file_sha256"], m["manifest_sha256"]) for m in manifest["members"]}
+    catalogued = {
+        name: (rows[0].file_sha256, rows[0].manifest_sha256)
+        for name, rows in members.items()
+        if len(rows) == 1
+    }
+    if listed != catalogued:
+        wrong.append("member files")
+    return [f"archived set manifest disagrees with the catalog on {w}" for w in wrong]
+
+
+def _check_reader(
+    report: RestoreReport,
+    target_dsn: str,
+    reference: Mapping[str, Any],
+    window_end: datetime,
+) -> None:
     """The registered reader's own readiness and health paths, on the restored copy."""
     readiness = asyncio.run(
         load_readiness(
             target_dsn,
             cohort_start=COHORT_START,
-            decision_prefix_end=DECISION_PREFIX_END,
+            decision_prefix_end=window_end,
             schemas=RESTORED,
         )
     )
@@ -757,7 +964,7 @@ def _check_reader(report: RestoreReport, target_dsn: str, reference: Mapping[str
         load_health_checkpoint(
             target_dsn,
             since=COHORT_START,
-            until=DECISION_PREFIX_END,
+            until=window_end,
             funding_version=ACTUAL_FUNDING_VERSION,
             schemas=RESTORED,
         )
@@ -796,13 +1003,18 @@ def main(argv: Sequence[str] | None = None) -> int:
         step = sub.add_parser(name)
         step.add_argument("--out-dir", type=Path, required=True)
         step.add_argument("--reserve-bytes", type=int, default=DEFAULT_RESERVE_BYTES)
-        if name in ("archive", "verify", "restore-check"):
+        if name in ("archive", "verify", "verify-set", "restore-check"):
             step.add_argument("--backup-env", type=Path, required=True)
         if name in ("export", "snapshot-set"):
             step.add_argument("--code-revision", required=True)
         if name in ("verify-set", "restore-check"):
             step.add_argument("--set-id", required=True)
     sub.choices["export"].add_argument("--max-chunks", type=int, default=7)
+    sub.choices["snapshot-set"].add_argument(
+        "--preliminary",
+        action="store_true",
+        help="pin the verified prefix of the window (an early restore check)",
+    )
     sub.choices["restore-check"].add_argument("--target-dsn-env", default="RESTORE_DATABASE_URL")
     args = parser.parse_args(argv)
     dsn = os.getenv("DATABASE_URL")
@@ -822,14 +1034,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         sys.stdout.write(result.to_json())
         return 1 if result.failed else 0
     if args.step == "snapshot-set":
-        made = take_snapshot_set(dsn, args.out_dir, code_revision=args.code_revision)
+        made = take_snapshot_set(
+            dsn,
+            args.out_dir,
+            code_revision=args.code_revision,
+            final=not args.preliminary,
+            reserve_bytes=args.reserve_bytes,
+        )
         sys.stdout.write(json.dumps(asdict(made), indent=1) + "\n")
         return 0
+    repo, env = borg_env(args.backup_env)
     if args.step == "verify-set":
-        retired = verify_set(dsn, args.set_id, now=now)
+        retired = verify_set(dsn, args.set_id, now=now, repo=repo, env=env, work_dir=args.out_dir)
         sys.stdout.write(json.dumps({"verified": args.set_id, "retired": retired}) + "\n")
         return 0
-    repo, env = borg_env(args.backup_env)
     if args.step == "restore-check":
         target = os.getenv(args.target_dsn_env)
         if not target:
@@ -846,7 +1064,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         sys.stdout.write(checked.to_json())
         return 0 if checked.ok else 1
     if args.step == "archive":
-        result = run_archive(dsn, ALL_CONTRACTS, args.out_dir, repo=repo, env=env, now=now)
+        result = archive_inputs(dsn, args.out_dir, repo=repo, env=env, now=now)
     else:
         result = run_verify(
             dsn,
