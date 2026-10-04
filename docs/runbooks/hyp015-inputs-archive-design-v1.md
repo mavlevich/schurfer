@@ -65,18 +65,30 @@ Column types to carry exactly: `uuid`, `text[]`, `bytea`, `boolean`, `integer`,
 
    **Timing.** A snapshot at 2026-11-02 12:00 UTC is only preliminary: funding settles
    after the holding windows close, which is why the registered read waits until
-   2026-11-04 12:00 UTC. The final set is taken once blind completeness checks pass:
-   - every cohort probe that opened is closed;
-   - funding coverage is `complete` for every closed position;
-   - accounting is complete for every probe and outcome.
+   2026-11-04 12:00 UTC. Two things are checked separately, both blind:
+   - **inputs preserved** (decides whether a set is final): every member dataset is
+     verified, the watch revisions are pinned and still match the source, and every
+     cohort event is in the archive whatever its outcome. Rejected entries
+     (`rejected_stale`, `rejected_quote`) and unresolved events are kept as they are;
+     a cohort that needs no outcome rows may have none;
+   - **formal readiness** (reported, never required for preservation): for the events
+     that need them only, opened probes are closed, closed positions have both
+     registered horizons (240 and 720) complete, accounting is complete, and funding
+     coverage is `complete`.
 
-   If a check fails, the snapshot is repeated later as a new set; an earlier set is
-   superseded, never edited.
+   The final set is the first one taken after readiness holds (expected from
+   2026-11-04); if readiness never holds, the last preserved set is final and the
+   archive records the unresolved events honestly. A later set replaces an earlier one
+   only once the later set is complete and verified.
 
-4. **Composition reference, bound to the snapshot.** Inside the same export
-   transaction, and over the archived watch chunks, compute a blind composition
-   summary and record it in the set's manifest. It reads no return, fee, funding
-   amount or price:
+4. **Composition reference, bound to the snapshot and to pinned watch revisions.**
+   Inside the same export transaction:
+   - pin the verified watch revisions of the window (catalog ids, file SHA-256,
+     content fingerprints) and recompute each chunk's fingerprint from the source in
+     this snapshot; any difference aborts the set, the chunk is re-exported as a new
+     revision, and the set is taken again;
+   - compute a blind composition summary and record it, with the pinned revisions, in
+     the set's manifest and set row. It reads no return, fee, funding amount or price:
    - SHA-256 of the sorted eligible WATCH ids, and their count;
    - SHA-256 of the sorted hold12h probe ids, with counts by `entry_status`,
      `position_status` and `accounting_status`;
@@ -85,10 +97,13 @@ Column types to carry exactly: `uuid`, `text[]`, `bytea`, `boolean`, `integer`,
    - funding coverage runs counted by `status`, per probe window;
    - universe snapshots and instruments by count and id hash.
 5. **Restore check:**
-   - restore the watch chunks of the window and a complete plain-input set into a
-     disposable PostgreSQL on the host (the ENG-025 drill's throwaway container),
-     into two schemas created with the production DDL;
-   - compare each restored table's content fingerprint with its catalog row;
+   - the watch chunks of the window hold about 13 GB uncompressed, too much to restore
+     whole on this host and not needed: each chunk's completeness is already proven by
+     its verified fingerprint. The check restores, from the pinned watch revisions, the
+     rows the reader's denominator selects, plus a complete plain-input set, into a
+     throwaway TimescaleDB container on the compose network (the ENG-025 pattern; the
+     production database is not touched), into two schemas with the pinned columns;
+   - compare each restored plain table's content fingerprint with its catalog row;
    - recompute the composition summary on the restored schemas and require it to
      equal the reference;
    - run the registered reader's readiness path (`load_readiness`) on the restored
@@ -98,9 +113,9 @@ Column types to carry exactly: `uuid`, `text[]`, `bytea`, `boolean`, `integer`,
    - never call `load_cohort`, `open_formal_claim` or the formal CLI; a test asserts
      the new targets cannot reach them.
 6. **Late inserts into watch chunks.** A closed chunk can still receive a late row.
-   Before the final check, every verified watch chunk that still exists is
-   re-fingerprinted against the source; a changed chunk is superseded and exported
-   again as a new verified revision.
+   The set's pinning step (4) is the recheck: it runs in the set's own snapshot, so the
+   composition reference and the pinned revisions always agree. A changed chunk is
+   superseded and exported again before a new set is taken.
 7. **Order and dates:**
    - code PR, then migrations 0058 and 0059 in the next planned deploy window after a
      verified backup (a separate approved operation);
@@ -130,6 +145,20 @@ only. Fingerprints are hashes over whole rows and reveal no value.
   database.
 - Watch scope is the cohort window with one day of margin; early archives are
   rechecked against the source before the final check.
+
+## Review 2 answers folded in
+
+- Preservation and formal readiness are separate; rejected and unresolved events are
+  preserved, and only the events that need outcomes, accounting or funding are
+  checked for them.
+- A set pins its watch revisions and checks them against the source in its own
+  snapshot; a changed watch chunk forces a new revision and a new set.
+- Migration 0059: conditional constraints for `chunk` and `snapshot` rows (a snapshot
+  has no range and may be empty), separate uniqueness of live snapshots per dataset and
+  set, `unit` and `snapshot_set` immutable, and a set table whose rows move
+  `building -> verified -> superseded`, where a set is verified only when every
+  required member is verified and is superseded only by a verified newer set. The LSR
+  pilot's tests run unchanged as regressions.
 
 ## Checks
 
