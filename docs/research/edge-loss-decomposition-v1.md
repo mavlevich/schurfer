@@ -1,6 +1,7 @@
 # Where the edge is lost: detection-delay decomposition v1
 
-Status: **registered 2026-10-04, before any analysis; design review 1 folded in.** A
+Status: **registered 2026-10-04, before any analysis; design review 1 folded in;
+amendment 1 (2026-10-05) supersedes the window, fee and statistics wording below.** A
 bounded research result, separate from
 any collector. No code, no read of any data on or after 2026-09-29. Nothing here
 becomes a trading rule.
@@ -104,6 +105,62 @@ moves; it does not reconstruct MEXC execution in September.
   never the verdict).
 - **Scanner events** of the same window, as the anchor of what the scanner actually
   saw.
+
+## Amendment 1 (2026-10-05, before any data was read)
+
+Locating the inputs showed that four points of the registration do not hold as written.
+They are fixed here, before any bar, return or event of the window has been read.
+Only coverage facts (which days exist, which files exist, row counts by exchange) were
+looked at.
+
+1. **Bybit window: 2026-08-13..2026-09-28.**
+   - The cold bars of 2026-08-10, 11 and 12 are `unverifiable_legacy` and not
+     admissible as formal evidence
+     ([audit 2026-09-19](../engineering/audits/2026-09-19/README.md)). They are
+     excluded.
+   - PostgreSQL now holds bars from 2026-09-02 only. To give every day the same
+     provenance, all days of the window are read from verified Borg fetches
+     (`cold-bar-fetch`: the receipt's sha256 and row count).
+   - Each day is then reduced on the host to the columns this study needs, with its own
+     manifest. The full file is deleted after the reduction, so the host disk never
+     holds more than one fetch batch.
+2. **There is no measured Bybit taker fee.** The repository has no fill and no
+   account-verified fee.
+   - Every cost scenario uses Bybit's published base-tier taker rate for linear
+     perpetuals, **5.5 bps per side**. It is labelled published, not measured.
+   - Slippage stays 5, 15 and 40 bps per side, so the cost scenarios are 10.5, 20.5 and
+     45.5 bps per side. The primary is 20.5 (41 bps per round trip).
+   - One sensitivity result, descriptive only: a 10 bps fee with 15 bps slippage.
+3. **Binance price coverage.** Binance close prices were empty until the trade-price
+   source landed. Binance (secondary only) starts at the first UTC day on which at least
+   99% of its bars carry `price_complete`. That is a coverage rule, fixed before
+   reading prices.
+4. **Statistics, made exact.**
+   - **Clustering.** "Cluster bootstrap by instrument and UTC day" becomes two one-way
+     cluster bootstraps: one clustered by instrument, one by UTC day. Each runs 10,000
+     iterations with a seed derived from the contract hash.
+   - **Verdict.** _Positive established_ needs both 95% lower bounds above zero.
+     _Negative established_ needs both upper bounds below zero.
+   - **Minimum detectable effect.** MDE at 80% power, two-sided 5%, is
+     (1.959964 + 0.841621) x SE. SE is the larger of the two bootstrap standard
+     deviations of the mean.
+   - **Order of reporting.** The MDE and the firing count are computed and written
+     before the mean.
+5. **Gate tapes: population.** Only the three PR 3 probe bases are on disk.
+   - **Population:** the bases of the scanner's Gate pump sources first seen
+     2026-07-23..07-31. The scanner's records start on 07-23, and the PR 3 boundary is
+     08-01.
+   - **Download:** their July trade files, fetched once from the public archive to the
+     local machine (not the production host). Each file's sha256 is recorded, with a cap
+     of 200 bases and 5 GiB.
+   - **What it shows:** a crossing is used only if the move is inside the tape.
+6. **The scanner's own detection time is measured, not simulated.**
+   - Part A step 4 also reports the actual lag from the bar-based crossing to the
+     scanner's `first_seen_at` for the same exchange and base.
+   - The uniform-phase cycle model stays as the explanation of that lag.
+
+The MEXC 1-minute archive keeps its survivorship caveat: it holds only the symbols listed
+on 2026-09-27.
 
 ## What it decides
 
