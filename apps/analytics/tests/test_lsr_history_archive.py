@@ -11,6 +11,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+from schurfer_analytics import history_archive as engine
 from schurfer_analytics import lsr_history_archive as archive
 
 T0 = datetime(2026, 8, 27, tzinfo=UTC)
@@ -118,19 +119,19 @@ def test_the_cache_evicts_least_recently_used_and_keeps_what_this_read_needs(
     _put(tmp_path / "new.parquet", 40, 100)
     # 120 cached + 50 needed against 130: the least recently used file that this read
     # does not need (mid; old is kept) goes, and nothing more.
-    archive._make_room(tmp_path, 50, 130, keep={tmp_path / "old.parquet"})
+    engine._make_room(tmp_path, 50, 130, keep={tmp_path / "old.parquet"})
     assert sorted(p.name for p in tmp_path.glob("*.parquet")) == ["new.parquet", "old.parquet"]
     with pytest.raises(archive.ArchiveError, match="exceeds"):
-        archive._make_room(tmp_path, 101, 100, keep=set())
+        engine._make_room(tmp_path, 101, 100, keep=set())
     with pytest.raises(archive.ArchiveError, match="do not fit"):
-        archive._make_room(
+        engine._make_room(
             tmp_path, 30, 100, keep={tmp_path / "old.parquet", tmp_path / "new.parquet"}
         )
 
 
 def test_row_text_is_the_same_construction_in_both_engines() -> None:
-    pg = archive.pg_row_text(archive.LSR_CONTRACT)
-    duck = archive.duck_row_text(archive.LSR_CONTRACT)
+    pg = engine.pg_row_text(archive.LSR_CONTRACT)
+    duck = engine.duck_row_text(archive.LSR_CONTRACT)
     assert pg.count("CASE WHEN") == duck.count("CASE WHEN") == len(archive.LSR_CONTRACT.columns)
     assert "extract(epoch FROM ts)" in pg and "epoch_us(ts)" in duck
     assert "octet_length" in pg and "strlen" in duck  # bytes in both, not characters

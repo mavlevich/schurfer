@@ -7,6 +7,7 @@
 .PHONY: hyp-024-orderflow-report prod-hyp-024-orderflow-report net-buy-accumulation-report prod-net-buy-accumulation-report net-buy-accumulation-coverage-funnel prod-net-buy-accumulation-coverage-funnel
 .PHONY: cex-activity-path-coverage-audit-report prod-cex-activity-path-coverage-audit-report
 .PHONY: cex-activity-discovery-report radar-outcome-discovery-report prod-radar-outcome-discovery-report
+.PHONY: prod-hyp015-watch-export prod-hyp015-archive prod-hyp015-verify prod-hyp015-snapshot-set prod-hyp015-verify-set prod-hyp015-restore-check
 .PHONY: prod-history-lsr-export prod-history-lsr-archive prod-history-lsr-verify prod-history-lsr-fetch prod-history-lsr-deletion-dry-run
 .PHONY: liquidation-capture-bybit-start liquidation-capture-bybit-stop liquidation-capture-bybit-health liquidation-capture-binance-start liquidation-capture-binance-stop liquidation-capture-binance-health
 .PHONY: prod-liquidation-capture-bybit-start prod-liquidation-capture-bybit-stop prod-liquidation-capture-bybit-health prod-liquidation-capture-binance-start prod-liquidation-capture-binance-stop prod-liquidation-capture-binance-health
@@ -1821,6 +1822,51 @@ prod-history-lsr-fetch:
 prod-history-lsr-deletion-dry-run:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	@$(_HISTORY_LSR) deletion-dry-run --out-dir /history-lsr --backup-env /backup.env
+
+# HYP-015 reader inputs (docs/runbooks/hyp015-inputs-archive-design-v1.md): the watch
+# chunks of the cohort window, then a snapshot set of the plain inputs, archived and
+# verified in never-pruned `history-hyp015-*` archives, and a restore check into a
+# throwaway TimescaleDB container. Manual targets, no timers. Nothing here deletes a row,
+# computes a verdict or opens a formal-read claim. Export and snapshot-set refuse a dirty
+# tree, because the manifest records the code revision.
+_HYP015 = $(_PROD) run --rm --no-deps \
+	-v /opt/schurfer/runtime/history-archive/hyp015:/hyp015 \
+	-v /opt/schurfer/runtime/backup.env:/backup.env:ro \
+	-v /opt/schurfer/runtime/borg-home:/opt/schurfer/runtime/borg-home \
+	-v /opt/schurfer/runtime/borg-passphrase:/opt/schurfer/runtime/borg-passphrase:ro \
+	-v /opt/schurfer/runtime/storagebox_known_hosts:/opt/schurfer/runtime/storagebox_known_hosts:ro \
+	-v /home/deploy/.ssh/schurfer_storagebox:/home/deploy/.ssh/schurfer_storagebox:ro \
+	--entrypoint hyp015-inputs-archive analytics
+
+prod-hyp015-watch-export:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: dirty working tree; the manifest records the revision" && exit 1)
+	@mkdir -p /opt/schurfer/runtime/history-archive/hyp015
+	@$(_HYP015) export --out-dir /hyp015 --code-revision "$$(git rev-parse HEAD)" $(ARGS)
+
+prod-hyp015-archive:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@$(_HYP015) archive --out-dir /hyp015 --backup-env /backup.env
+
+prod-hyp015-verify:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@$(_HYP015) verify --out-dir /hyp015 --backup-env /backup.env
+
+prod-hyp015-snapshot-set:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: dirty working tree; the manifest records the revision" && exit 1)
+	@mkdir -p /opt/schurfer/runtime/history-archive/hyp015
+	@$(_HYP015) snapshot-set --out-dir /hyp015 --code-revision "$$(git rev-parse HEAD)" $(ARGS)
+
+prod-hyp015-verify-set:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@test -n "$(SET)" || (echo "ERROR: SET=<set id> is required" && exit 1)
+	@$(_HYP015) verify-set --out-dir /hyp015 --backup-env /backup.env --set-id $(SET)
+
+prod-hyp015-restore-check:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@test -n "$(SET)" || (echo "ERROR: SET=<set id> is required" && exit 1)
+	@bash infra/scripts/hyp015-restore-check.sh $(SET)
 
 prod-paper-replay-reconciliation:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
