@@ -1,0 +1,428 @@
+{
+ "bybit_1m_0.03": {
+  "firings": 2215,
+  "entry_t+1_hold60": {
+   "n": 2214,
+   "mean": 53.9,
+   "median": -12.7,
+   "share_pos": 0.489
+  },
+  "top5_instrument_share_of_sum": 0.539,
+  "mean_without_top5": 26.4,
+  "by_iso_week_mean": {
+   "33": [
+    189,
+    -112.0
+   ],
+   "34": [
+    546,
+    168.6
+   ],
+   "35": [
+    252,
+    57.1
+   ],
+   "36": [
+    259,
+    29.1
+   ],
+   "37": [
+    310,
+    13.2
+   ],
+   "38": [
+    303,
+    -29.8
+   ],
+   "39": [
+    315,
+    109.5
+   ],
+   "40": [
+    40,
+    -75.0
+   ]
+  },
+  "mean_winsor_1_99": 46.2,
+  "mean_by_burst_notional": {
+   "below_median": 41.5,
+   "above_median": 66.3,
+   "median_burst_notional_usd": 93908
+  },
+  "net_at_20.5_instrument_ci": [
+   -25.0,
+   50.7
+  ],
+  "entry_t+2_hold60": {
+   "n": 2214,
+   "mean": 15.5,
+   "median": -33.0,
+   "share_pos": 0.467
+  },
+  "entry_t+3_hold60": {
+   "n": 2214,
+   "mean": 13.0,
+   "median": -42.2,
+   "share_pos": 0.451
+  },
+  "entry_t+6_hold60": {
+   "n": 2213,
+   "mean": 11.1,
+   "median": -20.2,
+   "share_pos": 0.472
+  }
+ },
+ "bybit_1m_0.05": {
+  "firings": 740,
+  "entry_t+1_hold60": {
+   "n": 740,
+   "mean": 128.3,
+   "median": 55.1,
+   "share_pos": 0.53
+  },
+  "top5_instrument_share_of_sum": 0.555,
+  "mean_without_top5": 62.7,
+  "by_iso_week_mean": {
+   "33": [
+    58,
+    -35.0
+   ],
+   "34": [
+    243,
+    186.2
+   ],
+   "35": [
+    66,
+    147.4
+   ],
+   "36": [
+    74,
+    159.2
+   ],
+   "37": [
+    108,
+    97.9
+   ],
+   "38": [
+    99,
+    -74.2
+   ],
+   "39": [
+    84,
+    350.9
+   ],
+   "40": [
+    8,
+    -311.2
+   ]
+  },
+  "mean_winsor_1_99": 110.8,
+  "mean_by_burst_notional": {
+   "below_median": 147.8,
+   "above_median": 108.8,
+   "median_burst_notional_usd": 152228
+  },
+  "net_at_20.5_instrument_ci": [
+   3.0,
+   175.4
+  ],
+  "entry_t+2_hold60": {
+   "n": 740,
+   "mean": 45.6,
+   "median": 0.0,
+   "share_pos": 0.499
+  },
+  "entry_t+3_hold60": {
+   "n": 740,
+   "mean": 31.0,
+   "median": -39.3,
+   "share_pos": 0.449
+  },
+  "entry_t+6_hold60": {
+   "n": 738,
+   "mean": 46.5,
+   "median": 0.0,
+   "share_pos": 0.497
+  }
+ },
+ "bybit_1m_0.08": {
+  "firings": 241,
+  "entry_t+1_hold60": {
+   "n": 241,
+   "mean": 208.5,
+   "median": 151.9,
+   "share_pos": 0.589
+  },
+  "top5_instrument_share_of_sum": 0.702,
+  "mean_without_top5": 67.1,
+  "by_iso_week_mean": {
+   "33": [
+    21,
+    78.0
+   ],
+   "34": [
+    112,
+    273.1
+   ],
+   "35": [
+    16,
+    848.8
+   ],
+   "36": [
+    16,
+    -530.9
+   ],
+   "37": [
+    24,
+    114.1
+   ],
+   "38": [
+    26,
+    -132.1
+   ],
+   "39": [
+    24,
+    556.8
+   ],
+   "40": [
+    2,
+    134.8
+   ]
+  },
+  "mean_winsor_1_99": 201.5,
+  "mean_by_burst_notional": {
+   "below_median": 302.4,
+   "above_median": 115.4,
+   "median_burst_notional_usd": 161475
+  },
+  "net_at_20.5_instrument_ci": [
+   6.9,
+   356.9
+  ],
+  "entry_t+2_hold60": {
+   "n": 241,
+   "mean": 82.8,
+   "median": -10.7,
+   "share_pos": 0.494
+  },
+  "entry_t+3_hold60": {
+   "n": 241,
+   "mean": 20.9,
+   "median": -77.1,
+   "share_pos": 0.407
+  },
+  "entry_t+6_hold60": {
+   "n": 239,
+   "mean": 13.1,
+   "median": -15.3,
+   "share_pos": 0.456
+  }
+ },
+ "binance_1m_0.03": {
+  "firings": 2100,
+  "entry_t+1_hold60": {
+   "n": 2085,
+   "mean": 100.7,
+   "median": 11.8,
+   "share_pos": 0.508
+  },
+  "top5_instrument_share_of_sum": 0.353,
+  "mean_without_top5": 71.7,
+  "by_iso_week_mean": {
+   "34": [
+    504,
+    183.9
+   ],
+   "35": [
+    232,
+    101.0
+   ],
+   "36": [
+    290,
+    46.1
+   ],
+   "37": [
+    322,
+    38.4
+   ],
+   "38": [
+    401,
+    57.0
+   ],
+   "39": [
+    306,
+    153.9
+   ],
+   "40": [
+    30,
+    -63.7
+   ]
+  },
+  "mean_winsor_1_99": 90.7,
+  "mean_by_burst_notional": {
+   "below_median": 101.7,
+   "above_median": 99.7,
+   "median_burst_notional_usd": 442589
+  },
+  "net_at_20.5_instrument_ci": [
+   23.4,
+   98.9
+  ],
+  "entry_t+2_hold60": {
+   "n": 2087,
+   "mean": 66.1,
+   "median": -5.3,
+   "share_pos": 0.49
+  },
+  "entry_t+3_hold60": {
+   "n": 2091,
+   "mean": 51.4,
+   "median": -26.2,
+   "share_pos": 0.467
+  },
+  "entry_t+6_hold60": {
+   "n": 2085,
+   "mean": 44.1,
+   "median": -2.4,
+   "share_pos": 0.497
+  }
+ },
+ "binance_1m_0.05": {
+  "firings": 770,
+  "entry_t+1_hold60": {
+   "n": 764,
+   "mean": 183.0,
+   "median": 88.3,
+   "share_pos": 0.556
+  },
+  "top5_instrument_share_of_sum": 0.392,
+  "mean_without_top5": 121.9,
+  "by_iso_week_mean": {
+   "34": [
+    252,
+    211.1
+   ],
+   "35": [
+    63,
+    188.7
+   ],
+   "36": [
+    93,
+    202.6
+   ],
+   "37": [
+    122,
+    66.4
+   ],
+   "38": [
+    138,
+    95.0
+   ],
+   "39": [
+    91,
+    392.7
+   ],
+   "40": [
+    5,
+    -203.4
+   ]
+  },
+  "mean_winsor_1_99": 169.3,
+  "mean_by_burst_notional": {
+   "below_median": 221.6,
+   "above_median": 144.4,
+   "median_burst_notional_usd": 620363
+  },
+  "net_at_20.5_instrument_ci": [
+   61.7,
+   220.7
+  ],
+  "entry_t+2_hold60": {
+   "n": 769,
+   "mean": 120.1,
+   "median": 36.1,
+   "share_pos": 0.527
+  },
+  "entry_t+3_hold60": {
+   "n": 768,
+   "mean": 90.6,
+   "median": -16.2,
+   "share_pos": 0.475
+  },
+  "entry_t+6_hold60": {
+   "n": 770,
+   "mean": 79.1,
+   "median": 19.7,
+   "share_pos": 0.527
+  }
+ },
+ "binance_1m_0.08": {
+  "firings": 253,
+  "entry_t+1_hold60": {
+   "n": 247,
+   "mean": 288.7,
+   "median": 143.3,
+   "share_pos": 0.603
+  },
+  "top5_instrument_share_of_sum": 0.561,
+  "mean_without_top5": 140.4,
+  "by_iso_week_mean": {
+   "34": [
+    112,
+    222.3
+   ],
+   "35": [
+    14,
+    1122.1
+   ],
+   "36": [
+    21,
+    144.8
+   ],
+   "37": [
+    31,
+    85.7
+   ],
+   "38": [
+    38,
+    57.3
+   ],
+   "39": [
+    30,
+    725.3
+   ],
+   "40": [
+    1,
+    1079.5
+   ]
+  },
+  "mean_winsor_1_99": 284.1,
+  "mean_by_burst_notional": {
+   "below_median": 284.7,
+   "above_median": 292.7,
+   "median_burst_notional_usd": 685739
+  },
+  "net_at_20.5_instrument_ci": [
+   79.5,
+   437.4
+  ],
+  "entry_t+2_hold60": {
+   "n": 253,
+   "mean": 179.5,
+   "median": 16.8,
+   "share_pos": 0.514
+  },
+  "entry_t+3_hold60": {
+   "n": 252,
+   "mean": 98.3,
+   "median": -57.0,
+   "share_pos": 0.417
+  },
+  "entry_t+6_hold60": {
+   "n": 253,
+   "mean": 70.2,
+   "median": 4.3,
+   "share_pos": 0.502
+  }
+ }
+}
