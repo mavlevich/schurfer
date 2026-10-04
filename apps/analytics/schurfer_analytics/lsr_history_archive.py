@@ -40,6 +40,7 @@ from .history_archive import (
     _snapshot,
     _sql_str,
     borg_env,
+    covering_ranges,
     duck_type,
     fence_of,
     fetch,
@@ -93,32 +94,6 @@ ARCHIVE_PREFIX = LSR_CONTRACT.archive_prefix
 
 
 READ_ATTEMPTS = 3
-
-
-def covering_ranges(
-    catalog: Mapping[datetime, CatalogRow], start: datetime, split: datetime
-) -> list[CatalogRow]:
-    """The verified ranges that tile `[start, split)` exactly, or an error naming the
-    first gap or overlap. A week without a verified range is a gap even if it held no
-    rows: emptiness needs its own evidence, which the pilot does not record."""
-    verified = sorted(
-        (
-            r
-            for r in catalog.values()
-            if r.state == "verified" and r.range_start < split and r.range_end > start
-        ),
-        key=lambda r: r.range_start,
-    )
-    cursor = start
-    for index, row in enumerate(verified):
-        if row.range_start > cursor:
-            raise ArchiveError(f"no verified archive covers [{cursor}, {row.range_start})")
-        if index > 0 and row.range_start < cursor:
-            raise ArchiveError(f"verified archives overlap at {row.range_start}")
-        cursor = row.range_end
-    if cursor < split:
-        raise ArchiveError(f"no verified archive covers [{cursor}, {split})")
-    return verified
 
 
 def read_lsr(

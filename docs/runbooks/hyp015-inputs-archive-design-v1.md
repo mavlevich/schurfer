@@ -1,6 +1,6 @@
 # HYP-015 reader inputs: archive and restore readiness v1
 
-Status: **DRAFT, design review 1 folded in (2026-10-04).** No code yet. Builds on the history archive pilot
+Status: **design reviews 1 and 2 folded in; implemented in this PR (2026-10-04).** Nothing has run in production. Builds on the history archive pilot
 ([history-archive-design-v1](history-archive-design-v1.md), merged in #488). This work
 computes no verdict, opens no formal-read claim and reads no return, fee, funding or
 PnL value.
@@ -176,3 +176,37 @@ Real PostgreSQL/TimescaleDB:
 - a missing, superseded or corrupted archived input fails the check;
 - a schema drift in a pinned column fails the export;
 - the formal path is unreachable from the new targets.
+
+## Implementation
+
+- `history_archive` is now the shared engine of the LSR pilot and this work: pinned
+  columns (`format_type` names, checked at every export), snapshots of plain tables
+  inside one caller-held snapshot, and archive and verify steps over several datasets
+  of one archive prefix. Every column but a timestamp is exported as its `::text`, the
+  same text the fingerprint hashes (COPY itself prints a boolean as `t`, `::text` as
+  `true`; the fingerprint check caught that before it reached an archive).
+- Migration 0059 as described above; the LSR pilot's tests pass unchanged in behaviour
+  (only their imports of shared functions moved to `history_archive`).
+- `hyp015_inputs_archive`: the watch contract (window 2026-10-04..11-03), six snapshot
+  contracts (whole tables), the blind composition built from the reader's own
+  `_watch_filter_sql` and `_funding_covered_sql`, `take_snapshot_set`, `verify_set`, and
+  `restore_check`, which loads the plain inputs whole and the denominator rows of the
+  pinned chunks into `hyp015_restore_ts` and `hyp015_restore_app`, then requires equal
+  fingerprints, an equal composition, and readiness and health counts from the
+  registered reader equal to the reference. Identity-derived readiness counts are not
+  in the reference (the reader resolves identity in its own session); they follow from
+  the restored universe tables, whose content fingerprints must match.
+
+## Running
+
+Manual make targets on the production host after migrations 0058 and 0059 are
+deployed; no timers.
+
+1. `make prod-hyp015-watch-export`: closed watch chunks of the window (up to 7 a run).
+2. `make prod-hyp015-archive`, then `make prod-hyp015-verify`.
+3. `make prod-hyp015-snapshot-set`: pins and rechecks the watch revisions, records the
+   reference, exports the plain inputs; prints the set id and `formal_ready`.
+4. `make prod-hyp015-archive`, `make prod-hyp015-verify`, then
+   `make prod-hyp015-verify-set SET=<id>` (older verified sets give way to it).
+5. `make prod-hyp015-restore-check SET=<id>`: throwaway container, report as JSON;
+   exit status 0 only when every check passes.
