@@ -7,6 +7,7 @@
 .PHONY: hyp-024-orderflow-report prod-hyp-024-orderflow-report net-buy-accumulation-report prod-net-buy-accumulation-report net-buy-accumulation-coverage-funnel prod-net-buy-accumulation-coverage-funnel
 .PHONY: cex-activity-path-coverage-audit-report prod-cex-activity-path-coverage-audit-report
 .PHONY: cex-activity-discovery-report radar-outcome-discovery-report prod-radar-outcome-discovery-report
+.PHONY: prod-history-lsr-export prod-history-lsr-archive prod-history-lsr-verify prod-history-lsr-fetch prod-history-lsr-deletion-dry-run
 .PHONY: liquidation-capture-bybit-start liquidation-capture-bybit-stop liquidation-capture-bybit-health liquidation-capture-binance-start liquidation-capture-binance-stop liquidation-capture-binance-health
 .PHONY: prod-liquidation-capture-bybit-start prod-liquidation-capture-bybit-stop prod-liquidation-capture-bybit-health prod-liquidation-capture-binance-start prod-liquidation-capture-binance-stop prod-liquidation-capture-binance-health
 
@@ -1779,6 +1780,47 @@ prod-cold-bar-fetch:
 		--entrypoint cold-bar-fetch analytics \
 		--cold-bars-dir /cold-bars --backup-env /backup.env --from $(FROM) --to $(TO) \
 		--out-dir /cold-bar-fetch
+
+# History archive pilot (docs/runbooks/history-archive-design-v1.md): closed weekly chunks of
+# app.live_long_short_ratio to Parquet, into never-pruned `history-lsr-*` Borg archives,
+# verified by extraction. Manual targets only; no timer runs them. Nothing here deletes a
+# row or raises a fence: the deletion target is a dry-run that explains each blocker.
+# Export refuses a dirty tree, because the manifest records the code revision.
+_HISTORY_LSR = $(_PROD) run --rm --no-deps \
+	-v /opt/schurfer/runtime/history-archive/lsr:/history-lsr \
+	-v /opt/schurfer/runtime/history-cache/lsr:/history-cache \
+	-v /opt/schurfer/runtime/backup.env:/backup.env:ro \
+	-v /opt/schurfer/runtime/borg-home:/opt/schurfer/runtime/borg-home \
+	-v /opt/schurfer/runtime/borg-passphrase:/opt/schurfer/runtime/borg-passphrase:ro \
+	-v /opt/schurfer/runtime/storagebox_known_hosts:/opt/schurfer/runtime/storagebox_known_hosts:ro \
+	-v /home/deploy/.ssh/schurfer_storagebox:/home/deploy/.ssh/schurfer_storagebox:ro \
+	--entrypoint lsr-history-archive analytics
+
+prod-history-lsr-export:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: dirty working tree; the manifest records the revision" && exit 1)
+	@mkdir -p /opt/schurfer/runtime/history-archive/lsr
+	@$(_HISTORY_LSR) export --out-dir /history-lsr --code-revision "$$(git rev-parse HEAD)" $(ARGS)
+
+prod-history-lsr-archive:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@$(_HISTORY_LSR) archive --out-dir /history-lsr --backup-env /backup.env
+
+prod-history-lsr-verify:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@$(_HISTORY_LSR) verify --out-dir /history-lsr --backup-env /backup.env
+
+# FROM and TO are UTC instants with an offset, e.g. 2026-08-20T00:00:00+00:00. The cache is
+# capped (2 GiB by default) and keeps a 10 GiB free-space reserve.
+prod-history-lsr-fetch:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@test -n "$(FROM)" -a -n "$(TO)" || (echo "ERROR: FROM and TO are required" && exit 1)
+	@mkdir -p /opt/schurfer/runtime/history-cache/lsr
+	@$(_HISTORY_LSR) fetch --out-dir /history-cache --backup-env /backup.env --from $(FROM) --to $(TO)
+
+prod-history-lsr-deletion-dry-run:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@$(_HISTORY_LSR) deletion-dry-run --out-dir /history-lsr --backup-env /backup.env
 
 prod-paper-replay-reconciliation:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
