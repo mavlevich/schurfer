@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Schurfer disk-growth reading
+
+[Timer]
+# 12:00 UTC: clear of the offsite backup (04:00), the cold-bar gated deletion (05:00)
+# and the restore drill (Sunday 06:00), so a reading never sees a half-written dump.
+OnCalendar=*-*-* 12:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
