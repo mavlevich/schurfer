@@ -1,6 +1,7 @@
 # Gate trade collection: storage, load and recovery budget v1
 
-Status: **measurement and decision for PR 5 of the priority queue.** It sizes the
+Status: **measurement and decision for PR 5 of the priority queue; its growth estimate
+was corrected on 2026-10-04 (see Correction).** It sizes the
 collection of Gate's trade archives chosen by
 [PR 3](pre-move-source-selection-v1.md) and records whether the current server can
 carry it. It starts no collector, changes no retention, deletes nothing and reads no
@@ -8,7 +9,38 @@ market value: only archive sizes, disk, relation and chunk sizes, row counts by
 creation time before the blind window, and backup metadata. Gate open interest is not
 budgeted, because PR 3 deferred it (no enforceable request bound).
 
-## Decision
+## Correction (2026-10-04)
+
+The decision below rested on an estimate of the database's other growth that a first
+direct measurement does not support. The original text and evidence are kept
+unchanged under it.
+
+- **What was estimated.** `other_growth` charged every row created in 2026-09-15..28
+  at its table's mean bytes per row. That mean includes space PostgreSQL reuses (old
+  row versions that vacuum frees), so heavily updated tables were charged for growth
+  they did not make.
+- **What was measured.** The same eleven plain tables were read again at 2026-10-03
+  22:20 UTC (relation sizes only,
+  [`growth-reading-2026-10-03.json`](evidence/gate-collection-budget-v1/growth-reading-2026-10-03.json),
+  SHA-256 `6f9b5c3aba2521ac1df6588c2cf7e971a11c5d41cb68a36162f061476f97abc4`), 1.16 days
+  after the `growth-inputs.json` reading. Together they grew about **56 MiB/day**
+  against the 220 MiB/day estimate. The paper probes (estimate 49.6), the context
+  samples (57.2) and their runs grew by zero bytes; `trade_decision_outcomes` grew
+  faster than estimated (23.1 against 11.7). The hypertables were not re-measured.
+- **What follows.** One interval is not a rate: free space inside a table can run out
+  and growth then steps up, and a day can be atypical. The days-to-reserve figures and
+  the "for any universe" verdict are therefore withdrawn, and no new date is given.
+  The disk verdict for the registry set is **undetermined** until a series of at
+  least a week (the measurement follow-up of
+  `docs/runbooks/history-archive-design-v1.md`).
+- **What still holds.** The Gate volumes, the recovery evidence and the limits. The
+  full 592-base universe still does not fit on the current disk: it needs 24.1 GiB
+  over six months against 15.7 GiB above the reserve even with no other growth at all.
+  The registry set fits for six months only if all other growth stays under 74 MiB/day
+  after the hot-bars release; the measured interval (56 MiB/day for the plain tables,
+  plus unmeasured hypertables estimated at about 31 MiB/day) does not decide that.
+
+## Decision (superseded in part by the correction above)
 
 **Insufficient for a six-month collection on the current disk, for any universe, and
 the reason is not Gate.** The database outside the hot bars grows by about
