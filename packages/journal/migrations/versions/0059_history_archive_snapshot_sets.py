@@ -12,8 +12,8 @@ Plain tables are archived as point-in-time snapshots, not chunks
 - `snapshot`: the rows of a table at one instant, inside a snapshot set (no range, no
   chunk name; it may hold zero rows).
 
-`unit` and `snapshot_set` are immutable like the other content columns. One live
-revision exists per dataset and range (chunks) or per dataset and set (snapshots).
+`unit` and `snapshot_set` are immutable like the other content columns. Each dataset
+has one live revision per range (chunks) or per set (snapshots).
 
 `app.history_archive_snapshot_sets` groups the snapshots taken from one database
 snapshot, with the pinned revisions of the time-series chunks they depend on, a blind
