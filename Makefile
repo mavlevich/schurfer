@@ -1268,7 +1268,9 @@ prod-disk-usage-install:
 	@$(MAKE) prod-disk-usage-health
 
 # Daily read-only disk-growth reading (runtime/research/disk-growth), the input of the
-# storage-budget report. Install once; run on demand; health shows the latest reading.
+# storage-budget report. Install once; run on demand. Health fails unless the timer is
+# active, the last run succeeded (a successful oneshot is inactive, so its Result is
+# checked) and the newest reading is under 36 hours old with a matching hash.
 prod-disk-growth-install:
 	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: not on main (on '$$(git branch --show-current)'). Install only from main." && exit 1)
 	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean. Commit or stash first." && exit 1)
@@ -1283,9 +1285,11 @@ prod-disk-growth-run:
 	sudo systemctl start schurfer-disk-growth-reading.service
 	@$(MAKE) prod-disk-growth-health
 
+DISK_GROWTH_DIR ?= runtime/research/disk-growth
 prod-disk-growth-health:
-	@systemctl --no-pager --full status schurfer-disk-growth-reading.service | head -12 || true
-	@ls -1t runtime/research/disk-growth/reading-*.json 2>/dev/null | head -3
+	@test "$$(systemctl is-active schurfer-disk-growth-reading.timer)" = active || (echo "ERROR: the disk-growth timer is not active" && exit 1)
+	@result=$$(systemctl show schurfer-disk-growth-reading.service -p Result --value); test "$$result" = success || (echo "ERROR: the last disk-growth run ended '$$result'" && exit 1)
+	@python3 infra/scripts/disk_growth_reading.py --check --out-dir $(DISK_GROWTH_DIR)
 
 prod-disk-usage-health:
 	@systemctl --no-pager --full status schurfer-disk-usage.service

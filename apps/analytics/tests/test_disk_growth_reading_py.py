@@ -7,7 +7,9 @@ import importlib.util
 import json
 import os
 import re
+import subprocess
 import sys
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -99,3 +101,87 @@ def test_the_sql_runs_on_the_real_schema() -> None:
     hypertables = {h["hypertable"] for h in payload["hypertables"]}
     assert "timeseries.momentum_flow_watch_evaluations_1m" in hypertables
     assert payload["database_bytes"] > 0 and "temp_bytes" in payload["temp"]
+
+
+def test_a_failed_hash_write_publishes_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = Path.write_bytes
+
+    def fail_hash(self: Path, data: bytes) -> int:
+        if ".sha256" in self.name:
+            raise OSError("sidecar write failed: disk full")
+        return original(self, data)
+
+    monkeypatch.setattr(Path, "write_bytes", fail_hash)
+    monkeypatch.setattr(dg, "take_reading", lambda _r: {"taken_at": "2026-10-04T12:00:00+00:00"})
+    assert dg.main(["--out-dir", str(tmp_path)]) == 1
+    assert list(tmp_path.iterdir()) == []
+
+
+def _reading(out: Path, taken: datetime, *, version: str = dg.VERSION) -> Path:
+    out.mkdir(parents=True, exist_ok=True)
+    written: Path = dg.write_reading(out, {"version": version, "taken_at": taken.isoformat()})
+    return written
+
+
+NOW = datetime(2026, 10, 10, 13, tzinfo=UTC)
+
+
+def test_check_latest_names_every_problem(tmp_path: Path) -> None:
+    out = tmp_path / "dg"
+    assert dg.check_latest(out, now=NOW) == [f"no reading in {out}"]
+    _reading(out, NOW - timedelta(days=3))
+    assert "older than" in dg.check_latest(out, now=NOW)[0]
+    latest = _reading(out, NOW - timedelta(hours=1))
+    assert dg.check_latest(out, now=NOW) == []
+    latest.with_name(latest.name + ".sha256").write_text("0" * 64 + "\n")
+    assert "does not match" in dg.check_latest(out, now=NOW)[0]
+    latest.with_name(latest.name + ".sha256").unlink()
+    assert "has no .sha256" in dg.check_latest(out, now=NOW)[0]
+    _reading(out, NOW, version="other")
+    assert "is 'other'" in dg.check_latest(out, now=NOW)[0]
+
+
+ROOT = Path(__file__).resolve().parents[3]
+FAKE_SYSTEMCTL = """#!/bin/sh
+case "$1" in
+  is-active) echo "${TIMER_STATE:-active}" ;;
+  show) echo "${RUN_RESULT:-success}" ;;
+esac
+"""
+
+
+@pytest.mark.parametrize(
+    ("timer", "result", "age_hours", "healthy"),
+    [
+        ("active", "success", 1, True),
+        ("inactive", "success", 1, False),
+        ("active", "exit-code", 1, False),
+        ("active", "success", 48, False),
+    ],
+)
+def test_the_health_target_fails_unless_everything_holds(
+    tmp_path: Path, timer: str, result: str, age_hours: int, healthy: bool
+) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    fake = bin_dir / "systemctl"
+    fake.write_text(FAKE_SYSTEMCTL)
+    fake.chmod(0o755)
+    out = tmp_path / "dg"
+    _reading(out, datetime.now(UTC) - timedelta(hours=age_hours))
+    run = subprocess.run(  # noqa: S603 -- the repository's own make target
+        ["/usr/bin/make", "-s", "prod-disk-growth-health", f"DISK_GROWTH_DIR={out}"],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "PATH": f"{bin_dir}:{os.environ['PATH']}",
+            "TIMER_STATE": timer,
+            "RUN_RESULT": result,
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert (run.returncode == 0) is healthy, run.stdout + run.stderr

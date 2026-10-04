@@ -28,7 +28,7 @@ import os
 import shutil
 import subprocess
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -170,28 +170,72 @@ def _runtime(directories: list[str]) -> dict[str, Any]:
 
 
 def write_reading(out_dir: Path, reading: dict[str, Any]) -> Path:
-    """Write the reading and its SHA-256 under a temporary name and rename both, so an
-    interrupted run leaves no partial reading that looks complete."""
+    """Prepare the reading and its SHA-256 under temporary names, publish the hash, then
+    the reading last: a `reading-*.json` exists only when its hash is already beside it.
+    Any failure removes what this call wrote."""
     out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.fromisoformat(reading["taken_at"]).strftime("%Y%m%dT%H%M%SZ")
     target = out_dir / f"reading-{stamp}.json"
     body = (json.dumps(reading, indent=1, sort_keys=True, default=str) + "\n").encode()
     sidecar = target.with_name(target.name + ".sha256")
-    for path, data in (
-        (target, body),
-        (sidecar, (hashlib.sha256(body).hexdigest() + "\n").encode()),
-    ):
-        partial = path.with_name("." + path.name + ".partial")
-        partial.write_bytes(data)
-        partial.replace(path)
+    partial_body = out_dir / f".{target.name}.partial"
+    partial_hash = out_dir / f".{sidecar.name}.partial"
+    try:
+        partial_body.write_bytes(body)
+        partial_hash.write_bytes((hashlib.sha256(body).hexdigest() + "\n").encode())
+        partial_hash.replace(sidecar)
+        partial_body.replace(target)
+    except BaseException:
+        for path in (partial_body, partial_hash, sidecar):
+            path.unlink(missing_ok=True)
+        raise
     return target
+
+
+MAX_AGE = timedelta(hours=36)  # a daily timer; one missed run is already a failure
+
+
+def check_latest(out_dir: Path, *, now: datetime, max_age: timedelta = MAX_AGE) -> list[str]:
+    """Problems with the newest reading: none, unreadable, a hash that does not match,
+    another format version, or older than `max_age`. An empty list means healthy."""
+    readings = sorted(out_dir.glob("reading-*.json")) if out_dir.is_dir() else []
+    if not readings:
+        return [f"no reading in {out_dir}"]
+    latest = readings[-1]
+    sidecar = latest.with_name(latest.name + ".sha256")
+    if not sidecar.exists():
+        return [f"{latest.name} has no .sha256"]
+    body = latest.read_bytes()
+    if hashlib.sha256(body).hexdigest() != sidecar.read_text().strip():
+        return [f"{latest.name} does not match its .sha256"]
+    try:
+        payload = json.loads(body)
+        taken = datetime.fromisoformat(payload["taken_at"])
+    except (ValueError, KeyError, TypeError):
+        return [f"{latest.name} is not a reading"]
+    problems = []
+    if payload.get("version") != VERSION:
+        problems.append(f"{latest.name} is {payload.get('version')!r}, not {VERSION!r}")
+    if now - taken > max_age:
+        problems.append(f"the newest reading is from {taken.isoformat()}, older than {max_age}")
+    return problems
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--runtime-dir", type=Path, default=RUNTIME_DIR)
+    parser.add_argument(
+        "--check", action="store_true", help="check the newest reading instead of taking one"
+    )
     args = parser.parse_args(argv)
+    if args.check:
+        problems = check_latest(args.out_dir, now=datetime.now(UTC))
+        for problem in problems:
+            sys.stderr.write(f"disk growth readings unhealthy: {problem}\n")
+        if not problems:
+            sys.stdout.write("disk growth readings healthy\n")
+        return 1 if problems else 0
     try:
         path = write_reading(args.out_dir, take_reading(args.runtime_dir))
     except (ReadingError, OSError, ValueError) as exc:
