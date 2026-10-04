@@ -1,0 +1,23 @@
+[Unit]
+Description=Schurfer daily disk-growth reading for the storage budget (read-only)
+After=docker.service
+Requires=docker.service
+
+# Read-only: catalog and statistics views, filesystem usage, docker system df and a
+# walk of runtime/. The reading
+# lands in runtime/research/disk-growth, which the nightly research archive carries
+# offsite.
+[Service]
+Type=oneshot
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/schurfer
+ExecStart=/usr/bin/python3 /opt/schurfer/infra/scripts/disk_growth_reading.py --out-dir /opt/schurfer/runtime/research/disk-growth
+TimeoutStartSec=20min
+Nice=10
+IOSchedulingClass=idle
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/opt/schurfer/runtime/research

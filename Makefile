@@ -7,6 +7,7 @@
 .PHONY: hyp-024-orderflow-report prod-hyp-024-orderflow-report net-buy-accumulation-report prod-net-buy-accumulation-report net-buy-accumulation-coverage-funnel prod-net-buy-accumulation-coverage-funnel
 .PHONY: cex-activity-path-coverage-audit-report prod-cex-activity-path-coverage-audit-report
 .PHONY: cex-activity-discovery-report radar-outcome-discovery-report prod-radar-outcome-discovery-report
+.PHONY: prod-disk-growth-install prod-disk-growth-run prod-disk-growth-health
 .PHONY: prod-hyp015-watch-export prod-hyp015-archive prod-hyp015-verify prod-hyp015-snapshot-set prod-hyp015-verify-set prod-hyp015-restore-check
 .PHONY: prod-history-lsr-export prod-history-lsr-archive prod-history-lsr-verify prod-history-lsr-fetch prod-history-lsr-deletion-dry-run
 .PHONY: liquidation-capture-bybit-start liquidation-capture-bybit-stop liquidation-capture-bybit-health liquidation-capture-binance-start liquidation-capture-binance-stop liquidation-capture-binance-health
@@ -1117,7 +1118,7 @@ check: lint test security
 # next person to push (that is exactly how #360 landed one). CI calls this
 # target rather than repeating the commands, so the two cannot drift.
 typecheck:
-	MYPYPATH=apps/analytics:packages/journal:packages/performance uv run --extra dev --with sqlalchemy --with psycopg mypy apps/analytics/schurfer_analytics apps/analytics/tests packages/journal/schurfer_journal packages/performance/schurfer_performance infra/scripts/research_checkpoints.py infra/scripts/check_ai_rules.py
+	MYPYPATH=apps/analytics:packages/journal:packages/performance uv run --extra dev --with sqlalchemy --with psycopg mypy apps/analytics/schurfer_analytics apps/analytics/tests packages/journal/schurfer_journal packages/performance/schurfer_performance infra/scripts/research_checkpoints.py infra/scripts/disk_growth_reading.py infra/scripts/check_ai_rules.py
 	MYPYPATH=packages/performance:packages/market-quality uv run --extra dev --all-packages mypy apps/execution/schurfer_execution
 
 verify:
@@ -1130,7 +1131,7 @@ verify-body:
 	@echo "=== [2/6] uv lock check ==="
 	uv lock --check
 	@echo "=== [3/6] Python: ruff + mypy + pytest ==="
-	uv run --extra dev ruff check apps/analytics apps/execution packages infra/scripts/research_checkpoints.py
+	uv run --extra dev ruff check apps/analytics apps/execution packages infra/scripts/research_checkpoints.py infra/scripts/disk_growth_reading.py
 	$(MAKE) typecheck
 	uv run --extra dev --with ccxt --with greenlet --with redis --with sqlalchemy --with structlog --with "psycopg[binary]" pytest apps/analytics -q
 	uv run --extra dev --with sqlalchemy --with alembic --with "psycopg[binary]" pytest packages/journal packages/performance -q
@@ -1265,6 +1266,30 @@ prod-disk-usage-install:
 	sudo systemctl restart schurfer-disk-usage.service
 	@sleep 2
 	@$(MAKE) prod-disk-usage-health
+
+# Daily read-only disk-growth reading (runtime/research/disk-growth), the input of the
+# storage-budget report. Install once; run on demand. Health fails unless the timer is
+# active, the last run succeeded (a successful oneshot is inactive, so its Result is
+# checked) and the newest reading is under 36 hours old with a matching hash.
+prod-disk-growth-install:
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: not on main (on '$$(git branch --show-current)'). Install only from main." && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean. Commit or stash first." && exit 1)
+	@mkdir -p runtime/research/disk-growth
+	sudo install -m 0644 infra/systemd/schurfer-disk-growth-reading.service /etc/systemd/system/schurfer-disk-growth-reading.service
+	sudo install -m 0644 infra/systemd/schurfer-disk-growth-reading.timer /etc/systemd/system/schurfer-disk-growth-reading.timer
+	sudo systemctl daemon-reload
+	sudo systemctl enable --now schurfer-disk-growth-reading.timer
+	@systemctl list-timers schurfer-disk-growth-reading.timer --no-pager
+
+prod-disk-growth-run:
+	sudo systemctl start schurfer-disk-growth-reading.service
+	@$(MAKE) prod-disk-growth-health
+
+DISK_GROWTH_DIR ?= runtime/research/disk-growth
+prod-disk-growth-health:
+	@test "$$(systemctl is-active schurfer-disk-growth-reading.timer)" = active || (echo "ERROR: the disk-growth timer is not active" && exit 1)
+	@result=$$(systemctl show schurfer-disk-growth-reading.service -p Result --value); test "$$result" = success || (echo "ERROR: the last disk-growth run ended '$$result'" && exit 1)
+	@python3 infra/scripts/disk_growth_reading.py --check --out-dir $(DISK_GROWTH_DIR)
 
 prod-disk-usage-health:
 	@systemctl --no-pager --full status schurfer-disk-usage.service
