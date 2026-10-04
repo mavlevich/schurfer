@@ -1,6 +1,7 @@
 # Where the edge is lost: detection-delay decomposition v1
 
-Status: **DRAFT, design review 1 folded in.** A bounded research result, separate from
+Status: **registered 2026-10-04, before any analysis; design review 1 folded in.** A
+bounded research result, separate from
 any collector. No code, no read of any data on or after 2026-09-29. Nothing here
 becomes a trading rule.
 
@@ -92,14 +93,15 @@ moves; it does not reconstruct MEXC execution in September.
 
 ## Data and boundaries
 
-- **Bybit 1-minute bars:** 2026-08-10 (capture start) to 2026-08-30, from the cold-bar
-  archive; **Binance** from its own capture start, where it falls before 2026-08-31. **Gate trade archives:** July 2026.
+- **Bybit 1-minute bars:** 2026-08-10 (capture start) to 2026-09-28, from the cold-bar
+  archive and the hot table; **Binance** from its own capture start to 2026-09-28. **Gate trade archives:** July 2026.
 - **No data on or after 2026-09-29.**
-- **ISO weeks 36-39 (2026-08-31..09-28)** were the HYP-012b holdout. They have since been
-  spent by the HYP-012c and HYP-029 formal reads, but the PR 3 protocol still treated
-  them as unread. They are **not used unless the research ledger explicitly releases
-  them**. That excludes almost all of the MEXC 1-minute archive (2026-08-28 onward), so
-  MEXC appears only in Part A's three pre-holdout days, as a note.
+- **ISO weeks 36-39 (2026-08-31..09-28)** were the HYP-012b holdout and have been
+  spent by the HYP-012c and HYP-029 formal reads. **The owner released them for this
+  study on 2026-10-04.** So the Bybit window runs 2026-08-10..09-28, and the MEXC
+  1-minute archive (2026-08-28..09-28) enters Part A and, as a secondary descriptive
+  result only, Part B (MEXC costs are not measured, so it gets the cost scenarios but
+  never the verdict).
 - **Scanner events** of the same window, as the anchor of what the scanner actually
   saw.
 

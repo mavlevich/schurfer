@@ -1,7 +1,7 @@
 # Realtime market capture: venue codecs, streaming triggers, one MEXC canary v1
 
-Status: **DRAFT, design review 1 folded in.** No code. Proposes one change to the
-agreed order, which needs the owner's decision (below).
+Status: **design review 1 folded in; the owner accepted the proposed change of order
+(2026-10-04).** No code yet.
 
 ## Why
 
@@ -52,6 +52,9 @@ This differs from the PR 3 probe rule ("discarding values after receipt does not
 as blind") on purpose. That rule governs research probes whose operator sees responses;
 here no one sees values until the blind ends. Whether that is acceptable is the
 owner's and the reviewer's call.
+
+**Owner decision (2026-10-04):** the sealed protocol is accepted, and the MEXC canary
+may start before 2026-10-31 under it.
 
 ## Scope and non-goals
 
