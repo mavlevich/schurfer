@@ -1,6 +1,6 @@
 # HYP-015 reader inputs: archive and restore readiness v1
 
-Status: **DRAFT for design review.** No code yet. Builds on the history archive pilot
+Status: **DRAFT, design review 1 folded in (2026-10-04).** No code yet. Builds on the history archive pilot
 ([history-archive-design-v1](history-archive-design-v1.md), merged in #488). This work
 computes no verdict, opens no formal-read claim and reads no return, fee, funding or
 PnL value.
@@ -47,51 +47,89 @@ Column types to carry exactly: `uuid`, `text[]`, `bytea`, `boolean`, `integer`,
    `bucket_start`). Export, Borg archive and extraction verify exactly as in the
    pilot. No fence and no deletion: Timescale retention is the deletion, so every
    chunk must be `verified` before its 45th day.
-3. **Plain inputs (not at risk, needed for a restore):** one point-in-time snapshot
-   export per table, as a superset of what the reader selects: all probes and
-   outcomes of the hold12h paper version, and the universe and funding tables whole
-   (2.5 MB and 17 MB today). Taken after the last holding window closes
-   (2026-11-02 12:00 UTC), archived and verified the same way.
-4. **Restore readiness check:**
-   - restore every archived input into a disposable PostgreSQL on the host (the
-     ENG-025 drill's throwaway container), into two schemas created with the
-     production DDL;
+3. **Plain inputs (not at risk, needed for a restore):** every plain input table is
+   exported from **one** `REPEATABLE READ` snapshot, as one snapshot set:
+   - each table is its own dataset (`hyp015_paper_probes`, `hyp015_paper_outcomes`,
+     `hyp015_universe_snapshots`, `hyp015_universe_instruments`,
+     `hyp015_funding_coverage_runs`, `hyp015_funding_settlements`);
+   - the export is a superset of what the reader selects: all probes and outcomes of
+     the hold12h paper version, and the universe and funding tables whole (2.5 MB and
+     17 MB today);
+   - the manifest states `unit = snapshot`, the filter, `snapshot_at` and the set id;
+     a restore is accepted only for a complete set.
+
+   A snapshot covers "the rows that existed at `snapshot_at`", not a time range, so
+   the catalog gets a small migration (0059): a `unit` column (`chunk` or `snapshot`)
+   and a `snapshot_set` column; a snapshot row has no range and one live revision per
+   dataset and set. 0059 is deployed together with 0058.
+
+   **Timing.** A snapshot at 2026-11-02 12:00 UTC is only preliminary: funding settles
+   after the holding windows close, which is why the registered read waits until
+   2026-11-04 12:00 UTC. The final set is taken once blind completeness checks pass:
+   - every cohort probe that opened is closed;
+   - funding coverage is `complete` for every closed position;
+   - accounting is complete for every probe and outcome.
+
+   If a check fails, the snapshot is repeated later as a new set; an earlier set is
+   superseded, never edited.
+
+4. **Composition reference, bound to the snapshot.** Inside the same export
+   transaction, and over the archived watch chunks, compute a blind composition
+   summary and record it in the set's manifest. It reads no return, fee, funding
+   amount or price:
+   - SHA-256 of the sorted eligible WATCH ids, and their count;
+   - SHA-256 of the sorted hold12h probe ids, with counts by `entry_status`,
+     `position_status` and `accounting_status`;
+   - outcomes counted by (`horizon_minutes`, `status`, `accounting_status`); every
+     closed probe must have both registered horizons (240 and 720);
+   - funding coverage runs counted by `status`, per probe window;
+   - universe snapshots and instruments by count and id hash.
+5. **Restore check:**
+   - restore the watch chunks of the window and a complete plain-input set into a
+     disposable PostgreSQL on the host (the ENG-025 drill's throwaway container),
+     into two schemas created with the production DDL;
    - compare each restored table's content fingerprint with its catalog row;
-   - run the reader's **readiness** path (`load_readiness`, counts, statuses and
-     identity only) against the restored schemas and against production, over the
-     cohort window, and require identical summaries;
+   - recompute the composition summary on the restored schemas and require it to
+     equal the reference;
+   - run the registered reader's readiness path (`load_readiness`) on the restored
+     schemas and require its counts to agree with the reference (total WATCH, entries
+     opened, positions closed). Readiness is never compared against the live database,
+     which keeps changing;
    - never call `load_cohort`, `open_formal_claim` or the formal CLI; a test asserts
      the new targets cannot reach them.
-5. **Order and dates:**
-   - deploy migration 0058 (with a backup; it also installs the inert LSR fence
-     trigger), a separate approved operation;
-   - archive the watch chunks as they close, in manual batches;
-   - run a first restore readiness check on the days archived so far, to prove the
-     path early;
-   - after 2026-11-02 12:00 UTC, snapshot the plain inputs and run the full check;
-   - done by **2026-11-12**, a week before the first cohort chunk drops. If that slips,
-     the fallback is a temporary retention extension on the watch hypertable (about
-     0.1 GB a day), an approved production change.
+6. **Late inserts into watch chunks.** A closed chunk can still receive a late row.
+   Before the final check, every verified watch chunk that still exists is
+   re-fingerprinted against the source; a changed chunk is superseded and exported
+   again as a new verified revision.
+7. **Order and dates:**
+   - code PR, then migrations 0058 and 0059 in the next planned deploy window after a
+     verified backup (a separate approved operation);
+   - archive the watch chunks of the window (2026-10-04..11-02, one day of margin) in
+     manual batches as they close;
+   - a first restore check on the chunks archived so far plus a preliminary plain-input
+     set, well before 2026-11-12;
+   - the final set after the completeness checks pass (expected from 2026-11-04), the
+     late-insert recheck, and the full restore check by **2026-11-12**, a week before
+     the first cohort chunk would drop. If that slips, the fallback is a temporary
+     retention extension on the watch hypertable (about 0.1 GB a day), an approved
+     production change.
 
 ## Blindness
 
 Export copies and hashes rows; no code path in this work selects a return, fee,
-funding or PnL column into a computation, a log or an output. Readiness reads counts,
-statuses and identity only. Fingerprints are hashes over whole rows and reveal no
-value.
+funding amount, price or PnL column into a computation, a log or an output. The
+composition summary and readiness read ids, counts, statuses, horizons and identity
+only. Fingerprints are hashes over whole rows and reveal no value.
 
-## Questions for review
+## Review 1 answers folded in
 
-1. A snapshot of a plain table is not a chunk. Proposal: catalog it with
-   `chunk_name = 'snapshot'` and `range = [cohort window start, snapshot instant)`,
-   with the snapshot's filter recorded in the manifest. Acceptable, or should snapshots
-   get their own catalog shape?
-2. Is identical readiness on restored and live data, plus per-table fingerprints, a
-   sufficient proof that the registered reader can run on the archive, given the
-   formal path may not be exercised before 2026-11-04 12:00 UTC?
-3. Should the watch archive cover only the cohort window, or every daily chunk before
-   retention drops it (general history at about 0.1 GB a day compressed)? Proposal:
-   the cohort window now; general history later, as its own decision.
+- Snapshots are catalogued per table under one snapshot set, from one snapshot, and
+  restored only as a complete set; they do not pretend to a time range (0059).
+- The restore proof is fingerprints, the composition summary bound to the snapshot,
+  and readiness on the restored data; not a comparison with the changing live
+  database.
+- Watch scope is the cohort window with one day of margin; early archives are
+  rechecked against the source before the final check.
 
 ## Checks
 
@@ -99,7 +137,13 @@ Real PostgreSQL/TimescaleDB:
 
 - exact round trip of every listed type, including `NULL`, empty arrays, `NaN` and
   infinities in `double precision`;
-- restored readiness equals source readiness on seeded data;
+- the composition summary and readiness on restored data equal the reference recorded
+  at export, on seeded data;
+- an incomplete set, an empty outcomes or funding archive, or a probe without both
+  horizons fails the check;
+- a late insert into a verified watch chunk is detected and re-exported as a new
+  revision;
+- 0059: a snapshot row needs a set and no range, a chunk row needs a range;
 - a missing, superseded or corrupted archived input fails the check;
 - a schema drift in a pinned column fails the export;
 - the formal path is unreachable from the new targets.
