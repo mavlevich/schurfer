@@ -21,6 +21,7 @@ from typing import Any
 
 import psycopg
 import pytest
+from schurfer_analytics import history_archive as engine
 from schurfer_analytics import lsr_history_archive as archive
 from schurfer_analytics.cold_bar_fetch import sha256_of
 from schurfer_journal.testing_database import integration_database_url
@@ -178,19 +179,19 @@ def test_export_and_restore_keep_every_value_exactly(db: Any, tmp_path: Path) ->
     chunk = _chunk(db, W1)
     assert (chunk.range_start, chunk.range_end) == (W1, W1 + WEEK)
     contract = _contract()
-    manifest = archive.export_chunk(
+    manifest = engine.export_chunk(
         DSN, contract, chunk, tmp_path, revision=1, code_revision="test", reserve_bytes=0
     )
     parquet = tmp_path / manifest.file_name
     assert manifest.row_count == 303
-    assert archive.parquet_fingerprint(contract, parquet) == (303, manifest.content_fingerprint)
+    assert engine.parquet_fingerprint(contract, parquet) == (303, manifest.content_fingerprint)
     assert manifest.file_sha256 == sha256_of(parquet)
     assert {k["exchange"]: k["rows"] for k in manifest.data_keys} == {"binance": 302, "bybit": 1}
     assert not list(tmp_path.glob(".*partial"))
     db.execute("DROP SCHEMA IF EXISTS lsr_restore_it CASCADE")
     db.execute("CREATE SCHEMA lsr_restore_it")
     try:
-        assert archive.restore_into(db, contract, parquet, "lsr_restore_it.lsr") == 303
+        assert engine.restore_into(db, contract, parquet, "lsr_restore_it.lsr") == 303
         restored_sql = f"SELECT {TEXT_COLUMNS} FROM lsr_restore_it.lsr"  # noqa: S608
         restored = set(db.execute(restored_sql).fetchall())
         assert restored == _source_text(db, W1, W1 + WEEK)
@@ -216,12 +217,12 @@ def test_export_reads_one_snapshot_and_a_later_row_is_detected(
             _insert(other, [late])
         original(conn, *args)
 
-    monkeypatch.setattr(archive, "_copy_rows_gz", copy_after_a_concurrent_commit)
-    manifest = archive.export_chunk(
+    monkeypatch.setattr(engine, "_copy_rows_gz", copy_after_a_concurrent_commit)
+    manifest = engine.export_chunk(
         DSN, contract, chunk, tmp_path, revision=1, code_revision="test", reserve_bytes=0
     )
     assert manifest.row_count == 53
-    assert archive.parquet_fingerprint(contract, tmp_path / manifest.file_name)[0] == 53
+    assert engine.parquet_fingerprint(contract, tmp_path / manifest.file_name)[0] == 53
     now_fp = db.execute(archive.pg_fingerprint_sql(contract), (W1, W1 + WEEK)).fetchone()[0]
     assert f"{archive.FINGERPRINT_VERSION}:{now_fp}" != manifest.content_fingerprint
 
@@ -334,7 +335,7 @@ def test_the_reserve_refuses_export_and_fetch(
 def test_a_second_run_cannot_overlap_the_first(db: Any, tmp_path: Path) -> None:
     contract = _contract()
     with (
-        archive.archiver_session(DSN, contract, tmp_path),
+        engine.archiver_session(DSN, contract, tmp_path),
         pytest.raises(archive.ArchiveError, match="holds"),
     ):
         archive.run_export(DSN, contract, tmp_path, code_revision="t", now=NOW, max_chunks=1)
@@ -536,7 +537,7 @@ def test_a_corrupted_offsite_manifest_is_never_verified(
     )
     archive.run_archive(DSN, contract, out, repo=repo, env=env, now=NOW)
     row = archive.live_rows(db, contract)[W1]
-    (Path(repo) / str(row.borg_archive) / archive.manifest_member(row.file_name)).write_text("{}")
+    (Path(repo) / str(row.borg_archive) / engine.manifest_member(row.file_name)).write_text("{}")
     report = archive.run_verify(DSN, contract, out, repo=repo, env=env, now=NOW, reserve_bytes=0)
     assert len(report.failed) == 1 and "manifest sha256" in report.failed[0]
     assert archive.live_rows(db, contract)[W1].state == "archived"
@@ -548,7 +549,7 @@ def test_a_missing_archive_week_fails_the_read_instead_of_shortening_it(
 ) -> None:
     repo, env = borg
     contract = _verified(db, tmp_path / "out", repo, env, weeks=2)
-    archive.supersede(db, archive.live_rows(db, contract)[W1 + WEEK].id, "replacement pending")
+    engine.supersede(db, archive.live_rows(db, contract)[W1 + WEEK].id, "replacement pending")
     _set_fence(db, contract, W1 + 2 * WEEK)
     cache = tmp_path / "cache"
     with pytest.raises(archive.ArchiveError, match="no verified archive covers"):
