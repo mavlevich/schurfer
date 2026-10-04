@@ -62,13 +62,13 @@ def test_read_verifies_tapes_and_counts_sources(tmp_path: Path) -> None:
         "sources": [
             {
                 "exchange": "gate",
-                "symbol": "AAA_USDT",
+                "symbol": "AAA/USDT:USDT",
                 "event_id": 1,
                 "first_seen_at": seen.isoformat(),
             },
             {
                 "exchange": "gate",
-                "symbol": "BBB_USDT",
+                "symbol": "BBB/USDT:USDT",
                 "event_id": 2,
                 "first_seen_at": seen.isoformat(),
             },
@@ -101,5 +101,7 @@ def test_read_verifies_tapes_and_counts_sources(tmp_path: Path) -> None:
     assert result["statuses"] == {"ok": 1, "no_tape": 1}
     assert result["moments"]["24h_0.2"]["after_0s"]["n"] == 1
     assert json.loads((stage / g.RESULT_NAME).read_text())["scanner_sources"] == 2
+    assert g.native_symbol("IDOL/USDT:USDT") == "IDOL_USDT"
+    assert g.native_symbol("IDOL_USDT") is None
     with pytest.raises(SystemExit, match="read once"):
         g.read(stage, tapes_dir)

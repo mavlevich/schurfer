@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import sys
 from array import array
 from collections import Counter, defaultdict
@@ -51,12 +52,23 @@ TAPES_NAME = "gate-tapes.json"
 RESULT_NAME = "gate-result.json"
 
 
+_UNIFIED = re.compile(r"^([A-Z0-9]+)/USDT:USDT$")
+
+
+def native_symbol(symbol: str) -> str | None:
+    """The scanner stores Gate sources in the unified form (`IDOL/USDT:USDT`); the
+    archive names files by Gate's native id (`IDOL_USDT`). Anything else is unmapped."""
+    match = _UNIFIED.match(symbol)
+    return f"{match.group(1)}_USDT" if match else None
+
+
 def gate_sources(scanner: dict[str, Any]) -> list[dict[str, Any]]:
+    """Gate sources of the population, keyed by the native id (None when unmapped)."""
     out = []
     for source in scanner["sources"]:
         seen = datetime.fromisoformat(source["first_seen_at"])
         if source["exchange"] == "gate" and SOURCES_FROM <= seen < MONTH_END:
-            out.append({**source, "first_seen_at": seen})
+            out.append({**source, "first_seen_at": seen, "native": native_symbol(source["symbol"])})
     return out
 
 
@@ -67,7 +79,8 @@ def fetch_tapes(stage_dir: Path, tapes_dir: Path) -> dict[str, Any]:
     import httpx
 
     scanner, scanner_sha = load_verified(stage_dir / SCANNER_NAME)
-    symbols = sorted({s["symbol"] for s in gate_sources(scanner)})
+    sources = gate_sources(scanner)
+    symbols = sorted({s["native"] for s in sources if s["native"]})
     tapes_dir.mkdir(parents=True, exist_ok=True)
     files: dict[str, Any] = {}
     total = 0
@@ -103,6 +116,7 @@ def fetch_tapes(stage_dir: Path, tapes_dir: Path) -> dict[str, Any]:
         "gate_version": GATE_VERSION,
         "scanner_sha256": scanner_sha,
         "bases_in_population": len(symbols),
+        "sources_unmapped": sum(1 for s in sources if not s["native"]),
         "bases_over_cap": max(0, len(symbols) - MAX_BASES),
         "status": dict(status),
         "files": files,
@@ -223,11 +237,14 @@ def read(stage_dir: Path, tapes_dir: Path) -> dict[str, Any]:
         raise ValueError("the tapes were fetched for another scanner export")
     by_symbol: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for source in gate_sources(scanner):
-        by_symbol[source["symbol"]].append(source)
+        by_symbol[source["native"] or "unmapped"].append(source)
     statuses: Counter[str] = Counter()
     values: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
     not_crossed: Counter[str] = Counter()
     for symbol, sources in sorted(by_symbol.items()):
+        if symbol == "unmapped":
+            statuses["unmapped_symbol"] += len(sources)
+            continue
         entry = tapes["files"].get(symbol)
         if entry is None or entry.get("status") != "ok":
             statuses["no_tape"] += len(sources)
