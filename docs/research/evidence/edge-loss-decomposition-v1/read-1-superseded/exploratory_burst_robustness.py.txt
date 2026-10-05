@@ -1,0 +1,88 @@
+"""Exploratory robustness of the 1m burst cell (descriptive, not a verdict)."""
+import json
+import statistics as st
+import sys
+from collections import defaultdict
+from datetime import UTC, datetime
+from pathlib import Path
+
+import duckdb
+
+sys.path.insert(0, "/Users/mavlevich/Desktop/Projects/schurfer/.claude/worktrees/edge-loss/apps/analytics")
+from schurfer_analytics import edge_loss_study as s  # noqa: E402
+from schurfer_analytics.clustered_inference import ClusterObservation, cluster_bootstrap_mean  # noqa: E402
+
+R = Path("/Users/mavlevich/Desktop/Projects/schurfer/runtime/research/edge-loss")
+con = duckdb.connect()
+con.execute("SET TimeZone = 'UTC'")
+s.load_bars(con, R / "bars", [])
+con.execute("DELETE FROM bars WHERE exchange = 'binance' AND t < TIMESTAMPTZ '2026-08-18 00:00:00+00'")
+con.execute("""
+CREATE TABLE b1 AS
+WITH w AS (
+  SELECT exchange, symbol, t, o, c, n,
+         lag(c) OVER s AS pc, lag(t) OVER s AS pt,
+         median(n) OVER r AS med, count(*) OVER r AS cnt
+  FROM bars
+  WINDOW s AS (PARTITION BY exchange, symbol ORDER BY t),
+         r AS (PARTITION BY exchange, symbol ORDER BY t
+               RANGE BETWEEN INTERVAL 60 MINUTE PRECEDING AND INTERVAL 1 MINUTE PRECEDING))
+SELECT exchange, symbol, t, c / pc - 1 AS r, n, med, n / med AS mult FROM w
+WHERE pt = t - INTERVAL 1 MINUTE AND c / pc - 1 >= 0.03 AND cnt >= 30 AND med > 0 AND n >= 5 * med
+""")
+offs = [1, 2, 3, 6]
+sel = ", ".join(f"e{k}.o AS e{k}" for k in offs)
+joins = "\n".join(
+    f"LEFT JOIN bars e{k} ON e{k}.exchange=f.exchange AND e{k}.symbol=f.symbol AND e{k}.t=f.t + INTERVAL {k} MINUTE"
+    for k in offs
+)
+xj = "\n".join(
+    f"LEFT JOIN bars x{k} ON x{k}.exchange=f.exchange AND x{k}.symbol=f.symbol AND x{k}.t=f.t + INTERVAL {k + 60} MINUTE"
+    for k in offs
+)
+xsel = ", ".join(f"x{k}.o AS x{k}" for k in offs)
+rows = con.execute(f"""
+SELECT f.exchange, f.symbol, epoch(f.t)::BIGINT, f.r, f.n, f.mult, {sel}, {xsel}
+FROM b1 f {joins} {xj} ORDER BY f.exchange, f.symbol, f.t""").fetchall()
+
+out = {}
+for venue in ("bybit", "binance"):
+    for thr in (0.03, 0.05, 0.08):
+        fired = s.firings([r for r in rows], venue, thr, 0)
+        cell = {"firings": len(fired)}
+        for k_i, k in enumerate(offs):
+            g = []
+            for r in fired:
+                e, x = r[6 + k_i], r[6 + len(offs) + k_i]
+                if e and x:
+                    g.append((r, (x / e - 1) * 1e4))
+            vals = [v for _, v in g]
+            cell[f"entry_t+{k}_hold60"] = {
+                "n": len(vals), "mean": round(st.fmean(vals), 1), "median": round(st.median(vals), 1),
+                "share_pos": round(sum(v > 0 for v in vals) / len(vals), 3),
+            }
+            if k == 1:
+                by_sym = defaultdict(list)
+                by_week = defaultdict(list)
+                for r, v in g:
+                    by_sym[r[1]].append(v)
+                    by_week[datetime.fromtimestamp(r[2], UTC).isocalendar().week].append(v)
+                tot = sum(vals)
+                top = sorted(by_sym.items(), key=lambda kv: -sum(kv[1]))[:5]
+                cell["top5_instrument_share_of_sum"] = round(sum(sum(v) for _, v in top) / tot, 3)
+                cell["mean_without_top5"] = round(st.fmean([v for sym, vs in by_sym.items() if sym not in dict(top) for v in vs]), 1)
+                cell["by_iso_week_mean"] = {w: (len(v), round(st.fmean(v), 1)) for w, v in sorted(by_week.items())}
+                winsor = sorted(vals)
+                lo, hi = winsor[int(0.01 * len(winsor))], winsor[int(0.99 * len(winsor)) - 1]
+                cell["mean_winsor_1_99"] = round(st.fmean(min(max(v, lo), hi) for v in vals), 1)
+                notional = sorted(r[4] for r, _ in g)
+                cut = notional[len(notional) // 2]
+                cell["mean_by_burst_notional"] = {
+                    "below_median": round(st.fmean(v for r, v in g if r[4] < cut), 1),
+                    "above_median": round(st.fmean(v for r, v in g if r[4] >= cut), 1),
+                    "median_burst_notional_usd": round(cut),
+                }
+                boot = cluster_bootstrap_mean(tuple(ClusterObservation(r[1], v - 41.0) for r, v in g), iterations=2000, seed=1)
+                cell["net_at_20.5_instrument_ci"] = [round(boot.estimate.lower_bound, 1), round(boot.estimate.upper_bound, 1)]
+        out[f"{venue}_1m_{thr}"] = cell
+print(json.dumps(out, indent=1))

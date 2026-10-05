@@ -1,0 +1,472 @@
+{
+  "bases_in_population": 92,
+  "bases_over_cap": 0,
+  "files": {
+    "4_USDT": {
+      "bytes": 2751964,
+      "sha256": "2b85604bf8d15e9737046f394ffdc31221cd6ebcd094de20de5940c9a4f91e52",
+      "status": "ok"
+    },
+    "AAOI_USDT": {
+      "bytes": 5777958,
+      "sha256": "b1ce7f12bf77d5129a055d8aaac7d6e64ce450b86e9a1b2d46eb902b98d38227",
+      "status": "ok"
+    },
+    "ACE_USDT": {
+      "bytes": 6890271,
+      "sha256": "f6b08b4274e197f5433e15d3170d73ca2d1bcb63b11ff4350163b7c91a86d560",
+      "status": "ok"
+    },
+    "ACH_USDT": {
+      "bytes": 585103,
+      "sha256": "cbd61f4ca9da0fac74660fa7241285643ef04e1af947e3124dea757dd335ad00",
+      "status": "ok"
+    },
+    "AEON_USDT": {
+      "bytes": 626074,
+      "sha256": "b6ae73767c03a375942b632564f72d1483014693ab0207e8c01479fa5341c02a",
+      "status": "ok"
+    },
+    "AKE_USDT": {
+      "bytes": 100693462,
+      "sha256": "709d8d08b899eef9e31c53bc3c98fd633e19dc2359185bd052c9c6b390771e96",
+      "status": "ok"
+    },
+    "ALAB_USDT": {
+      "bytes": 1742767,
+      "sha256": "37a19251ece18bd6bbdf2c7d798b82bfdd0f0b8c836b70a9a7c7858ff6912834",
+      "status": "ok"
+    },
+    "AMZU_USDT": {
+      "bytes": 125141,
+      "sha256": "322192ada1f46124d8d3f5201a7c817ebef0ee0934cd49a19e06cbfddb7ec589",
+      "status": "ok"
+    },
+    "ANDURIL_USDT": {
+      "bytes": 645896,
+      "sha256": "e5e9a05139bbe917d6a3b05617c941d4302bedab843059cb1ee277aa47871cf3",
+      "status": "ok"
+    },
+    "ARM_USDT": {
+      "bytes": 4566782,
+      "sha256": "04f2994c306cd91c5dda53491a05a62b0584cddf3f517d508ab60da15e0fa381",
+      "status": "ok"
+    },
+    "ASTEROID_USDT": {
+      "bytes": 3312066,
+      "sha256": "c2c1ab921cc61dcc9f90fd396dce9333678b289e88185d09f2fdad3767c8fc58",
+      "status": "ok"
+    },
+    "AXTI_USDT": {
+      "bytes": 4480666,
+      "sha256": "6eae4342b61d49dd5c26bf8312d5059270f84289bc75e8c1f7fbc4edec6e8855",
+      "status": "ok"
+    },
+    "B2_USDT": {
+      "bytes": 1822314,
+      "sha256": "436f8298d31869399c1b403d7a10f7457eee18b6fd69393d8c23498fe346ecb9",
+      "status": "ok"
+    },
+    "BANK_USDT": {
+      "bytes": 78201474,
+      "sha256": "ce98cc6a51f470888960b467db2911884b5742c4a02e849276e50cc85e972cef",
+      "status": "ok"
+    },
+    "BEAT_USDT": {
+      "bytes": 16302450,
+      "sha256": "d74c5a6d0b88a516447769cb2a04276652ba05ae21f2bc309db772f9f4975dd8",
+      "status": "ok"
+    },
+    "BE_USDT": {
+      "bytes": 4432988,
+      "sha256": "c66769c1cd6270c29e5d37f9ca75661a98353b28b5bf5b60dde10b039e59dac7",
+      "status": "ok"
+    },
+    "BGSC_USDT": {
+      "bytes": 611213,
+      "sha256": "4d9b46c389dde52a705522c312b1a0ff8a918032ddf24297260616172a419848",
+      "status": "ok"
+    },
+    "BIRB_USDT": {
+      "bytes": 3830963,
+      "sha256": "6fd4b84e428bd8d69f711e75d5b6f35642adbcc24789c60aae7c312153956366",
+      "status": "ok"
+    },
+    "BOB_USDT": {
+      "bytes": 1129640,
+      "sha256": "51be629a2d5942095fe87431325f8d0a3480b976f3a85feb9b197b291ce01544",
+      "status": "ok"
+    },
+    "BOT_USDT": {
+      "bytes": 1800118,
+      "sha256": "3d3e21e0abf94a8ada2f17cae6c96cb07c27c7199be53a4287fd653ed6ec5adf",
+      "status": "ok"
+    },
+    "BROCCOLIF3B_USDT": {
+      "bytes": 1397671,
+      "sha256": "365478256eb06a7041369316a77dd88d25f36ef6f1cf0bd884b0ccf602867ddb",
+      "status": "ok"
+    },
+    "BROCCOLI_USDT": {
+      "bytes": 398961,
+      "sha256": "584f65cf79d1491b5d5033acd6ab976dcc19e741570e9acea2394ba154bed94f",
+      "status": "ok"
+    },
+    "BTW_USDT": {
+      "bytes": 7744866,
+      "sha256": "904189f4ca3037313156a126be0894bd17d28d6345037b64e3e91b0be7ecf440",
+      "status": "ok"
+    },
+    "BULLA_USDT": {
+      "bytes": 2630353,
+      "sha256": "0aad60312fda2bb9e8cdcfd6dfdf7d6492cb3882023865be8bc4b19f5e64a7d8",
+      "status": "ok"
+    },
+    "CAP_USDT": {
+      "bytes": 4441035,
+      "sha256": "c26b127bf28324cca6270f2a863587e1cb24d022c8fa081fbb195e41fc1ab133",
+      "status": "ok"
+    },
+    "CBRS_USDT": {
+      "bytes": 4481755,
+      "sha256": "c7fdc5d1927dcf6231eb7429fd3f9fe26865dd7c6590b9cb17861b8a6fbdf2ae",
+      "status": "ok"
+    },
+    "CLO_USDT": {
+      "bytes": 7540475,
+      "sha256": "c06eaed650f4f6db5c43bffe0f52c182d23281256f6d101d85bce913a316790b",
+      "status": "ok"
+    },
+    "COTI_USDT": {
+      "bytes": 10637430,
+      "sha256": "3a227d3c5dfa5a351855fcda7756aa313082e389fccf82a6ca9a480f3bc21858",
+      "status": "ok"
+    },
+    "CRDO_USDT": {
+      "bytes": 699952,
+      "sha256": "4818f0a9f56ff086b0020382273158d59f67153104ef2518c31ec10b5f19282b",
+      "status": "ok"
+    },
+    "CROSS_USDT": {
+      "bytes": 492695,
+      "sha256": "4c4d95d15ac599007f25326d66ef473f0cbe73e057239ce25b8c8a0a76afe7b2",
+      "status": "ok"
+    },
+    "CRWV_USDT": {
+      "bytes": 2949583,
+      "sha256": "033a20d465d05ee32edcf95808addf04b4c18a33de381080420aaa4d83a87674",
+      "status": "ok"
+    },
+    "DAM_USDT": {
+      "bytes": 365047,
+      "sha256": "ee68417f5b7b1458c454122b2f251c2f4b02d27a82f32196b8dd8731d1038056",
+      "status": "ok"
+    },
+    "DEXE_USDT": {
+      "bytes": 58438685,
+      "sha256": "36747ba0ef9853984f0b25bff245ce366525b3e57655df89be5a119e8fa4f7d5",
+      "status": "ok"
+    },
+    "DIA_USDT": {
+      "bytes": 2852171,
+      "sha256": "1a7b2082c868448d4834e2ba836313c594a0de21606611e691cd05ba3916252a",
+      "status": "ok"
+    },
+    "DRAM_USDT": {
+      "bytes": 12269304,
+      "sha256": "5b81d4487c8cf17eaae38941ca8523d61846e43d2f1be1306aca42bcd99fc0f4",
+      "status": "ok"
+    },
+    "EPIC_USDT": {
+      "bytes": 22606240,
+      "sha256": "5cc5e5f541dfd19d65e93290ac1a15022264683cb2cde69d7d2ec1e056469578",
+      "status": "ok"
+    },
+    "ESPORTS_USDT": {
+      "bytes": 34387060,
+      "sha256": "16aa0dc4bfa9d4be029a121e6ca05130d140ff84c92c7e47e500c58c24c1c8a6",
+      "status": "ok"
+    },
+    "ESP_USDT": {
+      "bytes": 6986499,
+      "sha256": "33de86550be3752473449652f5a877441f490d5808fe9dc736f6ba0ce804c7a8",
+      "status": "ok"
+    },
+    "EUL_USDT": {
+      "bytes": 14950132,
+      "sha256": "7dcc46a0657639d6863f86f5559eb4aaa4102e0af917716aa582b3c04f7062b2",
+      "status": "ok"
+    },
+    "EVAA_USDT": {
+      "bytes": 48855263,
+      "sha256": "2e7aff1a7a7c739ecf402032cae5c585ffbb97e0eeacc85bef32508fc7fa665e",
+      "status": "ok"
+    },
+    "GIGGLE_USDT": {
+      "bytes": 2197168,
+      "sha256": "24c78dbe0fa15fb4391dd8a4f41cd607533ec02991b244889a62eac0c4f186cf",
+      "status": "ok"
+    },
+    "GWEI_USDT": {
+      "bytes": 7826497,
+      "sha256": "627bc3161211329061d31e1ae00bca143e4bb1765ef6cf7db0a53e3930147777",
+      "status": "ok"
+    },
+    "IDOL_USDT": {
+      "bytes": 2616483,
+      "sha256": "1c0d10b98310bc166b0db93819eb9a46ffd124552b19372d9c3124254f8af89d",
+      "status": "ok"
+    },
+    "INTW_USDT": {
+      "bytes": 2084996,
+      "sha256": "29f6f357028620701d885b1e0b661c4ff0c4f568eaf4de9c5190d9936fba7cf7",
+      "status": "ok"
+    },
+    "INX_USDT": {
+      "bytes": 679741,
+      "sha256": "977c0af287d725859950c1177653c03acd83a0557f80561f37120218102ab4f1",
+      "status": "ok"
+    },
+    "IREN_USDT": {
+      "bytes": 2213038,
+      "sha256": "13fc55fcf930685d912e627547b014163e0d192a2a18dd7350250677b78662f0",
+      "status": "ok"
+    },
+    "JUSUNG_USDT": {
+      "bytes": 3552120,
+      "sha256": "e48f6f03079c9b1092b08ff0a5f303e9195bfa692a80d0fa14d3b346ee99ff4a",
+      "status": "ok"
+    },
+    "KIMI_USDT": {
+      "bytes": 242982,
+      "sha256": "874bb6ef446e57008d12252bb8a3fa74f56a823cdb4b1e37006e5a4753e2e714",
+      "status": "ok"
+    },
+    "KOMA_USDT": {
+      "bytes": 6144157,
+      "sha256": "8761eea3c38977ee7b4bb21dec84ca9369a74a5229767b1069b6e872f4724dc3",
+      "status": "ok"
+    },
+    "KORU_USDT": {
+      "bytes": 3755929,
+      "sha256": "232c5d0c769502babb2d65dc6c5680dff1624a656ed644382d6ae2de1f391aaf",
+      "status": "ok"
+    },
+    "LA_USDT": {
+      "bytes": 5277625,
+      "sha256": "f619084ed101d8a728ab7fd9cfab5b83cf5825edef3a6fb8e9a45c327d85c114",
+      "status": "ok"
+    },
+    "MEMES_USDT": {
+      "bytes": 4024757,
+      "sha256": "3d85b576e52f17e7de5317b0111c55615fa90a7a67ff2a3bf09b6b5308ca64dd",
+      "status": "ok"
+    },
+    "MMT_USDT": {
+      "bytes": 3503935,
+      "sha256": "c3f5da8ab10fdbc22562d0199e241cd9ea0e2b2d8328e1271fdd77195f2254cd",
+      "status": "ok"
+    },
+    "MUU_USDT": {
+      "bytes": 4759340,
+      "sha256": "a4cb51d451e7d988f92ebcc1c624ad3d8691818f8508704349e3f7670a43448f",
+      "status": "ok"
+    },
+    "MU_USDT": {
+      "bytes": 32310574,
+      "sha256": "a61d5453f25af52936a495d93e27ef5ce139042de53508106517e83093d48939",
+      "status": "ok"
+    },
+    "MVLL_USDT": {
+      "bytes": 3017637,
+      "sha256": "b5b394efd8edd50c18e8a1138603ffd860cedd55c4422358692432690bfab365",
+      "status": "ok"
+    },
+    "M_USDT": {
+      "bytes": 8999948,
+      "sha256": "2f33e82d0f9560a62a6cf661be3cdbf4efda29503dd4f4aa1e2d2bc0b0bbf53f",
+      "status": "ok"
+    },
+    "NBIS_USDT": {
+      "bytes": 6292686,
+      "sha256": "9f9bff0247ecd8af86adf2a8f01a8f1e636f259f0edd63ee41ba985da93c6177",
+      "status": "ok"
+    },
+    "NIL_USDT": {
+      "bytes": 1453252,
+      "sha256": "e08dbf0ee3f65eb68d67808dfd382895fed7a650aa33558c1812c6c439de7e72",
+      "status": "ok"
+    },
+    "ON_USDT": {
+      "bytes": 5421621,
+      "sha256": "eb8d776d83c9a794dc1b18cceca2ba14c7fe848028dd2fb576b561b0889aed3e",
+      "status": "ok"
+    },
+    "PENG_USDT": {
+      "bytes": 165497,
+      "sha256": "1f33d05199a468f0de202bde3657e30e906bbcb758801b1decdb34ce73e800ba",
+      "status": "ok"
+    },
+    "PIEVERSE_USDT": {
+      "bytes": 2461507,
+      "sha256": "c9cf9538cac470502fb554448d9141e5b99700f9a421c8e2a3c40b4158ba71db",
+      "status": "ok"
+    },
+    "POLYMARKET_USDT": {
+      "bytes": 688108,
+      "sha256": "77b44a8b602610d56249c231a93c2e18f1275fc08f77525a6968a30e13fa4a3f",
+      "status": "ok"
+    },
+    "PRL_USDT": {
+      "bytes": 644011,
+      "sha256": "379425441bfd5826ed0d651e6175d5ac9b901b2fa9668032840be5175c89973f",
+      "status": "ok"
+    },
+    "PTB_USDT": {
+      "bytes": 1859182,
+      "sha256": "7dd5c89d87873083af8f77f3560a38ae390cafc23d1e1ce14500960721661c0a",
+      "status": "ok"
+    },
+    "RATS_USDT": {
+      "bytes": 3842854,
+      "sha256": "a1a51713c31e7809694119b200ffe9606e420adc8db8dee27f5a4d127d82ad36",
+      "status": "ok"
+    },
+    "REZ_USDT": {
+      "bytes": 286528,
+      "sha256": "362edd8eb56c45905e28b40a3f784082d0011de69620160d7fda7d4a59302f02",
+      "status": "ok"
+    },
+    "RIF_USDT": {
+      "bytes": 11012859,
+      "sha256": "f13914bffa234cf2bd61ab0e0909f575b623b3ca29b680e9045da522841c251c",
+      "status": "ok"
+    },
+    "RLC_USDT": {
+      "bytes": 301534,
+      "sha256": "596feaf382da3f2ecc093db718dbd70029c864e48c8ac85e2d1fc7b65a30cba1",
+      "status": "ok"
+    },
+    "ROBO_USDT": {
+      "bytes": 677319,
+      "sha256": "8716cb45eb6a6814ee3547fd2abb9356c5e0898186f2aeac7cc44f3f98f8e2fb",
+      "status": "ok"
+    },
+    "SHAZ_USDT": {
+      "bytes": 186292,
+      "sha256": "5f38e4eca716df3fb1f3af34170648e51f312f49f42a3677233293dcc7d3ae03",
+      "status": "ok"
+    },
+    "SKDD_USDT": {
+      "bytes": 218793,
+      "sha256": "4e4ff0c795e574ce9dad80cafc7a27ff600310472a8f0c4c35f4b85f159c6c2d",
+      "status": "ok"
+    },
+    "SKHY_USDT": {
+      "bytes": 27589656,
+      "sha256": "d3f115ec2f078d032128b73da2936c25237c73e19c1a1b5a1e5ad5d4e493806c",
+      "status": "ok"
+    },
+    "SKSQUARE_USDT": {
+      "bytes": 3543760,
+      "sha256": "8dc2bea876f72574cf420f716d417ac13e1b9eab6c0a865270afcce89671ea4d",
+      "status": "ok"
+    },
+    "SKUU_USDT": {
+      "bytes": 963174,
+      "sha256": "6aeaa262a39c680ec594ea6d4aa9670bb47599292376651a01c755137c00a35e",
+      "status": "ok"
+    },
+    "SNDK_USDT": {
+      "bytes": 96748289,
+      "sha256": "cfd69d16e46c81be489a2d95ca1e90cf7ecaa008d4dfd3ba774de8542a4006b4",
+      "status": "ok"
+    },
+    "SNXX_USDT": {
+      "bytes": 10296757,
+      "sha256": "54074100e70f0621a32e35c6d9129274e08732057420625c6f8afcb4bc048a19",
+      "status": "ok"
+    },
+    "SOON_USDT": {
+      "bytes": 2880946,
+      "sha256": "05f064d75b32834859c6dcacb862f3fd51dd289a8939087126a0ef98e09b1d73",
+      "status": "ok"
+    },
+    "SOXL_USDT": {
+      "bytes": 38164075,
+      "sha256": "b4bbb830335abf1d258847c97a09790d73e6f3fa8551c051e5cc1ad7294aa9f7",
+      "status": "ok"
+    },
+    "SOXS_USDT": {
+      "bytes": 5891282,
+      "sha256": "a84b6e8ce3b5a58ecfb3f217fe3b6ce2a4b5585b626e7ab187145d9695aa1608",
+      "status": "ok"
+    },
+    "STAR_USDT": {
+      "bytes": 1149085,
+      "sha256": "e2854cd5ab4b1ab1b82a8b68af3eec624b498df6b15e8923c454016e92c1d4cc",
+      "status": "ok"
+    },
+    "TAG_USDT": {
+      "bytes": 8852829,
+      "sha256": "f3ad48b27d4ae90ed6a3820bdf7676d3f60c233ff37f604c6bf09324ec44e83c",
+      "status": "ok"
+    },
+    "TAKE_USDT": {
+      "bytes": 1495965,
+      "sha256": "f43ea330335d544df13cef7d0f664bc5cecc82268dc719dd1471c2bb82884934",
+      "status": "ok"
+    },
+    "TLM_USDT": {
+      "bytes": 24966020,
+      "sha256": "b76a93dea237a496d7f149d8f1cc2c647d63580a2b2c8549ab967263cddf391c",
+      "status": "ok"
+    },
+    "UAI_USDT": {
+      "bytes": 5920618,
+      "sha256": "b61a1bfa54bc392ff52f438ae6e7e9a151a879ae4035742e3f50250511595ad0",
+      "status": "ok"
+    },
+    "US_USDT": {
+      "bytes": 23240562,
+      "sha256": "a4630db55471d0201c420e374bbfbfecfeeedbda4252ac54563fa00b5061c797",
+      "status": "ok"
+    },
+    "VANRY_USDT": {
+      "bytes": 27351705,
+      "sha256": "9e020d0bff02c7b6c0375c7e051404eda42cd329e03f63b77f27ac2b79408e82",
+      "status": "ok"
+    },
+    "WDC_USDT": {
+      "bytes": 3633537,
+      "sha256": "a2eb23d37f1f09c6907bf84bc8861f430e51affb54dd26b54f1e3fabf08356fd",
+      "status": "ok"
+    },
+    "XNO_USDT": {
+      "bytes": 232995,
+      "sha256": "373cf287663726f51d44a169a5624f1654e9a5119f0d00ebb41607bec74a08d4",
+      "status": "ok"
+    },
+    "XNY_USDT": {
+      "bytes": 819416,
+      "sha256": "63b1b6da070d5133aacdbf589e482fcca29ad28fbb2cfecd897ca20f9163ef92",
+      "status": "ok"
+    },
+    "ZHIPU_USDT": {
+      "bytes": 6945812,
+      "sha256": "8422acc5ff6ce877ed5d180aba955db13ca2810134b6375c86ccce66f340d70b",
+      "status": "ok"
+    },
+    "ZIL_USDT": {
+      "bytes": 1041326,
+      "sha256": "68e751c85d94a8ca02e40c101024c20d5aeb1af699446c4ebff9dbc3808330a2",
+      "status": "ok"
+    }
+  },
+  "gate_version": "edge_loss_gate_tapes_v1",
+  "scanner_sha256": "5437af0fe0223615e154d4a04f82b45f29c92e07585f7fe12454ff3818a1403f",
+  "sources_unmapped": 0,
+  "status": {
+    "ok": 92
+  }
+}

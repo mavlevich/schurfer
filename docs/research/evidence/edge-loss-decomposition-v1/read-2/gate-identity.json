@@ -1,0 +1,2574 @@
+{
+  "exported_at": "2026-10-05T04:59:24.372991+00:00",
+  "gate_version": "edge_loss_gate_tapes_v2",
+  "sources": [
+    {
+      "event_id": 473,
+      "first_seen_at": "2026-07-23T10:07:56.348151+00:00",
+      "identity_conflict": false,
+      "market_id": null,
+      "market_type": null,
+      "symbol": "IDOL/USDT:USDT"
+    },
+    {
+      "event_id": 474,
+      "first_seen_at": "2026-07-23T10:22:39.178526+00:00",
+      "identity_conflict": false,
+      "market_id": null,
+      "market_type": null,
+      "symbol": "IDOL/USDT:USDT"
+    },
+    {
+      "event_id": 475,
+      "first_seen_at": "2026-07-23T10:48:06.947987+00:00",
+      "identity_conflict": false,
+      "market_id": null,
+      "market_type": null,
+      "symbol": "IDOL/USDT:USDT"
+    },
+    {
+      "event_id": 467,
+      "first_seen_at": "2026-07-23T13:49:39.661737+00:00",
+      "identity_conflict": false,
+      "market_id": "RIF_USDT",
+      "market_type": "swap",
+      "symbol": "RIF/USDT:USDT"
+    },
+    {
+      "event_id": 485,
+      "first_seen_at": "2026-07-23T14:16:54.619001+00:00",
+      "identity_conflict": false,
+      "market_id": null,
+      "market_type": null,
+      "symbol": "CLO/USDT:USDT"
+    },
+    {
+      "event_id": 490,
+      "first_seen_at": "2026-07-23T15:25:04.732083+00:00",
+      "identity_conflict": false,
+      "market_id": null,
+      "market_type": null,
+      "symbol": "CLO/USDT:USDT"
+    },
+    {
+      "event_id": 495,
+      "first_seen_at": "2026-07-23T16:11:22.912411+00:00",
+      "identity_conflict": false,
+      "market_id": "AKE_USDT",
+      "market_type": "swap",
+      "symbol": "AKE/USDT:USDT"
+    },
+    {
+      "event_id": 499,
+      "first_seen_at": "2026-07-23T19:36:20.543924+00:00",
+      "identity_conflict": false,
+      "market_id": "AKE_USDT",
+      "market_type": "swap",
+      "symbol": "AKE/USDT:USDT"
+    },
+    {
+      "event_id": 500,
+      "first_seen_at": "2026-07-23T19:43:05.891797+00:00",
+      "identity_conflict": false,
+      "market_id": "AKE_USDT",
+      "market_type": "swap",
+      "symbol": "AKE/USDT:USDT"
+    },
+    {
+      "event_id": 501,
+      "first_seen_at": "2026-07-23T19:51:20.094959+00:00",
+      "identity_conflict": false,
+      "market_id": "LA_USDT",
+      "market_type": "swap",
+      "symbol": "LA/USDT:USDT"
+    },
+    {
+      "event_id": 503,
+      "first_seen_at": "2026-07-23T20:08:47.870814+00:00",
+      "identity_conflict": false,
+      "market_id": "AKE_USDT",
+      "market_type": "swap",
+      "symbol": "AKE/USDT:USDT"
+    },
+    {
+      "event_id": 511,
+      "first_seen_at": "2026-07-23T21:32:01.247015+00:00",
+      "identity_conflict": false,
+      "market_id": "ESPORTS_USDT",
+      "market_type": "swap",
+      "symbol": "ESPORTS/USDT:USDT"
+    },
+    {
+      "event_id": 512,
+      "first_seen_at": "2026-07-23T22:05:41.169691+00:00",
+      "identity_conflict": false,
+      "market_id": "ESPORTS_USDT",
+      "market_type": "swap",
+      "symbol": "ESPORTS/USDT:USDT"
+    },
+    {
+      "event_id": 513,
+      "first_seen_at": "2026-07-23T22:16:40.540981+00:00",
+      "identity_conflict": false,
+      "market_id": "ESPORTS_USDT",
+      "market_type": "swap",
+      "symbol": "ESPORTS/USDT:USDT"
+    },
+    {
+      "event_id": 517,
+      "first_seen_at": "2026-07-23T22:43:46.848407+00:00",
+      "identity_conflict": false,
+      "market_id": "ESPORTS_USDT",
+      "market_type": "swap",
+      "symbol": "ESPORTS/USDT:USDT"
+    },
+    {
+      "event_id": 538,
+      "first_seen_at": "2026-07-24T01:53:04.504977+00:00",
+      "identity_conflict": false,
+      "market_id": "DEXE_USDT",
+      "market_type": "swap",
+      "symbol": "DEXE/USDT:USDT"
+    },
+    {
+      "event_id": 540,
+      "first_seen_at": "2026-07-24T02:03:49.412987+00:00",
+      "identity_conflict": false,
+      "market_id": "DEXE_USDT",
+      "market_type": "swap",
+      "symbol": "DEXE/USDT:USDT"
+    },
+    {
+      "event_id": 566,
+      "first_seen_at": "2026-07-24T05:09:16.856562+00:00",
+      "identity_conflict": false,
+      "market_id": "DEXE_USDT",
+      "market_type": "swap",
+      "symbol": "DEXE/USDT:USDT"
+    },
+    {
+      "event_id": 567,
+      "first_seen_at": "2026-07-24T05:16:03.197133+00:00",
+      "identity_conflict": false,
+      "market_id": "DEXE_USDT",
+      "market_type": "swap",
+      "symbol": "DEXE/USDT:USDT"
+    },
+    {
+      "event_id": 568,
+      "first_seen_at": "2026-07-24T05:53:58.341148+00:00",
+      "identity_conflict": false,
+      "market_id": "DEXE_USDT",
+      "market_type": "swap",
+      "symbol": "DEXE/USDT:USDT"
+    },
+    {
+      "event_id": 570,
+      "first_seen_at": "2026-07-24T06:02:09.702569+00:00",
+      "identity_conflict": false,
+      "market_id": "DEXE_USDT",
+      "market_type": "swap",
+      "symbol": "DEXE/USDT:USDT"
+    },
+    {
+      "event_id": 601,
+      "first_seen_at": "2026-07-24T15:39:06.146685+00:00",
+      "identity_conflict": false,
+      "market_id": "GWEI_USDT",
+      "market_type": "swap",
+      "symbol": "GWEI/USDT:USDT"
+    },
+    {
+      "event_id": 607,
+      "first_seen_at": "2026-07-24T17:10:32.474025+00:00",
+      "identity_conflict": false,
+      "market_id": "ACE_USDT",
+      "market_type": "swap",
+      "symbol": "ACE/USDT:USDT"
+    },
+    {
+      "event_id": 609,
+      "first_seen_at": "2026-07-24T17:20:05.929856+00:00",
+      "identity_conflict": false,
+      "market_id": "ACE_USDT",
+      "market_type": "swap",
+      "symbol": "ACE/USDT:USDT"
+    },
+    {
+      "event_id": 611,
+      "first_seen_at": "2026-07-24T17:28:16.983332+00:00",
+      "identity_conflict": false,
+      "market_id": "GWEI_USDT",
+      "market_type": "swap",
+      "symbol": "GWEI/USDT:USDT"
+    },
+    {
+      "event_id": 615,
+      "first_seen_at": "2026-07-24T17:54:16.056997+00:00",
+      "identity_conflict": false,
+      "market_id": "GWEI_USDT",
+      "market_type": "swap",
+      "symbol": "GWEI/USDT:USDT"
+    },
+    {
+      "event_id": 608,
+      "first_seen_at": "2026-07-24T17:56:59.904135+00:00",
+      "identity_conflict": false,
+      "market_id": "B2_USDT",
+      "market_type": "swap",
+      "symbol": "B2/USDT:USDT"
+    },
+    {
+      "event_id": 618,
+      "first_seen_at": "2026-07-24T18:50:19.580199+00:00",
+      "identity_conflict": false,
+      "market_id": "ACE_USDT",
+      "market_type": "swap",
+      "symbol": "ACE/USDT:USDT"
+    },
+    {
+      "event_id": 623,
+      "first_seen_at": "2026-07-24T19:32:31.281647+00:00",
+      "identity_conflict": false,
+      "market_id": "ACE_USDT",
+      "market_type": "swap",
+      "symbol": "ACE/USDT:USDT"
+    },
+    {
+      "event_id": 633,
+      "first_seen_at": "2026-07-24T21:11:58.785967+00:00",
+      "identity_conflict": false,
+      "market_id": "GWEI_USDT",
+      "market_type": "swap",
+      "symbol": "GWEI/USDT:USDT"
+    },
+    {
+      "event_id": 635,
+      "first_seen_at": "2026-07-24T21:39:07.950004+00:00",
+      "identity_conflict": false,
+      "market_id": "ACE_USDT",
+      "market_type": "swap",
+      "symbol": "ACE/USDT:USDT"
+    },
+    {
+      "event_id": 640,
+      "first_seen_at": "2026-07-24T22:04:54.066188+00:00",
+      "identity_conflict": false,
+      "market_id": "GWEI_USDT",
+      "market_type": "swap",
+      "symbol": "GWEI/USDT:USDT"
+    },
+    {
+      "event_id": 642,
+      "first_seen_at": "2026-07-24T22:51:09.050355+00:00",
+      "identity_conflict": false,
+      "market_id": "ACE_USDT",
+      "market_type": "swap",
+      "symbol": "ACE/USDT:USDT"
+    },
+    {
+      "event_id": 645,
+      "first_seen_at": "2026-07-24T23:11:34.951730+00:00",
+      "identity_conflict": false,
+      "market_id": "ACE_USDT",
+      "market_type": "swap",
+      "symbol": "ACE/USDT:USDT"
+    },
+    {
+      "event_id": 647,
+      "first_seen_at": "2026-07-24T23:19:45.243087+00:00",
+      "identity_conflict": false,
+      "market_id": "ACE_USDT",
+      "market_type": "swap",
+      "symbol": "ACE/USDT:USDT"
+    },
+    {
+      "event_id": 651,
+      "first_seen_at": "2026-07-24T23:53:42.719017+00:00",
+      "identity_conflict": false,
+      "market_id": "GWEI_USDT",
+      "market_type": "swap",
+      "symbol": "GWEI/USDT:USDT"
+    },
+    {
+      "event_id": 658,
+      "first_seen_at": "2026-07-25T00:23:12.753765+00:00",
+      "identity_conflict": false,
+      "market_id": "MEMES_USDT",
+      "market_type": "swap",
+      "symbol": "MEMES/USDT:USDT"
+    },
+    {
+      "event_id": 667,
+      "first_seen_at": "2026-07-25T01:41:04.551641+00:00",
+      "identity_conflict": false,
+      "market_id": "MEMES_USDT",
+      "market_type": "swap",
+      "symbol": "MEMES/USDT:USDT"
+    },
+    {
+      "event_id": 679,
+      "first_seen_at": "2026-07-25T04:12:36.820186+00:00",
+      "identity_conflict": false,
+      "market_id": "MEMES_USDT",
+      "market_type": "swap",
+      "symbol": "MEMES/USDT:USDT"
+    },
+    {
+      "event_id": 690,
+      "first_seen_at": "2026-07-25T06:18:46.857818+00:00",
+      "identity_conflict": false,
+      "market_id": "EUL_USDT",
+      "market_type": "swap",
+      "symbol": "EUL/USDT:USDT"
+    },
+    {
+      "event_id": 700,
+      "first_seen_at": "2026-07-25T09:26:22.803831+00:00",
+      "identity_conflict": false,
+      "market_id": "MEMES_USDT",
+      "market_type": "swap",
+      "symbol": "MEMES/USDT:USDT"
+    },
+    {
+      "event_id": 703,
+      "first_seen_at": "2026-07-25T09:37:16.444570+00:00",
+      "identity_conflict": false,
+      "market_id": "MEMES_USDT",
+      "market_type": "swap",
+      "symbol": "MEMES/USDT:USDT"
+    },
+    {
+      "event_id": 723,
+      "first_seen_at": "2026-07-25T14:19:56.218390+00:00",
+      "identity_conflict": false,
+      "market_id": "ESPORTS_USDT",
+      "market_type": "swap",
+      "symbol": "ESPORTS/USDT:USDT"
+    },
+    {
+      "event_id": 719,
+      "first_seen_at": "2026-07-25T15:06:11.250649+00:00",
+      "identity_conflict": false,
+      "market_id": "DEXE_USDT",
+      "market_type": "swap",
+      "symbol": "DEXE/USDT:USDT"
+    },
+    {
+      "event_id": 725,
+      "first_seen_at": "2026-07-25T15:19:46.609718+00:00",
+      "identity_conflict": false,
+      "market_id": "DAM_USDT",
+      "market_type": "swap",
+      "symbol": "DAM/USDT:USDT"
+    },
+    {
+      "event_id": 736,
+      "first_seen_at": "2026-07-25T18:25:05.066841+00:00",
+      "identity_conflict": false,
+      "market_id": "ASTEROID_USDT",
+      "market_type": "swap",
+      "symbol": "ASTEROID/USDT:USDT"
+    },
+    {
+      "event_id": 740,
+      "first_seen_at": "2026-07-25T18:46:46.652595+00:00",
+      "identity_conflict": false,
+      "market_id": "ESPORTS_USDT",
+      "market_type": "swap",
+      "symbol": "ESPORTS/USDT:USDT"
+    },
+    {
+      "event_id": 752,
+      "first_seen_at": "2026-07-25T20:47:36.005201+00:00",
+      "identity_conflict": false,
+      "market_id": "ASTEROID_USDT",
+      "market_type": "swap",
+      "symbol": "ASTEROID/USDT:USDT"
+    },
+    {
+      "event_id": 756,
+      "first_seen_at": "2026-07-25T22:15:45.297929+00:00",
+      "identity_conflict": false,
+      "market_id": "ASTEROID_USDT",
+      "market_type": "swap",
+      "symbol": "ASTEROID/USDT:USDT"
+    },
+    {
+      "event_id": 758,
+      "first_seen_at": "2026-07-25T22:52:17.556150+00:00",
+      "identity_conflict": false,
+      "market_id": "ASTEROID_USDT",
+      "market_type": "swap",
+      "symbol": "ASTEROID/USDT:USDT"
+    },
+    {
+      "event_id": 759,
+      "first_seen_at": "2026-07-25T22:57:42.601807+00:00",
+      "identity_conflict": false,
+      "market_id": "ASTEROID_USDT",
+      "market_type": "swap",
+      "symbol": "ASTEROID/USDT:USDT"
+    },
+    {
+      "event_id": 760,
+      "first_seen_at": "2026-07-25T23:40:55.282026+00:00",
+      "identity_conflict": false,
+      "market_id": "ESPORTS_USDT",
+      "market_type": "swap",
+      "symbol": "ESPORTS/USDT:USDT"
+    },
+    {
+      "event_id": 761,
+      "first_seen_at": "2026-07-25T23:58:32.771716+00:00",
+      "identity_conflict": false,
+      "market_id": "ASTEROID_USDT",
+      "market_type": "swap",
+      "symbol": "ASTEROID/USDT:USDT"
+    },
+    {
+      "event_id": 780,
+      "first_seen_at": "2026-07-26T05:00:04.219813+00:00",
+      "identity_conflict": false,
+      "market_id": "DIA_USDT",
+      "market_type": "swap",
+      "symbol": "DIA/USDT:USDT"
+    },
+    {
+      "event_id": 788,
+      "first_seen_at": "2026-07-26T06:05:04.447311+00:00",
+      "identity_conflict": false,
+      "market_id": "PIEVERSE_USDT",
+      "market_type": "swap",
+      "symbol": "PIEVERSE/USDT:USDT"
+    },
+    {
+      "event_id": 797,
+      "first_seen_at": "2026-07-26T08:53:58.736045+00:00",
+      "identity_conflict": false,
+      "market_id": "PRL_USDT",
+      "market_type": "swap",
+      "symbol": "PRL/USDT:USDT"
+    },
+    {
+      "event_id": 799,
+      "first_seen_at": "2026-07-26T09:06:13.345775+00:00",
+      "identity_conflict": false,
+      "market_id": "PRL_USDT",
+      "market_type": "swap",
+      "symbol": "PRL/USDT:USDT"
+    },
+    {
+      "event_id": 801,
+      "first_seen_at": "2026-07-26T09:15:44.711582+00:00",
+      "identity_conflict": false,
+      "market_id": "PRL_USDT",
+      "market_type": "swap",
+      "symbol": "PRL/USDT:USDT"
+    },
+    {
+      "event_id": 814,
+      "first_seen_at": "2026-07-26T13:32:23.125118+00:00",
+      "identity_conflict": false,
+      "market_id": "CROSS_USDT",
+      "market_type": "swap",
+      "symbol": "CROSS/USDT:USDT"
+    },
+    {
+      "event_id": 816,
+      "first_seen_at": "2026-07-26T14:16:36.084327+00:00",
+      "identity_conflict": false,
+      "market_id": "ESP_USDT",
+      "market_type": "swap",
+      "symbol": "ESP/USDT:USDT"
+    },
+    {
+      "event_id": 819,
+      "first_seen_at": "2026-07-26T14:54:47.163195+00:00",
+      "identity_conflict": false,
+      "market_id": "KIMI_USDT",
+      "market_type": "swap",
+      "symbol": "KIMI/USDT:USDT"
+    },
+    {
+      "event_id": 823,
+      "first_seen_at": "2026-07-26T15:52:30.842704+00:00",
+      "identity_conflict": false,
+      "market_id": "ESP_USDT",
+      "market_type": "swap",
+      "symbol": "ESP/USDT:USDT"
+    },
+    {
+      "event_id": 818,
+      "first_seen_at": "2026-07-26T18:26:23.439000+00:00",
+      "identity_conflict": false,
+      "market_id": "DIA_USDT",
+      "market_type": "swap",
+      "symbol": "DIA/USDT:USDT"
+    },
+    {
+      "event_id": 828,
+      "first_seen_at": "2026-07-26T18:38:19.525000+00:00",
+      "identity_conflict": false,
+      "market_id": "ESP_USDT",
+      "market_type": "swap",
+      "symbol": "ESP/USDT:USDT"
+    },
+    {
+      "event_id": 829,
+      "first_seen_at": "2026-07-26T18:45:07.286000+00:00",
+      "identity_conflict": false,
+      "market_id": "CROSS_USDT",
+      "market_type": "swap",
+      "symbol": "CROSS/USDT:USDT"
+    },
+    {
+      "event_id": 830,
+      "first_seen_at": "2026-07-26T18:46:28.389000+00:00",
+      "identity_conflict": false,
+      "market_id": "ESP_USDT",
+      "market_type": "swap",
+      "symbol": "ESP/USDT:USDT"
+    },
+    {
+      "event_id": 831,
+      "first_seen_at": "2026-07-26T19:00:07.465000+00:00",
+      "identity_conflict": false,
+      "market_id": "ESP_USDT",
+      "market_type": "swap",
+      "symbol": "ESP/USDT:USDT"
+    },
+    {
+      "event_id": 832,
+      "first_seen_at": "2026-07-26T19:04:13.261000+00:00",
+      "identity_conflict": false,
+      "market_id": "CROSS_USDT",
+      "market_type": "swap",
+      "symbol": "CROSS/USDT:USDT"
+    },
+    {
+      "event_id": 834,
+      "first_seen_at": "2026-07-26T19:30:05.069000+00:00",
+      "identity_conflict": false,
+      "market_id": "CROSS_USDT",
+      "market_type": "swap",
+      "symbol": "CROSS/USDT:USDT"
+    },
+    {
+      "event_id": 835,
+      "first_seen_at": "2026-07-26T19:36:53.009000+00:00",
+      "identity_conflict": false,
+      "market_id": "KIMI_USDT",
+      "market_type": "swap",
+      "symbol": "KIMI/USDT:USDT"
+    },
+    {
+      "event_id": 836,
+      "first_seen_at": "2026-07-26T19:38:15.393000+00:00",
+      "identity_conflict": false,
+      "market_id": "CROSS_USDT",
+      "market_type": "swap",
+      "symbol": "CROSS/USDT:USDT"
+    },
+    {
+      "event_id": 838,
+      "first_seen_at": "2026-07-26T19:53:14.444000+00:00",
+      "identity_conflict": false,
+      "market_id": "KIMI_USDT",
+      "market_type": "swap",
+      "symbol": "KIMI/USDT:USDT"
+    },
+    {
+      "event_id": 839,
+      "first_seen_at": "2026-07-26T19:54:35.917000+00:00",
+      "identity_conflict": false,
+      "market_id": "ESP_USDT",
+      "market_type": "swap",
+      "symbol": "ESP/USDT:USDT"
+    },
+    {
+      "event_id": 841,
+      "first_seen_at": "2026-07-26T20:03:52.413000+00:00",
+      "identity_conflict": false,
+      "market_id": "KIMI_USDT",
+      "market_type": "swap",
+      "symbol": "KIMI/USDT:USDT"
+    },
+    {
+      "event_id": 842,
+      "first_seen_at": "2026-07-26T20:07:57.066000+00:00",
+      "identity_conflict": false,
+      "market_id": "4_USDT",
+      "market_type": "swap",
+      "symbol": "4/USDT:USDT"
+    },
+    {
+      "event_id": 843,
+      "first_seen_at": "2026-07-26T20:16:05.667000+00:00",
+      "identity_conflict": false,
+      "market_id": "ESP_USDT",
+      "market_type": "swap",
+      "symbol": "ESP/USDT:USDT"
+    },
+    {
+      "event_id": 844,
+      "first_seen_at": "2026-07-26T20:22:53.642000+00:00",
+      "identity_conflict": false,
+      "market_id": "ESP_USDT",
+      "market_type": "swap",
+      "symbol": "ESP/USDT:USDT"
+    },
+    {
+      "event_id": 845,
+      "first_seen_at": "2026-07-26T20:36:30.032000+00:00",
+      "identity_conflict": false,
+      "market_id": "CROSS_USDT",
+      "market_type": "swap",
+      "symbol": "CROSS/USDT:USDT"
+    },
+    {
+      "event_id": 846,
+      "first_seen_at": "2026-07-26T20:39:13.181000+00:00",
+      "identity_conflict": false,
+      "market_id": "ESP_USDT",
+      "market_type": "swap",
+      "symbol": "ESP/USDT:USDT"
+    },
+    {
+      "event_id": 847,
+      "first_seen_at": "2026-07-26T20:51:26.509000+00:00",
+      "identity_conflict": false,
+      "market_id": "CROSS_USDT",
+      "market_type": "swap",
+      "symbol": "CROSS/USDT:USDT"
+    },
+    {
+      "event_id": 849,
+      "first_seen_at": "2026-07-26T21:46:25.542000+00:00",
+      "identity_conflict": false,
+      "market_id": "CROSS_USDT",
+      "market_type": "swap",
+      "symbol": "CROSS/USDT:USDT"
+    },
+    {
+      "event_id": 848,
+      "first_seen_at": "2026-07-26T21:50:30.349000+00:00",
+      "identity_conflict": false,
+      "market_id": "DIA_USDT",
+      "market_type": "swap",
+      "symbol": "DIA/USDT:USDT"
+    },
+    {
+      "event_id": 850,
+      "first_seen_at": "2026-07-26T21:57:19.410000+00:00",
+      "identity_conflict": false,
+      "market_id": "CROSS_USDT",
+      "market_type": "swap",
+      "symbol": "CROSS/USDT:USDT"
+    },
+    {
+      "event_id": 854,
+      "first_seen_at": "2026-07-26T22:47:41.084000+00:00",
+      "identity_conflict": false,
+      "market_id": "DIA_USDT",
+      "market_type": "swap",
+      "symbol": "DIA/USDT:USDT"
+    },
+    {
+      "event_id": 887,
+      "first_seen_at": "2026-07-27T06:17:57.501000+00:00",
+      "identity_conflict": false,
+      "market_id": "AKE_USDT",
+      "market_type": "swap",
+      "symbol": "AKE/USDT:USDT"
+    },
+    {
+      "event_id": 888,
+      "first_seen_at": "2026-07-27T06:17:57.501000+00:00",
+      "identity_conflict": false,
+      "market_id": "BANK_USDT",
+      "market_type": "swap",
+      "symbol": "BANK/USDT:USDT"
+    },
+    {
+      "event_id": 889,
+      "first_seen_at": "2026-07-27T06:17:57.501000+00:00",
+      "identity_conflict": false,
+      "market_id": "US_USDT",
+      "market_type": "swap",
+      "symbol": "US/USDT:USDT"
+    },
+    {
+      "event_id": 890,
+      "first_seen_at": "2026-07-27T06:25:57.854000+00:00",
+      "identity_conflict": false,
+      "market_id": "AKE_USDT",
+      "market_type": "swap",
+      "symbol": "AKE/USDT:USDT"
+    },
+    {
+      "event_id": 891,
+      "first_seen_at": "2026-07-27T06:27:20.048000+00:00",
+      "identity_conflict": false,
+      "market_id": "BANK_USDT",
+      "market_type": "swap",
+      "symbol": "BANK/USDT:USDT"
+    },
+    {
+      "event_id": 886,
+      "first_seen_at": "2026-07-27T06:38:48.067000+00:00",
+      "identity_conflict": false,
+      "market_id": "BTW_USDT",
+      "market_type": "swap",
+      "symbol": "BTW/USDT:USDT"
+    },
+    {
+      "event_id": 892,
+      "first_seen_at": "2026-07-27T07:04:48.343000+00:00",
+      "identity_conflict": false,
+      "market_id": "ON_USDT",
+      "market_type": "swap",
+      "symbol": "ON/USDT:USDT"
+    },
+    {
+      "event_id": 909,
+      "first_seen_at": "2026-07-27T07:11:39.187000+00:00",
+      "identity_conflict": false,
+      "market_id": "DIA_USDT",
+      "market_type": "swap",
+      "symbol": "DIA/USDT:USDT"
+    },
+    {
+      "event_id": 905,
+      "first_seen_at": "2026-07-27T08:41:06.718000+00:00",
+      "identity_conflict": false,
+      "market_id": "TAG_USDT",
+      "market_type": "swap",
+      "symbol": "TAG/USDT:USDT"
+    },
+    {
+      "event_id": 920,
+      "first_seen_at": "2026-07-27T08:46:40.943000+00:00",
+      "identity_conflict": false,
+      "market_id": "ASTEROID_USDT",
+      "market_type": "swap",
+      "symbol": "ASTEROID/USDT:USDT"
+    },
+    {
+      "event_id": 923,
+      "first_seen_at": "2026-07-27T09:02:29.100000+00:00",
+      "identity_conflict": false,
+      "market_id": "MEMES_USDT",
+      "market_type": "swap",
+      "symbol": "MEMES/USDT:USDT"
+    },
+    {
+      "event_id": 927,
+      "first_seen_at": "2026-07-27T09:41:25.909000+00:00",
+      "identity_conflict": false,
+      "market_id": "ASTEROID_USDT",
+      "market_type": "swap",
+      "symbol": "ASTEROID/USDT:USDT"
+    },
+    {
+      "event_id": 928,
+      "first_seen_at": "2026-07-27T09:48:38.969000+00:00",
+      "identity_conflict": false,
+      "market_id": "INX_USDT",
+      "market_type": "swap",
+      "symbol": "INX/USDT:USDT"
+    },
+    {
+      "event_id": 926,
+      "first_seen_at": "2026-07-27T10:18:57.104000+00:00",
+      "identity_conflict": false,
+      "market_id": "NIL_USDT",
+      "market_type": "swap",
+      "symbol": "NIL/USDT:USDT"
+    },
+    {
+      "event_id": 932,
+      "first_seen_at": "2026-07-27T10:29:12.235000+00:00",
+      "identity_conflict": false,
+      "market_id": "MEMES_USDT",
+      "market_type": "swap",
+      "symbol": "MEMES/USDT:USDT"
+    },
+    {
+      "event_id": 942,
+      "first_seen_at": "2026-07-27T13:04:40.352000+00:00",
+      "identity_conflict": false,
+      "market_id": "BEAT_USDT",
+      "market_type": "swap",
+      "symbol": "BEAT/USDT:USDT"
+    },
+    {
+      "event_id": 944,
+      "first_seen_at": "2026-07-27T13:21:45.799000+00:00",
+      "identity_conflict": false,
+      "market_id": "BEAT_USDT",
+      "market_type": "swap",
+      "symbol": "BEAT/USDT:USDT"
+    },
+    {
+      "event_id": 946,
+      "first_seen_at": "2026-07-27T13:48:47.587000+00:00",
+      "identity_conflict": false,
+      "market_id": "ASTEROID_USDT",
+      "market_type": "swap",
+      "symbol": "ASTEROID/USDT:USDT"
+    },
+    {
+      "event_id": 948,
+      "first_seen_at": "2026-07-27T14:15:29.004000+00:00",
+      "identity_conflict": false,
+      "market_id": "ASTEROID_USDT",
+      "market_type": "swap",
+      "symbol": "ASTEROID/USDT:USDT"
+    },
+    {
+      "event_id": 949,
+      "first_seen_at": "2026-07-27T14:22:35.416000+00:00",
+      "identity_conflict": false,
+      "market_id": "ASTEROID_USDT",
+      "market_type": "swap",
+      "symbol": "ASTEROID/USDT:USDT"
+    },
+    {
+      "event_id": 951,
+      "first_seen_at": "2026-07-27T14:29:50.350000+00:00",
+      "identity_conflict": false,
+      "market_id": "SOXS_USDT",
+      "market_type": "swap",
+      "symbol": "SOXS/USDT:USDT"
+    },
+    {
+      "event_id": 961,
+      "first_seen_at": "2026-07-27T15:03:00.278000+00:00",
+      "identity_conflict": false,
+      "market_id": "SOXS_USDT",
+      "market_type": "swap",
+      "symbol": "SOXS/USDT:USDT"
+    },
+    {
+      "event_id": 962,
+      "first_seen_at": "2026-07-27T15:03:00.278000+00:00",
+      "identity_conflict": false,
+      "market_id": "BOB_USDT",
+      "market_type": "swap",
+      "symbol": "BOB/USDT:USDT"
+    },
+    {
+      "event_id": 957,
+      "first_seen_at": "2026-07-27T15:10:23.968000+00:00",
+      "identity_conflict": false,
+      "market_id": "BROCCOLIF3B_USDT",
+      "market_type": "swap",
+      "symbol": "BROCCOLIF3B/USDT:USDT"
+    },
+    {
+      "event_id": 963,
+      "first_seen_at": "2026-07-27T15:10:23.968000+00:00",
+      "identity_conflict": false,
+      "market_id": "SOXS_USDT",
+      "market_type": "swap",
+      "symbol": "SOXS/USDT:USDT"
+    },
+    {
+      "event_id": 969,
+      "first_seen_at": "2026-07-27T16:36:48.246000+00:00",
+      "identity_conflict": false,
+      "market_id": "BULLA_USDT",
+      "market_type": "swap",
+      "symbol": "BULLA/USDT:USDT"
+    },
+    {
+      "event_id": 972,
+      "first_seen_at": "2026-07-27T16:39:31.883000+00:00",
+      "identity_conflict": false,
+      "market_id": "ASTEROID_USDT",
+      "market_type": "swap",
+      "symbol": "ASTEROID/USDT:USDT"
+    },
+    {
+      "event_id": 974,
+      "first_seen_at": "2026-07-27T16:51:52.201000+00:00",
+      "identity_conflict": false,
+      "market_id": "SOXS_USDT",
+      "market_type": "swap",
+      "symbol": "SOXS/USDT:USDT"
+    },
+    {
+      "event_id": 980,
+      "first_seen_at": "2026-07-27T17:09:42.162000+00:00",
+      "identity_conflict": false,
+      "market_id": "LA_USDT",
+      "market_type": "swap",
+      "symbol": "LA/USDT:USDT"
+    },
+    {
+      "event_id": 982,
+      "first_seen_at": "2026-07-27T18:11:21.125000+00:00",
+      "identity_conflict": false,
+      "market_id": "BULLA_USDT",
+      "market_type": "swap",
+      "symbol": "BULLA/USDT:USDT"
+    },
+    {
+      "event_id": 1000,
+      "first_seen_at": "2026-07-27T19:12:26.877000+00:00",
+      "identity_conflict": false,
+      "market_id": "ASTEROID_USDT",
+      "market_type": "swap",
+      "symbol": "ASTEROID/USDT:USDT"
+    },
+    {
+      "event_id": 1006,
+      "first_seen_at": "2026-07-27T19:44:30.949000+00:00",
+      "identity_conflict": false,
+      "market_id": "COTI_USDT",
+      "market_type": "swap",
+      "symbol": "COTI/USDT:USDT"
+    },
+    {
+      "event_id": 1008,
+      "first_seen_at": "2026-07-27T19:53:22.687000+00:00",
+      "identity_conflict": false,
+      "market_id": "COTI_USDT",
+      "market_type": "swap",
+      "symbol": "COTI/USDT:USDT"
+    },
+    {
+      "event_id": 1022,
+      "first_seen_at": "2026-07-27T21:24:35.890000+00:00",
+      "identity_conflict": false,
+      "market_id": "REZ_USDT",
+      "market_type": "swap",
+      "symbol": "REZ/USDT:USDT"
+    },
+    {
+      "event_id": 1026,
+      "first_seen_at": "2026-07-27T21:38:31.030000+00:00",
+      "identity_conflict": false,
+      "market_id": "TAG_USDT",
+      "market_type": "swap",
+      "symbol": "TAG/USDT:USDT"
+    },
+    {
+      "event_id": 1028,
+      "first_seen_at": "2026-07-27T21:46:54.538000+00:00",
+      "identity_conflict": false,
+      "market_id": "BROCCOLIF3B_USDT",
+      "market_type": "swap",
+      "symbol": "BROCCOLIF3B/USDT:USDT"
+    },
+    {
+      "event_id": 1035,
+      "first_seen_at": "2026-07-27T22:26:23.170000+00:00",
+      "identity_conflict": false,
+      "market_id": "ASTEROID_USDT",
+      "market_type": "swap",
+      "symbol": "ASTEROID/USDT:USDT"
+    },
+    {
+      "event_id": 1054,
+      "first_seen_at": "2026-07-28T00:10:01.191000+00:00",
+      "identity_conflict": false,
+      "market_id": "MEMES_USDT",
+      "market_type": "swap",
+      "symbol": "MEMES/USDT:USDT"
+    },
+    {
+      "event_id": 1095,
+      "first_seen_at": "2026-07-28T05:51:26.412000+00:00",
+      "identity_conflict": false,
+      "market_id": "BEAT_USDT",
+      "market_type": "swap",
+      "symbol": "BEAT/USDT:USDT"
+    },
+    {
+      "event_id": 1096,
+      "first_seen_at": "2026-07-28T06:00:57.355000+00:00",
+      "identity_conflict": false,
+      "market_id": "DEXE_USDT",
+      "market_type": "swap",
+      "symbol": "DEXE/USDT:USDT"
+    },
+    {
+      "event_id": 1101,
+      "first_seen_at": "2026-07-28T06:49:59.463000+00:00",
+      "identity_conflict": false,
+      "market_id": "ACH_USDT",
+      "market_type": "swap",
+      "symbol": "ACH/USDT:USDT"
+    },
+    {
+      "event_id": 1103,
+      "first_seen_at": "2026-07-28T06:54:03.050000+00:00",
+      "identity_conflict": false,
+      "market_id": "AKE_USDT",
+      "market_type": "swap",
+      "symbol": "AKE/USDT:USDT"
+    },
+    {
+      "event_id": 1104,
+      "first_seen_at": "2026-07-28T07:02:14.268000+00:00",
+      "identity_conflict": false,
+      "market_id": "AKE_USDT",
+      "market_type": "swap",
+      "symbol": "AKE/USDT:USDT"
+    },
+    {
+      "event_id": 1115,
+      "first_seen_at": "2026-07-28T09:17:56.841000+00:00",
+      "identity_conflict": false,
+      "market_id": "VANRY_USDT",
+      "market_type": "swap",
+      "symbol": "VANRY/USDT:USDT"
+    },
+    {
+      "event_id": 1133,
+      "first_seen_at": "2026-07-28T11:16:38.447000+00:00",
+      "identity_conflict": false,
+      "market_id": "AKE_USDT",
+      "market_type": "swap",
+      "symbol": "AKE/USDT:USDT"
+    },
+    {
+      "event_id": 1136,
+      "first_seen_at": "2026-07-28T11:42:31.216000+00:00",
+      "identity_conflict": false,
+      "market_id": "BEAT_USDT",
+      "market_type": "swap",
+      "symbol": "BEAT/USDT:USDT"
+    },
+    {
+      "event_id": 1138,
+      "first_seen_at": "2026-07-28T11:53:26.672000+00:00",
+      "identity_conflict": false,
+      "market_id": "AKE_USDT",
+      "market_type": "swap",
+      "symbol": "AKE/USDT:USDT"
+    },
+    {
+      "event_id": 1139,
+      "first_seen_at": "2026-07-28T11:56:10.269000+00:00",
+      "identity_conflict": false,
+      "market_id": "BEAT_USDT",
+      "market_type": "swap",
+      "symbol": "BEAT/USDT:USDT"
+    },
+    {
+      "event_id": 1145,
+      "first_seen_at": "2026-07-28T12:20:50.315000+00:00",
+      "identity_conflict": false,
+      "market_id": "XNO_USDT",
+      "market_type": "swap",
+      "symbol": "XNO/USDT:USDT"
+    },
+    {
+      "event_id": 1150,
+      "first_seen_at": "2026-07-28T12:50:52.019000+00:00",
+      "identity_conflict": false,
+      "market_id": "BEAT_USDT",
+      "market_type": "swap",
+      "symbol": "BEAT/USDT:USDT"
+    },
+    {
+      "event_id": 1140,
+      "first_seen_at": "2026-07-28T14:51:23.264000+00:00",
+      "identity_conflict": false,
+      "market_id": "SOON_USDT",
+      "market_type": "swap",
+      "symbol": "SOON/USDT:USDT"
+    },
+    {
+      "event_id": 1162,
+      "first_seen_at": "2026-07-28T15:10:27.966000+00:00",
+      "identity_conflict": false,
+      "market_id": "BULLA_USDT",
+      "market_type": "swap",
+      "symbol": "BULLA/USDT:USDT"
+    },
+    {
+      "event_id": 1158,
+      "first_seen_at": "2026-07-28T15:20:00.881000+00:00",
+      "identity_conflict": false,
+      "market_id": "VANRY_USDT",
+      "market_type": "swap",
+      "symbol": "VANRY/USDT:USDT"
+    },
+    {
+      "event_id": 1174,
+      "first_seen_at": "2026-07-28T16:24:58.792000+00:00",
+      "identity_conflict": false,
+      "market_id": "DEXE_USDT",
+      "market_type": "swap",
+      "symbol": "DEXE/USDT:USDT"
+    },
+    {
+      "event_id": 1176,
+      "first_seen_at": "2026-07-28T16:37:36.039000+00:00",
+      "identity_conflict": false,
+      "market_id": "BTW_USDT",
+      "market_type": "swap",
+      "symbol": "BTW/USDT:USDT"
+    },
+    {
+      "event_id": 1181,
+      "first_seen_at": "2026-07-28T17:48:35.548000+00:00",
+      "identity_conflict": false,
+      "market_id": "BEAT_USDT",
+      "market_type": "swap",
+      "symbol": "BEAT/USDT:USDT"
+    },
+    {
+      "event_id": 1185,
+      "first_seen_at": "2026-07-28T17:59:33.859000+00:00",
+      "identity_conflict": false,
+      "market_id": "BTW_USDT",
+      "market_type": "swap",
+      "symbol": "BTW/USDT:USDT"
+    },
+    {
+      "event_id": 1189,
+      "first_seen_at": "2026-07-28T18:20:01.692000+00:00",
+      "identity_conflict": false,
+      "market_id": "BTW_USDT",
+      "market_type": "swap",
+      "symbol": "BTW/USDT:USDT"
+    },
+    {
+      "event_id": 1190,
+      "first_seen_at": "2026-07-28T18:22:44.871000+00:00",
+      "identity_conflict": false,
+      "market_id": "BEAT_USDT",
+      "market_type": "swap",
+      "symbol": "BEAT/USDT:USDT"
+    },
+    {
+      "event_id": 1193,
+      "first_seen_at": "2026-07-28T19:04:23.249000+00:00",
+      "identity_conflict": false,
+      "market_id": "DEXE_USDT",
+      "market_type": "swap",
+      "symbol": "DEXE/USDT:USDT"
+    },
+    {
+      "event_id": 1197,
+      "first_seen_at": "2026-07-28T19:27:00.293000+00:00",
+      "identity_conflict": false,
+      "market_id": "DEXE_USDT",
+      "market_type": "swap",
+      "symbol": "DEXE/USDT:USDT"
+    },
+    {
+      "event_id": 1200,
+      "first_seen_at": "2026-07-28T20:21:38.929000+00:00",
+      "identity_conflict": false,
+      "market_id": "RIF_USDT",
+      "market_type": "swap",
+      "symbol": "RIF/USDT:USDT"
+    },
+    {
+      "event_id": 1203,
+      "first_seen_at": "2026-07-28T21:03:26.908000+00:00",
+      "identity_conflict": false,
+      "market_id": "ZIL_USDT",
+      "market_type": "swap",
+      "symbol": "ZIL/USDT:USDT"
+    },
+    {
+      "event_id": 1206,
+      "first_seen_at": "2026-07-28T21:21:15.998000+00:00",
+      "identity_conflict": false,
+      "market_id": "RIF_USDT",
+      "market_type": "swap",
+      "symbol": "RIF/USDT:USDT"
+    },
+    {
+      "event_id": 1207,
+      "first_seen_at": "2026-07-28T21:35:56.199000+00:00",
+      "identity_conflict": false,
+      "market_id": "BOT_USDT",
+      "market_type": "swap",
+      "symbol": "BOT/USDT:USDT"
+    },
+    {
+      "event_id": 1208,
+      "first_seen_at": "2026-07-28T21:45:56.696000+00:00",
+      "identity_conflict": false,
+      "market_id": "RIF_USDT",
+      "market_type": "swap",
+      "symbol": "RIF/USDT:USDT"
+    },
+    {
+      "event_id": 1211,
+      "first_seen_at": "2026-07-28T22:05:50.001000+00:00",
+      "identity_conflict": false,
+      "market_id": "BOT_USDT",
+      "market_type": "swap",
+      "symbol": "BOT/USDT:USDT"
+    },
+    {
+      "event_id": 1212,
+      "first_seen_at": "2026-07-28T22:32:40.417000+00:00",
+      "identity_conflict": false,
+      "market_id": "RIF_USDT",
+      "market_type": "swap",
+      "symbol": "RIF/USDT:USDT"
+    },
+    {
+      "event_id": 1215,
+      "first_seen_at": "2026-07-28T22:53:45.591000+00:00",
+      "identity_conflict": false,
+      "market_id": "SOXS_USDT",
+      "market_type": "swap",
+      "symbol": "SOXS/USDT:USDT"
+    },
+    {
+      "event_id": 1216,
+      "first_seen_at": "2026-07-28T22:59:34.389000+00:00",
+      "identity_conflict": false,
+      "market_id": "SOXS_USDT",
+      "market_type": "swap",
+      "symbol": "SOXS/USDT:USDT"
+    },
+    {
+      "event_id": 1217,
+      "first_seen_at": "2026-07-28T23:05:06.368000+00:00",
+      "identity_conflict": false,
+      "market_id": "SKDD_USDT",
+      "market_type": "swap",
+      "symbol": "SKDD/USDT:USDT"
+    },
+    {
+      "event_id": 1234,
+      "first_seen_at": "2026-07-29T01:57:40.658000+00:00",
+      "identity_conflict": false,
+      "market_id": "DAM_USDT",
+      "market_type": "swap",
+      "symbol": "DAM/USDT:USDT"
+    },
+    {
+      "event_id": 1238,
+      "first_seen_at": "2026-07-29T02:11:14.157000+00:00",
+      "identity_conflict": false,
+      "market_id": "DAM_USDT",
+      "market_type": "swap",
+      "symbol": "DAM/USDT:USDT"
+    },
+    {
+      "event_id": 1245,
+      "first_seen_at": "2026-07-29T03:20:38.864000+00:00",
+      "identity_conflict": false,
+      "market_id": "EUL_USDT",
+      "market_type": "swap",
+      "symbol": "EUL/USDT:USDT"
+    },
+    {
+      "event_id": 1248,
+      "first_seen_at": "2026-07-29T04:46:27.802000+00:00",
+      "identity_conflict": false,
+      "market_id": "EUL_USDT",
+      "market_type": "swap",
+      "symbol": "EUL/USDT:USDT"
+    },
+    {
+      "event_id": 1250,
+      "first_seen_at": "2026-07-29T05:24:39.122000+00:00",
+      "identity_conflict": false,
+      "market_id": "AEON_USDT",
+      "market_type": "swap",
+      "symbol": "AEON/USDT:USDT"
+    },
+    {
+      "event_id": 1252,
+      "first_seen_at": "2026-07-29T06:08:10.231000+00:00",
+      "identity_conflict": false,
+      "market_id": "AEON_USDT",
+      "market_type": "swap",
+      "symbol": "AEON/USDT:USDT"
+    },
+    {
+      "event_id": 1268,
+      "first_seen_at": "2026-07-29T07:34:24.445000+00:00",
+      "identity_conflict": false,
+      "market_id": "COTI_USDT",
+      "market_type": "swap",
+      "symbol": "COTI/USDT:USDT"
+    },
+    {
+      "event_id": 1274,
+      "first_seen_at": "2026-07-29T08:03:00.166000+00:00",
+      "identity_conflict": false,
+      "market_id": "COTI_USDT",
+      "market_type": "swap",
+      "symbol": "COTI/USDT:USDT"
+    },
+    {
+      "event_id": 1276,
+      "first_seen_at": "2026-07-29T08:15:31.907000+00:00",
+      "identity_conflict": false,
+      "market_id": "DAM_USDT",
+      "market_type": "swap",
+      "symbol": "DAM/USDT:USDT"
+    },
+    {
+      "event_id": 1282,
+      "first_seen_at": "2026-07-29T09:03:11.733000+00:00",
+      "identity_conflict": false,
+      "market_id": "AEON_USDT",
+      "market_type": "swap",
+      "symbol": "AEON/USDT:USDT"
+    },
+    {
+      "event_id": 1285,
+      "first_seen_at": "2026-07-29T09:25:05.758000+00:00",
+      "identity_conflict": false,
+      "market_id": "COTI_USDT",
+      "market_type": "swap",
+      "symbol": "COTI/USDT:USDT"
+    },
+    {
+      "event_id": 1293,
+      "first_seen_at": "2026-07-29T10:34:18.610000+00:00",
+      "identity_conflict": false,
+      "market_id": "UAI_USDT",
+      "market_type": "swap",
+      "symbol": "UAI/USDT:USDT"
+    },
+    {
+      "event_id": 1335,
+      "first_seen_at": "2026-07-29T15:09:39.999000+00:00",
+      "identity_conflict": false,
+      "market_id": "BOB_USDT",
+      "market_type": "swap",
+      "symbol": "BOB/USDT:USDT"
+    },
+    {
+      "event_id": 1253,
+      "first_seen_at": "2026-07-29T16:33:24.597000+00:00",
+      "identity_conflict": false,
+      "market_id": "BEAT_USDT",
+      "market_type": "swap",
+      "symbol": "BEAT/USDT:USDT"
+    },
+    {
+      "event_id": 1348,
+      "first_seen_at": "2026-07-29T19:51:50.920000+00:00",
+      "identity_conflict": false,
+      "market_id": "AEON_USDT",
+      "market_type": "swap",
+      "symbol": "AEON/USDT:USDT"
+    },
+    {
+      "event_id": 1352,
+      "first_seen_at": "2026-07-29T20:11:03.629000+00:00",
+      "identity_conflict": false,
+      "market_id": "SOXS_USDT",
+      "market_type": "swap",
+      "symbol": "SOXS/USDT:USDT"
+    },
+    {
+      "event_id": 1353,
+      "first_seen_at": "2026-07-29T20:27:24.133000+00:00",
+      "identity_conflict": false,
+      "market_id": "SOXS_USDT",
+      "market_type": "swap",
+      "symbol": "SOXS/USDT:USDT"
+    },
+    {
+      "event_id": 1356,
+      "first_seen_at": "2026-07-29T20:49:10.992000+00:00",
+      "identity_conflict": false,
+      "market_id": "SOXS_USDT",
+      "market_type": "swap",
+      "symbol": "SOXS/USDT:USDT"
+    },
+    {
+      "event_id": 1357,
+      "first_seen_at": "2026-07-29T20:55:56.839000+00:00",
+      "identity_conflict": false,
+      "market_id": "SOXS_USDT",
+      "market_type": "swap",
+      "symbol": "SOXS/USDT:USDT"
+    },
+    {
+      "event_id": 1386,
+      "first_seen_at": "2026-07-30T00:38:55.349000+00:00",
+      "identity_conflict": false,
+      "market_id": "POLYMARKET_USDT",
+      "market_type": "swap",
+      "symbol": "POLYMARKET/USDT:USDT"
+    },
+    {
+      "event_id": 1396,
+      "first_seen_at": "2026-07-30T01:55:58.610000+00:00",
+      "identity_conflict": false,
+      "market_id": "POLYMARKET_USDT",
+      "market_type": "swap",
+      "symbol": "POLYMARKET/USDT:USDT"
+    },
+    {
+      "event_id": 1401,
+      "first_seen_at": "2026-07-30T02:13:37.246000+00:00",
+      "identity_conflict": false,
+      "market_id": "POLYMARKET_USDT",
+      "market_type": "swap",
+      "symbol": "POLYMARKET/USDT:USDT"
+    },
+    {
+      "event_id": 1402,
+      "first_seen_at": "2026-07-30T02:21:49.409000+00:00",
+      "identity_conflict": false,
+      "market_id": "BGSC_USDT",
+      "market_type": "swap",
+      "symbol": "BGSC/USDT:USDT"
+    },
+    {
+      "event_id": 1404,
+      "first_seen_at": "2026-07-30T02:32:42.468000+00:00",
+      "identity_conflict": false,
+      "market_id": "POLYMARKET_USDT",
+      "market_type": "swap",
+      "symbol": "POLYMARKET/USDT:USDT"
+    },
+    {
+      "event_id": 1409,
+      "first_seen_at": "2026-07-30T03:12:15.588000+00:00",
+      "identity_conflict": false,
+      "market_id": "POLYMARKET_USDT",
+      "market_type": "swap",
+      "symbol": "POLYMARKET/USDT:USDT"
+    },
+    {
+      "event_id": 1420,
+      "first_seen_at": "2026-07-30T04:20:16.315000+00:00",
+      "identity_conflict": false,
+      "market_id": "POLYMARKET_USDT",
+      "market_type": "swap",
+      "symbol": "POLYMARKET/USDT:USDT"
+    },
+    {
+      "event_id": 1422,
+      "first_seen_at": "2026-07-30T04:29:48.418000+00:00",
+      "identity_conflict": false,
+      "market_id": "POLYMARKET_USDT",
+      "market_type": "swap",
+      "symbol": "POLYMARKET/USDT:USDT"
+    },
+    {
+      "event_id": 1421,
+      "first_seen_at": "2026-07-30T04:31:10.356000+00:00",
+      "identity_conflict": false,
+      "market_id": "KOMA_USDT",
+      "market_type": "swap",
+      "symbol": "KOMA/USDT:USDT"
+    },
+    {
+      "event_id": 1423,
+      "first_seen_at": "2026-07-30T04:36:37.793000+00:00",
+      "identity_conflict": false,
+      "market_id": "ANDURIL_USDT",
+      "market_type": "swap",
+      "symbol": "ANDURIL/USDT:USDT"
+    },
+    {
+      "event_id": 1430,
+      "first_seen_at": "2026-07-30T06:50:01.688000+00:00",
+      "identity_conflict": false,
+      "market_id": "EPIC_USDT",
+      "market_type": "swap",
+      "symbol": "EPIC/USDT:USDT"
+    },
+    {
+      "event_id": 1437,
+      "first_seen_at": "2026-07-30T07:18:39.955000+00:00",
+      "identity_conflict": false,
+      "market_id": "ESP_USDT",
+      "market_type": "swap",
+      "symbol": "ESP/USDT:USDT"
+    },
+    {
+      "event_id": 1453,
+      "first_seen_at": "2026-07-30T09:21:16.542000+00:00",
+      "identity_conflict": false,
+      "market_id": "ESP_USDT",
+      "market_type": "swap",
+      "symbol": "ESP/USDT:USDT"
+    },
+    {
+      "event_id": 1486,
+      "first_seen_at": "2026-07-30T12:43:34.858000+00:00",
+      "identity_conflict": false,
+      "market_id": "AKE_USDT",
+      "market_type": "swap",
+      "symbol": "AKE/USDT:USDT"
+    },
+    {
+      "event_id": 1488,
+      "first_seen_at": "2026-07-30T12:49:06.160000+00:00",
+      "identity_conflict": false,
+      "market_id": "AKE_USDT",
+      "market_type": "swap",
+      "symbol": "AKE/USDT:USDT"
+    },
+    {
+      "event_id": 1483,
+      "first_seen_at": "2026-07-30T12:56:00.684000+00:00",
+      "identity_conflict": false,
+      "market_id": "CAP_USDT",
+      "market_type": "swap",
+      "symbol": "CAP/USDT:USDT"
+    },
+    {
+      "event_id": 1489,
+      "first_seen_at": "2026-07-30T13:00:10.451000+00:00",
+      "identity_conflict": false,
+      "market_id": "AKE_USDT",
+      "market_type": "swap",
+      "symbol": "AKE/USDT:USDT"
+    },
+    {
+      "event_id": 1492,
+      "first_seen_at": "2026-07-30T13:26:16.221000+00:00",
+      "identity_conflict": false,
+      "market_id": "SNXX_USDT",
+      "market_type": "swap",
+      "symbol": "SNXX/USDT:USDT"
+    },
+    {
+      "event_id": 1494,
+      "first_seen_at": "2026-07-30T13:29:01.099000+00:00",
+      "identity_conflict": false,
+      "market_id": "ARM_USDT",
+      "market_type": "swap",
+      "symbol": "ARM/USDT:USDT"
+    },
+    {
+      "event_id": 1501,
+      "first_seen_at": "2026-07-30T13:41:25.340000+00:00",
+      "identity_conflict": false,
+      "market_id": "MUU_USDT",
+      "market_type": "swap",
+      "symbol": "MUU/USDT:USDT"
+    },
+    {
+      "event_id": 1500,
+      "first_seen_at": "2026-07-30T13:42:48.637000+00:00",
+      "identity_conflict": false,
+      "market_id": "BE_USDT",
+      "market_type": "swap",
+      "symbol": "BE/USDT:USDT"
+    },
+    {
+      "event_id": 1502,
+      "first_seen_at": "2026-07-30T13:42:48.637000+00:00",
+      "identity_conflict": false,
+      "market_id": "NBIS_USDT",
+      "market_type": "swap",
+      "symbol": "NBIS/USDT:USDT"
+    },
+    {
+      "event_id": 1504,
+      "first_seen_at": "2026-07-30T13:45:48.906000+00:00",
+      "identity_conflict": false,
+      "market_id": "INTW_USDT",
+      "market_type": "swap",
+      "symbol": "INTW/USDT:USDT"
+    },
+    {
+      "event_id": 1505,
+      "first_seen_at": "2026-07-30T13:47:19.487000+00:00",
+      "identity_conflict": false,
+      "market_id": "IREN_USDT",
+      "market_type": "swap",
+      "symbol": "IREN/USDT:USDT"
+    },
+    {
+      "event_id": 1506,
+      "first_seen_at": "2026-07-30T13:48:50.553000+00:00",
+      "identity_conflict": false,
+      "market_id": "SHAZ_USDT",
+      "market_type": "swap",
+      "symbol": "SHAZ/USDT:USDT"
+    },
+    {
+      "event_id": 1507,
+      "first_seen_at": "2026-07-30T13:48:50.553000+00:00",
+      "identity_conflict": false,
+      "market_id": "MVLL_USDT",
+      "market_type": "swap",
+      "symbol": "MVLL/USDT:USDT"
+    },
+    {
+      "event_id": 1508,
+      "first_seen_at": "2026-07-30T13:50:19.002000+00:00",
+      "identity_conflict": false,
+      "market_id": "SOXL_USDT",
+      "market_type": "swap",
+      "symbol": "SOXL/USDT:USDT"
+    },
+    {
+      "event_id": 1511,
+      "first_seen_at": "2026-07-30T13:51:47.106000+00:00",
+      "identity_conflict": false,
+      "market_id": "SNDK_USDT",
+      "market_type": "swap",
+      "symbol": "SNDK/USDT:USDT"
+    },
+    {
+      "event_id": 1513,
+      "first_seen_at": "2026-07-30T14:13:40.076000+00:00",
+      "identity_conflict": false,
+      "market_id": "SKUU_USDT",
+      "market_type": "swap",
+      "symbol": "SKUU/USDT:USDT"
+    },
+    {
+      "event_id": 1514,
+      "first_seen_at": "2026-07-30T14:13:40.076000+00:00",
+      "identity_conflict": false,
+      "market_id": "KORU_USDT",
+      "market_type": "swap",
+      "symbol": "KORU/USDT:USDT"
+    },
+    {
+      "event_id": 1524,
+      "first_seen_at": "2026-07-30T14:28:23.733000+00:00",
+      "identity_conflict": false,
+      "market_id": "CRWV_USDT",
+      "market_type": "swap",
+      "symbol": "CRWV/USDT:USDT"
+    },
+    {
+      "event_id": 1527,
+      "first_seen_at": "2026-07-30T14:34:17.861000+00:00",
+      "identity_conflict": false,
+      "market_id": "BGSC_USDT",
+      "market_type": "swap",
+      "symbol": "BGSC/USDT:USDT"
+    },
+    {
+      "event_id": 1530,
+      "first_seen_at": "2026-07-30T14:56:25.963000+00:00",
+      "identity_conflict": false,
+      "market_id": "GIGGLE_USDT",
+      "market_type": "swap",
+      "symbol": "GIGGLE/USDT:USDT"
+    },
+    {
+      "event_id": 1533,
+      "first_seen_at": "2026-07-30T15:06:44.778000+00:00",
+      "identity_conflict": false,
+      "market_id": "EPIC_USDT",
+      "market_type": "swap",
+      "symbol": "EPIC/USDT:USDT"
+    },
+    {
+      "event_id": 1534,
+      "first_seen_at": "2026-07-30T15:06:44.778000+00:00",
+      "identity_conflict": false,
+      "market_id": "AXTI_USDT",
+      "market_type": "swap",
+      "symbol": "AXTI/USDT:USDT"
+    },
+    {
+      "event_id": 1539,
+      "first_seen_at": "2026-07-30T15:21:30.177000+00:00",
+      "identity_conflict": false,
+      "market_id": "CRWV_USDT",
+      "market_type": "swap",
+      "symbol": "CRWV/USDT:USDT"
+    },
+    {
+      "event_id": 1550,
+      "first_seen_at": "2026-07-30T16:15:18.144000+00:00",
+      "identity_conflict": false,
+      "market_id": "AXTI_USDT",
+      "market_type": "swap",
+      "symbol": "AXTI/USDT:USDT"
+    },
+    {
+      "event_id": 1551,
+      "first_seen_at": "2026-07-30T16:22:38.677000+00:00",
+      "identity_conflict": false,
+      "market_id": "BGSC_USDT",
+      "market_type": "swap",
+      "symbol": "BGSC/USDT:USDT"
+    },
+    {
+      "event_id": 1552,
+      "first_seen_at": "2026-07-30T16:31:10.463000+00:00",
+      "identity_conflict": false,
+      "market_id": "EPIC_USDT",
+      "market_type": "swap",
+      "symbol": "EPIC/USDT:USDT"
+    },
+    {
+      "event_id": 1478,
+      "first_seen_at": "2026-07-30T16:52:42.424000+00:00",
+      "identity_conflict": false,
+      "market_id": "MMT_USDT",
+      "market_type": "swap",
+      "symbol": "MMT/USDT:USDT"
+    },
+    {
+      "event_id": 1556,
+      "first_seen_at": "2026-07-30T17:01:33.746000+00:00",
+      "identity_conflict": false,
+      "market_id": "AXTI_USDT",
+      "market_type": "swap",
+      "symbol": "AXTI/USDT:USDT"
+    },
+    {
+      "event_id": 1557,
+      "first_seen_at": "2026-07-30T17:08:45.682000+00:00",
+      "identity_conflict": false,
+      "market_id": "AXTI_USDT",
+      "market_type": "swap",
+      "symbol": "AXTI/USDT:USDT"
+    },
+    {
+      "event_id": 1565,
+      "first_seen_at": "2026-07-30T18:20:24.557000+00:00",
+      "identity_conflict": false,
+      "market_id": "EVAA_USDT",
+      "market_type": "swap",
+      "symbol": "EVAA/USDT:USDT"
+    },
+    {
+      "event_id": 1566,
+      "first_seen_at": "2026-07-30T18:33:08.870000+00:00",
+      "identity_conflict": false,
+      "market_id": "POLYMARKET_USDT",
+      "market_type": "swap",
+      "symbol": "POLYMARKET/USDT:USDT"
+    },
+    {
+      "event_id": 1570,
+      "first_seen_at": "2026-07-30T19:01:59.266000+00:00",
+      "identity_conflict": false,
+      "market_id": "EVAA_USDT",
+      "market_type": "swap",
+      "symbol": "EVAA/USDT:USDT"
+    },
+    {
+      "event_id": 1572,
+      "first_seen_at": "2026-07-30T19:04:47.043000+00:00",
+      "identity_conflict": false,
+      "market_id": "ROBO_USDT",
+      "market_type": "swap",
+      "symbol": "ROBO/USDT:USDT"
+    },
+    {
+      "event_id": 1574,
+      "first_seen_at": "2026-07-30T19:07:38.426000+00:00",
+      "identity_conflict": false,
+      "market_id": "CRWV_USDT",
+      "market_type": "swap",
+      "symbol": "CRWV/USDT:USDT"
+    },
+    {
+      "event_id": 1579,
+      "first_seen_at": "2026-07-30T19:22:10.871000+00:00",
+      "identity_conflict": false,
+      "market_id": "EVAA_USDT",
+      "market_type": "swap",
+      "symbol": "EVAA/USDT:USDT"
+    },
+    {
+      "event_id": 1581,
+      "first_seen_at": "2026-07-30T19:27:59.957000+00:00",
+      "identity_conflict": false,
+      "market_id": "ROBO_USDT",
+      "market_type": "swap",
+      "symbol": "ROBO/USDT:USDT"
+    },
+    {
+      "event_id": 1582,
+      "first_seen_at": "2026-07-30T20:04:22.284000+00:00",
+      "identity_conflict": false,
+      "market_id": "CRWV_USDT",
+      "market_type": "swap",
+      "symbol": "CRWV/USDT:USDT"
+    },
+    {
+      "event_id": 1589,
+      "first_seen_at": "2026-07-30T20:08:39.583000+00:00",
+      "identity_conflict": false,
+      "market_id": "ALAB_USDT",
+      "market_type": "swap",
+      "symbol": "ALAB/USDT:USDT"
+    },
+    {
+      "event_id": 1596,
+      "first_seen_at": "2026-07-30T20:08:39.583000+00:00",
+      "identity_conflict": false,
+      "market_id": "SKHY_USDT",
+      "market_type": "swap",
+      "symbol": "SKHY/USDT:USDT"
+    },
+    {
+      "event_id": 1597,
+      "first_seen_at": "2026-07-30T20:08:39.583000+00:00",
+      "identity_conflict": false,
+      "market_id": "MU_USDT",
+      "market_type": "swap",
+      "symbol": "MU/USDT:USDT"
+    },
+    {
+      "event_id": 1593,
+      "first_seen_at": "2026-07-30T20:19:05.695000+00:00",
+      "identity_conflict": false,
+      "market_id": "AMZU_USDT",
+      "market_type": "swap",
+      "symbol": "AMZU/USDT:USDT"
+    },
+    {
+      "event_id": 1595,
+      "first_seen_at": "2026-07-30T20:30:59.572000+00:00",
+      "identity_conflict": false,
+      "market_id": "PENG_USDT",
+      "market_type": "swap",
+      "symbol": "PENG/USDT:USDT"
+    },
+    {
+      "event_id": 1600,
+      "first_seen_at": "2026-07-30T20:38:25.895000+00:00",
+      "identity_conflict": false,
+      "market_id": "AAOI_USDT",
+      "market_type": "swap",
+      "symbol": "AAOI/USDT:USDT"
+    },
+    {
+      "event_id": 1614,
+      "first_seen_at": "2026-07-30T21:35:10.376000+00:00",
+      "identity_conflict": false,
+      "market_id": "WDC_USDT",
+      "market_type": "swap",
+      "symbol": "WDC/USDT:USDT"
+    },
+    {
+      "event_id": 1590,
+      "first_seen_at": "2026-07-30T22:09:22.479000+00:00",
+      "identity_conflict": false,
+      "market_id": "CBRS_USDT",
+      "market_type": "swap",
+      "symbol": "CBRS/USDT:USDT"
+    },
+    {
+      "event_id": 1636,
+      "first_seen_at": "2026-07-30T22:22:41.280000+00:00",
+      "identity_conflict": false,
+      "market_id": "EVAA_USDT",
+      "market_type": "swap",
+      "symbol": "EVAA/USDT:USDT"
+    },
+    {
+      "event_id": 1619,
+      "first_seen_at": "2026-07-30T22:38:52.024000+00:00",
+      "identity_conflict": false,
+      "market_id": "DRAM_USDT",
+      "market_type": "swap",
+      "symbol": "DRAM/USDT:USDT"
+    },
+    {
+      "event_id": 1641,
+      "first_seen_at": "2026-07-30T23:03:54.966000+00:00",
+      "identity_conflict": false,
+      "market_id": "PENG_USDT",
+      "market_type": "swap",
+      "symbol": "PENG/USDT:USDT"
+    },
+    {
+      "event_id": 1646,
+      "first_seen_at": "2026-07-30T23:23:14.806000+00:00",
+      "identity_conflict": false,
+      "market_id": "SKHY_USDT",
+      "market_type": "swap",
+      "symbol": "SKHY/USDT:USDT"
+    },
+    {
+      "event_id": 1650,
+      "first_seen_at": "2026-07-30T23:52:38.084000+00:00",
+      "identity_conflict": false,
+      "market_id": "CRDO_USDT",
+      "market_type": "swap",
+      "symbol": "CRDO/USDT:USDT"
+    },
+    {
+      "event_id": 1653,
+      "first_seen_at": "2026-07-30T23:52:38.084000+00:00",
+      "identity_conflict": false,
+      "market_id": "SKSQUARE_USDT",
+      "market_type": "swap",
+      "symbol": "SKSQUARE/USDT:USDT"
+    },
+    {
+      "event_id": 1676,
+      "first_seen_at": "2026-07-31T00:37:26.093000+00:00",
+      "identity_conflict": false,
+      "market_id": "POLYMARKET_USDT",
+      "market_type": "swap",
+      "symbol": "POLYMARKET/USDT:USDT"
+    },
+    {
+      "event_id": 1681,
+      "first_seen_at": "2026-07-31T00:45:42.084000+00:00",
+      "identity_conflict": false,
+      "market_id": "BANK_USDT",
+      "market_type": "swap",
+      "symbol": "BANK/USDT:USDT"
+    },
+    {
+      "event_id": 1688,
+      "first_seen_at": "2026-07-31T01:01:24.586000+00:00",
+      "identity_conflict": false,
+      "market_id": "BANK_USDT",
+      "market_type": "swap",
+      "symbol": "BANK/USDT:USDT"
+    },
+    {
+      "event_id": 1708,
+      "first_seen_at": "2026-07-31T01:57:52.987000+00:00",
+      "identity_conflict": false,
+      "market_id": "ZHIPU_USDT",
+      "market_type": "swap",
+      "symbol": "ZHIPU/USDT:USDT"
+    },
+    {
+      "event_id": 1719,
+      "first_seen_at": "2026-07-31T02:18:24.479000+00:00",
+      "identity_conflict": false,
+      "market_id": "BULLA_USDT",
+      "market_type": "swap",
+      "symbol": "BULLA/USDT:USDT"
+    },
+    {
+      "event_id": 1725,
+      "first_seen_at": "2026-07-31T02:30:41.490000+00:00",
+      "identity_conflict": false,
+      "market_id": "BANK_USDT",
+      "market_type": "swap",
+      "symbol": "BANK/USDT:USDT"
+    },
+    {
+      "event_id": 1727,
+      "first_seen_at": "2026-07-31T02:37:28.045000+00:00",
+      "identity_conflict": false,
+      "market_id": "BANK_USDT",
+      "market_type": "swap",
+      "symbol": "BANK/USDT:USDT"
+    },
+    {
+      "event_id": 1728,
+      "first_seen_at": "2026-07-31T02:40:11.861000+00:00",
+      "identity_conflict": false,
+      "market_id": "BULLA_USDT",
+      "market_type": "swap",
+      "symbol": "BULLA/USDT:USDT"
+    },
+    {
+      "event_id": 1731,
+      "first_seen_at": "2026-07-31T02:55:13.408000+00:00",
+      "identity_conflict": false,
+      "market_id": "BULLA_USDT",
+      "market_type": "swap",
+      "symbol": "BULLA/USDT:USDT"
+    },
+    {
+      "event_id": 1747,
+      "first_seen_at": "2026-07-31T03:43:10.857000+00:00",
+      "identity_conflict": false,
+      "market_id": "BULLA_USDT",
+      "market_type": "swap",
+      "symbol": "BULLA/USDT:USDT"
+    },
+    {
+      "event_id": 1704,
+      "first_seen_at": "2026-07-31T03:56:52.267000+00:00",
+      "identity_conflict": false,
+      "market_id": "RLC_USDT",
+      "market_type": "swap",
+      "symbol": "RLC/USDT:USDT"
+    },
+    {
+      "event_id": 1771,
+      "first_seen_at": "2026-07-31T04:43:28.853000+00:00",
+      "identity_conflict": false,
+      "market_id": "BULLA_USDT",
+      "market_type": "swap",
+      "symbol": "BULLA/USDT:USDT"
+    },
+    {
+      "event_id": 1781,
+      "first_seen_at": "2026-07-31T05:03:02.642000+00:00",
+      "identity_conflict": false,
+      "market_id": "BULLA_USDT",
+      "market_type": "swap",
+      "symbol": "BULLA/USDT:USDT"
+    },
+    {
+      "event_id": 1785,
+      "first_seen_at": "2026-07-31T05:30:17.134000+00:00",
+      "identity_conflict": false,
+      "market_id": "JUSUNG_USDT",
+      "market_type": "swap",
+      "symbol": "JUSUNG/USDT:USDT"
+    },
+    {
+      "event_id": 1787,
+      "first_seen_at": "2026-07-31T05:38:40.306000+00:00",
+      "identity_conflict": false,
+      "market_id": "JUSUNG_USDT",
+      "market_type": "swap",
+      "symbol": "JUSUNG/USDT:USDT"
+    },
+    {
+      "event_id": 1791,
+      "first_seen_at": "2026-07-31T05:49:57.546000+00:00",
+      "identity_conflict": false,
+      "market_id": "JUSUNG_USDT",
+      "market_type": "swap",
+      "symbol": "JUSUNG/USDT:USDT"
+    },
+    {
+      "event_id": 1795,
+      "first_seen_at": "2026-07-31T06:08:00.703000+00:00",
+      "identity_conflict": false,
+      "market_id": "BULLA_USDT",
+      "market_type": "swap",
+      "symbol": "BULLA/USDT:USDT"
+    },
+    {
+      "event_id": 1799,
+      "first_seen_at": "2026-07-31T06:26:11.142000+00:00",
+      "identity_conflict": false,
+      "market_id": "BANK_USDT",
+      "market_type": "swap",
+      "symbol": "BANK/USDT:USDT"
+    },
+    {
+      "event_id": 1746,
+      "first_seen_at": "2026-07-31T07:12:13.322000+00:00",
+      "identity_conflict": false,
+      "market_id": "GIGGLE_USDT",
+      "market_type": "swap",
+      "symbol": "GIGGLE/USDT:USDT"
+    },
+    {
+      "event_id": 1817,
+      "first_seen_at": "2026-07-31T08:17:36.848000+00:00",
+      "identity_conflict": false,
+      "market_id": "JUSUNG_USDT",
+      "market_type": "swap",
+      "symbol": "JUSUNG/USDT:USDT"
+    },
+    {
+      "event_id": 1820,
+      "first_seen_at": "2026-07-31T08:29:00.384000+00:00",
+      "identity_conflict": false,
+      "market_id": "JUSUNG_USDT",
+      "market_type": "swap",
+      "symbol": "JUSUNG/USDT:USDT"
+    },
+    {
+      "event_id": 1823,
+      "first_seen_at": "2026-07-31T08:34:37.969000+00:00",
+      "identity_conflict": false,
+      "market_id": "JUSUNG_USDT",
+      "market_type": "swap",
+      "symbol": "JUSUNG/USDT:USDT"
+    },
+    {
+      "event_id": 1826,
+      "first_seen_at": "2026-07-31T08:44:34.726000+00:00",
+      "identity_conflict": false,
+      "market_id": "BROCCOLI_USDT",
+      "market_type": "swap",
+      "symbol": "BROCCOLI/USDT:USDT"
+    },
+    {
+      "event_id": 1833,
+      "first_seen_at": "2026-07-31T09:04:15.645000+00:00",
+      "identity_conflict": false,
+      "market_id": "JUSUNG_USDT",
+      "market_type": "swap",
+      "symbol": "JUSUNG/USDT:USDT"
+    },
+    {
+      "event_id": 1839,
+      "first_seen_at": "2026-07-31T09:12:50.994000+00:00",
+      "identity_conflict": false,
+      "market_id": "JUSUNG_USDT",
+      "market_type": "swap",
+      "symbol": "JUSUNG/USDT:USDT"
+    },
+    {
+      "event_id": 1842,
+      "first_seen_at": "2026-07-31T09:19:58.643000+00:00",
+      "identity_conflict": false,
+      "market_id": "JUSUNG_USDT",
+      "market_type": "swap",
+      "symbol": "JUSUNG/USDT:USDT"
+    },
+    {
+      "event_id": 1845,
+      "first_seen_at": "2026-07-31T09:28:36.125000+00:00",
+      "identity_conflict": false,
+      "market_id": "JUSUNG_USDT",
+      "market_type": "swap",
+      "symbol": "JUSUNG/USDT:USDT"
+    },
+    {
+      "event_id": 1847,
+      "first_seen_at": "2026-07-31T09:35:47.532000+00:00",
+      "identity_conflict": false,
+      "market_id": "JUSUNG_USDT",
+      "market_type": "swap",
+      "symbol": "JUSUNG/USDT:USDT"
+    },
+    {
+      "event_id": 1857,
+      "first_seen_at": "2026-07-31T10:12:28.693000+00:00",
+      "identity_conflict": false,
+      "market_id": "BROCCOLI_USDT",
+      "market_type": "swap",
+      "symbol": "BROCCOLI/USDT:USDT"
+    },
+    {
+      "event_id": 1866,
+      "first_seen_at": "2026-07-31T10:49:38.605000+00:00",
+      "identity_conflict": false,
+      "market_id": "BIRB_USDT",
+      "market_type": "swap",
+      "symbol": "BIRB/USDT:USDT"
+    },
+    {
+      "event_id": 1876,
+      "first_seen_at": "2026-07-31T11:30:41.715000+00:00",
+      "identity_conflict": false,
+      "market_id": "COTI_USDT",
+      "market_type": "swap",
+      "symbol": "COTI/USDT:USDT"
+    },
+    {
+      "event_id": 1877,
+      "first_seen_at": "2026-07-31T11:39:13.378000+00:00",
+      "identity_conflict": false,
+      "market_id": "COTI_USDT",
+      "market_type": "swap",
+      "symbol": "COTI/USDT:USDT"
+    },
+    {
+      "event_id": 1883,
+      "first_seen_at": "2026-07-31T11:54:25.574000+00:00",
+      "identity_conflict": false,
+      "market_id": "M_USDT",
+      "market_type": "swap",
+      "symbol": "M/USDT:USDT"
+    },
+    {
+      "event_id": 1900,
+      "first_seen_at": "2026-07-31T12:36:37.868000+00:00",
+      "identity_conflict": false,
+      "market_id": "COTI_USDT",
+      "market_type": "swap",
+      "symbol": "COTI/USDT:USDT"
+    },
+    {
+      "event_id": 1906,
+      "first_seen_at": "2026-07-31T12:54:54.175000+00:00",
+      "identity_conflict": false,
+      "market_id": "BROCCOLI_USDT",
+      "market_type": "swap",
+      "symbol": "BROCCOLI/USDT:USDT"
+    },
+    {
+      "event_id": 1907,
+      "first_seen_at": "2026-07-31T12:56:16.640000+00:00",
+      "identity_conflict": false,
+      "market_id": "COTI_USDT",
+      "market_type": "swap",
+      "symbol": "COTI/USDT:USDT"
+    },
+    {
+      "event_id": 1909,
+      "first_seen_at": "2026-07-31T13:01:51.845000+00:00",
+      "identity_conflict": false,
+      "market_id": "COTI_USDT",
+      "market_type": "swap",
+      "symbol": "COTI/USDT:USDT"
+    },
+    {
+      "event_id": 1878,
+      "first_seen_at": "2026-07-31T13:24:20.917000+00:00",
+      "identity_conflict": false,
+      "market_id": "TAG_USDT",
+      "market_type": "swap",
+      "symbol": "TAG/USDT:USDT"
+    },
+    {
+      "event_id": 1926,
+      "first_seen_at": "2026-07-31T13:57:43.016000+00:00",
+      "identity_conflict": false,
+      "market_id": "RATS_USDT",
+      "market_type": "swap",
+      "symbol": "RATS/USDT:USDT"
+    },
+    {
+      "event_id": 1932,
+      "first_seen_at": "2026-07-31T14:36:47.512000+00:00",
+      "identity_conflict": false,
+      "market_id": "XNY_USDT",
+      "market_type": "swap",
+      "symbol": "XNY/USDT:USDT"
+    },
+    {
+      "event_id": 1934,
+      "first_seen_at": "2026-07-31T14:48:00.479000+00:00",
+      "identity_conflict": false,
+      "market_id": "BROCCOLI_USDT",
+      "market_type": "swap",
+      "symbol": "BROCCOLI/USDT:USDT"
+    },
+    {
+      "event_id": 1935,
+      "first_seen_at": "2026-07-31T14:49:28.682000+00:00",
+      "identity_conflict": false,
+      "market_id": "ASTEROID_USDT",
+      "market_type": "swap",
+      "symbol": "ASTEROID/USDT:USDT"
+    },
+    {
+      "event_id": 1940,
+      "first_seen_at": "2026-07-31T15:35:55.572000+00:00",
+      "identity_conflict": false,
+      "market_id": "BROCCOLI_USDT",
+      "market_type": "swap",
+      "symbol": "BROCCOLI/USDT:USDT"
+    },
+    {
+      "event_id": 1945,
+      "first_seen_at": "2026-07-31T15:55:01.077000+00:00",
+      "identity_conflict": false,
+      "market_id": "BROCCOLI_USDT",
+      "market_type": "swap",
+      "symbol": "BROCCOLI/USDT:USDT"
+    },
+    {
+      "event_id": 1947,
+      "first_seen_at": "2026-07-31T16:02:15.335000+00:00",
+      "identity_conflict": false,
+      "market_id": "ASTEROID_USDT",
+      "market_type": "swap",
+      "symbol": "ASTEROID/USDT:USDT"
+    },
+    {
+      "event_id": 1949,
+      "first_seen_at": "2026-07-31T16:11:02.797000+00:00",
+      "identity_conflict": false,
+      "market_id": "BROCCOLI_USDT",
+      "market_type": "swap",
+      "symbol": "BROCCOLI/USDT:USDT"
+    },
+    {
+      "event_id": 1950,
+      "first_seen_at": "2026-07-31T16:23:06.824000+00:00",
+      "identity_conflict": false,
+      "market_id": "STAR_USDT",
+      "market_type": "swap",
+      "symbol": "STAR/USDT:USDT"
+    },
+    {
+      "event_id": 1952,
+      "first_seen_at": "2026-07-31T16:27:26.528000+00:00",
+      "identity_conflict": false,
+      "market_id": "BROCCOLI_USDT",
+      "market_type": "swap",
+      "symbol": "BROCCOLI/USDT:USDT"
+    },
+    {
+      "event_id": 1953,
+      "first_seen_at": "2026-07-31T16:36:08.054000+00:00",
+      "identity_conflict": false,
+      "market_id": "M_USDT",
+      "market_type": "swap",
+      "symbol": "M/USDT:USDT"
+    },
+    {
+      "event_id": 1957,
+      "first_seen_at": "2026-07-31T16:52:50.566000+00:00",
+      "identity_conflict": false,
+      "market_id": "M_USDT",
+      "market_type": "swap",
+      "symbol": "M/USDT:USDT"
+    },
+    {
+      "event_id": 1958,
+      "first_seen_at": "2026-07-31T17:02:30.606000+00:00",
+      "identity_conflict": false,
+      "market_id": "BROCCOLI_USDT",
+      "market_type": "swap",
+      "symbol": "BROCCOLI/USDT:USDT"
+    },
+    {
+      "event_id": 1959,
+      "first_seen_at": "2026-07-31T17:08:16.909000+00:00",
+      "identity_conflict": false,
+      "market_id": "BROCCOLI_USDT",
+      "market_type": "swap",
+      "symbol": "BROCCOLI/USDT:USDT"
+    },
+    {
+      "event_id": 1961,
+      "first_seen_at": "2026-07-31T17:21:06.009000+00:00",
+      "identity_conflict": false,
+      "market_id": "BROCCOLI_USDT",
+      "market_type": "swap",
+      "symbol": "BROCCOLI/USDT:USDT"
+    },
+    {
+      "event_id": 1968,
+      "first_seen_at": "2026-07-31T17:39:43.929000+00:00",
+      "identity_conflict": false,
+      "market_id": "ASTEROID_USDT",
+      "market_type": "swap",
+      "symbol": "ASTEROID/USDT:USDT"
+    },
+    {
+      "event_id": 1970,
+      "first_seen_at": "2026-07-31T17:44:02.835000+00:00",
+      "identity_conflict": false,
+      "market_id": "XNY_USDT",
+      "market_type": "swap",
+      "symbol": "XNY/USDT:USDT"
+    },
+    {
+      "event_id": 1974,
+      "first_seen_at": "2026-07-31T18:09:56.822000+00:00",
+      "identity_conflict": false,
+      "market_id": "ASTEROID_USDT",
+      "market_type": "swap",
+      "symbol": "ASTEROID/USDT:USDT"
+    },
+    {
+      "event_id": 1977,
+      "first_seen_at": "2026-07-31T18:28:31.584000+00:00",
+      "identity_conflict": false,
+      "market_id": "DIA_USDT",
+      "market_type": "swap",
+      "symbol": "DIA/USDT:USDT"
+    },
+    {
+      "event_id": 1979,
+      "first_seen_at": "2026-07-31T18:43:08.864000+00:00",
+      "identity_conflict": false,
+      "market_id": "ON_USDT",
+      "market_type": "swap",
+      "symbol": "ON/USDT:USDT"
+    },
+    {
+      "event_id": 1975,
+      "first_seen_at": "2026-07-31T18:51:55.241000+00:00",
+      "identity_conflict": false,
+      "market_id": "US_USDT",
+      "market_type": "swap",
+      "symbol": "US/USDT:USDT"
+    },
+    {
+      "event_id": 1981,
+      "first_seen_at": "2026-07-31T18:53:17.998000+00:00",
+      "identity_conflict": false,
+      "market_id": "ON_USDT",
+      "market_type": "swap",
+      "symbol": "ON/USDT:USDT"
+    },
+    {
+      "event_id": 1982,
+      "first_seen_at": "2026-07-31T19:07:40.387000+00:00",
+      "identity_conflict": false,
+      "market_id": "ASTEROID_USDT",
+      "market_type": "swap",
+      "symbol": "ASTEROID/USDT:USDT"
+    },
+    {
+      "event_id": 1985,
+      "first_seen_at": "2026-07-31T19:33:45.229000+00:00",
+      "identity_conflict": false,
+      "market_id": "COTI_USDT",
+      "market_type": "swap",
+      "symbol": "COTI/USDT:USDT"
+    },
+    {
+      "event_id": 1987,
+      "first_seen_at": "2026-07-31T19:48:15.962000+00:00",
+      "identity_conflict": false,
+      "market_id": "COTI_USDT",
+      "market_type": "swap",
+      "symbol": "COTI/USDT:USDT"
+    },
+    {
+      "event_id": 1988,
+      "first_seen_at": "2026-07-31T19:54:07.861000+00:00",
+      "identity_conflict": false,
+      "market_id": "DIA_USDT",
+      "market_type": "swap",
+      "symbol": "DIA/USDT:USDT"
+    },
+    {
+      "event_id": 1989,
+      "first_seen_at": "2026-07-31T19:55:35.538000+00:00",
+      "identity_conflict": false,
+      "market_id": "COTI_USDT",
+      "market_type": "swap",
+      "symbol": "COTI/USDT:USDT"
+    },
+    {
+      "event_id": 1990,
+      "first_seen_at": "2026-07-31T19:57:03.469000+00:00",
+      "identity_conflict": false,
+      "market_id": "ON_USDT",
+      "market_type": "swap",
+      "symbol": "ON/USDT:USDT"
+    },
+    {
+      "event_id": 1991,
+      "first_seen_at": "2026-07-31T20:04:25.902000+00:00",
+      "identity_conflict": false,
+      "market_id": "COTI_USDT",
+      "market_type": "swap",
+      "symbol": "COTI/USDT:USDT"
+    },
+    {
+      "event_id": 1994,
+      "first_seen_at": "2026-07-31T20:25:50.793000+00:00",
+      "identity_conflict": false,
+      "market_id": "COTI_USDT",
+      "market_type": "swap",
+      "symbol": "COTI/USDT:USDT"
+    },
+    {
+      "event_id": 1995,
+      "first_seen_at": "2026-07-31T21:38:36.283000+00:00",
+      "identity_conflict": false,
+      "market_id": "CAP_USDT",
+      "market_type": "swap",
+      "symbol": "CAP/USDT:USDT"
+    },
+    {
+      "event_id": 1997,
+      "first_seen_at": "2026-07-31T21:41:33.345000+00:00",
+      "identity_conflict": false,
+      "market_id": "BROCCOLI_USDT",
+      "market_type": "swap",
+      "symbol": "BROCCOLI/USDT:USDT"
+    },
+    {
+      "event_id": 1998,
+      "first_seen_at": "2026-07-31T21:44:29.705000+00:00",
+      "identity_conflict": false,
+      "market_id": "TLM_USDT",
+      "market_type": "swap",
+      "symbol": "TLM/USDT:USDT"
+    },
+    {
+      "event_id": 1999,
+      "first_seen_at": "2026-07-31T21:44:29.705000+00:00",
+      "identity_conflict": false,
+      "market_id": "CAP_USDT",
+      "market_type": "swap",
+      "symbol": "CAP/USDT:USDT"
+    },
+    {
+      "event_id": 2002,
+      "first_seen_at": "2026-07-31T21:48:55.139000+00:00",
+      "identity_conflict": false,
+      "market_id": "BROCCOLI_USDT",
+      "market_type": "swap",
+      "symbol": "BROCCOLI/USDT:USDT"
+    },
+    {
+      "event_id": 2008,
+      "first_seen_at": "2026-07-31T22:25:03.833000+00:00",
+      "identity_conflict": false,
+      "market_id": "COTI_USDT",
+      "market_type": "swap",
+      "symbol": "COTI/USDT:USDT"
+    },
+    {
+      "event_id": 2010,
+      "first_seen_at": "2026-07-31T22:50:39.099000+00:00",
+      "identity_conflict": false,
+      "market_id": "COTI_USDT",
+      "market_type": "swap",
+      "symbol": "COTI/USDT:USDT"
+    },
+    {
+      "event_id": 2011,
+      "first_seen_at": "2026-07-31T23:00:51.514000+00:00",
+      "identity_conflict": false,
+      "market_id": "COTI_USDT",
+      "market_type": "swap",
+      "symbol": "COTI/USDT:USDT"
+    },
+    {
+      "event_id": 2013,
+      "first_seen_at": "2026-07-31T23:09:24.386000+00:00",
+      "identity_conflict": false,
+      "market_id": "TAKE_USDT",
+      "market_type": "swap",
+      "symbol": "TAKE/USDT:USDT"
+    },
+    {
+      "event_id": 2012,
+      "first_seen_at": "2026-07-31T23:13:33.953000+00:00",
+      "identity_conflict": false,
+      "market_id": "PTB_USDT",
+      "market_type": "swap",
+      "symbol": "PTB/USDT:USDT"
+    },
+    {
+      "event_id": 2014,
+      "first_seen_at": "2026-07-31T23:15:02.112000+00:00",
+      "identity_conflict": false,
+      "market_id": "TLM_USDT",
+      "market_type": "swap",
+      "symbol": "TLM/USDT:USDT"
+    },
+    {
+      "event_id": 2018,
+      "first_seen_at": "2026-07-31T23:22:14.812000+00:00",
+      "identity_conflict": false,
+      "market_id": "BROCCOLI_USDT",
+      "market_type": "swap",
+      "symbol": "BROCCOLI/USDT:USDT"
+    },
+    {
+      "event_id": 2022,
+      "first_seen_at": "2026-07-31T23:38:01.510000+00:00",
+      "identity_conflict": false,
+      "market_id": "COTI_USDT",
+      "market_type": "swap",
+      "symbol": "COTI/USDT:USDT"
+    },
+    {
+      "event_id": 2025,
+      "first_seen_at": "2026-07-31T23:42:25.689000+00:00",
+      "identity_conflict": false,
+      "market_id": "PTB_USDT",
+      "market_type": "swap",
+      "symbol": "PTB/USDT:USDT"
+    },
+    {
+      "event_id": 2029,
+      "first_seen_at": "2026-07-31T23:59:48.055000+00:00",
+      "identity_conflict": false,
+      "market_id": "BROCCOLI_USDT",
+      "market_type": "swap",
+      "symbol": "BROCCOLI/USDT:USDT"
+    }
+  ]
+}

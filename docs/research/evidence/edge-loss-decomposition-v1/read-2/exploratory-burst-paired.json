@@ -1,0 +1,387 @@
+{
+ "entries": [
+  1,
+  2,
+  3,
+  6
+ ],
+ "exit_offset_minutes": 61,
+ "bybit_1m_0.03": {
+  "firings": 2207,
+  "paired_complete": 2198,
+  "entry_t+1": {
+   "mean": 50.1,
+   "median": -15.9,
+   "share_pos": 0.486
+  },
+  "entry_t+2": {
+   "mean": 13.7,
+   "median": -33.8,
+   "share_pos": 0.467
+  },
+  "entry_t+3": {
+   "mean": 12.1,
+   "median": -39.1,
+   "share_pos": 0.452
+  },
+  "entry_t+6": {
+   "mean": 10.8,
+   "median": -22.4,
+   "share_pos": 0.469
+  },
+  "paired_loss_t1_minus_t2_bps": {
+   "mean": 36.4,
+   "ci95_by_instrument": [
+    26.0,
+    47.1
+   ]
+  },
+  "entry_t+1_by_iso_week": {
+   "33": [
+    186,
+    -114.8
+   ],
+   "34": [
+    543,
+    157.5
+   ],
+   "35": [
+    251,
+    58.6
+   ],
+   "36": [
+    258,
+    28.5
+   ],
+   "37": [
+    305,
+    13.8
+   ],
+   "38": [
+    302,
+    -32.1
+   ],
+   "39": [
+    313,
+    103.7
+   ],
+   "40": [
+    40,
+    -75.0
+   ]
+  }
+ },
+ "bybit_1m_0.05": {
+  "firings": 736,
+  "paired_complete": 732,
+  "entry_t+1": {
+   "mean": 123.4,
+   "median": 50.3,
+   "share_pos": 0.527
+  },
+  "entry_t+2": {
+   "mean": 44.9,
+   "median": 3.3,
+   "share_pos": 0.501
+  },
+  "entry_t+3": {
+   "mean": 30.1,
+   "median": -34.8,
+   "share_pos": 0.456
+  },
+  "entry_t+6": {
+   "mean": 52.4,
+   "median": 5.4,
+   "share_pos": 0.507
+  },
+  "paired_loss_t1_minus_t2_bps": {
+   "mean": 78.5,
+   "ci95_by_instrument": [
+    48.9,
+    108.2
+   ]
+  },
+  "entry_t+1_by_iso_week": {
+   "33": [
+    55,
+    14.5
+   ],
+   "34": [
+    240,
+    167.7
+   ],
+   "35": [
+    66,
+    147.4
+   ],
+   "36": [
+    74,
+    159.2
+   ],
+   "37": [
+    107,
+    82.0
+   ],
+   "38": [
+    98,
+    -81.7
+   ],
+   "39": [
+    84,
+    350.9
+   ],
+   "40": [
+    8,
+    -311.2
+   ]
+  }
+ },
+ "bybit_1m_0.08": {
+  "firings": 238,
+  "paired_complete": 237,
+  "entry_t+1": {
+   "mean": 204.2,
+   "median": 151.7,
+   "share_pos": 0.591
+  },
+  "entry_t+2": {
+   "mean": 80.9,
+   "median": 0.0,
+   "share_pos": 0.494
+  },
+  "entry_t+3": {
+   "mean": 14.0,
+   "median": -69.1,
+   "share_pos": 0.418
+  },
+  "entry_t+6": {
+   "mean": 13.9,
+   "median": -22.7,
+   "share_pos": 0.477
+  },
+  "paired_loss_t1_minus_t2_bps": {
+   "mean": 123.3,
+   "ci95_by_instrument": [
+    67.0,
+    185.1
+   ]
+  },
+  "entry_t+1_by_iso_week": {
+   "33": [
+    19,
+    185.1
+   ],
+   "34": [
+    111,
+    250.1
+   ],
+   "35": [
+    16,
+    848.8
+   ],
+   "36": [
+    16,
+    -530.9
+   ],
+   "37": [
+    24,
+    114.1
+   ],
+   "38": [
+    26,
+    -132.1
+   ],
+   "39": [
+    23,
+    541.8
+   ],
+   "40": [
+    2,
+    134.8
+   ]
+  }
+ },
+ "binance_1m_0.03": {
+  "firings": 2096,
+  "paired_complete": 2068,
+  "entry_t+1": {
+   "mean": 102.5,
+   "median": 12.7,
+   "share_pos": 0.509
+  },
+  "entry_t+2": {
+   "mean": 67.0,
+   "median": -5.3,
+   "share_pos": 0.493
+  },
+  "entry_t+3": {
+   "mean": 54.5,
+   "median": -21.1,
+   "share_pos": 0.467
+  },
+  "entry_t+6": {
+   "mean": 46.7,
+   "median": -4.3,
+   "share_pos": 0.492
+  },
+  "paired_loss_t1_minus_t2_bps": {
+   "mean": 35.5,
+   "ci95_by_instrument": [
+    23.0,
+    49.1
+   ]
+  },
+  "entry_t+1_by_iso_week": {
+   "34": [
+    503,
+    184.2
+   ],
+   "35": [
+    232,
+    101.0
+   ],
+   "36": [
+    289,
+    47.6
+   ],
+   "37": [
+    316,
+    41.4
+   ],
+   "38": [
+    398,
+    56.7
+   ],
+   "39": [
+    302,
+    156.8
+   ],
+   "40": [
+    28,
+    -31.6
+   ]
+  }
+ },
+ "binance_1m_0.05": {
+  "firings": 770,
+  "paired_complete": 761,
+  "entry_t+1": {
+   "mean": 185.6,
+   "median": 89.5,
+   "share_pos": 0.557
+  },
+  "entry_t+2": {
+   "mean": 125.6,
+   "median": 35.6,
+   "share_pos": 0.537
+  },
+  "entry_t+3": {
+   "mean": 94.6,
+   "median": -10.5,
+   "share_pos": 0.484
+  },
+  "entry_t+6": {
+   "mean": 82.1,
+   "median": 27.0,
+   "share_pos": 0.527
+  },
+  "paired_loss_t1_minus_t2_bps": {
+   "mean": 59.9,
+   "ci95_by_instrument": [
+    30.6,
+    91.2
+   ]
+  },
+  "entry_t+1_by_iso_week": {
+   "34": [
+    252,
+    211.1
+   ],
+   "35": [
+    63,
+    188.7
+   ],
+   "36": [
+    93,
+    202.6
+   ],
+   "37": [
+    121,
+    65.2
+   ],
+   "38": [
+    138,
+    95.0
+   ],
+   "39": [
+    90,
+    403.2
+   ],
+   "40": [
+    4,
+    4.0
+   ]
+  }
+ },
+ "binance_1m_0.08": {
+  "firings": 253,
+  "paired_complete": 246,
+  "entry_t+1": {
+   "mean": 289.0,
+   "median": 142.5,
+   "share_pos": 0.602
+  },
+  "entry_t+2": {
+   "mean": 190.6,
+   "median": 25.7,
+   "share_pos": 0.524
+  },
+  "entry_t+3": {
+   "mean": 111.7,
+   "median": -38.5,
+   "share_pos": 0.467
+  },
+  "entry_t+6": {
+   "mean": 82.4,
+   "median": 8.2,
+   "share_pos": 0.512
+  },
+  "paired_loss_t1_minus_t2_bps": {
+   "mean": 98.4,
+   "ci95_by_instrument": [
+    40.5,
+    162.8
+   ]
+  },
+  "entry_t+1_by_iso_week": {
+   "34": [
+    112,
+    222.3
+   ],
+   "35": [
+    14,
+    1122.1
+   ],
+   "36": [
+    21,
+    144.8
+   ],
+   "37": [
+    30,
+    81.4
+   ],
+   "38": [
+    38,
+    57.3
+   ],
+   "39": [
+    30,
+    725.3
+   ],
+   "40": [
+    1,
+    1079.5
+   ]
+  }
+ }
+}

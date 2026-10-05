@@ -1,0 +1,432 @@
+{
+  "bars": [
+    {
+      "day": "2026-08-13",
+      "reduced_sha256": "a93ac005f9e4f55205f491f44835d15f4432aa504658da5129ce006fb856c504",
+      "rows_by_exchange": {
+        "bybit": 964136
+      },
+      "source_sha256": "4c133b0af75dd2175247a17b8d0a3f5caa4879d3a68f045d225b9c17a3668f97"
+    },
+    {
+      "day": "2026-08-14",
+      "reduced_sha256": "8568f05a55007e21f942c622d560c14c69dfcda79fe7c51f15cc95b25fefeb71",
+      "rows_by_exchange": {
+        "bybit": 742981
+      },
+      "source_sha256": "f758f38ab7f1cd941373142a3840e90843a416349e6084bc44e045277537c0bd"
+    },
+    {
+      "day": "2026-08-15",
+      "reduced_sha256": "3a87f81cfdfc5534c3519b4447bca7ffbc68ea9a32c074beb5da1fd00c33e056",
+      "rows_by_exchange": {
+        "binance": 164605,
+        "bybit": 743028
+      },
+      "source_sha256": "f12667248904e35e254382f1a9ed8de8d4504a2f401a97a53041ac24fb9f235c"
+    },
+    {
+      "day": "2026-08-16",
+      "reduced_sha256": "0825e370f5fd9329d5cc6a051c171a2778f32ecd7765969018c98beef388756c",
+      "rows_by_exchange": {
+        "binance": 756000,
+        "bybit": 743040
+      },
+      "source_sha256": "cb40bf31df63ac336b896724f74d1ea2b1c3790160aa25a635cc6a9106119b8b"
+    },
+    {
+      "day": "2026-08-17",
+      "reduced_sha256": "545b178cdb6f9221120b745075098d0966439bac2bca5107325846bdd7ab3fe8",
+      "rows_by_exchange": {
+        "binance": 755952,
+        "bybit": 742968
+      },
+      "source_sha256": "b2aaf289c7852acf3348bb6b7001f08d10f44898a1cbab562754d2406f8362b1"
+    },
+    {
+      "day": "2026-08-18",
+      "reduced_sha256": "c1c0afe2f311e9d9a938c15e5282531505d2f320089cb669418304e95e12927b",
+      "rows_by_exchange": {
+        "binance": 721049,
+        "bybit": 743040
+      },
+      "source_sha256": "acd9ae2353aa1691287958117bb75d12c3883c5586611ec8fecbfe8b8b555ec0"
+    },
+    {
+      "day": "2026-08-19",
+      "reduced_sha256": "5a56bccdc2303986e39be95de2767596a2d52f3d96cb269e3a6f8799dc21aba8",
+      "rows_by_exchange": {
+        "binance": 755864,
+        "bybit": 743029
+      },
+      "source_sha256": "a1869059b55fd9c8d4c0933477ada818f40dd2dca093c648a3ae6a0599bb31e1"
+    },
+    {
+      "day": "2026-08-20",
+      "reduced_sha256": "75d8a4fb7f9bfa0604d64687c663a171bf8993738871ecf7033520b142727d7f",
+      "rows_by_exchange": {
+        "binance": 755413,
+        "bybit": 743040
+      },
+      "source_sha256": "1c4e118849a5c9e6d9e5d67afa9b36353126f75cf85d7309e6bae14f01eccab2"
+    },
+    {
+      "day": "2026-08-21",
+      "reduced_sha256": "01678122f4c26d7d4fe5cc343befeb266af618c6231156dc0c7aad456f5d4200",
+      "rows_by_exchange": {
+        "binance": 755669,
+        "bybit": 743040
+      },
+      "source_sha256": "28a4c8cd40ebb08eba418bd0d0cfe2d9dc8ff988b3e97a010813662a2f438b9f"
+    },
+    {
+      "day": "2026-08-22",
+      "reduced_sha256": "33aa633b45d9dc2d3450c456eb6e466b2f380a8d3d39f7759e5cf3e979279130",
+      "rows_by_exchange": {
+        "binance": 755266,
+        "bybit": 743029
+      },
+      "source_sha256": "58ad2bfa20e73ee253552b1f4437f95c61efef28d0aeb205ec87b222229ad5e0"
+    },
+    {
+      "day": "2026-08-23",
+      "reduced_sha256": "dc486720c0b45c7fe94e928050629ab55fda23caeb914efb39b8384c5fc512a1",
+      "rows_by_exchange": {
+        "binance": 755624,
+        "bybit": 743040
+      },
+      "source_sha256": "de908fb55e68efb0bf0f6ebfddd4d1602846a6c7aaf2cd5161ee8aa0be828330"
+    },
+    {
+      "day": "2026-08-24",
+      "reduced_sha256": "2b3b3aa85717ec1561f61155736f9f4313b08101ed57191a74c64921a0c81ab9",
+      "rows_by_exchange": {
+        "binance": 755502,
+        "bybit": 743040
+      },
+      "source_sha256": "891483bbc75703b568d62d0d7e5fc9b70067df0ed44c6e87a293febda3d1fc22"
+    },
+    {
+      "day": "2026-08-25",
+      "reduced_sha256": "cb6ed721d812cc474508c7adeead7a9b6781568a7830a1f4e2b8ad23f3b6942b",
+      "rows_by_exchange": {
+        "binance": 702289,
+        "bybit": 741475
+      },
+      "source_sha256": "1727d31c93e1146e1bb8a57f0d90f42ba92ab027e7c042ad25a473731411b099"
+    },
+    {
+      "day": "2026-08-26",
+      "reduced_sha256": "145b6047c9735680e1457f23d0fa9e79620cf84df49be0bf661c27390573df91",
+      "rows_by_exchange": {
+        "binance": 754418,
+        "bybit": 740148
+      },
+      "source_sha256": "89d8883f99100e1b84f2736d8370b51b0413f2e28a9fe2e062cd12f37d0741c7"
+    },
+    {
+      "day": "2026-08-27",
+      "reduced_sha256": "c7c84315b5545ef2e40fd3f4c42aaa49216213ecd53e31c638ef71e56f46024d",
+      "rows_by_exchange": {
+        "binance": 744178,
+        "bybit": 731042
+      },
+      "source_sha256": "496c0e69c93ea64c4eb9e1bf10a6d8ef7dec43062cd9c1bbadf78f650cb36a24"
+    },
+    {
+      "day": "2026-08-28",
+      "reduced_sha256": "328eab843e8d4ed0fcbf8f7c98b073db1d033fa37e3ae17c0220b257812263bd",
+      "rows_by_exchange": {
+        "binance": 750662,
+        "bybit": 741550
+      },
+      "source_sha256": "26df2b61f81bcc11ac0178be7e07f8a68794463cd3c9907438a243b044dba84a"
+    },
+    {
+      "day": "2026-08-29",
+      "reduced_sha256": "8e87e9e9cd791b25f2d973e1eae32e28a364fb0ddc2ac0935ed51e25b9211233",
+      "rows_by_exchange": {
+        "binance": 750455,
+        "bybit": 741600
+      },
+      "source_sha256": "d69da9a9240e9624e087eb017784a3ee473278926fb43efb60d888ceb9626ea3"
+    },
+    {
+      "day": "2026-08-30",
+      "reduced_sha256": "fb2e87a5cf0b100d98efcf7336ae52a901160f570c6a71f362f1643947a68d72",
+      "rows_by_exchange": {
+        "binance": 750930,
+        "bybit": 741600
+      },
+      "source_sha256": "f6d4fd74b117eca3b65af87af31e4b71ab391dd785f3fa26cd5fb0cb0bb89bcf"
+    },
+    {
+      "day": "2026-08-31",
+      "reduced_sha256": "a2d3e002a1f23f54e35a431aadfc5b591926b94d78c0c6fc6d651379fd2af6e1",
+      "rows_by_exchange": {
+        "binance": 750018,
+        "bybit": 741600
+      },
+      "source_sha256": "62110a60b3c112bc5fcb2cf982f1e20195d16614472ca5c07a5764d9152ad1f8"
+    },
+    {
+      "day": "2026-09-01",
+      "reduced_sha256": "fa7ad118bb09c1bbcf85b723e9d725624740e4044fb0859fd1e3ebbcbb5c1951",
+      "rows_by_exchange": {
+        "binance": 750653,
+        "bybit": 741600
+      },
+      "source_sha256": "03ada944921814c1a7d378d7b1937059e1a9014e7234b70f1a1d29a6783f45f1"
+    },
+    {
+      "day": "2026-09-02",
+      "reduced_sha256": "c48373620d9e211f0901b22e633f78fe594015c2a26b93abceefacf2c85f07d9",
+      "rows_by_exchange": {
+        "binance": 750920,
+        "bybit": 741600
+      },
+      "source_sha256": "d9fd73e5323d7ef959c22f65743d991b3b6e4f24859fa90ac2287e54bd420177"
+    },
+    {
+      "day": "2026-09-03",
+      "reduced_sha256": "b06160a0d92c08687984db796160844df2e9be01c3952a6113fcba9bbe44780c",
+      "rows_by_exchange": {
+        "binance": 750251,
+        "bybit": 741600
+      },
+      "source_sha256": "0c656caf020c826ef4b748aaca47e037c328e2f362cb8f0694aaa3e9ed85c20f"
+    },
+    {
+      "day": "2026-09-04",
+      "reduced_sha256": "8505a98cc54fb8d3b49f0e1b775b6800594fd21e1e66212d1b1598647bd465ee",
+      "rows_by_exchange": {
+        "binance": 750475,
+        "bybit": 741600
+      },
+      "source_sha256": "f70d9ce61bf25e58f51cb66add35cf2129ff4ebba3ac3680f21b77276b320140"
+    },
+    {
+      "day": "2026-09-05",
+      "reduced_sha256": "f8bea40fcfad04d1bfe10e4cf295540a6532112f9b18fcb185fd7d3dfe3eddb6",
+      "rows_by_exchange": {
+        "binance": 750352,
+        "bybit": 741600
+      },
+      "source_sha256": "d061c8ae8cfb3992b6159a3045f1d7886311f40d21b95a7363b00f71d6090a97"
+    },
+    {
+      "day": "2026-09-06",
+      "reduced_sha256": "84d5ed78d9c70c59777dac2cd0e220c0a6ddcbf5330b20c37ee81ed6d74dd75a",
+      "rows_by_exchange": {
+        "binance": 750919,
+        "bybit": 741600
+      },
+      "source_sha256": "389830c7934a030af9af6fd27234ed694dee95b7ed02dacdd10c96809dd327d6"
+    },
+    {
+      "day": "2026-09-07",
+      "reduced_sha256": "2ede9c99f1fb5ed772652947fecbe69e6fd9cbe8adea23e60ca745c4effcadf7",
+      "rows_by_exchange": {
+        "binance": 749917,
+        "bybit": 741600
+      },
+      "source_sha256": "6d0900d3628349cedd4955cca56dc7ef9142db26043127aa60525d4fb0779ff7"
+    },
+    {
+      "day": "2026-09-08",
+      "reduced_sha256": "c959110df37c3ec4b2d5a2a8e2000f97acb1588d13767091a67f90e204a07643",
+      "rows_by_exchange": {
+        "binance": 749495,
+        "bybit": 741600
+      },
+      "source_sha256": "51048e1050b68ea1d1b6803eab2bb454d523328697b99df48c1212ff1f453cb1"
+    },
+    {
+      "day": "2026-09-09",
+      "reduced_sha256": "2bd1795a14a9b07ca1918ada5849db5bd37260ca6b822da16d03d8ed9505d1ca",
+      "rows_by_exchange": {
+        "binance": 750214,
+        "bybit": 741600
+      },
+      "source_sha256": "c3052d4a80104c8543b052e374c5ef16a08a3c2cc777a4da839e494fe857473d"
+    },
+    {
+      "day": "2026-09-10",
+      "reduced_sha256": "14b038c2cb8dd8c8874d6865edcf8d23557ae34c5784e3552a833e29f5d49711",
+      "rows_by_exchange": {
+        "binance": 750530,
+        "bybit": 741600
+      },
+      "source_sha256": "0c2e63d2d266662c8b4a8b125e7db18101507e7fb4d2952379ada4b66341ce43"
+    },
+    {
+      "day": "2026-09-11",
+      "reduced_sha256": "9a4bc8cecf7340fcc86e1bfdd60d00eb517df32741dc52daa4d2b72177b8d345",
+      "rows_by_exchange": {
+        "binance": 750171,
+        "bybit": 741599
+      },
+      "source_sha256": "381f85d40c6d214520d322d9367eea7526cad81d9a0e79cd25b3070e0bc3d759"
+    },
+    {
+      "day": "2026-09-12",
+      "reduced_sha256": "92a68b06fa77664d3ce73eb5f82d7f7faa42207eb2f08ae9d4277e33ed323630",
+      "rows_by_exchange": {
+        "binance": 750584,
+        "bybit": 741600
+      },
+      "source_sha256": "0d978c90d7ec61e0ac98301c091ae47fbf0e045380f0c08eafbb77a9eef7ae22"
+    },
+    {
+      "day": "2026-09-13",
+      "reduced_sha256": "359761eaedc01ea16df3f296d20746e72d13f438f5db39dc7773a161323e0a10",
+      "rows_by_exchange": {
+        "binance": 750434,
+        "bybit": 741600
+      },
+      "source_sha256": "f2a9e2c4816c431adce1340101235857de16c5010014402b63215a52370a0b40"
+    },
+    {
+      "day": "2026-09-14",
+      "reduced_sha256": "a851fafc84b95ff97c377e5075f5b63806c4b8b870c03e194288440923c16fb4",
+      "rows_by_exchange": {
+        "binance": 748260,
+        "bybit": 741600
+      },
+      "source_sha256": "00c62a1e37c23b44d2b06691a3558d6c232f5cba46ab3f478099a9cd7a103dd6"
+    },
+    {
+      "day": "2026-09-15",
+      "reduced_sha256": "4bff3e2edeeb7bf4163ac4f54533bfe4b73cbf0ef165cffcfafd7dc98d2e5eac",
+      "rows_by_exchange": {
+        "binance": 749448,
+        "bybit": 741598
+      },
+      "source_sha256": "5e7995be7d9d3e13162ae69df5423115449c3f70199fa619987b9578f53d1727"
+    },
+    {
+      "day": "2026-09-16",
+      "reduced_sha256": "dbedfdde7740862374e8e6d71a5d3d440b830b5a8007bd9593cf064f51fcf24d",
+      "rows_by_exchange": {
+        "binance": 749184,
+        "bybit": 741600
+      },
+      "source_sha256": "dbefbf0b37ec66e49ccc1db6d615ef2c502d5448f9b995c39dae7a600ae68df0"
+    },
+    {
+      "day": "2026-09-17",
+      "reduced_sha256": "6f1607c3493ec2b7726e7e750261f18d7cf11d3d90c7d3b5762fa2f0ed327c9d",
+      "rows_by_exchange": {
+        "binance": 749776,
+        "bybit": 741600
+      },
+      "source_sha256": "73cfedfae6429d5f0cb3b93c8ff68ce5bfb01f387531c03ecc3ce748d4bca90b"
+    },
+    {
+      "day": "2026-09-18",
+      "reduced_sha256": "39189b0d6aa761b033b8f4ab479fbfefd817e09fd37286f679adfb578ab707d4",
+      "rows_by_exchange": {
+        "binance": 750405,
+        "bybit": 741600
+      },
+      "source_sha256": "d770e4368ee538dc0a1a614df85dd9f1494056db5ff2b30f359d04678a91ab7b"
+    },
+    {
+      "day": "2026-09-19",
+      "reduced_sha256": "40b0ba09a74b8a2515d69955624ee4e058ce69af09d2e328812252c058272644",
+      "rows_by_exchange": {
+        "binance": 751791,
+        "bybit": 743149
+      },
+      "source_sha256": "cbdc83d745a99074d59182a728d545a49a2492dbad66405a664569cdf0e267fc"
+    },
+    {
+      "day": "2026-09-20",
+      "reduced_sha256": "fe586239d9c4093fea21870cc8b7b4449668f5d8f2257d5195ddf66b039cccc7",
+      "rows_by_exchange": {
+        "binance": 755138,
+        "bybit": 748800
+      },
+      "source_sha256": "1967103dd4349b490483afa31631987ed9715d253bf0d2aaaa5ac15bce8123d7"
+    },
+    {
+      "day": "2026-09-21",
+      "reduced_sha256": "58069a185bbca3fceade96051dd960b88d773219eb990324c876c6eeb961df78",
+      "rows_by_exchange": {
+        "binance": 754889,
+        "bybit": 748776
+      },
+      "source_sha256": "1f7b7ea1799fedf01a9c3b3deaf8aa03629c0e3f33a31063d63ddba71e8f7ac9"
+    },
+    {
+      "day": "2026-09-22",
+      "reduced_sha256": "5c8b9efb62039abb9f9caf876b31796037b3a9a1827dd2cf45435f062e4b6563",
+      "rows_by_exchange": {
+        "binance": 755135,
+        "bybit": 748799
+      },
+      "source_sha256": "acfc107bf0658bc9f1369549dfbe38c621d7ebe223e026978522ad629cf6c646"
+    },
+    {
+      "day": "2026-09-23",
+      "reduced_sha256": "da03b0195458328bd264be5f10c01fda1fcd650eff4d4a321e52fc92dc583d8a",
+      "rows_by_exchange": {
+        "binance": 754023,
+        "bybit": 748800
+      },
+      "source_sha256": "a8bd1d1e903112125d0dd562ac4d052a9114b9f61f31016f76a082ef16a441b0"
+    },
+    {
+      "day": "2026-09-24",
+      "reduced_sha256": "ab6f60c991dae4ab4664fcf2c20ba2428b53a07b52d0b8b86eed4b564fe518a3",
+      "rows_by_exchange": {
+        "binance": 749374,
+        "bybit": 748800
+      },
+      "source_sha256": "d92facadf53f8b67e2495b433b60a701fe54c353245043a17b01c5dc959b8581"
+    },
+    {
+      "day": "2026-09-25",
+      "reduced_sha256": "76b3752f0e4f90da2eb834e66a5d3a03247bca6f34e34bb4367e440b69740dfb",
+      "rows_by_exchange": {
+        "binance": 741575,
+        "bybit": 748799
+      },
+      "source_sha256": "161c82f75b2768a759d67e39a542c1a35b81076cfc7fdfe5cc7428ada86c6ca1"
+    },
+    {
+      "day": "2026-09-26",
+      "reduced_sha256": "332b27ac71be5630aa82b6b7ca6a143805f5bd9295a76f385d5e02e7867954cd",
+      "rows_by_exchange": {
+        "binance": 743091,
+        "bybit": 748800
+      },
+      "source_sha256": "8b28b6f5e361d8f43dccea8a89fb759de0d1c945cec4536a8b1ff6d6ca1f87ba"
+    },
+    {
+      "day": "2026-09-27",
+      "reduced_sha256": "0df5b59aa8e4f4c6c1cac45fc7cc204d3831ef48b9a1f505f9f04a3c44cd8e20",
+      "rows_by_exchange": {
+        "binance": 743830,
+        "bybit": 748800
+      },
+      "source_sha256": "50efd6028af606773a3c9a468731f784922e8fad6fa6653bf203579c0a133dd8"
+    },
+    {
+      "day": "2026-09-28",
+      "reduced_sha256": "78f2cb514cca1750a3e129af7979c91057b1fb32f959fb1dffd1cac175b6e5d0",
+      "rows_by_exchange": {
+        "binance": 739881,
+        "bybit": 748800
+      },
+      "source_sha256": "c53036c4d1013d61492905d76e7c5721e9df95c95a0f51cc30732f63878f2af5"
+    }
+  ],
+  "contract_sha256": "dec18b724f0f6d621c1b3f50a485a54eb97a3377ded10d03b312d20af366947c",
+  "mexc_files": 1070,
+  "mexc_manifest_sha256": "0ba65483cb573b9d41e79457ba943ad20d39419c6a5104f6d8cddd4289871543",
+  "reader_code_revision": "7b660744bfba47c072067a83d31ce03f961bb05a",
+  "scanner_sha256": "5437af0fe0223615e154d4a04f82b45f29c92e07585f7fe12454ff3818a1403f",
+  "study_version": "edge_loss_decomposition_v1_amendment1",
+  "taken_at": "2026-10-04T22:55:35.854573+00:00"
+}
