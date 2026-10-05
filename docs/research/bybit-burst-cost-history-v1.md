@@ -36,7 +36,7 @@ its sha256 before anything is downloaded. **No data on or after 2026-09-29.**
 - **Funding:** Bybit's public funding history (`/v5/market/funding/history`) for the
   settlements inside each hold, recorded with the request and its response hash. Only
   timestamps before 2026-09-29.
-- **Trade proxy:** the decay study's g(d) for the same firings, for the comparison.
+- **Trade proxy:** the decay study's published mean g(d), for the comparison of levels.
 
 ## Book reconstruction
 
@@ -63,8 +63,11 @@ exit moment is B + 60 min.
    under mid, plus 2 x 5.5 bps (Bybit's published taker fee), plus the settled funding
    over the hold. Long positions pay positive funding.
 5. **Net executable proxy:** exit VWAP / entry VWAP - 1 - fees - funding, in bps.
-6. **Gap to the trade proxy:** g_trade(d) from the decay study minus the gross
-   executable proxy, on the same firings.
+6. **Against the trade proxy:** the mean gross executable proxy (exit VWAP / entry
+   VWAP - 1) beside the decay study's mean g_trade(d), from its published result
+   (sha256 `30356acb870a...`). That result holds aggregates only, so the two means can
+   cover slightly different resolved sets; this is a comparison of levels, not a paired
+   difference.
 
 **Reported per entry moment:**
 
