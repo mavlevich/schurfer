@@ -143,8 +143,8 @@ func TestReconnectsAreCountedAndPingsSent(t *testing.T) {
 	if dials.Load() < 2 || r.Reconnects < 1 || r.Acks < 2 {
 		t.Fatalf("dials %d reconnects %d acks %d", dials.Load(), r.Reconnects, r.Acks)
 	}
-	if r.Sessions < 2 || r.SessionsFullyAcked != r.Sessions {
-		t.Fatalf("sessions %d fully acked %d", r.Sessions, r.SessionsFullyAcked)
+	if r.Sessions < 2 || r.SessionsAckCountMet != r.Sessions {
+		t.Fatalf("sessions %d fully acked %d", r.Sessions, r.SessionsAckCountMet)
 	}
 }
 
@@ -155,13 +155,16 @@ func TestChunkShardsSymbols(t *testing.T) {
 	}
 }
 
+// MEXC's acknowledgement names no instrument: the count can only be compared with the
+// requests, so two anonymous acknowledgements meet a two-request session even if one
+// instrument was acknowledged twice. The instruments seen trading carry the coverage.
 func TestAcknowledgementsAreCountedPerSessionNotPooled(t *testing.T) {
 	stats := NewStats()
 	stats.SessionEnded(2, 3) // one instrument acknowledged twice, another maybe never
 	stats.SessionEnded(2, 1)
 	r := stats.Report(time.Now(), time.Now(), false, UniverseSnapshot{}, 2, 2)
-	if r.Sessions != 2 || r.SessionsFullyAcked != 1 || r.ExcessAcks != 1 {
-		t.Fatalf("sessions %d fully %d excess %d", r.Sessions, r.SessionsFullyAcked, r.ExcessAcks)
+	if r.Sessions != 2 || r.SessionsAckCountMet != 1 || r.ExcessAcks != 1 {
+		t.Fatalf("sessions %d fully %d excess %d", r.Sessions, r.SessionsAckCountMet, r.ExcessAcks)
 	}
 }
 

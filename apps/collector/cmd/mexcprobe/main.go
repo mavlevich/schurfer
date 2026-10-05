@@ -38,8 +38,10 @@ import (
 
 // v2 (design review 2): perpetual classification by futureType, per-connection
 // acknowledgement accounting and instruments seen trading, a measured ping round trip,
-// and uniform reservoir samples. v1 reports stay as they are.
-const ReportVersion = "mexc_sealed_probe_v2"
+// and uniform reservoir samples. v3 (review 3) names the per-session acknowledgement
+// count for what it is: a count match, not proof that each subscription was
+// acknowledged. Earlier reports stay as they are.
+const ReportVersion = "mexc_sealed_probe_v3"
 
 type contract struct {
 	Symbol       string   `json:"symbol"`
@@ -101,27 +103,27 @@ func Universe(body []byte) (UniverseSnapshot, error) {
 
 // Stats are the probe's counters. Only counts and timings; never a market value.
 type Stats struct {
-	mu                 sync.Mutex
-	messagesByChannel  map[string]int64
-	bytesByChannel     map[string]int64
-	trades             int64
-	malformedTrades    int64
-	payloadObjects     int64
-	payloadLists       int64
-	fieldsSeen         map[string]int64
-	lagEventMS         reservoir // receive minus trade time
-	lagPushMS          reservoir // receive minus message ts
-	perSecond          map[int64]int64
-	reconnects         int64
-	gapMS              []int64
-	errorsByCode       map[string]int64
-	acks               int64
-	pongOffsetMS       reservoir // receive minus the server time in the pong
-	pingRTTMS          reservoir // pong received minus the ping sent on that connection
-	sessions           int64
-	sessionsFullyAcked int64
-	excessAcks         int64
-	symbolsTrading     map[string]struct{} // only its size is reported
+	mu                      sync.Mutex
+	messagesByChannel       map[string]int64
+	bytesByChannel          map[string]int64
+	trades                  int64
+	malformedTrades         int64
+	payloadObjects          int64
+	payloadLists            int64
+	fieldsSeen              map[string]int64
+	lagEventMS              reservoir // receive minus trade time
+	lagPushMS               reservoir // receive minus message ts
+	perSecond               map[int64]int64
+	reconnects              int64
+	gapMS                   []int64
+	errorsByCode            map[string]int64
+	acks                    int64
+	pongOffsetMS            reservoir // receive minus the server time in the pong
+	pingRTTMS               reservoir // pong received minus the ping sent on that connection
+	sessions                int64
+	sessionsAckCountMatched int64
+	excessAcks              int64
+	symbolsTrading          map[string]struct{} // only its size is reported
 }
 
 const maxSamples = 200_000
@@ -207,16 +209,17 @@ func (s *Stats) Observe(frame []byte, received time.Time) string {
 	return channel
 }
 
-// SessionEnded records one connection's subscriptions against its acknowledgements.
-// MEXC's acknowledgement names no instrument, so a session counts as fully acknowledged
-// only when it got at least one acknowledgement per subscription; any surplus is
-// reported, never credited to another subscription.
+// SessionEnded records one connection's subscription requests against its
+// acknowledgements. MEXC's acknowledgement names no instrument, so acknowledgements
+// cannot be matched to subscriptions: a session only counts as having at least as many
+// acknowledgements as requests, and any surplus is reported. Whether each instrument
+// was really subscribed is shown by the instruments seen trading, not by this count.
 func (s *Stats) SessionEnded(subscribed, acked int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.sessions++
 	if acked >= subscribed {
-		s.sessionsFullyAcked++
+		s.sessionsAckCountMatched++
 	}
 	if acked > subscribed {
 		s.excessAcks += int64(acked - subscribed)
@@ -316,7 +319,7 @@ type Report struct {
 	SymbolsPerConnection int                         `json:"symbols_per_connection"`
 	Acks                 int64                       `json:"subscription_acks"`
 	Sessions             int64                       `json:"sessions"`
-	SessionsFullyAcked   int64                       `json:"sessions_fully_acknowledged"`
+	SessionsAckCountMet  int64                       `json:"sessions_ack_count_at_least_requests"`
 	ExcessAcks           int64                       `json:"excess_acknowledgements"`
 	InstrumentsTrading   int                         `json:"instruments_with_trades"`
 	LagSampled           map[string]int64            `json:"lag_values_seen"`
@@ -360,7 +363,7 @@ func (s *Stats) Report(start, end time.Time, compress bool, universe UniverseSna
 		Symbols: len(universe.Symbols), SymbolsMissingSize: universe.MissingSize,
 		UniverseExcluded: universe.Excluded, Connections: conns,
 		SymbolsPerConnection: perConn, Acks: s.acks, Sessions: s.sessions,
-		SessionsFullyAcked: s.sessionsFullyAcked, ExcessAcks: s.excessAcks,
+		SessionsAckCountMet: s.sessionsAckCountMatched, ExcessAcks: s.excessAcks,
 		InstrumentsTrading: len(s.symbolsTrading),
 		LagSampled: map[string]int64{
 			"receive_minus_trade_time": s.lagEventMS.seen,

@@ -50,7 +50,7 @@ semantics are still checked before any use.
 Probe v2 (`mexc_sealed_probe_v2`) fixes all four:
 
 - perpetuals are selected by `futureType` (1), with every exclusion counted by reason;
-- acknowledgements are accounted per connection, and the instruments actually seen
+- acknowledgement counts are compared with requests per connection, and the instruments actually seen
   trading are counted;
 - a uniform reservoir sample (Algorithm R) is used;
 - the ping round trip is measured from the ping sent to its pong received.
@@ -81,21 +81,22 @@ Probe v2 (`mexc_sealed_probe_v2`) fixes all four:
 
 The report holds counters only.
 
-| What                     | Measured                                                                                                             |
-| ------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| Universe                 | 1,077 enabled USDT perpetuals (`futureType` 1); 109 contracts excluded as not USDT; no delivery contract among them  |
-| Subscriptions            | 22 sessions, each with one acknowledgement per subscription, none in excess; all 1,077 instruments traded in the run |
-| Stability                | 0 reconnects, 0 errors, 0 malformed trades                                                                           |
-| Rate                     | 253,147 trades: per second p50 135, p90 182, p99 267, max 833 (a Monday early morning; v1 ran on a Sunday evening)   |
-| Volume                   | about 12.2 M trades and 2.0 GB of raw JSON per day at this hour                                                      |
-| Ping round trip          | p50 228 ms, p90 243, p99 270 (2,618 pings)                                                                           |
-| Receive minus trade time | p50 120 ms, p90 127, p99 164 (uniform sample of 253,147)                                                             |
-| Receive minus pong time  | p50 112 ms                                                                                                           |
+| What                     | Measured                                                                                                                                             |
+| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Universe                 | 1,077 enabled USDT perpetuals (`futureType` 1); 109 contracts excluded as not USDT; no delivery contract among them                                  |
+| Subscriptions            | 22 sessions; in each the acknowledgement count reached the request count, none in excess (a count match: MEXC's acknowledgements name no instrument) |
+| Instruments traded       | all 1,077 subscribed instruments delivered at least one trade during the run                                                                         |
+| Stability                | 0 reconnects, 0 errors, 0 malformed trades                                                                                                           |
+| Rate                     | 253,147 trades: per second p50 135, p90 182, p99 267, max 833 (a Monday early morning; v1 ran on a Sunday evening)                                   |
+| Volume                   | about 12.2 M trades and 2.0 GB of raw JSON per day at this hour                                                                                      |
+| Ping round trip          | p50 228 ms, p90 243, p99 270 (2,618 pings)                                                                                                           |
+| Receive minus trade time | p50 120 ms, p90 127, p99 164 (uniform sample of 253,147)                                                                                             |
+| Receive minus pong time  | p50 112 ms                                                                                                                                           |
 
-**Reading.** Half the round trip (about 114 ms) is close to the receive-minus-pong
-offset (112 ms). That is what a symmetric path with a small clock offset gives, though
-the two cannot be told apart for certain. On that reading, about 114 ms of the 120 ms
-trade lag is the network from MEXC to this host, and MEXC's own delay before the push is
-a few milliseconds. The network part would shrink only by moving the collector nearer
-to MEXC. For signals on minute bars that is not the binding constraint
-(the edge-loss readout, `docs/research/edge-loss-decomposition-v1-readout.md`).
+**Reading.** The 228 ms round trip is measured. Splitting the 120 ms trade lag into
+network, clock offset and MEXC's own delay is not: half the round trip (about 114 ms) is
+close to the receive-minus-pong offset (112 ms), which a symmetric path with a small
+clock offset would give, but neither assumption is verified. No decision about moving
+the collector rests on this estimate. In v2's report the field
+`sessions_fully_acknowledged` means this count match; probe v3 names it
+`sessions_ack_count_at_least_requests`.
