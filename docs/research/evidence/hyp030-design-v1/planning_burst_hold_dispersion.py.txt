@@ -1,0 +1,48 @@
+"""Planning input for HYP-030: dispersion of the burst proxy by hold (bars, read-2 rules).
+
+Only the standard deviation and cluster structure are used to compare holds; means are
+printed for the record but are in-sample and do not choose anything.
+"""
+import json
+import statistics as st
+import sys
+from collections import defaultdict
+from pathlib import Path
+
+import duckdb
+
+sys.path.insert(0, "/Users/mavlevich/Desktop/Projects/schurfer/.claude/worktrees/hyp030/apps/analytics")
+from schurfer_analytics import edge_loss_study as s  # noqa: E402
+from schurfer_analytics import research_cost_power_planning as p  # noqa: E402
+
+firings = json.load(open(
+    "/Users/mavlevich/Desktop/Projects/schurfer/.claude/worktrees/hyp030/docs/research/evidence/"
+    "bybit-burst-decay-v1/decay-firings.json"))["firings"]
+con = duckdb.connect()
+con.execute("SET TimeZone = 'UTC'")
+s.load_bars(con, Path("/Users/mavlevich/Desktop/Projects/schurfer/runtime/research/edge-loss/bars"), [])
+con.execute("CREATE TABLE f (symbol VARCHAR, ts BIGINT)")
+con.executemany("INSERT INTO f VALUES (?, ?)", [(x["symbol"], x["bar_start"]) for x in firings])
+holds = (5, 15, 30, 60)
+cols = ", ".join(f"x{h}.o" for h in holds)
+joins = " ".join(
+    f"LEFT JOIN good x{h} ON x{h}.exchange='bybit' AND x{h}.symbol=f.symbol"
+    f" AND x{h}.t = to_timestamp(f.ts) + INTERVAL {h + 1} MINUTE" for h in holds)
+rows = con.execute(
+    f"SELECT f.symbol, f.ts, e.o, {cols} FROM f LEFT JOIN good e ON e.exchange='bybit'"
+    f" AND e.symbol=f.symbol AND e.t = to_timestamp(f.ts) + INTERVAL 1 MINUTE {joins}").fetchall()
+out = {}
+for i, h in enumerate(holds):
+    vals = [(r[0], r[1], (r[3 + i] / r[2] - 1) * 1e4) for r in rows if r[2] and r[3 + i]]
+    g = [v for _, _, v in vals]
+    sd = st.pstdev(g)
+    by_day = defaultdict(list)
+    for sym, ts, v in vals:
+        by_day[ts // 86400].append(v)
+    out[f"hold_{h}m"] = {
+        "n": len(g), "sd_bps": round(sd, 1), "mean_bps_in_sample": round(st.fmean(g), 1),
+        "median_bps_in_sample": round(st.median(g), 1),
+        "independent_n_50bps_80pct": p.independent_sample_size(sd, 50.0, 0.8),
+        "independent_n_100bps_80pct": p.independent_sample_size(sd, 100.0, 0.8),
+    }
+print(json.dumps(out, indent=1))

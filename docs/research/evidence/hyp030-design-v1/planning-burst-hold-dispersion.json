@@ -1,0 +1,34 @@
+{
+ "hold_5m": {
+  "n": 732,
+  "sd_bps": 576.2,
+  "mean_bps_in_sample": 68.6,
+  "median_bps_in_sample": 39.0,
+  "independent_n_50bps_80pct": 1043,
+  "independent_n_100bps_80pct": 261
+ },
+ "hold_15m": {
+  "n": 732,
+  "sd_bps": 828.7,
+  "mean_bps_in_sample": 110.2,
+  "median_bps_in_sample": 42.9,
+  "independent_n_50bps_80pct": 2157,
+  "independent_n_100bps_80pct": 540
+ },
+ "hold_30m": {
+  "n": 732,
+  "sd_bps": 1241.8,
+  "mean_bps_in_sample": 120.5,
+  "median_bps_in_sample": 27.2,
+  "independent_n_50bps_80pct": 4842,
+  "independent_n_100bps_80pct": 1211
+ },
+ "hold_60m": {
+  "n": 732,
+  "sd_bps": 1112.3,
+  "mean_bps_in_sample": 123.4,
+  "median_bps_in_sample": 50.3,
+  "independent_n_50bps_80pct": 3885,
+  "independent_n_100bps_80pct": 972
+ }
+}

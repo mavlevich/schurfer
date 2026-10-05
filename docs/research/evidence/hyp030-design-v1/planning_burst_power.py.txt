@@ -1,0 +1,27 @@
+"""Planning input for HYP-030: power for 1-minute bursts on Bybit (not a test).
+
+Dispersion scenario: the 732 frozen decay firings, gross from the t+1 bar open to the
+t+61 bar open (ticker-based bar opens; on these firings close to the trade proxy).
+Returns are centered by the planning code, so only shape, tails and dependence matter.
+"""
+import json
+import sys
+from datetime import UTC, datetime
+
+sys.path.insert(0, "/Users/mavlevich/Desktop/Projects/schurfer/.claude/worktrees/hyp030/apps/analytics")
+from schurfer_analytics import research_cost_power_planning as p  # noqa: E402
+
+firings = json.load(open(
+    "/Users/mavlevich/Desktop/Projects/schurfer/.claude/worktrees/hyp030/docs/research/evidence/"
+    "bybit-burst-decay-v1/decay-firings.json"))["firings"]
+episodes = [
+    p.Episode(cluster=f["symbol"], at=datetime.fromtimestamp(f["bar_start"], UTC),
+              net_bps=(f["t61_open"] / f["t1_open"] - 1) * 1e4)
+    for f in firings
+]
+out = p.dataset_power(episodes, label="hyp030_bursts", replicates=1000,
+                      calibration_replicates=200, calibration_iterations=1000, seed=20261005)
+days = len({e.at.date() for e in episodes})
+out["flow"] = {"firings": len(episodes), "utc_days": days, "per_day": len(episodes) / days,
+               "instruments": len({e.cluster for e in episodes})}
+print(json.dumps(out, indent=1, default=str))
