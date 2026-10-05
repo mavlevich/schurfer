@@ -50,6 +50,11 @@ one half of the window, judged on the other.
   optimistic bound only.
 - A book that is broken, stale or too thin at the fill moment makes the firing
   `exit_unfilled` for that exit. It is counted and never filled at the trade price.
+- Reader details (fixed before the read, in `bybit_burst_exit.py`):
+  - triggers read only trades strictly after B + 5 s and before B + 60 min;
+  - T's high is the highest of those trades;
+  - E's check reads the last trade at or before B + 15 min;
+  - funding is charged from the entry to the fill.
 
 ## The split (fixed now; both halves exploratory)
 
