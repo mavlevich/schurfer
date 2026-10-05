@@ -18,11 +18,18 @@
 //   - Disconnected: the session ended (error, liveness timeout or a codec error).
 //     LastFrameAt is the last frame received: the gap starts there, not at the
 //     detection, which can come a whole read timeout later;
+//   - Heartbeat: the connection is alive and its subscription acknowledged (never sent
+//     before Subscribed); LastFrameAt is its latest received frame. At
+//     most one per HeartbeatEvery per shard, carried by received frames, so a dead
+//     connection sends none. A consumer may treat the stream as delivered through
+//     LastFrameAt (frames of one connection arrive in order);
 //   - Overflow: events of this shard were dropped because the consumer queue was full,
 //     from Since (the first drop) to At by receive time. DroppedFrom and DroppedTo
-//     bound the dropped trades by exchange time, and DroppedLifecycle says whether a
-//     lifecycle event was among them (a consumer can then no longer trust its
-//     connection state until the next Subscribed).
+//     bound the dropped trades by exchange time. DroppedState says whether a state
+//     event (Connected, Subscribed, Disconnected; never a Heartbeat) was among them. In
+//     that case the runtime re-confirms its current state right after the report: a
+//     Subscribed for a session that is still subscribed, so a consumer's gap closes
+//     without a resubscription.
 //
 // The queue is bounded and the reader never blocks on it. A dropped event is counted
 // and the shard owes an Overflow event, delivered before its next delivered event, so
@@ -67,24 +74,25 @@ type LifecycleKind string
 const (
 	Connected    LifecycleKind = "connected"
 	Subscribed   LifecycleKind = "subscribed"
+	Heartbeat    LifecycleKind = "heartbeat"
 	Disconnected LifecycleKind = "disconnected"
 	Overflow     LifecycleKind = "overflow"
 )
 
 // Lifecycle is an in-band connection event for exactly the shard's own symbols.
 type Lifecycle struct {
-	Kind             LifecycleKind
-	Shard            int
-	SessionID        string
-	Symbols          []string
-	At               time.Time
-	Dropped          int64     // Overflow: events dropped since the last delivered event
-	Since            time.Time // Overflow: when the first of them was dropped (receive time)
-	DroppedFrom      time.Time // Overflow: earliest exchange time among dropped trades
-	DroppedTo        time.Time // Overflow: latest exchange time among dropped trades
-	DroppedLifecycle bool      // Overflow: a lifecycle event was dropped too
-	LastFrameAt      time.Time // Disconnected: the session's last received frame (or its dial)
-	Reason           string    // Disconnected: why
+	Kind         LifecycleKind
+	Shard        int
+	SessionID    string
+	Symbols      []string
+	At           time.Time
+	Dropped      int64     // Overflow: events dropped since the last delivered event
+	Since        time.Time // Overflow: when the first of them was dropped (receive time)
+	DroppedFrom  time.Time // Overflow: earliest exchange time among dropped trades
+	DroppedTo    time.Time // Overflow: latest exchange time among dropped trades
+	DroppedState bool      // Overflow: a state event (not a heartbeat) was dropped too
+	LastFrameAt  time.Time // Disconnected: the session's last received frame (or its dial)
+	Reason       string    // Disconnected: why
 }
 
 // Event is either a trade or a lifecycle event; exactly one pointer is set.
@@ -120,6 +128,7 @@ type Config struct {
 	QueueSize        int
 	ReadTimeout      time.Duration // no frame for this long ends the session
 	SubscribeTimeout time.Duration // all acknowledgements must arrive within this
+	HeartbeatEvery   time.Duration // at most one Heartbeat per shard per this
 	BackoffInitial   time.Duration
 	BackoffMax       time.Duration
 	Dialer           *websocket.Dialer
@@ -134,6 +143,9 @@ func (c Config) withDefaults(codec Codec) Config {
 	}
 	if c.SubscribeTimeout <= 0 {
 		c.SubscribeTimeout = 10 * time.Second
+	}
+	if c.HeartbeatEvery <= 0 {
+		c.HeartbeatEvery = 200 * time.Millisecond
 	}
 	if c.BackoffInitial <= 0 {
 		c.BackoffInitial = time.Second
@@ -197,19 +209,21 @@ func (r *Runtime) Run(ctx context.Context, symbols []string) error {
 // shard is one connection's state; owed counts events dropped and not yet reported,
 // owedSince is when the first of them was dropped.
 type shard struct {
-	index         int
-	symbols       []string
-	owed          int64
-	owedSince     time.Time
-	owedFrom      time.Time
-	owedTo        time.Time
-	owedLifecycle bool
+	index     int
+	symbols   []string
+	owed      int64
+	owedSince time.Time
+	owedFrom  time.Time
+	owedTo    time.Time
+	owedState bool
+	// subscribedSession is the current session id while it is subscribed, else "".
+	subscribedSession string
 }
 
 func (s *shard) drop(r *Runtime, event Event) {
 	if s.owed == 0 {
 		s.owedSince = time.Now()
-		s.owedFrom, s.owedTo, s.owedLifecycle = time.Time{}, time.Time{}, false
+		s.owedFrom, s.owedTo, s.owedState = time.Time{}, time.Time{}, false
 	}
 	switch {
 	case event.Trade != nil:
@@ -220,8 +234,8 @@ func (s *shard) drop(r *Runtime, event Event) {
 		if at.After(s.owedTo) {
 			s.owedTo = at
 		}
-	case event.Lifecycle != nil:
-		s.owedLifecycle = true
+	case event.Lifecycle != nil && event.Lifecycle.Kind != Heartbeat:
+		s.owedState = true
 	}
 	s.owed++
 	r.Stats.Dropped.Add(1)
@@ -234,11 +248,26 @@ func (r *Runtime) emit(s *shard, event Event) {
 		overflow := Event{Lifecycle: &Lifecycle{
 			Kind: Overflow, Shard: s.index, Symbols: s.symbols, At: time.Now(),
 			Dropped: s.owed, Since: s.owedSince, DroppedFrom: s.owedFrom, DroppedTo: s.owedTo,
-			DroppedLifecycle: s.owedLifecycle,
+			DroppedState: s.owedState,
 		}}
 		select {
 		case r.events <- overflow:
+			stateLost := s.owedState
 			s.owed = 0
+			if stateLost && s.subscribedSession != "" {
+				// re-confirm the live subscription, so the consumer's gap closes
+				confirm := Event{Lifecycle: &Lifecycle{
+					Kind: Subscribed, Shard: s.index, SessionID: s.subscribedSession,
+					Symbols: s.symbols, At: time.Now(),
+				}}
+				select {
+				case r.events <- confirm:
+				default:
+					s.drop(r, confirm)
+					s.drop(r, event) // keep order: nothing passes an undelivered state
+					return
+				}
+			}
 		default:
 			s.drop(r, event)
 			return
@@ -310,6 +339,7 @@ func (r *Runtime) session(ctx context.Context, s *shard) (connected bool, err er
 		Kind: Connected, Shard: s.index, SessionID: sessionID, Symbols: s.symbols, At: dialedAt,
 	}})
 	defer func() {
+		s.subscribedSession = ""
 		if ctx.Err() != nil {
 			return // a clean shutdown is not a feed interruption
 		}
@@ -344,10 +374,22 @@ func (r *Runtime) session(ctx context.Context, s *shard) (connected bool, err er
 			}
 		}
 	}()
+	return true, r.readLoop(conn, s, sessionID, len(frames), dialedAt, &lastFrameAt)
+
+}
+
+// readLoop reads frames until the session ends: it enforces the subscription deadline
+// and liveness, counts acknowledgements into Subscribed, forwards trades, and emits
+// heartbeats. lastFrameAt is updated for the caller's Disconnected event.
+func (r *Runtime) readLoop(
+	conn *websocket.Conn, s *shard, sessionID string, requested int, dialedAt time.Time,
+	lastFrameAt *time.Time,
+) error {
 	if err := wsstream.ConfigureReadLiveness(conn, r.config.ReadTimeout); err != nil {
-		return true, err
+		return err
 	}
 	acked, subscribed := 0, false
+	var lastBeat time.Time
 	subscribeBy := dialedAt.Add(r.config.SubscribeTimeout)
 	for {
 		if !subscribed {
@@ -357,36 +399,37 @@ func (r *Runtime) session(ctx context.Context, s *shard) (connected bool, err er
 				deadline = subscribeBy
 			}
 			if subscribeBy.Before(time.Now()) {
-				return true, fmt.Errorf("subscribe timeout: %d of %d acknowledged", acked, len(frames))
+				return fmt.Errorf("subscribe timeout: %d of %d acknowledged", acked, requested)
 			}
 			if err := conn.SetReadDeadline(deadline); err != nil {
-				return true, err
+				return err
 			}
 		}
 		_, frame, readErr := conn.ReadMessage()
 		if readErr != nil {
 			if !subscribed && !time.Now().Before(subscribeBy) {
-				return true, fmt.Errorf("subscribe timeout: %d of %d acknowledged", acked, len(frames))
+				return fmt.Errorf("subscribe timeout: %d of %d acknowledged", acked, requested)
 			}
-			return true, wsstream.ClassifyReadError(readErr)
+			return wsstream.ClassifyReadError(readErr)
 		}
 		received := time.Now()
-		lastFrameAt = received
+		*lastFrameAt = received
 		if err := wsstream.RefreshReadDeadline(conn, r.config.ReadTimeout); err != nil {
-			return true, err
+			return err
 		}
 		r.Stats.Frames.Add(1)
 		r.Stats.Bytes.Add(int64(len(frame)))
 		parsed, parseErr := r.codec.Parse(frame, received)
 		if parseErr != nil {
 			r.Stats.ParseErrors.Add(1)
-			return true, fmt.Errorf("parse: %w", parseErr)
+			return fmt.Errorf("parse: %w", parseErr)
 		}
 		if parsed.Acks > 0 {
 			r.Stats.Acks.Add(int64(parsed.Acks))
 			acked += parsed.Acks
-			if !subscribed && acked >= len(frames) {
+			if !subscribed && acked >= requested {
 				subscribed = true
+				s.subscribedSession = sessionID
 				r.emit(s, Event{Lifecycle: &Lifecycle{
 					Kind: Subscribed, Shard: s.index, SessionID: sessionID, Symbols: s.symbols,
 					At: received,
@@ -396,6 +439,13 @@ func (r *Runtime) session(ctx context.Context, s *shard) (connected bool, err er
 		for i := range parsed.Trades {
 			r.Stats.Trades.Add(1)
 			r.emit(s, Event{Trade: &parsed.Trades[i]})
+		}
+		if subscribed && received.Sub(lastBeat) >= r.config.HeartbeatEvery {
+			lastBeat = received
+			r.emit(s, Event{Lifecycle: &Lifecycle{
+				Kind: Heartbeat, Shard: s.index, SessionID: sessionID, Symbols: s.symbols,
+				At: received, LastFrameAt: received,
+			}})
 		}
 	}
 }

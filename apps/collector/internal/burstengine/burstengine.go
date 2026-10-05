@@ -13,13 +13,21 @@
 //
 //   - A trade belongs to the minute of its exchange time. Open and Close are the
 //     first and last trade by (exchange time, venue sequence, arrival order).
-//   - A minute is finalized when the clock passes its end plus Grace. Until then a trade
-//     of that minute updates it, even after trades of a later minute have arrived;
-//     after it a trade of that minute (or earlier) is counted late and never added.
+//   - A minute is finalized only when the stream is confirmed delivered past its end
+//     plus Grace plus LagAllowance: a Heartbeat or Subscribed of the instrument's
+//     connection that far after it (frames of one connection arrive in order; a break
+//     found later starts LagAllowance before its last frame), and the clock past it.
+//     While a gap is open the clock alone finalizes, and those minutes are incomplete.
+//     So a break detected late (a read timeout) is known before the minutes after the
+//     connection's last frame are decided. Until finalization a trade of the minute
+//     updates it, even after trades of a later minute have arrived; after it a trade of
+//     that minute (or earlier) is counted late and never added.
 //   - A minute without trades becomes a bar with zero turnover and the previous bar's
 //     close, as the research bars have one.
-//   - A repeated trade id is dropped before it touches any price or turnover (a bounded
-//     memory of recent ids per instrument). A trade without an id is refused.
+//   - A repeated trade id is dropped before it touches any price or turnover. Ids are
+//     kept per open minute and freed when it is finalized: a repeat of a finalized
+//     minute's trade is already refused as late, so memory stays bounded by the trades
+//     of the open minutes. A trade without an id is refused.
 //
 // Completeness is part of the data, from gap intervals per instrument. Receive times
 // are moved back by LagAllowance, because a trade executed shortly before the last
@@ -28,8 +36,9 @@
 //   - from the start until the first Subscribed;
 //   - from a Disconnected's last received frame until the next Subscribed;
 //   - over an Overflow: the union of its dropped trades' exchange times and its
-//     receive-time span; when a lifecycle event was dropped too, the connection state
-//     is unknown, so the gap stays open until the next Subscribed.
+//     receive-time span; when a state event was dropped too (never a heartbeat), the
+//     connection state is unknown, so the gap stays open until a Subscribed (the
+//     runtime re-confirms a live subscription right after the report).
 //
 // Completeness is evaluated against the gaps known at the time of the decision, for
 // the bar, its previous bar and every bar of the median window, so a gap discovered
@@ -50,8 +59,6 @@ import (
 
 // ContractVersion names this engine's data contract.
 const ContractVersion = "burst_trade_bars_v1"
-
-const recentIDs = 8192
 
 // Config holds the rule and the bar mechanics.
 type Config struct {
@@ -82,6 +89,7 @@ type Bar struct {
 	Turnover   float64
 	Trades     int
 	LastRecvAt time.Time // the latest receive time among the bar's trades
+	ids        map[string]struct{}
 	first      orderKey
 	last       orderKey
 }
@@ -141,9 +149,7 @@ type symbolState struct {
 	finalThrough time.Time
 	lastFire     time.Time
 	gaps         []gap
-	seen         map[string]struct{}
-	seenRing     []string
-	seenNext     int
+	aliveThrough time.Time // the latest Heartbeat or Subscribed of its connection
 }
 
 // Engine is the bar builder and rule evaluator.
@@ -162,7 +168,7 @@ func (e *Engine) state(symbol string) *symbolState {
 	s, ok := e.symbols[symbol]
 	if !ok {
 		// gap from the beginning until the first Subscribed
-		s = &symbolState{gaps: []gap{{}}, seen: map[string]struct{}{}, seenRing: make([]string, recentIDs)}
+		s = &symbolState{gaps: []gap{{}}}
 		e.symbols[symbol] = s
 	}
 	return s
@@ -185,6 +191,11 @@ func (s *symbolState) openGap(from time.Time) {
 	s.gaps = append(s.gaps, gap{from: from})
 }
 
+func (s *symbolState) gapOpen() bool {
+	n := len(s.gaps)
+	return n > 0 && s.gaps[n-1].to.IsZero()
+}
+
 func (s *symbolState) closeGap(at time.Time) {
 	if n := len(s.gaps); n > 0 && s.gaps[n-1].to.IsZero() {
 		s.gaps[n-1].to = at
@@ -203,6 +214,16 @@ func (e *Engine) onLifecycle(l *streamrt.Lifecycle) {
 			s.openGap(from.Add(-e.config.LagAllowance))
 		case streamrt.Subscribed:
 			s.closeGap(l.At)
+			if l.At.After(s.aliveThrough) {
+				s.aliveThrough = l.At
+			}
+		case streamrt.Heartbeat:
+			// the runtime sends heartbeats only for an acknowledged subscription, in order,
+			// so one proves the subscription is live: it closes a gap left by a lost state
+			s.closeGap(l.At)
+			if l.LastFrameAt.After(s.aliveThrough) {
+				s.aliveThrough = l.LastFrameAt
+			}
 		case streamrt.Overflow:
 			from, to := l.At, l.At
 			if !l.Since.IsZero() {
@@ -214,8 +235,10 @@ func (e *Engine) onLifecycle(l *streamrt.Lifecycle) {
 			if l.DroppedTo.After(to) {
 				to = l.DroppedTo
 			}
-			if l.DroppedLifecycle {
-				s.openGap(from) // the connection state is unknown until the next Subscribed
+			if l.DroppedState {
+				// the connection state is unknown until a Subscribed: the runtime
+				// re-confirms a live subscription right after this report
+				s.openGap(from)
 				continue
 			}
 			if n := len(s.gaps); n > 0 && s.gaps[n-1].to.IsZero() {
@@ -226,20 +249,6 @@ func (e *Engine) onLifecycle(l *streamrt.Lifecycle) {
 			// data is complete only from Subscribed
 		}
 	}
-}
-
-// remember reports whether the id is new, keeping a bounded memory of recent ids.
-func (s *symbolState) remember(id string) bool {
-	if _, ok := s.seen[id]; ok {
-		return false
-	}
-	if old := s.seenRing[s.seenNext]; old != "" {
-		delete(s.seen, old)
-	}
-	s.seenRing[s.seenNext] = id
-	s.seenNext = (s.seenNext + 1) % len(s.seenRing)
-	s.seen[id] = struct{}{}
-	return true
 }
 
 func (e *Engine) onTrade(t *streamrt.Trade) {
@@ -255,11 +264,15 @@ func (e *Engine) onTrade(t *streamrt.Trade) {
 		e.Stats.LateTrades++
 		return
 	}
-	if !s.remember(t.TradeID) {
+	bar := e.barFor(s, start)
+	if bar.ids == nil {
+		bar.ids = map[string]struct{}{}
+	}
+	if _, seen := bar.ids[t.TradeID]; seen {
 		e.Stats.Duplicates++
 		return
 	}
-	bar := e.barFor(s, start)
+	bar.ids[t.TradeID] = struct{}{}
 	e.arrival++
 	key := orderKey{at: t.EventAt, seq: t.Seq, arrival: e.arrival}
 	if bar.Trades == 0 {
@@ -352,15 +365,23 @@ func (e *Engine) Tick(now time.Time) []Signal {
 		symbols = append(symbols, symbol)
 	}
 	slices.Sort(symbols)
-	due := now.Add(-time.Minute - e.config.Grace).Truncate(time.Minute)
 	var out []Signal
 	for _, symbol := range symbols {
 		s := e.symbols[symbol]
+		limit := now
+		// a break detected later starts LagAllowance before its last frame, so only
+		// what lies that far behind the confirmed delivery is safe to decide
+		confirmed := s.aliveThrough.Add(-e.config.LagAllowance)
+		if !s.gapOpen() && confirmed.Before(limit) {
+			limit = confirmed
+		}
+		due := limit.Add(-time.Minute - e.config.Grace).Truncate(time.Minute)
 		if newest, ok := e.newest(s); ok && newest.Before(due) {
 			e.barFor(s, due) // empty minutes up to the due minute
 		}
 		for len(s.open) > 0 && !s.open[0].Start.After(due) {
 			bar := *s.open[0]
+			bar.ids = nil // a repeat of this minute is refused as late from now on
 			s.open = s.open[1:]
 			s.finalThrough = bar.Start
 			if signal, ok := e.admit(symbol, s, bar, now); ok {

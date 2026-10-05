@@ -116,9 +116,12 @@ func TestRuntimeEmitsLifecycleInBandAndReconnects(t *testing.T) {
 	defer cancel()
 	go func() { _ = rt.Run(ctx, []string{"AAAUSDT"}) }()
 	var kinds []string
+	beats := 0
 	sessions := map[string]bool{}
 	for event := range rt.Events() {
 		switch {
+		case event.Lifecycle != nil && event.Lifecycle.Kind == Heartbeat:
+			beats++
 		case event.Lifecycle != nil:
 			kinds = append(kinds, string(event.Lifecycle.Kind))
 			sessions[event.Lifecycle.SessionID] = true
@@ -130,7 +133,7 @@ func TestRuntimeEmitsLifecycleInBandAndReconnects(t *testing.T) {
 	if !strings.HasPrefix(got, "connected,subscribed,trade,disconnected,connected,subscribed,trade") {
 		t.Fatalf("event order %s", got)
 	}
-	if len(sessions) < 2 || dials.Load() < 2 || pings.Load() < 1 {
+	if len(sessions) < 2 || dials.Load() < 2 || pings.Load() < 1 || beats < 1 {
 		t.Fatalf("sessions %d dials %d pings %d", len(sessions), dials.Load(), pings.Load())
 	}
 }
@@ -246,8 +249,40 @@ func TestOverflowCarriesTheExchangeTimesOfTheDroppedTrades(t *testing.T) {
 	<-rt.events
 	rt.emit(s, tradeAt(40))
 	report := (<-rt.events).Lifecycle
-	if report == nil || report.Kind != Overflow || report.Dropped != 3 || !report.DroppedLifecycle ||
+	if report == nil || report.Kind != Overflow || report.Dropped != 3 || !report.DroppedState ||
 		!report.DroppedFrom.Equal(base.Add(10*time.Second)) || !report.DroppedTo.Equal(base.Add(30*time.Second)) {
 		t.Fatalf("report %+v", report)
+	}
+}
+
+func TestALostSubscribedIsReconfirmedAfterTheOverflowReport(t *testing.T) {
+	rt := New(BybitCodec{}, Config{QueueSize: 1})
+	s := &shard{index: 0, symbols: []string{"AAAUSDT"}, subscribedSession: "live"}
+	rt.emit(s, Event{Trade: &Trade{Symbol: "AAAUSDT"}})                           // fills the queue
+	rt.emit(s, Event{Lifecycle: &Lifecycle{Kind: Subscribed, SessionID: "live"}}) // dropped
+	<-rt.events
+	rt.emit(s, Event{Trade: &Trade{Symbol: "AAAUSDT"}})
+	report := (<-rt.events).Lifecycle
+	if report == nil || report.Kind != Overflow || !report.DroppedState {
+		t.Fatalf("report %+v", report)
+	}
+	// the queue held one slot: the re-confirmation could not fit, so it is owed again
+	if s.owed == 0 || !s.owedState {
+		t.Fatalf("an undelivered re-confirmation must stay owed: owed %d state %v", s.owed, s.owedState)
+	}
+	rt2 := New(BybitCodec{}, Config{QueueSize: 4})
+	s2 := &shard{index: 0, symbols: []string{"AAAUSDT"}, subscribedSession: "live", owed: 1, owedState: true}
+	rt2.emit(s2, Event{Trade: &Trade{Symbol: "AAAUSDT"}})
+	kinds := []string{}
+	for range 3 {
+		e := <-rt2.events
+		if e.Lifecycle != nil {
+			kinds = append(kinds, string(e.Lifecycle.Kind))
+		} else {
+			kinds = append(kinds, "trade")
+		}
+	}
+	if strings.Join(kinds, ",") != "overflow,subscribed,trade" {
+		t.Fatalf("order %v", kinds)
 	}
 }

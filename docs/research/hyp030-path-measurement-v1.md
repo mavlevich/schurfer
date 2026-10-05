@@ -34,10 +34,20 @@ actually cost to enter and exit at those moments?
    - So this is a new signal contract. The historical flow (about 15 a day) and the
      power planning are approximations for it, and its firings will not match the
      research list one for one.
-   - Bars are evaluated 250 ms after their end. Until then a trade of the minute still
+   - A minute is decided only once the connection is confirmed delivered past its end
+     plus 250 ms plus the 2 s lag allowance (an in-band heartbeat of that connection; a
+     break found later starts 2 s before its last frame), and every queued event is
+     applied first. Decisions therefore come at least about 2.3 s after the bar's end.
+   - Heartbeats are sent only for an acknowledged subscription and are never a state
+     event: a dropped heartbeat leaves no gap. If a state event is dropped, the runtime
+     re-confirms a live subscription right after the overflow report, and a heartbeat
+     also closes the gap. While a gap is open the clock alone finalizes, and the minute is
+     incomplete. So a break detected late still removes the minutes after the
+     connection's last frame. Until then a trade of the minute still
      updates it; after that it is late, counted and never added.
-   - A repeated trade id is dropped before it touches price or turnover; a trade
-     without an id is refused.
+   - A repeated trade id is dropped before it touches price or turnover. Ids are kept
+     per open minute and freed at finalization; a repeat of a finalized minute is
+     already refused as late. A trade without an id is refused.
    - **Completeness starts only when the venue has acknowledged as many subscriptions
      as were requested** (a count match: acknowledgements name no instrument), within
      10 s or the session restarts. Gap intervals run:
@@ -66,8 +76,9 @@ actually cost to enter and exit at those moments?
 
 ## What is recorded
 
-**Visible now: counters and times only.** They go to Redis health and to a daily
-summary.
+**Visible now: counters and times only.** They go to Redis health (the whole snapshot
+replaced atomically, named by its run id) and to a daily summary per run. Health leaves
+the event loop as snapshots, so a slow Redis never delays events.
 
 - Signals per day; suppressed by a gap; blocked (more than 3 open at once, counted
   against the design's portfolio limit).
@@ -88,8 +99,12 @@ summary.
 - both book snapshots;
 - the funding rate at entry and the settled funding of any crossed settlement.
 
-These are appended to daily NDJSON files (gzip), mode 0600, each closed day with a
-manifest (line count, sha256). Nothing opens them before v2 is terminal. A test asserts
+These go to gzip NDJSON segments, one per UTC day per run, created new and never
+appended to, mode 0600. Each closed segment gets a manifest (line count, sha256). A run
+killed without closing leaves its segment without a trailer; the next start writes that
+segment an "unterminated" manifest with the lines still readable. A record that cannot
+be sealed stops the run with an error: a measurement that cannot keep its records does
+not go on, and nothing counts as completed unless sealed. Nothing opens them before v2 is terminal. A test asserts
 that the health record and the daily summary carry no market value and no instrument
 name.
 
@@ -101,6 +116,21 @@ name.
   latency).
 - **Disk:** about 15 signals a day with two 50-level books each is small. The trade
   stream is not stored.
+
+## Implementation and a local check
+
+- **Code:** `cmd/burstprobe` (process), `internal/burstprobe` (REST snapshots, sealed
+  daily NDJSON with manifests, counters-only health), `internal/burstengine`,
+  `internal/streamrt`.
+- **Operations:** `make prod-burstprobe-start | -stop | -health`; compose profile
+  `burst-probe`, no restart, 256 MB and 0.5 CPU.
+- **Local check on live Bybit (counters only, 2026-10-05, 150 s):**
+  - 3 connections, 53 acknowledgements for 53 subscribe frames;
+  - no drops, disconnects, duplicates or parse errors; about 300 trades/s;
+  - the first minute after the subscription marked incomplete, as designed;
+  - peak RSS about 25 MB after moving the id deduplication into the open minutes (an
+    earlier ring of recent ids per instrument grew past 100 MB).
+- No sealed file was opened.
 
 ## Readout (later, separately registered)
 
