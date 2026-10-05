@@ -28,9 +28,10 @@ executable economics.
     [output](evidence/bybit-burst-decay-v1/diagnostic-open-vs-first-trade.json)) puts
     the gap at: entry median 0 bps (absolute median 6.4, 5-95% -27..+28); exit median
     0 bps (absolute median 2.7).
-  - The mean gross from the bar opens (+125.4 bps) and from the trades (+125.0 bps)
-    agree. So the edge-loss readout's paired 79 bps rests on a ticker proxy, but not a
-    biased one.
+  - On these firings, the mean returns of the two proxies are close: +125.4 bps from
+    the bar opens and +125.0 bps from the trades. This does not test whether ticker
+    prices affected which bars were selected as bursts, or the edge-loss readout's
+    delay comparison built on the bar opens.
 - **Waits.** The median wait is 0.06 s for the entry and 0.29 s for the exit. No moment
   waited over 5 s.
 
@@ -83,11 +84,15 @@ bar ended below the threshold are not in this population.
     reader has the bar), 76% at 5 s, half at 20 s, under a third at 46 s.
   - Today's watch path enters about 46 s after the bar closes: it is in the part where
     most is gone, and its median is negative.
-- **Latency requirement (protocol's second case).** A material part survives several
-  seconds. A path that acts within about 3 to 5 s of the bar's end keeps most of the
-  gross proxy. That is reachable from Bybit's own capture, which has the bar 2.7 s
-  after close (the 30 s settle and the 10 s poll are the delay, not the data). It does
-  not need co-location or sub-second engineering.
+- **Latency target (protocol's second case), not yet confirmed.** A material part of
+  the proxy survives several seconds, so acting within about 3 to 5 s of the bar's end
+  is a target worth testing.
+  - Bybit's capture has the bar 2.7 s after close at the median, but 7.7 s at p90,
+    before any signal is computed or a quote is fetched. The 30 s settle and the 10 s
+    poll are today's main delay, not the data.
+  - Whether a new path meets the target, and what the economics are at its actual
+    latencies including their tail, is for a bounded measurement to show.
+  - Nothing here calls for co-location or sub-second engineering.
 - **This is not money yet.**
   - The middle cost scenario is 41 bps per round trip. Against the 2.7 s mean of
     106 bps it leaves about 65 bps, but the 2.7 s median (33 bps) does not clear it.
