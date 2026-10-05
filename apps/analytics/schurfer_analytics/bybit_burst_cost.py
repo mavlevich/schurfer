@@ -6,7 +6,7 @@ Nothing here is a trading rule; quotes are not fills.
 Phases:
 
 - `fetch` downloads, once and locally, the Bybit order-book archive files of the
-  instrument-days the frozen decay firings need (sha256, a 20 GiB cap that counts files
+  instrument-days the frozen decay firings need (sha256, a 40 GiB cap that counts files
   on disk), and the public funding history of those instruments over the window.
 - `read` rebuilds each book in file order, captures it at every entry moment and exit
   moment (never reading ahead of the moment), and writes the result once.
@@ -50,7 +50,7 @@ MIN_COVERAGE = 0.5  # resolved / firings
 MIN_INSTRUMENTS = 50
 MIN_DAYS = 20
 EMPTY_FUNDING_SUSPECT_MS = 24 * 3600 * 1000  # no settlement over a longer span is suspect
-MAX_BYTES = 20 * 1024**3
+MAX_BYTES = 40 * 1024**3  # 20 GiB proved too small before any read (430 of 606 files)
 BOOTSTRAP_ITERATIONS = 10_000
 BOOTSTRAP_SEED = 20_261_006
 BOOKS_NAME = "cost-books.json"
@@ -115,7 +115,7 @@ def fetch_books(firings: Sequence[dict[str, Any]], books_dir: Path) -> dict[str,
     # everything already on disk counts before any download, partial files included
     total = sum(p.stat().st_size for p in books_dir.iterdir() if p.is_file())
     if total > MAX_BYTES:
-        raise SystemExit("the 20 GiB cap is already exceeded by the files on disk")
+        raise SystemExit("the download cap is already exceeded by the files on disk")
     files: dict[str, Any] = {}
     status: Counter[str] = Counter()
     with httpx.Client(timeout=600, follow_redirects=True) as client:
@@ -131,7 +131,7 @@ def fetch_books(firings: Sequence[dict[str, Any]], books_dir: Path) -> dict[str,
                     response.raise_for_status()
                     announced = int(response.headers.get("content-length") or 0)
                     if total + announced > MAX_BYTES:
-                        raise SystemExit("the 20 GiB cap would be exceeded by the next file")
+                        raise SystemExit("the download cap would be exceeded by the next file")
                     partial = path.with_suffix(".partial")
                     written = 0
                     try:
@@ -139,7 +139,9 @@ def fetch_books(firings: Sequence[dict[str, Any]], books_dir: Path) -> dict[str,
                             for block in response.iter_bytes():
                                 written += len(block)
                                 if total + written > MAX_BYTES:
-                                    raise SystemExit("the 20 GiB cap was reached while downloading")
+                                    raise SystemExit(
+                                        "the download cap was reached while downloading"
+                                    )
                                 out.write(block)
                     except SystemExit:
                         partial.unlink(missing_ok=True)

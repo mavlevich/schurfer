@@ -32,7 +32,8 @@ its sha256 before anything is downloaded. **No data on or after 2026-09-29.**
   - JSON lines in the public stream's own format: `type` snapshot or delta,
     exchange time `ts` (ms), update id `u`, sequence `seq`, levels `b` and `a`.
   - Only the instrument-days that hold a firing's entry moments and its exit.
-  - Downloaded once, locally, each with its sha256. A 20 GiB cap: everything already
+  - Downloaded once, locally, each with its sha256. A 40 GiB cap (amended from 20 GiB before any read: the first fetch stopped at the cap
+    with 430 of 606 files, 21.4 GB, projecting about 30 GB): everything already
     in the directory (partial files included) counts before the first download, and
     each download is checked against the cap before and while it is written. A missing
     file makes its firings `no_book`.
