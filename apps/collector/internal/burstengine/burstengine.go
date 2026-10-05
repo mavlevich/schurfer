@@ -13,9 +13,14 @@
 //
 //   - A trade belongs to the minute of its exchange time. Open and Close are the
 //     first and last trade by (exchange time, venue sequence, arrival order).
-//   - A minute is finalized when the clock passes its end plus Grace. Until then a trade
-//     of that minute updates it, even after trades of a later minute have arrived;
-//     after it a trade of that minute (or earlier) is counted late and never added.
+//   - A minute is finalized only when the stream is confirmed delivered past its end
+//     plus Grace: a Heartbeat or Subscribed of the instrument's connection at or after
+//     that point (frames of one connection arrive in order), and the clock past it too.
+//     While a gap is open the clock alone finalizes, and those minutes are incomplete.
+//     So a break detected late (a read timeout) is known before the minutes after the
+//     connection's last frame are decided. Until finalization a trade of the minute
+//     updates it, even after trades of a later minute have arrived; after it a trade of
+//     that minute (or earlier) is counted late and never added.
 //   - A minute without trades becomes a bar with zero turnover and the previous bar's
 //     close, as the research bars have one.
 //   - A repeated trade id is dropped before it touches any price or turnover. Ids are
@@ -142,6 +147,7 @@ type symbolState struct {
 	finalThrough time.Time
 	lastFire     time.Time
 	gaps         []gap
+	aliveThrough time.Time // the latest Heartbeat or Subscribed of its connection
 }
 
 // Engine is the bar builder and rule evaluator.
@@ -183,6 +189,11 @@ func (s *symbolState) openGap(from time.Time) {
 	s.gaps = append(s.gaps, gap{from: from})
 }
 
+func (s *symbolState) gapOpen() bool {
+	n := len(s.gaps)
+	return n > 0 && s.gaps[n-1].to.IsZero()
+}
+
 func (s *symbolState) closeGap(at time.Time) {
 	if n := len(s.gaps); n > 0 && s.gaps[n-1].to.IsZero() {
 		s.gaps[n-1].to = at
@@ -201,6 +212,13 @@ func (e *Engine) onLifecycle(l *streamrt.Lifecycle) {
 			s.openGap(from.Add(-e.config.LagAllowance))
 		case streamrt.Subscribed:
 			s.closeGap(l.At)
+			if l.At.After(s.aliveThrough) {
+				s.aliveThrough = l.At
+			}
+		case streamrt.Heartbeat:
+			if l.LastFrameAt.After(s.aliveThrough) {
+				s.aliveThrough = l.LastFrameAt
+			}
 		case streamrt.Overflow:
 			from, to := l.At, l.At
 			if !l.Since.IsZero() {
@@ -340,10 +358,14 @@ func (e *Engine) Tick(now time.Time) []Signal {
 		symbols = append(symbols, symbol)
 	}
 	slices.Sort(symbols)
-	due := now.Add(-time.Minute - e.config.Grace).Truncate(time.Minute)
 	var out []Signal
 	for _, symbol := range symbols {
 		s := e.symbols[symbol]
+		limit := now
+		if !s.gapOpen() && s.aliveThrough.Before(limit) {
+			limit = s.aliveThrough // not confirmed delivered past this point yet
+		}
+		due := limit.Add(-time.Minute - e.config.Grace).Truncate(time.Minute)
 		if newest, ok := e.newest(s); ok && newest.Before(due) {
 			e.barFor(s, due) // empty minutes up to the due minute
 		}

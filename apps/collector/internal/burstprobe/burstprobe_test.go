@@ -140,39 +140,94 @@ func TestHealthCarriesNoInstrumentAndNoMarketValue(t *testing.T) {
 	}
 }
 
-func TestSealedFilesRotateByDayWithManifests(t *testing.T) {
+func manifest(t *testing.T, dir, segment string) map[string]any {
+	t.Helper()
+	body, err := os.ReadFile(filepath.Join(dir, segment+".manifest.json")) //nolint:gosec // test temp dir
+	if err != nil {
+		t.Fatalf("no manifest for %s: %v", segment, err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(body, &m); err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+func TestSealedSegmentsRotateByDayAndRunWithManifests(t *testing.T) {
 	dir := t.TempDir()
 	day := time.Date(2026, 10, 6, 23, 59, 0, 0, time.UTC)
-	s, err := NewSealed(dir, burstengine.ContractVersion)
+	s, err := NewSealed(dir, burstengine.ContractVersion, "run1")
 	if err != nil {
 		t.Fatal(err)
 	}
 	s.clock = func() time.Time { return day }
 	_ = s.Write(map[string]int{"a": 1})
 	_ = s.Write(map[string]int{"a": 2})
-	day = day.Add(2 * time.Minute) // the next UTC day closes the first
+	day = day.Add(2 * time.Minute)
 	_ = s.Write(map[string]int{"a": 3})
 	if err := s.Close(); err != nil {
 		t.Fatal(err)
 	}
-	var m map[string]any
-	body, err := os.ReadFile(filepath.Join(dir, "sealed-2026-10-06.manifest.json")) //nolint:gosec // test temp dir
-	if err != nil || json.Unmarshal(body, &m) != nil || m["lines"].(float64) != 2 {
-		t.Fatalf("manifest %s %v", body, err)
+	m := manifest(t, dir, "sealed-2026-10-06-run1")
+	if m["status"] != "closed" || m["lines"].(float64) != 2 || m["stream_cut"] != false {
+		t.Fatalf("manifest %v", m)
 	}
-	info, _ := os.Stat(filepath.Join(dir, "sealed-2026-10-06.ndjson.gz"))
+	info, _ := os.Stat(filepath.Join(dir, "sealed-2026-10-06-run1.ndjson.gz"))
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("mode %v", info.Mode().Perm())
 	}
-	// a restart on the same day appends a new gzip member; the manifest counts both
-	s2, _ := NewSealed(dir, burstengine.ContractVersion)
-	s2.clock = func() time.Time { return day }
-	_ = s2.Write(map[string]int{"a": 4})
-	_ = s2.Close()
-	body, _ = os.ReadFile(filepath.Join(dir, "sealed-2026-10-07.manifest.json")) //nolint:gosec // test temp dir
-	_ = json.Unmarshal(body, &m)
-	if m["lines"].(float64) != 2 {
-		t.Fatalf("manifest after restart %s", body)
+}
+
+func TestACrashedSegmentIsClosedAsUnterminatedAndNeverAppendedTo(t *testing.T) {
+	dir := t.TempDir()
+	day := time.Date(2026, 10, 6, 12, 0, 0, 0, time.UTC)
+	crashed, _ := NewSealed(dir, burstengine.ContractVersion, "run1")
+	crashed.clock = func() time.Time { return day }
+	_ = crashed.Write(map[string]int{"a": 1})
+	_ = crashed.Write(map[string]int{"a": 2})
+	// SIGKILL: no Close, no gzip trailer, no manifest
+	before, _ := os.ReadFile(filepath.Join(dir, "sealed-2026-10-06-run1.ndjson.gz")) //nolint:gosec // test temp dir
+
+	next, err := NewSealed(dir, burstengine.ContractVersion, "run2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := manifest(t, dir, "sealed-2026-10-06-run1")
+	if m["status"] != "unterminated" || m["lines"].(float64) != 2 || m["stream_cut"] != true {
+		t.Fatalf("recovered manifest %v", m)
+	}
+	next.clock = func() time.Time { return day }
+	_ = next.Write(map[string]int{"a": 3})
+	_ = next.Close()
+	after, _ := os.ReadFile(filepath.Join(dir, "sealed-2026-10-06-run1.ndjson.gz")) //nolint:gosec // test temp dir
+	if string(before) != string(after) {
+		t.Fatal("the crashed segment was appended to")
+	}
+	if m2 := manifest(t, dir, "sealed-2026-10-06-run2"); m2["status"] != "closed" || m2["lines"].(float64) != 1 {
+		t.Fatalf("new segment %v", m2)
+	}
+}
+
+type failingRecorder struct{}
+
+func (failingRecorder) Write(any) error { return errors.New("disk full") }
+
+func TestASealingFailureStopsTheMeasurement(t *testing.T) {
+	market := &fakeMarket{}
+	p := New(market, failingRecorder{}, Config{MaxOpen: 3, Hold: 50 * time.Millisecond, QuoteTimeout: time.Second})
+	p.Handle(context.Background(), signal(time.Now()))
+	p.Wait()
+	select {
+	case err := <-p.Failed():
+		if !strings.Contains(err.Error(), "disk full") {
+			t.Fatalf("err %v", err)
+		}
+	default:
+		t.Fatal("a failed seal must be reported")
+	}
+	h := p.Health()
+	if h["completed"] != 0 || market.books != 1 {
+		t.Fatalf("health %v books %d: nothing more is fetched after an unsealed entry", h, market.books)
 	}
 }
 
@@ -204,5 +259,18 @@ func TestRESTParsesTheVenueShapes(t *testing.T) {
 	settled, err := rest.SettledBetween(ctx, "AAAUSDT", time.UnixMilli(1789999999000), time.UnixMilli(1790000001000))
 	if err != nil || len(settled) != 1 {
 		t.Fatalf("settled %+v %v (only settlements inside the hold)", settled, err)
+	}
+}
+
+func TestNothingMoreIsFetchedAfterASealingFailure(t *testing.T) {
+	market := &fakeMarket{}
+	p := New(market, failingRecorder{}, Config{MaxOpen: 3, Hold: time.Millisecond, QuoteTimeout: time.Second})
+	p.Handle(context.Background(), signal(time.Now()))
+	p.Wait()
+	calls := market.books
+	p.Handle(context.Background(), signal(time.Now()))
+	p.Wait()
+	if market.books != calls || p.Health()["ignored_after_failure"] != 1 {
+		t.Fatalf("books %d -> %d, health %v", calls, market.books, p.Health())
 	}
 }

@@ -18,6 +18,10 @@
 //   - Disconnected: the session ended (error, liveness timeout or a codec error).
 //     LastFrameAt is the last frame received: the gap starts there, not at the
 //     detection, which can come a whole read timeout later;
+//   - Heartbeat: the connection is alive; LastFrameAt is its latest received frame. At
+//     most one per HeartbeatEvery per shard, carried by received frames, so a dead
+//     connection sends none. A consumer may treat the stream as delivered through
+//     LastFrameAt (frames of one connection arrive in order);
 //   - Overflow: events of this shard were dropped because the consumer queue was full,
 //     from Since (the first drop) to At by receive time. DroppedFrom and DroppedTo
 //     bound the dropped trades by exchange time, and DroppedLifecycle says whether a
@@ -67,6 +71,7 @@ type LifecycleKind string
 const (
 	Connected    LifecycleKind = "connected"
 	Subscribed   LifecycleKind = "subscribed"
+	Heartbeat    LifecycleKind = "heartbeat"
 	Disconnected LifecycleKind = "disconnected"
 	Overflow     LifecycleKind = "overflow"
 )
@@ -120,6 +125,7 @@ type Config struct {
 	QueueSize        int
 	ReadTimeout      time.Duration // no frame for this long ends the session
 	SubscribeTimeout time.Duration // all acknowledgements must arrive within this
+	HeartbeatEvery   time.Duration // at most one Heartbeat per shard per this
 	BackoffInitial   time.Duration
 	BackoffMax       time.Duration
 	Dialer           *websocket.Dialer
@@ -134,6 +140,9 @@ func (c Config) withDefaults(codec Codec) Config {
 	}
 	if c.SubscribeTimeout <= 0 {
 		c.SubscribeTimeout = 10 * time.Second
+	}
+	if c.HeartbeatEvery <= 0 {
+		c.HeartbeatEvery = 200 * time.Millisecond
 	}
 	if c.BackoffInitial <= 0 {
 		c.BackoffInitial = time.Second
@@ -344,10 +353,22 @@ func (r *Runtime) session(ctx context.Context, s *shard) (connected bool, err er
 			}
 		}
 	}()
+	return true, r.readLoop(conn, s, sessionID, len(frames), dialedAt, &lastFrameAt)
+
+}
+
+// readLoop reads frames until the session ends: it enforces the subscription deadline
+// and liveness, counts acknowledgements into Subscribed, forwards trades, and emits
+// heartbeats. lastFrameAt is updated for the caller's Disconnected event.
+func (r *Runtime) readLoop(
+	conn *websocket.Conn, s *shard, sessionID string, requested int, dialedAt time.Time,
+	lastFrameAt *time.Time,
+) error {
 	if err := wsstream.ConfigureReadLiveness(conn, r.config.ReadTimeout); err != nil {
-		return true, err
+		return err
 	}
 	acked, subscribed := 0, false
+	var lastBeat time.Time
 	subscribeBy := dialedAt.Add(r.config.SubscribeTimeout)
 	for {
 		if !subscribed {
@@ -357,35 +378,35 @@ func (r *Runtime) session(ctx context.Context, s *shard) (connected bool, err er
 				deadline = subscribeBy
 			}
 			if subscribeBy.Before(time.Now()) {
-				return true, fmt.Errorf("subscribe timeout: %d of %d acknowledged", acked, len(frames))
+				return fmt.Errorf("subscribe timeout: %d of %d acknowledged", acked, requested)
 			}
 			if err := conn.SetReadDeadline(deadline); err != nil {
-				return true, err
+				return err
 			}
 		}
 		_, frame, readErr := conn.ReadMessage()
 		if readErr != nil {
 			if !subscribed && !time.Now().Before(subscribeBy) {
-				return true, fmt.Errorf("subscribe timeout: %d of %d acknowledged", acked, len(frames))
+				return fmt.Errorf("subscribe timeout: %d of %d acknowledged", acked, requested)
 			}
-			return true, wsstream.ClassifyReadError(readErr)
+			return wsstream.ClassifyReadError(readErr)
 		}
 		received := time.Now()
-		lastFrameAt = received
+		*lastFrameAt = received
 		if err := wsstream.RefreshReadDeadline(conn, r.config.ReadTimeout); err != nil {
-			return true, err
+			return err
 		}
 		r.Stats.Frames.Add(1)
 		r.Stats.Bytes.Add(int64(len(frame)))
 		parsed, parseErr := r.codec.Parse(frame, received)
 		if parseErr != nil {
 			r.Stats.ParseErrors.Add(1)
-			return true, fmt.Errorf("parse: %w", parseErr)
+			return fmt.Errorf("parse: %w", parseErr)
 		}
 		if parsed.Acks > 0 {
 			r.Stats.Acks.Add(int64(parsed.Acks))
 			acked += parsed.Acks
-			if !subscribed && acked >= len(frames) {
+			if !subscribed && acked >= requested {
 				subscribed = true
 				r.emit(s, Event{Lifecycle: &Lifecycle{
 					Kind: Subscribed, Shard: s.index, SessionID: sessionID, Symbols: s.symbols,
@@ -396,6 +417,13 @@ func (r *Runtime) session(ctx context.Context, s *shard) (connected bool, err er
 		for i := range parsed.Trades {
 			r.Stats.Trades.Add(1)
 			r.emit(s, Event{Trade: &parsed.Trades[i]})
+		}
+		if subscribed && received.Sub(lastBeat) >= r.config.HeartbeatEvery {
+			lastBeat = received
+			r.emit(s, Event{Lifecycle: &Lifecycle{
+				Kind: Heartbeat, Shard: s.index, SessionID: sessionID, Symbols: s.symbols,
+				At: received, LastFrameAt: received,
+			}})
 		}
 	}
 }

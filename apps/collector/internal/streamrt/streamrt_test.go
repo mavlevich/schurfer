@@ -116,9 +116,12 @@ func TestRuntimeEmitsLifecycleInBandAndReconnects(t *testing.T) {
 	defer cancel()
 	go func() { _ = rt.Run(ctx, []string{"AAAUSDT"}) }()
 	var kinds []string
+	beats := 0
 	sessions := map[string]bool{}
 	for event := range rt.Events() {
 		switch {
+		case event.Lifecycle != nil && event.Lifecycle.Kind == Heartbeat:
+			beats++
 		case event.Lifecycle != nil:
 			kinds = append(kinds, string(event.Lifecycle.Kind))
 			sessions[event.Lifecycle.SessionID] = true
@@ -130,7 +133,7 @@ func TestRuntimeEmitsLifecycleInBandAndReconnects(t *testing.T) {
 	if !strings.HasPrefix(got, "connected,subscribed,trade,disconnected,connected,subscribed,trade") {
 		t.Fatalf("event order %s", got)
 	}
-	if len(sessions) < 2 || dials.Load() < 2 || pings.Load() < 1 {
+	if len(sessions) < 2 || dials.Load() < 2 || pings.Load() < 1 || beats < 1 {
 		t.Fatalf("sessions %d dials %d pings %d", len(sessions), dials.Load(), pings.Load())
 	}
 }

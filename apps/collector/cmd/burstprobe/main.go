@@ -11,6 +11,7 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -93,7 +94,8 @@ func run() error {
 	if err := writeUniverse(o.outDir, universe.IncludedSymbols, universe.ExclusionCounts); err != nil {
 		return err
 	}
-	sealed, err := burstprobe.NewSealed(filepath.Join(o.outDir, "sealed"), burstengine.ContractVersion)
+	runID := newRunID()
+	sealed, err := burstprobe.NewSealed(filepath.Join(o.outDir, "sealed"), burstengine.ContractVersion, runID)
 	if err != nil {
 		return err
 	}
@@ -117,12 +119,29 @@ func run() error {
 	slog.Info("burstprobe.started", "instruments", len(universe.IncludedSymbols),
 		"contract", burstengine.ContractVersion, "duration", o.duration)
 
+	// Health leaves the event loop as snapshots; a slow Redis never delays events.
+	snapshots := make(chan map[string]int64, 1)
+	publisherDone := make(chan struct{})
+	go func() {
+		defer close(publisherDone)
+		summaryDay := time.Now().UTC().Format("2006-01-02")
+		for counters := range snapshots {
+			now := time.Now()
+			publish(ctx, rdb, runID, counters, now)
+			if day := now.UTC().Format("2006-01-02"); day != summaryDay {
+				writeSummary(o.outDir, summaryDay, runID, counters)
+				summaryDay = day
+			}
+		}
+		writeSummary(o.outDir, time.Now().UTC().Format("2006-01-02"), runID, health(rt, engine, probe))
+	}()
+
 	tick := time.NewTicker(100 * time.Millisecond)
 	defer tick.Stop()
 	report := time.NewTicker(10 * time.Second)
 	defer report.Stop()
-	summaryDay := time.Now().UTC().Format("2006-01-02")
 	events := rt.Events()
+	var runErr error
 loop:
 	for {
 		select {
@@ -132,26 +151,53 @@ loop:
 			}
 			engine.OnEvent(event)
 		case now := <-tick.C:
+			// every event already queued is applied before any minute is decided
+			if !drain(events, engine) {
+				break loop
+			}
 			for _, s := range engine.Tick(now) {
 				probe.Handle(ctx, s)
 			}
-		case now := <-report.C:
-			counters := health(rt, engine, probe)
-			publish(ctx, rdb, counters, now)
-			if day := now.UTC().Format("2006-01-02"); day != summaryDay {
-				writeSummary(o.outDir, summaryDay, counters)
-				summaryDay = day
+		case <-report.C:
+			select {
+			case snapshots <- health(rt, engine, probe):
+			default: // the publisher is behind; the next snapshot supersedes this one
 			}
+		case runErr = <-probe.Failed():
+			slog.Error("burstprobe.sealing_failed_stopping", "err", runErr)
+			break loop
 		case <-ctx.Done():
 			break loop
 		}
 	}
+	cancel()
 	probe.Wait()
-	counters := health(rt, engine, probe)
-	writeSummary(o.outDir, summaryDay, counters)
-	publish(context.Background(), rdb, counters, time.Now())
-	slog.Info("burstprobe.stopped", "signals", counters["signals"])
-	return sealed.Close()
+	close(snapshots)
+	<-publisherDone
+	publish(context.Background(), rdb, runID, health(rt, engine, probe), time.Now())
+	slog.Info("burstprobe.stopped", "run_id", runID)
+	return errors.Join(runErr, sealed.Close())
+}
+
+// drain applies every queued event without blocking; false when the stream has ended.
+func drain(events <-chan streamrt.Event, engine *burstengine.Engine) bool {
+	for {
+		select {
+		case event, ok := <-events:
+			if !ok {
+				return false
+			}
+			engine.OnEvent(event)
+		default:
+			return true
+		}
+	}
+}
+
+func newRunID() string {
+	var b [4]byte
+	_, _ = rand.Read(b[:])
+	return time.Now().UTC().Format("20060102T150405Z") + "-" + hex.EncodeToString(b[:])
 }
 
 // health merges the runtime, engine and probe counters; no instrument, no market value.
@@ -190,17 +236,21 @@ func peakRSS() int64 {
 	return usage.Maxrss * 1024 // KiB on Linux
 }
 
-func publish(ctx context.Context, rdb *redis.Client, counters map[string]int64, now time.Time) {
+// publish replaces the whole health snapshot atomically (no field of an earlier run
+// survives) and names the run it belongs to.
+func publish(ctx context.Context, rdb *redis.Client, runID string, counters map[string]int64, now time.Time) {
 	if rdb == nil {
-		slog.Info("burstprobe.health", "counters", counters)
+		slog.Info("burstprobe.health", "run_id", runID, "counters", counters)
 		return
 	}
-	values := make(map[string]any, len(counters)+1)
+	values := make(map[string]any, len(counters)+2)
 	for k, v := range counters {
 		values[k] = v
 	}
+	values["run_id"] = runID
 	values["updated_at"] = now.UTC().Format(time.RFC3339)
 	pipe := rdb.TxPipeline()
+	pipe.Del(ctx, healthKey)
 	pipe.HSet(ctx, healthKey, values)
 	pipe.Expire(ctx, healthKey, 10*time.Minute)
 	if _, err := pipe.Exec(ctx); err != nil {
@@ -208,13 +258,14 @@ func publish(ctx context.Context, rdb *redis.Client, counters map[string]int64, 
 	}
 }
 
-func writeSummary(dir, day string, counters map[string]int64) {
-	body, err := json.MarshalIndent(map[string]any{"day": day, "counters": counters}, "", " ")
+func writeSummary(dir, day, runID string, counters map[string]int64) {
+	body, err := json.MarshalIndent(map[string]any{"day": day, "run_id": runID, "counters": counters}, "", " ")
 	if err == nil {
 		err = os.MkdirAll(filepath.Join(dir, "summary"), 0o750)
 	}
 	if err == nil {
-		err = os.WriteFile(filepath.Join(dir, "summary", "summary-"+day+".json"), append(body, '\n'), 0o600)
+		name := filepath.Join(dir, "summary", "summary-"+day+"-"+runID+".json")
+		err = os.WriteFile(name, append(body, '\n'), 0o600)
 	}
 	if err != nil {
 		slog.Warn("burstprobe.summary_failed", "err", err)

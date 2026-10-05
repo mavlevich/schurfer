@@ -2,8 +2,10 @@ package burstprobe
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mavlevich/schurfer/collector/internal/burstengine"
@@ -48,14 +50,21 @@ type Probe struct {
 	counters  map[string]int64
 	latencies map[string][]time.Duration
 	wg        sync.WaitGroup
+	failed    chan error
+	stopped   atomic.Bool // set by the first sealing failure: nothing more is fetched
 }
 
 func New(market Market, recorder Recorder, config Config) *Probe {
 	return &Probe{
 		market: market, recorder: recorder, config: config,
 		counters: map[string]int64{}, latencies: map[string][]time.Duration{},
+		failed: make(chan error, 1),
 	}
 }
+
+// Failed reports the first failure to seal a record. A measurement that cannot keep
+// its records must stop: the caller ends the run with this error.
+func (p *Probe) Failed() <-chan error { return p.failed }
 
 func (p *Probe) count(name string) {
 	p.mu.Lock()
@@ -92,6 +101,10 @@ func sealSignal(s burstengine.Signal) sealedSignal {
 // Handle takes one signal: blocked when every slot is busy, else an entry snapshot now
 // and an exit snapshot and the settled funding after the hold.
 func (p *Probe) Handle(ctx context.Context, signal burstengine.Signal) {
+	if p.stopped.Load() {
+		p.count("ignored_after_failure")
+		return
+	}
 	p.count("signals")
 	p.observe(StageLastTrade, signal.LastTradeLag)
 	p.observe(StageEvaluated, signal.EvaluatedAt.Sub(signal.BarEnd))
@@ -102,8 +115,9 @@ func (p *Probe) Handle(ctx context.Context, signal burstengine.Signal) {
 	}
 	p.mu.Unlock()
 	if blocked {
-		p.count("blocked")
-		p.write(map[string]any{"kind": "blocked", "signal": sealSignal(signal)})
+		if p.write(map[string]any{"kind": "blocked", "signal": sealSignal(signal)}) {
+			p.count("blocked")
+		}
 		return
 	}
 	p.wg.Add(1)
@@ -141,7 +155,9 @@ func (p *Probe) run(ctx context.Context, signal burstengine.Signal) {
 	} else {
 		record["funding"] = funding
 	}
-	p.write(record)
+	if !p.write(record) {
+		return // the run is stopping: nothing more is fetched for an unsealed entry
+	}
 
 	exitAt := signal.BarEnd.Add(p.config.Hold)
 	select {
@@ -149,6 +165,10 @@ func (p *Probe) run(ctx context.Context, signal burstengine.Signal) {
 		p.count("exit_missed_shutdown")
 		return
 	case <-time.After(time.Until(exitAt)):
+	}
+	if p.stopped.Load() {
+		p.count("exit_skipped_after_failure")
+		return
 	}
 	exitCtx, cancel := context.WithTimeout(ctx, p.config.QuoteTimeout)
 	exitBook, exitErr := p.market.Book(exitCtx, signal.Symbol)
@@ -168,14 +188,23 @@ func (p *Probe) run(ctx context.Context, signal burstengine.Signal) {
 	} else {
 		exitRecord["settled_funding"] = settled
 	}
-	p.write(exitRecord)
-	p.count("completed")
+	if p.write(exitRecord) {
+		p.count("completed")
+	}
 }
 
-func (p *Probe) write(record any) {
+// write seals one record; a failure is reported once on Failed and counted.
+func (p *Probe) write(record any) bool {
 	if err := p.recorder.Write(record); err != nil {
+		p.stopped.Store(true)
 		p.count("sealed_write_failed")
+		select {
+		case p.failed <- fmt.Errorf("seal a record: %w", err):
+		default:
+		}
+		return false
 	}
+	return true
 }
 
 // Wait blocks until every running entry and exit is done (after ctx is cancelled).
