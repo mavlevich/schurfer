@@ -1,6 +1,7 @@
 # Bybit 1-minute burst: executable cost history v1 (descriptive protocol)
 
-Status: **draft for design review; registered before any order-book file is read.**
+Status: **design review 1 folded in (2026-10-05); registered before any order-book file
+is read.**
 Descriptive, on data before 2026-09-29 only. It creates no trading rule and does not
 replace the sealed forward measurement (HYP-030 path measurement, running since
 2026-10-05).
@@ -31,11 +32,17 @@ its sha256 before anything is downloaded. **No data on or after 2026-09-29.**
   - JSON lines in the public stream's own format: `type` snapshot or delta,
     exchange time `ts` (ms), update id `u`, sequence `seq`, levels `b` and `a`.
   - Only the instrument-days that hold a firing's entry moments and its exit.
-  - Downloaded once, locally, each with its sha256; a 20 GiB cap that counts files
-    already on disk. A missing file makes its firings `no_book`.
-- **Funding:** Bybit's public funding history (`/v5/market/funding/history`) for the
-  settlements inside each hold, recorded with the request and its response hash. Only
-  timestamps before 2026-09-29.
+  - Downloaded once, locally, each with its sha256. A 20 GiB cap: everything already
+    in the directory (partial files included) counts before the first download, and
+    each download is checked against the cap before and while it is written. A missing
+    file makes its firings `no_book`.
+- **Funding:** Bybit's public funding history (`/v5/market/funding/history`) per
+  instrument over its firings' span, with each response's hash, and the mark price at
+  every settlement inside a hold (the open of the 1-minute mark-price candle starting
+  at the settlement, `/v5/market/mark-price-kline`). Only timestamps before 2026-09-29.
+  - Missing data is never a zero. An instrument whose fetch failed, or that shows no
+    settlement over a span longer than 24 hours, is `funding_missing`; so is a
+    settlement inside a hold without a mark price.
 - **Trade proxy:** the decay study's published mean g(d), for the comparison of levels.
 
 ## Book reconstruction
@@ -52,21 +59,24 @@ its sha256 before anything is downloaded. **No data on or after 2026-09-29.**
 ## Measures (fixed now)
 
 B is the burst bar's end. Entry moments are d = 0, 2.7, 5, 10 and 46 s after B; the
-exit moment is B + 60 min.
+exit moment is B + 60 min. Costs are money, normalized by the entry notional (about
+USD 50), as Bybit charges them.
 
 1. **Top of book at each entry moment:** the half-spread in bps of mid.
-2. **Executable entry:** the volume-weighted ask price for USD 50 of notional; impact
-   in bps over mid. Not fillable within 200 levels counts as `depth_short`.
-3. **Executable exit:** the volume-weighted bid price for the same base quantity at
-   B + 60 min.
-4. **Round-trip quoted cost** at entry moment d: entry impact over mid, plus exit impact
-   under mid, plus 2 x 5.5 bps (Bybit's published taker fee), plus the settled funding
-   over the hold. Long positions pay positive funding.
-5. **Net executable proxy:** exit VWAP / entry VWAP - 1 - fees - funding, in bps.
-6. **Against the trade proxy:** the mean gross executable proxy (exit VWAP / entry
-   VWAP - 1) beside the decay study's mean g_trade(d), from its published result
-   (sha256 `30356acb870a...`). That result holds aggregates only, so the two means can
-   cover slightly different resolved sets; this is a comparison of levels, not a paired
+2. **Executable entry:** walk the asks for USD 50 of notional, giving the quantity q and
+   the entry notional N_e. The impact is in bps over mid. Not fillable within 200
+   levels counts as `depth_short`.
+3. **Executable exit:** walk the bids for the same q at B + 60 min, giving the exit
+   notional N_x.
+4. **Fees:** 5.5 bps (Bybit's published taker rate) on N_e and on N_x.
+5. **Funding paid by a long:** the sum over settlements inside the hold of q x mark
+   price x rate.
+6. **Round-trip cost:** entry and exit impact in money, plus fees and funding, over N_e.
+7. **Net executable proxy:** (N_x - N_e - fees - funding) / N_e, in bps.
+8. **Against the trade proxy:** the mean gross executable proxy (N_x / N_e - 1) beside
+   the decay study's mean g_trade(d), from its published result (sha256
+   `30356acb870a...`). That result holds aggregates only, so the two means can cover
+   slightly different resolved sets. This is a comparison of levels, not a paired
    difference.
 
 **Reported per entry moment:**
@@ -81,9 +91,18 @@ exit moment is B + 60 min.
 
 ## What it decides
 
-- **The median round-trip cost at d = 5 s is above 41 bps, or both intervals of the
-  mean net at d = 5 s lie below zero:** HYP-030 is parked in the discovery ledger. The
-  sealed measurement still runs to its end, but no forward test is designed.
+A decision needs enough evidence at the 5 s entry, fixed now:
+
+- at least 300 resolved firings and at least half of the 732;
+- at least 50 instruments;
+- at least 20 UTC days.
+
+Below any of these the result is **insufficient data** and decides nothing.
+
+- **Enough evidence, and either the median round-trip cost at d = 5 s is above 41 bps
+  or both intervals of the mean net at d = 5 s lie below zero:** HYP-030 is parked in
+  the discovery ledger. The sealed measurement still runs to its end, but no forward
+  test is designed.
 - **Otherwise:** nothing is decided here. The window is the one the cell was found in.
   The sealed measurement stays the independent check, and any forward test still
   needs its own registration on an untouched window.

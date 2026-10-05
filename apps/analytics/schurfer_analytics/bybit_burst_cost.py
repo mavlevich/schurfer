@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 COST_VERSION = "bybit_burst_cost_history_v1"
 ARCHIVE = "https://quote-saver.bycsi.com/orderbook/linear/{symbol}/{day}_{symbol}_ob200.data.zip"
 FUNDING_URL = "https://api.bybit.com/v5/market/funding/history"
+MARK_KLINE_URL = "https://api.bybit.com/v5/market/mark-price-kline"
 DECAY_FIRINGS_SHA256 = "cb3f8154bb43353b7869456dfcd89d1a951787dafc7d85ebfcb94c1f60a30211"
 ENTRY_DELAYS_S = (0.0, 2.7, 5.0, 10.0, 46.0)
 KEY_DELAYS_S = (2.7, 5.0)
@@ -43,6 +44,12 @@ NOTIONAL_USD = 50.0
 FEE_BPS = 5.5
 SCENARIO_ROUND_TRIP_BPS = 41.0
 STALE_MS = 5_000
+# A decision needs this much evidence at the 5 s entry; below it: insufficient_data.
+MIN_RESOLVED = 300
+MIN_COVERAGE = 0.5  # resolved / firings
+MIN_INSTRUMENTS = 50
+MIN_DAYS = 20
+EMPTY_FUNDING_SUSPECT_MS = 24 * 3600 * 1000  # no settlement over a longer span is suspect
 MAX_BYTES = 20 * 1024**3
 BOOTSTRAP_ITERATIONS = 10_000
 BOOTSTRAP_SEED = 20_261_006
@@ -63,6 +70,8 @@ def contract_sha256() -> str:
         "fee_bps": FEE_BPS,
         "scenario_round_trip_bps": SCENARIO_ROUND_TRIP_BPS,
         "stale_ms": STALE_MS,
+        "minimums": [MIN_RESOLVED, MIN_COVERAGE, MIN_INSTRUMENTS, MIN_DAYS],
+        "costs": "money: fees on entry and exit notional; funding = qty x mark x rate",
         "max_bytes": MAX_BYTES,
         "bootstrap": [BOOTSTRAP_ITERATIONS, BOOTSTRAP_SEED],
     }
@@ -103,39 +112,40 @@ def fetch_books(firings: Sequence[dict[str, Any]], books_dir: Path) -> dict[str,
     if late:
         raise SystemExit(f"days on or after the blind boundary: {', '.join(late)}")
     books_dir.mkdir(parents=True, exist_ok=True)
+    # everything already on disk counts before any download, partial files included
+    total = sum(p.stat().st_size for p in books_dir.iterdir() if p.is_file())
+    if total > MAX_BYTES:
+        raise SystemExit("the 20 GiB cap is already exceeded by the files on disk")
     files: dict[str, Any] = {}
-    total = 0
     status: Counter[str] = Counter()
-
-    def count(size: int) -> None:
-        nonlocal total
-        total += size
-        if total > MAX_BYTES:
-            raise SystemExit("the 20 GiB cap was reached (files on disk count too)")
-
     with httpx.Client(timeout=600, follow_redirects=True) as client:
         for symbol, day in needed:
             name = f"{day}_{symbol}_ob200.data.zip"
             path = books_dir / name
-            if path.exists():
-                count(path.stat().st_size)
-            else:
+            if not path.exists():
                 with client.stream("GET", ARCHIVE.format(symbol=symbol, day=day)) as response:
                     if response.status_code == 404:
                         files[name] = {"status": "not_in_archive"}
                         status["not_in_archive"] += 1
                         continue
                     response.raise_for_status()
+                    announced = int(response.headers.get("content-length") or 0)
+                    if total + announced > MAX_BYTES:
+                        raise SystemExit("the 20 GiB cap would be exceeded by the next file")
                     partial = path.with_suffix(".partial")
+                    written = 0
                     try:
                         with partial.open("wb") as out:
                             for block in response.iter_bytes():
-                                count(len(block))
+                                written += len(block)
+                                if total + written > MAX_BYTES:
+                                    raise SystemExit("the 20 GiB cap was reached while downloading")
                                 out.write(block)
                     except SystemExit:
                         partial.unlink(missing_ok=True)
                         raise
                     partial.rename(path)
+                    total += written
             files[name] = {
                 "status": "ok",
                 "sha256": sha256_file(path),
@@ -146,55 +156,97 @@ def fetch_books(firings: Sequence[dict[str, Any]], books_dir: Path) -> dict[str,
 
 
 def fetch_funding(firings: Sequence[dict[str, Any]]) -> dict[str, Any]:
-    """Settlements of each instrument over its firings' span, paged back from the end."""
+    """Per instrument: the settlements over its firings' span (paged back from the end)
+    with a status, and the mark price at every settlement inside a hold (the open of the
+    1-minute mark-price candle starting at the settlement), so a funding charge is
+    qty x mark x rate. Missing data is a status, never a zero."""
     import httpx
 
     spans: dict[str, list[int]] = {}
+    holds: dict[str, list[tuple[int, int]]] = defaultdict(list)
     for f in firings:
         m = moments(f)
         lo, hi = m["entry_0"], m["exit"]
         span = spans.setdefault(f["symbol"], [lo, hi])
         span[0], span[1] = min(span[0], lo), max(span[1], hi)
+        holds[f["symbol"]].append((lo, hi))
     out: dict[str, Any] = {}
     with httpx.Client(timeout=60) as client:
         for symbol, (lo, hi) in sorted(spans.items()):
             if hi >= int(BLIND_END.timestamp() * 1000):
                 raise SystemExit(f"{symbol}: a hold reaches the blind boundary")
-            rows: dict[int, str] = {}
-            end = hi
-            bodies = []
-            while True:
-                response = client.get(
-                    FUNDING_URL,
-                    params={
-                        "category": "linear",
-                        "symbol": symbol,
-                        "startTime": lo,
-                        "endTime": end,
-                        "limit": 200,
-                    },
-                )
-                response.raise_for_status()
-                bodies.append(hashlib.sha256(response.content).hexdigest())
-                body = response.json()
-                if body.get("retCode") != 0:
-                    raise SystemExit(f"{symbol}: funding history retCode {body.get('retCode')}")
-                page = body["result"]["list"]
-                for item in page:
-                    ts = int(item["fundingRateTimestamp"])
-                    if item.get("symbol") == symbol and lo <= ts <= hi:
-                        rows[ts] = item["fundingRate"]
-                if len(page) < 200:
-                    break
-                end = min(int(item["fundingRateTimestamp"]) for item in page) - 1
-                if end < lo:
-                    break
+            try:
+                rows, hashes = _settlements(client, symbol, lo, hi)
+            except (httpx.HTTPError, ValueError, KeyError) as exc:
+                out[symbol] = {"status": "fetch_failed", "error": str(exc)}
+                continue
+            if not rows and hi - lo > EMPTY_FUNDING_SUSPECT_MS:
+                out[symbol] = {"status": "suspect_empty", "response_sha256": hashes}
+                continue
+            settlements = []
+            for ts in sorted(rows):
+                inside = any(a < ts <= b for a, b in holds[symbol])
+                mark = _mark_open(client, symbol, ts) if inside else None
+                settlements.append([ts, rows[ts], mark])
             out[symbol] = {
+                "status": "ok",
                 "span_ms": [lo, hi],
-                "settlements": [[ts, rows[ts]] for ts in sorted(rows)],
-                "response_sha256": bodies,
+                "settlements": settlements,
+                "response_sha256": hashes,
             }
     return out
+
+
+def _settlements(client: Any, symbol: str, lo: int, hi: int) -> tuple[dict[int, str], list[str]]:
+    rows: dict[int, str] = {}
+    hashes: list[str] = []
+    end = hi
+    while True:
+        response = client.get(
+            FUNDING_URL,
+            params={
+                "category": "linear",
+                "symbol": symbol,
+                "startTime": lo,
+                "endTime": end,
+                "limit": 200,
+            },
+        )
+        response.raise_for_status()
+        hashes.append(hashlib.sha256(response.content).hexdigest())
+        body = response.json()
+        if body.get("retCode") != 0:
+            raise ValueError(f"retCode {body.get('retCode')}")
+        page = body["result"]["list"]
+        for item in page:
+            ts = int(item["fundingRateTimestamp"])
+            if item.get("symbol") == symbol and lo <= ts <= hi:
+                rows[ts] = item["fundingRate"]
+        if len(page) < 200:
+            return rows, hashes
+        end = min(int(item["fundingRateTimestamp"]) for item in page) - 1
+        if end < lo:
+            return rows, hashes
+
+
+def _mark_open(client: Any, symbol: str, ts: int) -> str | None:
+    response = client.get(
+        MARK_KLINE_URL,
+        params={
+            "category": "linear",
+            "symbol": symbol,
+            "interval": "1",
+            "start": ts,
+            "end": ts + 59_999,
+        },
+    )
+    if response.status_code != 200:
+        return None
+    body = response.json()
+    for candle in body.get("result", {}).get("list", []):
+        if int(candle[0]) == ts:
+            return str(candle[1])
+    return None
 
 
 # ---------------------------------------------------------------- book
@@ -298,14 +350,25 @@ def vwap(
     return None
 
 
-def funding_bps(settlements: Sequence[Sequence[Any]], start_ms: int, end_ms: int) -> float:
-    """A long pays positive funding: the sum of rates settled inside the hold, in bps."""
-    return sum(float(rate) for ts, rate in settlements if start_ms < int(ts) <= end_ms) * 1e4
+def funding_paid(
+    settlements: Sequence[Sequence[Any]], qty: float, start_ms: int, end_ms: int
+) -> float | None:
+    """Money a long pays over (start, end]: qty x mark x rate per settlement. None when a
+    settlement inside the hold has no mark price."""
+    paid = 0.0
+    for ts, rate, mark in settlements:
+        if start_ms < int(ts) <= end_ms:
+            if mark is None:
+                return None
+            paid += qty * float(mark) * float(rate)
+    return paid
 
 
 def measure(
-    firing: dict[str, Any], books: dict[int, dict[str, Any]], settlements: Sequence[Sequence[Any]]
+    firing: dict[str, Any], books: dict[int, dict[str, Any]], funding: dict[str, Any] | None
 ) -> dict[str, Any]:
+    """Costs in money, normalized by the entry notional: fees on the entry and the exit
+    notional, the depth impact on both sides, and funding as qty x mark x rate."""
     m = moments(firing)
     exit_book = books.get(m["exit"], {"status": "no_book"})
     out: dict[str, Any] = {"exit_status": exit_book["status"], "entries": {}}
@@ -322,29 +385,38 @@ def measure(
             out["entries"][key] = {"status": "depth_short"}
             continue
         entry_price, qty = bought
+        entry_notional = qty * entry_price
         cell: dict[str, Any] = {
             "status": "ok",
             "half_spread_bps": (best_ask - best_bid) / 2 / mid * 1e4,
             "entry_impact_bps": (entry_price / mid - 1) * 1e4,
         }
-        if exit_book["status"] == "ok":
-            sold = vwap(exit_book["bids"], base=qty)
-            if sold is None:
-                cell["status"] = "exit_depth_short"
-            else:
-                exit_mid = (exit_book["bids"][0][0] + exit_book["asks"][0][0]) / 2
-                exit_price = sold[0]
-                fund = funding_bps(settlements, m[f"entry_{key}"], m["exit"])
-                cell["exit_impact_bps"] = (1 - exit_price / exit_mid) * 1e4
-                cell["funding_bps"] = fund
-                cell["round_trip_cost_bps"] = (
-                    cell["entry_impact_bps"] + cell["exit_impact_bps"] + 2 * FEE_BPS + fund
-                )
-                cell["gross_exec_bps"] = (exit_price / entry_price - 1) * 1e4
-                cell["net_bps"] = cell["gross_exec_bps"] - 2 * FEE_BPS - fund
-        else:
-            cell["status"] = exit_book["status"]
         out["entries"][key] = cell
+        if exit_book["status"] != "ok":
+            cell["status"] = exit_book["status"]
+            continue
+        sold = vwap(exit_book["bids"], base=qty)
+        if sold is None:
+            cell["status"] = "exit_depth_short"
+            continue
+        if funding is None or funding.get("status") != "ok":
+            cell["status"] = "funding_missing"
+            continue
+        paid = funding_paid(funding["settlements"], qty, m[f"entry_{key}"], m["exit"])
+        if paid is None:
+            cell["status"] = "funding_missing"
+            continue
+        exit_price = sold[0]
+        exit_mid = (exit_book["bids"][0][0] + exit_book["asks"][0][0]) / 2
+        exit_notional = qty * exit_price
+        fees = FEE_BPS / 1e4 * (entry_notional + exit_notional)
+        impact = qty * (entry_price - mid) + qty * (exit_mid - exit_price)
+        cell["exit_impact_bps"] = qty * (exit_mid - exit_price) / entry_notional * 1e4
+        cell["fees_bps"] = fees / entry_notional * 1e4
+        cell["funding_bps"] = paid / entry_notional * 1e4
+        cell["round_trip_cost_bps"] = (impact + fees + paid) / entry_notional * 1e4
+        cell["gross_exec_bps"] = (exit_notional / entry_notional - 1) * 1e4
+        cell["net_bps"] = (exit_notional - entry_notional - fees - paid) / entry_notional * 1e4
     return out
 
 
@@ -394,6 +466,22 @@ def summarize(
             report["top5_instrument_share_of_net"] = top5 / total if total else None
         out["by_entry_delay"][key] = report
     five = out["by_entry_delay"]["5"]
+    resolved = [r for r in rows if "net_bps" in r["m"]["entries"]["5"]]
+    evidence = {
+        "resolved": len(resolved),
+        "coverage": len(resolved) / len(rows) if rows else 0.0,
+        "instruments": len({r["symbol"] for r in resolved}),
+        "days": len({r["day"] for r in resolved}),
+    }
+    out["evidence_at_5s"] = evidence
+    if (
+        evidence["resolved"] < MIN_RESOLVED
+        or evidence["coverage"] < MIN_COVERAGE
+        or evidence["instruments"] < MIN_INSTRUMENTS
+        or evidence["days"] < MIN_DAYS
+    ):
+        out["decision"] = "insufficient_data"
+        return out
     median_cost = five["round_trip_cost_bps"]["median"]
     cis = [five.get(f"net_ci95_by_{s}") for s in ("instrument", "utc_day")]
     park = (median_cost is not None and median_cost > SCENARIO_ROUND_TRIP_BPS) or (
@@ -431,8 +519,8 @@ def read(
         captured[symbol].update(capture_file(path, wanted))
     rows = []
     for f in firings:
-        settlements = funding_record["instruments"].get(f["symbol"], {}).get("settlements", [])
-        m = measure(f, captured.get(f["symbol"], {}), settlements)
+        funding = funding_record["instruments"].get(f["symbol"])  # None: missing
+        m = measure(f, captured.get(f["symbol"], {}), funding)
         rows.append(
             {
                 "symbol": f["symbol"],

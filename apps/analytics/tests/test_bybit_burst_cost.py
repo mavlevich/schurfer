@@ -80,14 +80,17 @@ def test_vwap_walks_levels_and_reports_thin_books() -> None:
     assert price == pytest.approx((20.0 + 5.0) / 15.0)
 
 
-def test_funding_counts_only_settlements_inside_the_hold() -> None:
+def test_funding_is_qty_times_mark_times_rate_inside_the_hold() -> None:
     settled = [
-        [B_MS - 1, "0.01"],
-        [B_MS + 10, "0.0001"],
-        [B_MS + 3_600_000, "0.0002"],
-        [B_MS + 3_600_001, "0.5"],
+        [B_MS - 1, "0.01", "9"],
+        [B_MS + 10, "0.0001", "2.0"],
+        [B_MS + 3_600_000, "0.0002", "3.0"],
+        [B_MS + 3_600_001, "0.5", "9"],
     ]
-    assert c.funding_bps(settled, B_MS, B_MS + 3_600_000) == pytest.approx(3.0)
+    assert c.funding_paid(settled, 10.0, B_MS, B_MS + 3_600_000) == pytest.approx(
+        10 * 2.0 * 0.0001 + 10 * 3.0 * 0.0002
+    )
+    assert c.funding_paid([[B_MS + 10, "0.0001", None]], 1.0, B_MS, B_MS + 60_000) is None
 
 
 def _ok(bid: float, ask: float) -> dict[str, Any]:
@@ -99,17 +102,18 @@ def test_measure_builds_costs_and_net_per_entry_delay() -> None:
     m = c.moments(firing)
     books = {m[f"entry_{d:g}"]: _ok(1.00, 1.02) for d in c.ENTRY_DELAYS_S}
     books[m["exit"]] = _ok(1.10, 1.12)
-    got = c.measure(firing, books, [])
+    ok_funding = {"status": "ok", "settlements": []}
+    got = c.measure(firing, books, ok_funding)
     cell = got["entries"]["5"]
     mid = 1.01
     assert cell["half_spread_bps"] == pytest.approx(0.01 / mid * 1e4)
     assert cell["gross_exec_bps"] == pytest.approx((1.10 / 1.02 - 1) * 1e4)
-    assert cell["net_bps"] == pytest.approx(cell["gross_exec_bps"] - 11.0)
-    assert cell["round_trip_cost_bps"] == pytest.approx(
-        cell["entry_impact_bps"] + cell["exit_impact_bps"] + 11.0
-    )
+    fees_bps = 5.5 * (1 + 1.10 / 1.02)  # on the entry and the exit notional
+    assert cell["fees_bps"] == pytest.approx(fees_bps)
+    assert cell["net_bps"] == pytest.approx(cell["gross_exec_bps"] - fees_bps)
+    assert c.measure(firing, books, None)["entries"]["5"]["status"] == "funding_missing"
     del books[m["exit"]]
-    assert c.measure(firing, books, [])["entries"]["5"]["status"] == "no_book"
+    assert c.measure(firing, books, ok_funding)["entries"]["5"]["status"] == "no_book"
 
 
 def _row(symbol: str, day: str, net: float, cost: float) -> dict[str, Any]:
@@ -133,14 +137,16 @@ def test_the_decision_parks_on_high_median_cost_or_clearly_negative_net(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(c, "BOOTSTRAP_ITERATIONS", 200)
-    expensive = [_row(f"S{i % 30}", f"d{i % 15}", 10.0, 60.0) for i in range(200)]
-    assert c.summarize(expensive, 1, {})["decision"] == "park_hyp030"
-    losing = [_row(f"S{i % 30}", f"d{i % 15}", -50.0 + (i % 5), 30.0) for i in range(200)]
-    assert c.summarize(losing, 1, {})["decision"] == "park_hyp030"
-    mixed = [
-        _row(f"S{i % 30}", f"d{i % 15}", (100.0 if i % 2 else -80.0), 30.0) for i in range(200)
-    ]
+
+    def rows(net: Any, cost: float, n: int = 400) -> list[dict[str, Any]]:
+        return [_row(f"S{i % 60}", f"d{i % 25}", net(i), cost) for i in range(n)]
+
+    assert c.summarize(rows(lambda i: 10.0, 60.0), 1, {})["decision"] == "park_hyp030"
+    assert c.summarize(rows(lambda i: -50.0 + (i % 5), 30.0), 1, {})["decision"] == "park_hyp030"
+    mixed = rows(lambda i: 100.0 if i % 2 else -80.0, 30.0)
     assert c.summarize(mixed, 1, {})["decision"] == "no_decision"
+    few = rows(lambda i: 10.0, 60.0, n=299)
+    assert c.summarize(few, 1, {})["decision"] == "insufficient_data"
 
 
 def test_only_the_frozen_firing_list_is_accepted(tmp_path: Path) -> None:
