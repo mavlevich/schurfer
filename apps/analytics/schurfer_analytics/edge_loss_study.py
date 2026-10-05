@@ -530,7 +530,9 @@ def part_b(
                                     **key,
                                     "unresolved": got["unresolved"],
                                     "censored_by_window_end": got["censored"],
-                                    **primary_inference(obs, derived_seed(seed, key["entry"])),
+                                    **primary_inference(
+                                        obs, derived_seed(seed, ENTRY_LABELS[entry])
+                                    ),
                                 }
                             cells.append(
                                 {

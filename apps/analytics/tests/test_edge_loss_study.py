@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import duckdb
 import pytest
 from schurfer_analytics import edge_loss_study as s
+from schurfer_analytics.edge_loss_bars import WINDOW_FIRST, WINDOW_LAST, reduced_name
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -15,7 +16,7 @@ T0 = datetime(2026, 9, 1, tzinfo=UTC)
 M0 = int(T0.timestamp()) // 60
 
 
-def _bars(prices: dict[int, float]) -> list[tuple]:
+def _bars(prices: dict[int, float]) -> list[tuple[int, float, float, float, float]]:
     """(epoch seconds, o, h, l, c) with open = previous close."""
     rows, prev = [], None
     for m in sorted(prices):
@@ -99,7 +100,7 @@ def test_outcomes_separate_censored_unresolved_and_resolved() -> None:
 
 
 def test_primary_inference_reports_the_mde_and_a_verdict() -> None:
-    obs = [
+    obs: list[dict[str, Any]] = [
         {"instrument": f"S{i % 25}", "utc_day": f"d{i % 20}", "net_bps": -50.0 + (i % 7)}
         for i in range(400)
     ]
@@ -191,8 +192,8 @@ def test_inputs_are_pinned_once_and_reused_only_when_identical(tmp_path: Path) -
 def test_verify_bars_refuses_a_missing_or_altered_day(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="missing"):
         s.verify_bars(tmp_path)
-    for day in s.window_days(s.WINDOW_FIRST, s.WINDOW_LAST):
-        path = tmp_path / s.reduced_name(day)
+    for day in s.window_days(WINDOW_FIRST, WINDOW_LAST):
+        path = tmp_path / reduced_name(day)
         path.write_bytes(day.encode())
         path.with_suffix(".manifest.json").write_text(
             json.dumps(
@@ -205,7 +206,7 @@ def test_verify_bars_refuses_a_missing_or_altered_day(tmp_path: Path) -> None:
             )
         )
     assert len(s.verify_bars(tmp_path)) == 47
-    (tmp_path / s.reduced_name("2026-09-01")).write_bytes(b"changed")
+    (tmp_path / reduced_name("2026-09-01")).write_bytes(b"changed")
     with pytest.raises(ValueError, match="does not match"):
         s.verify_bars(tmp_path)
 
@@ -214,7 +215,7 @@ def test_the_contract_pins_the_registered_primary_and_costs() -> None:
     assert s.PRIMARY["threshold"] == 0.05 and s.PRIMARY["horizon"] == 60
     assert s.COST_SCENARIOS_BPS == (10.5, 20.5, 45.5)
     assert s.PRIMARY_COST_BPS == 20.5
-    assert s.WINDOW_FIRST.isoformat() == "2026-08-13"
+    assert WINDOW_FIRST.isoformat() == "2026-08-13"
 
 
 def test_gap_marked_prices_never_reach_the_analysed_bars(
@@ -234,7 +235,7 @@ def test_gap_marked_prices_never_reach_the_analysed_bars(
     for column in ("buy_total_notional_usd", "sell_total_notional_usd"):
         con.execute(f"ALTER TABLE t ADD COLUMN {column} DOUBLE DEFAULT 1")
     con.execute("ALTER TABLE t ADD COLUMN trades_complete BOOLEAN DEFAULT true")
-    con.execute(f"COPY t TO '{tmp_path / s.reduced_name(day)}' (FORMAT parquet)")
+    con.execute(f"COPY t TO '{tmp_path / reduced_name(day)}' (FORMAT parquet)")
     monkeypatch.setattr(s, "window_days", lambda *_: [day])
     analysed = duckdb.connect()
     s.load_bars(analysed, tmp_path, [])
