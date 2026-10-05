@@ -18,8 +18,10 @@
 //     after it a trade of that minute (or earlier) is counted late and never added.
 //   - A minute without trades becomes a bar with zero turnover and the previous bar's
 //     close, as the research bars have one.
-//   - A repeated trade id is dropped before it touches any price or turnover (a bounded
-//     memory of recent ids per instrument). A trade without an id is refused.
+//   - A repeated trade id is dropped before it touches any price or turnover. Ids are
+//     kept per open minute and freed when it is finalized: a repeat of a finalized
+//     minute's trade is already refused as late, so memory stays bounded by the trades
+//     of the open minutes. A trade without an id is refused.
 //
 // Completeness is part of the data, from gap intervals per instrument. Receive times
 // are moved back by LagAllowance, because a trade executed shortly before the last
@@ -51,8 +53,6 @@ import (
 // ContractVersion names this engine's data contract.
 const ContractVersion = "burst_trade_bars_v1"
 
-const recentIDs = 8192
-
 // Config holds the rule and the bar mechanics.
 type Config struct {
 	ReturnThreshold  float64
@@ -82,6 +82,7 @@ type Bar struct {
 	Turnover   float64
 	Trades     int
 	LastRecvAt time.Time // the latest receive time among the bar's trades
+	ids        map[string]struct{}
 	first      orderKey
 	last       orderKey
 }
@@ -141,9 +142,6 @@ type symbolState struct {
 	finalThrough time.Time
 	lastFire     time.Time
 	gaps         []gap
-	seen         map[string]struct{}
-	seenRing     []string
-	seenNext     int
 }
 
 // Engine is the bar builder and rule evaluator.
@@ -162,7 +160,7 @@ func (e *Engine) state(symbol string) *symbolState {
 	s, ok := e.symbols[symbol]
 	if !ok {
 		// gap from the beginning until the first Subscribed
-		s = &symbolState{gaps: []gap{{}}, seen: map[string]struct{}{}, seenRing: make([]string, recentIDs)}
+		s = &symbolState{gaps: []gap{{}}}
 		e.symbols[symbol] = s
 	}
 	return s
@@ -228,20 +226,6 @@ func (e *Engine) onLifecycle(l *streamrt.Lifecycle) {
 	}
 }
 
-// remember reports whether the id is new, keeping a bounded memory of recent ids.
-func (s *symbolState) remember(id string) bool {
-	if _, ok := s.seen[id]; ok {
-		return false
-	}
-	if old := s.seenRing[s.seenNext]; old != "" {
-		delete(s.seen, old)
-	}
-	s.seenRing[s.seenNext] = id
-	s.seenNext = (s.seenNext + 1) % len(s.seenRing)
-	s.seen[id] = struct{}{}
-	return true
-}
-
 func (e *Engine) onTrade(t *streamrt.Trade) {
 	e.Stats.Trades++
 	if t.TradeID == "" {
@@ -255,11 +239,15 @@ func (e *Engine) onTrade(t *streamrt.Trade) {
 		e.Stats.LateTrades++
 		return
 	}
-	if !s.remember(t.TradeID) {
+	bar := e.barFor(s, start)
+	if bar.ids == nil {
+		bar.ids = map[string]struct{}{}
+	}
+	if _, seen := bar.ids[t.TradeID]; seen {
 		e.Stats.Duplicates++
 		return
 	}
-	bar := e.barFor(s, start)
+	bar.ids[t.TradeID] = struct{}{}
 	e.arrival++
 	key := orderKey{at: t.EventAt, seq: t.Seq, arrival: e.arrival}
 	if bar.Trades == 0 {
@@ -361,6 +349,7 @@ func (e *Engine) Tick(now time.Time) []Signal {
 		}
 		for len(s.open) > 0 && !s.open[0].Start.After(due) {
 			bar := *s.open[0]
+			bar.ids = nil // a repeat of this minute is refused as late from now on
 			s.open = s.open[1:]
 			s.finalThrough = bar.Start
 			if signal, ok := e.admit(symbol, s, bar, now); ok {
