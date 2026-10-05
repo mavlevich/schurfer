@@ -1,7 +1,8 @@
 # Where the edge is lost: detection-delay decomposition v1
 
 Status: **registered 2026-10-04, before any analysis; design review 1 folded in;
-amendment 1 (2026-10-05) supersedes the window, fee and statistics wording below.** A
+amendment 1 (2026-10-05) supersedes the window, fee and statistics wording below;
+amendment 2 (2026-10-05, after review 2) supersedes read 1.** A
 bounded research result, separate from
 any collector. No code, no read of any data on or after 2026-09-29. Nothing here
 becomes a trading rule.
@@ -161,6 +162,42 @@ looked at.
 
 The MEXC 1-minute archive keeps its survivorship caveat: it holds only the symbols listed
 on 2026-09-27.
+
+## Amendment 2 (2026-10-05, after read 1, from design review 2)
+
+Read 1 (reader `7b66074`, evidence kept under `read-1-superseded/`) ran before review 2
+arrived. The review found correctness defects in the reader, so read 1 is superseded.
+Read 2 runs on the same verified inputs with only these fixes. The primary contrast,
+thresholds, horizons, costs and windows are unchanged.
+
+1. **Bar quality.**
+   - A bar's price is used only if all four prices are positive and the bar is
+     price-complete (`price_complete`; for Bybit before that column existed, the bar's
+     `complete`).
+   - Turnover is used only from trade-complete bars.
+   - A 5-minute return needs all six minutes t-5..t; read 1 checked only the two ends.
+   - The 1-minute family needs t-1 and t, a trade-complete trigger bar, and a median
+     over trade-complete bars only.
+   - Entry and exit bars must be price-complete, or the firing is unresolved, with the
+     reason recorded.
+   - Exclusions are counted.
+2. **Minimum evidence for a verdict.** At least 100 resolved firings, 20 instruments
+   and 10 UTC days. Below that the primary is _not established_, whatever its interval.
+3. **Entry timing.**
+   - The registered entry (open of t+1) is labelled what it is: a bar-optimistic bound.
+     The bar is available 2.7 s after the close, and a minute bar cannot show that the
+     t+1 open was still obtainable then.
+   - Every cell, the primary included, is also reported at the open of t+2: the first
+     open after the data is available.
+   - The verdict stays on the registered entry. Executable economics are claimed from
+     neither.
+4. **Resumption.** An interrupted read reuses its pinned inputs only if they are
+   identical to the ones verified again. A reduced bar file counts as done only with a
+   matching manifest.
+
+The reduction step on the production host now also checks the 10 GiB reserve before and
+after reducing, and bounds DuckDB's memory and spill. Read 1's production run had
+already completed before this fix: its log shows 17-19 GiB free throughout.
 
 ## What it decides
 

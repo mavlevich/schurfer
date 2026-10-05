@@ -38,14 +38,14 @@ from typing import TYPE_CHECKING, Any
 
 from .clustered_inference import ClusterObservation, cluster_bootstrap_mean, derived_seed
 from .edge_loss_bars import WINDOW_FIRST, WINDOW_LAST, reduced_name
-from .source_lead_multi_source_report import load_verified, write_once
+from .source_lead_multi_source_report import complete_digest, load_verified, write_once
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
     import duckdb
 
-STUDY_VERSION = "edge_loss_decomposition_v1_amendment1"
+STUDY_VERSION = "edge_loss_decomposition_v1_amendment2"
 BLIND_END = datetime(2026, 9, 29, tzinfo=UTC)  # nothing at or after it is read
 SCANNER_FROM = datetime(2026, 7, 23, tzinfo=UTC)  # the scanner's records start here
 MEXC_FIRST = date(2026, 8, 28)
@@ -70,6 +70,12 @@ SCANNER_CYCLE_S = 101.0  # measured median real cycle
 BOOTSTRAP_ITERATIONS = 10_000
 Z_ALPHA = 1.959964  # two-sided 5%
 Z_POWER = 0.841621  # 80% power
+# A verdict needs at least this much independent evidence; below it the primary is
+# not_established whatever its interval says (a bootstrap over two clusters is
+# degenerate).
+MIN_RESOLVED = 100
+MIN_INSTRUMENTS = 20
+MIN_DAYS = 10
 PRIMARY = {
     "venue": "bybit",
     "family": "five_minute",
@@ -106,6 +112,18 @@ CONTRACT: dict[str, Any] = {
     "primary": PRIMARY,
     "bootstrap": {"iterations": BOOTSTRAP_ITERATIONS, "clusters": ["instrument", "utc_day"]},
     "mde": {"z_alpha": Z_ALPHA, "z_power": Z_POWER, "se": "max of the two bootstrap sds"},
+    "minimums": {"resolved": MIN_RESOLVED, "instruments": MIN_INSTRUMENTS, "days": MIN_DAYS},
+    "bar_quality": {
+        "price_ok": "prices > 0 and coalesce(price_complete, complete)",
+        "flow_ok": "trades_complete",
+        "five_minute_window": "all six minutes t-5..t price_ok",
+        "one_minute": "t-1 and t price_ok, t flow_ok, median over flow_ok bars",
+        "entry_and_exit": "price_ok bars only",
+    },
+    "entries": {
+        "registered": "open of t+1 (bar-optimistic: the bar is available 2.7 s after close)",
+        "after_availability": "open of t+2, the first open after the data is available",
+    },
 }
 SCANNER_SQL = """
 SELECT exchange, symbol, event_id, first_seen_at
@@ -183,17 +201,29 @@ def verify_mexc(archive_dir: Path) -> tuple[list[Path], str]:
 
 
 def load_bars(con: duckdb.DuckDBPyConnection, bars_dir: Path, mexc_files: list[Path]) -> None:
-    """One table `bars`: usable minute bars (all four prices positive) of every venue."""
+    """Table `bars` of every venue with two quality flags, and view `good` of the bars
+    whose price is usable.
+
+    - `price_ok`: all four prices positive and the bar's price complete
+      (`price_complete`; before that column existed, the bar's `complete`).
+    - `flow_ok`: `trades_complete`, so the bar's turnover is whole.
+
+    MEXC exchange klines carry no flags: a positive price is usable and turnover is the
+    exchange's own.
+    """
     paths = [str(bars_dir / reduced_name(d)) for d in window_days(WINDOW_FIRST, WINDOW_LAST)]
     con.execute(
         """
         CREATE TABLE bars AS
         SELECT exchange, symbol, bucket_start AS t,
                open_price AS o, high_price AS h, low_price AS l, close_price AS c,
-               coalesce(buy_total_notional_usd, 0) + coalesce(sell_total_notional_usd, 0) AS n
+               coalesce(buy_total_notional_usd, 0) + coalesce(sell_total_notional_usd, 0) AS n,
+               coalesce(open_price > 0 AND high_price > 0 AND low_price > 0
+                        AND close_price > 0
+                        AND coalesce(price_complete, complete), false) AS price_ok,
+               coalesce(trades_complete, false) AS flow_ok
         FROM read_parquet(?)
-        WHERE open_price > 0 AND high_price > 0 AND low_price > 0 AND close_price > 0
-          AND bucket_start < ?
+        WHERE bucket_start < ?
         """,
         [paths, BLIND_END],
     )
@@ -202,13 +232,13 @@ def load_bars(con: duckdb.DuckDBPyConnection, bars_dir: Path, mexc_files: list[P
             """
             INSERT INTO bars
             SELECT 'mexc', regexp_extract(filename, '([^/]+)\\.jsonl\\.gz$', 1),
-                   to_timestamp(t), o, h, l, c, coalesce(a, 0)
+                   to_timestamp(t), o, h, l, c, coalesce(a, 0),
+                   coalesce(o > 0 AND h > 0 AND l > 0 AND c > 0, false), a IS NOT NULL
             FROM read_json(?, format = 'newline_delimited', compression = 'gzip',
                            filename = true,
                            columns = {t: 'BIGINT', o: 'DOUBLE', h: 'DOUBLE', l: 'DOUBLE',
                                       c: 'DOUBLE', v: 'DOUBLE', a: 'DOUBLE'})
-            WHERE o > 0 AND h > 0 AND l > 0 AND c > 0
-              AND to_timestamp(t) >= ? AND to_timestamp(t) < ?
+            WHERE to_timestamp(t) >= ? AND to_timestamp(t) < ?
             """,
             [
                 [str(p) for p in mexc_files],
@@ -216,6 +246,7 @@ def load_bars(con: duckdb.DuckDBPyConnection, bars_dir: Path, mexc_files: list[P
                 BLIND_END,
             ],
         )
+    con.execute("CREATE VIEW good AS SELECT * FROM bars WHERE price_ok")
 
 
 def binance_first_day(con: duckdb.DuckDBPyConnection, bars_dir: Path) -> str | None:
@@ -257,8 +288,16 @@ def quantiles(values: Sequence[float]) -> dict[str, float | int | None]:
 def primary_inference(observations: Sequence[dict[str, Any]], seed: int) -> dict[str, Any]:
     """MDE first, then the mean and the two one-way cluster intervals and the verdict."""
     values = [o["net_bps"] for o in observations]
-    if len(values) < 2:
-        return {"firings": len(values), "verdict": "not_established", "reason": "too_few"}
+    instruments = len({o["instrument"] for o in observations})
+    days = len({o["utc_day"] for o in observations})
+    if len(values) < MIN_RESOLVED or instruments < MIN_INSTRUMENTS or days < MIN_DAYS:
+        return {
+            "firings": len(values),
+            "instruments": instruments,
+            "days": days,
+            "verdict": "not_established",
+            "reason": "below_registered_minimums",
+        }
     boots: dict[str, Any] = {}
     for scheme in ("instrument", "utc_day"):
         obs = tuple(ClusterObservation(o[scheme], o["net_bps"]) for o in observations)
@@ -292,62 +331,100 @@ def primary_inference(observations: Sequence[dict[str, Any]], seed: int) -> dict
 # ---------------------------------------------------------------- part B
 
 
-_FORWARD = """
-SELECT f.exchange, f.symbol, epoch(f.t)::BIGINT AS ts, f.r,
-       e.o AS entry, {exits}
-FROM {cands} f
-LEFT JOIN bars e ON e.exchange = f.exchange AND e.symbol = f.symbol
-                AND e.t = f.t + INTERVAL 1 MINUTE
-{joins}
-ORDER BY f.exchange, f.symbol, f.t
-"""
+_ENTRY_OFFSETS = (1, 2)
 
 
 def _forward_sql(cands: str) -> str:
-    exits = ", ".join(f"x{h}.o AS x{h}" for h in HORIZONS)
-    joins = "\n".join(
-        f"LEFT JOIN bars x{h} ON x{h}.exchange = f.exchange AND x{h}.symbol = f.symbol"
-        f" AND x{h}.t = f.t + INTERVAL {h + 1} MINUTE"
-        for h in HORIZONS
+    """Forward opens from price-complete bars: entry at t+1 and t+2, and each entry's
+    exits h minutes later. Row: exchange, symbol, ts, r, then per entry offset k the
+    entry open followed by one exit open per horizon."""
+    columns, joins = [], []
+    for k in _ENTRY_OFFSETS:
+        columns.append(f"e{k}.o AS e{k}")
+        joins.append(
+            f"LEFT JOIN good e{k} ON e{k}.exchange = f.exchange AND e{k}.symbol = f.symbol"
+            f" AND e{k}.t = f.t + INTERVAL {k} MINUTE"
+        )
+        for h in HORIZONS:
+            columns.append(f"x{k}_{h}.o AS x{k}_{h}")
+            joins.append(
+                f"LEFT JOIN good x{k}_{h} ON x{k}_{h}.exchange = f.exchange"
+                f" AND x{k}_{h}.symbol = f.symbol AND x{k}_{h}.t = f.t + INTERVAL {k + h} MINUTE"
+            )
+    return (
+        f"SELECT f.exchange, f.symbol, epoch(f.t)::BIGINT AS ts, f.r, {', '.join(columns)}"  # noqa: S608 -- fixed names
+        f" FROM {cands} f {' '.join(joins)} ORDER BY f.exchange, f.symbol, f.t"
     )
-    return _FORWARD.format(cands=cands, exits=exits, joins=joins)
 
 
-def trigger_candidates(con: duckdb.DuckDBPyConnection) -> dict[str, list[Row]]:
-    """Every bar passing the loosest threshold of each family, with forward opens."""
+def trigger_candidates(con: duckdb.DuckDBPyConnection) -> dict[str, Any]:
+    """Every bar passing the loosest threshold of each family, with forward opens.
+
+    Features use price-complete bars only, over complete windows: the 5-minute return
+    needs all six minutes t-5..t; the 1-minute return needs t-1 and t; the turnover
+    median counts only trade-complete bars of the prior 60 minutes and needs at least
+    ONE_MINUTE_MEDIAN_MIN_BARS of them, and the trigger bar itself must be
+    trade-complete. Candidates lost to an incomplete window are counted.
+    """
     con.execute(
         """
         CREATE TABLE cand5 AS
-        SELECT a.exchange, a.symbol, a.t, a.c / p.c - 1 AS r
-        FROM bars a JOIN bars p
-          ON p.exchange = a.exchange AND p.symbol = a.symbol
-         AND p.t = a.t - INTERVAL 5 MINUTE
-        WHERE a.c / p.c - 1 >= ?
+        WITH w AS (
+          SELECT exchange, symbol, t, c, lag(c, 5) OVER s AS c5, lag(t, 5) OVER s AS t5
+          FROM good WINDOW s AS (PARTITION BY exchange, symbol ORDER BY t)
+        )
+        SELECT exchange, symbol, t, c / c5 - 1 AS r FROM w
+        WHERE t5 = t - INTERVAL 5 MINUTE AND c / c5 - 1 >= ?
         """,
         [min(FIVE_MINUTE_THRESHOLDS)],
+    )
+    endpoint_only = dict(
+        con.execute(
+            """
+            SELECT a.exchange, count(*) FROM good a JOIN good p
+              ON p.exchange = a.exchange AND p.symbol = a.symbol
+             AND p.t = a.t - INTERVAL 5 MINUTE
+            WHERE a.c / p.c - 1 >= ? GROUP BY 1
+            """,
+            [min(FIVE_MINUTE_THRESHOLDS)],
+        ).fetchall()
     )
     con.execute(
         """
         CREATE TABLE cand1 AS
         WITH w AS (
-          SELECT exchange, symbol, t, c, n,
+          SELECT exchange, symbol, t, c, n, flow_ok,
                  lag(c) OVER s AS pc, lag(t) OVER s AS pt,
-                 median(n) OVER r AS med, count(*) OVER r AS cnt
-          FROM bars
+                 median(n) FILTER (WHERE flow_ok) OVER r AS med,
+                 count(*) FILTER (WHERE flow_ok) OVER r AS cnt
+          FROM good
           WINDOW s AS (PARTITION BY exchange, symbol ORDER BY t),
                  r AS (PARTITION BY exchange, symbol ORDER BY t
                        RANGE BETWEEN INTERVAL 60 MINUTE PRECEDING
                                  AND INTERVAL 1 MINUTE PRECEDING)
         )
         SELECT exchange, symbol, t, c / pc - 1 AS r FROM w
-        WHERE pt = t - INTERVAL 1 MINUTE AND c / pc - 1 >= ?
+        WHERE pt = t - INTERVAL 1 MINUTE AND c / pc - 1 >= ? AND flow_ok
           AND cnt >= ? AND med > 0 AND n >= ? * med
         """,
         [min(ONE_MINUTE_THRESHOLDS), ONE_MINUTE_MEDIAN_MIN_BARS, ONE_MINUTE_TURNOVER_MULTIPLE],
     )
+    kept5 = dict(con.execute("SELECT exchange, count(*) FROM cand5 GROUP BY 1").fetchall())
     return {
         "five_minute": con.execute(_forward_sql("cand5")).fetchall(),
         "one_minute": con.execute(_forward_sql("cand1")).fetchall(),
+        "exclusions": {
+            "five_minute_candidates_lost_to_incomplete_window": {
+                venue: endpoint_only[venue] - kept5.get(venue, 0) for venue in endpoint_only
+            },
+            "bars": {
+                venue: {"price_incomplete": bad, "trade_incomplete": noflow}
+                for venue, bad, noflow in con.execute(
+                    "SELECT exchange, count(*) FILTER (WHERE NOT price_ok),"
+                    " count(*) FILTER (WHERE price_ok AND NOT flow_ok) FROM bars GROUP BY 1"
+                ).fetchall()
+            },
+        },
     }
 
 
@@ -366,30 +443,40 @@ def firings(rows: Iterable[Row], venue: str, threshold: float, first_ts: int) ->
     return kept
 
 
-def outcomes(rows: Sequence[Row], horizon: int, side: str) -> dict[str, Any]:
-    """Resolve each firing at a horizon: censored by the window end, unresolved (an
-    entry or exit bar missing), or a gross return in bps."""
+def outcomes(rows: Sequence[Row], horizon: int, side: str, entry: int = 1) -> dict[str, Any]:
+    """Resolve each firing at a horizon for an entry at the open of bar t+entry:
+    censored by the window end, unresolved (entry or exit bar missing or not
+    price-complete), or a gross return in bps."""
     end = int(BLIND_END.timestamp())
-    index = 5 + HORIZONS.index(horizon)
-    resolved, unresolved, censored = [], 0, 0
+    base = 4 + _ENTRY_OFFSETS.index(entry) * (1 + len(HORIZONS))
+    entry_index, exit_index = base, base + 1 + HORIZONS.index(horizon)
+    resolved: list[dict[str, Any]] = []
+    unresolved: Counter[str] = Counter()
+    censored = 0
     for row in rows:
-        ts, entry, exit_ = row[2], row[4], row[index]
-        if ts + (horizon + 2) * MINUTE > end:
+        ts, entry_price, exit_price = row[2], row[entry_index], row[exit_index]
+        if ts + (entry + horizon + 1) * MINUTE > end:
             censored += 1
             continue
-        if entry is None or exit_ is None:
-            unresolved += 1
+        if entry_price is None:
+            unresolved["entry_bar_missing"] += 1
             continue
-        gross = exit_ / entry - 1 if side == "long" else 1 - exit_ / entry
+        if exit_price is None:
+            unresolved["exit_bar_missing"] += 1
+            continue
+        ratio = exit_price / entry_price
+        gross = ratio - 1 if side == "long" else 1 - ratio
         day = datetime.fromtimestamp(ts, UTC).date().isoformat()
         resolved.append({"instrument": row[1], "utc_day": day, "gross_bps": gross * 1e4})
-    return {"resolved": resolved, "unresolved": unresolved, "censored": censored}
+    return {"resolved": resolved, "unresolved": dict(unresolved), "censored": censored}
 
 
-def describe(resolved: Sequence[dict[str, Any]], unresolved: int, censored: int) -> dict[str, Any]:
+def describe(
+    resolved: Sequence[dict[str, Any]], unresolved: dict[str, int], censored: int
+) -> dict[str, Any]:
     gross = [o["gross_bps"] for o in resolved]
-    cell: dict[str, Any] = {
-        "firings": len(resolved) + unresolved + censored,
+    return {
+        "firings": len(resolved) + sum(unresolved.values()) + censored,
         "resolved": len(resolved),
         "unresolved": unresolved,
         "censored_by_window_end": censored,
@@ -400,14 +487,16 @@ def describe(resolved: Sequence[dict[str, Any]], unresolved: int, censored: int)
             for c in (*COST_SCENARIOS_BPS, SENSITIVITY_COST_BPS)
         },
     }
-    return cell
+
+
+ENTRY_LABELS = {1: "bar_optimistic_next_open", 2: "first_open_after_data_available"}
 
 
 def part_b(
-    candidates: dict[str, list[Row]], venue_first: dict[str, date | None], seed: int
+    candidates: dict[str, Any], venue_first: dict[str, date | None], seed: int
 ) -> dict[str, Any]:
     cells: list[dict[str, Any]] = []
-    primary: dict[str, Any] | None = None
+    primary: dict[str, Any] = {}
     families = {"five_minute": FIVE_MINUTE_THRESHOLDS, "one_minute": ONE_MINUTE_THRESHOLDS}
     for venue, first in venue_first.items():
         if first is None:
@@ -419,33 +508,42 @@ def part_b(
                 fired = firings(candidates[family], venue, threshold, first_ts)
                 for side in ("long", "short"):
                     for horizon in HORIZONS:
-                        got = outcomes(fired, horizon, side)
-                        key = {
-                            "venue": venue,
-                            "family": family,
-                            "threshold": threshold,
-                            "side": side,
-                            "horizon": horizon,
-                        }
-                        is_primary = all(
-                            PRIMARY[k] == key[k]
-                            for k in ("venue", "family", "threshold", "side", "horizon")
-                        )
-                        if is_primary:
-                            obs = [
-                                {**o, "net_bps": o["gross_bps"] - 2 * PRIMARY_COST_BPS}
-                                for o in got["resolved"]
-                            ]
-                            primary = {
-                                **key,
-                                "unresolved": got["unresolved"],
-                                "censored_by_window_end": got["censored"],
-                                **primary_inference(obs, seed),
+                        for entry in _ENTRY_OFFSETS:
+                            got = outcomes(fired, horizon, side, entry)
+                            key = {
+                                "venue": venue,
+                                "family": family,
+                                "threshold": threshold,
+                                "side": side,
+                                "horizon": horizon,
+                                "entry": ENTRY_LABELS[entry],
                             }
-                        cells.append(
-                            {**key, **describe(got["resolved"], got["unresolved"], got["censored"])}
-                        )
-    return {"primary": primary, "descriptive_cells": cells}
+                            if all(
+                                PRIMARY[k] == key[k]
+                                for k in ("venue", "family", "threshold", "side", "horizon")
+                            ):
+                                obs = [
+                                    {**o, "net_bps": o["gross_bps"] - 2 * PRIMARY_COST_BPS}
+                                    for o in got["resolved"]
+                                ]
+                                primary[ENTRY_LABELS[entry]] = {
+                                    **key,
+                                    "unresolved": got["unresolved"],
+                                    "censored_by_window_end": got["censored"],
+                                    **primary_inference(obs, derived_seed(seed, key["entry"])),
+                                }
+                            cells.append(
+                                {
+                                    **key,
+                                    **describe(got["resolved"], got["unresolved"], got["censored"]),
+                                }
+                            )
+    return {
+        "primary": primary,
+        "primary_registered_estimand": ENTRY_LABELS[1],
+        "exclusions": candidates["exclusions"],
+        "descriptive_cells": cells,
+    }
 
 
 # ---------------------------------------------------------------- part A
@@ -584,7 +682,7 @@ def part_a(
         not_crossed: Counter[str] = Counter()
         for symbol, items in sorted(by_symbol.items()):
             rows = con.execute(
-                "SELECT epoch(t)::BIGINT, o, h, l, c FROM bars"
+                "SELECT epoch(t)::BIGINT, o, h, l, c FROM good"
                 " WHERE exchange = ? AND symbol = ? ORDER BY t",
                 [venue, symbol],
             ).fetchall()
@@ -642,6 +740,20 @@ async def export_scanner(db_url: str) -> list[dict[str, Any]]:
         await engine.dispose()
 
 
+def pin_inputs(path: Path, inputs: dict[str, Any]) -> str:
+    """Record the inputs once. After an interrupted read the stored inputs are reused
+    only if they equal the ones just verified (all but `taken_at`); otherwise refuse."""
+    if not path.exists():
+        return write_once(path, inputs)
+    complete_digest(path)
+    stored, digest = load_verified(path)
+    if {k: v for k, v in stored.items() if k != "taken_at"} != {
+        k: v for k, v in json.loads(json.dumps(inputs)).items() if k != "taken_at"
+    }:
+        raise SystemExit(f"{path} pins other inputs than the ones verified now; refusing")
+    return digest
+
+
 def run_read(
     stage_dir: Path,
     bars_dir: Path,
@@ -666,7 +778,7 @@ def run_read(
         "mexc_manifest_sha256": mexc_manifest_sha,
         "mexc_files": len(mexc_files),
     }
-    inputs_sha = write_once(stage_dir / INPUTS_NAME, inputs)
+    inputs_sha = pin_inputs(stage_dir / INPUTS_NAME, inputs)
     con = duckdb.connect()
     con.execute("SET TimeZone = 'UTC'")
     binance_first = binance_first_day(con, bars_dir)

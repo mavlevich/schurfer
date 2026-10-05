@@ -28,6 +28,7 @@ from .cold_bar_fetch import (
     DEFAULT_RESERVE_BYTES,
     FetchError,
     days_between,
+    ensure_reserve,
     fetch_day,
     sha256_of,
 )
@@ -37,6 +38,13 @@ REDUCTION_VERSION = "edge_loss_bars_v1"
 WINDOW_FIRST = date(2026, 8, 13)
 WINDOW_LAST = date(2026, 9, 28)
 MAX_DAYS = 3
+# The reduction's own disk and memory bounds. DuckDB spills into a temporary directory
+# capped at TEMP_CAP_BYTES; the output is a subset of the source, so it is bounded by the
+# source's size. Both are checked against the reserve before the work starts, and the
+# reserve is checked again after it.
+TEMP_CAP_BYTES = 2 * 1024**3
+DUCKDB_MEMORY_LIMIT = "1GB"
+DUCKDB_THREADS = 2
 COLUMNS = (
     "exchange",
     "symbol",
@@ -63,19 +71,54 @@ def reduced_name(day: str) -> str:
     return f"edge-loss-bars-{day}.parquet"
 
 
+def reduced_state(out_dir: Path, day: str) -> str:
+    """`complete` only when the reduced file and its manifest both exist and agree.
+
+    A file without a manifest is the leftover of an interrupted run (the file is linked
+    before the manifest): it is removed and the day is reduced again. A manifest
+    without its file, or a file that differs from its manifest, is refused.
+    """
+    dest = out_dir / reduced_name(day)
+    manifest_path = dest.with_suffix(".manifest.json")
+    if manifest_path.exists():
+        if not dest.exists():
+            raise ReduceError(f"{day}: a manifest without its reduced file")
+        manifest = json.loads(manifest_path.read_text())
+        if manifest.get("day") != day or sha256_of(dest) != manifest.get("reduced_sha256"):
+            raise ReduceError(f"{day}: {dest.name} does not match its manifest")
+        return "complete"
+    if dest.exists():
+        dest.unlink()
+    return "absent"
+
+
 def reduce_day(
-    source: Path, day: str, source_sha: str, source_rows: int, out_dir: Path
+    source: Path,
+    day: str,
+    source_sha: str,
+    source_rows: int,
+    out_dir: Path,
+    reserve_bytes: int = DEFAULT_RESERVE_BYTES,
 ) -> dict[str, Any]:
-    """Write the reduced Parquet and its manifest; refuse if either already exists."""
+    """Write the reduced Parquet and its manifest within the disk reserve."""
     import duckdb
 
     dest = out_dir / reduced_name(day)
     manifest_path = dest.with_suffix(".manifest.json")
     if dest.exists() or manifest_path.exists():
         raise ReduceError(f"{day}: {dest.name} or its manifest already exists")
+    try:
+        ensure_reserve(out_dir, source.stat().st_size + TEMP_CAP_BYTES, reserve_bytes)
+    except FetchError as exc:
+        raise ReduceError(f"{day}: {exc}") from exc
     partial = dest.with_name(f".{dest.name}.{os.getpid()}.partial")
+    spill = out_dir / f".duckdb-tmp-{os.getpid()}"
     con = duckdb.connect()
     try:
+        con.execute(f"SET memory_limit = '{DUCKDB_MEMORY_LIMIT}'")
+        con.execute(f"SET threads = {DUCKDB_THREADS}")
+        con.execute(f"SET temp_directory = '{spill}'")
+        con.execute(f"SET max_temp_directory_size = '{TEMP_CAP_BYTES}B'")
         con.execute(
             f"COPY (SELECT {', '.join(COLUMNS)} FROM read_parquet(?) WHERE {_FILTER}"  # noqa: S608 -- fixed columns
             " ORDER BY exchange, symbol, bucket_start)"
@@ -96,10 +139,18 @@ def reduce_day(
                 [str(partial)],
             ).fetchall()
         )
+        try:
+            ensure_reserve(out_dir, 0, reserve_bytes)
+        except FetchError as exc:
+            raise ReduceError(f"{day}: below the reserve after reducing: {exc}") from exc
         os.link(partial, dest)
     finally:
         partial.unlink(missing_ok=True)
         con.close()
+        if spill.exists():
+            for leftover in spill.iterdir():
+                leftover.unlink()
+            spill.rmdir()
     manifest: dict[str, Any] = {
         "reduction_version": REDUCTION_VERSION,
         "day": day,
@@ -148,10 +199,10 @@ def main(argv: list[str] | None = None) -> int:
     done: list[dict[str, Any]] = []
     failed: list[dict[str, Any]] = []
     for day in days:
-        if (args.out_dir / reduced_name(day)).exists():
-            done.append({"day": day, "status": "already_reduced"})
-            continue
         try:
+            if reduced_state(args.out_dir, day) == "complete":
+                done.append({"day": day, "status": "already_reduced"})
+                continue
             got = fetch_day(
                 day,
                 cold_bars_dir=args.cold_bars_dir,

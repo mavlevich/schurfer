@@ -130,3 +130,38 @@ def test_more_than_three_days_are_refused(tmp_path: Path) -> None:
     s = _setup(tmp_path)
     with pytest.raises(SystemExit, match="per run"):
         _run(s, "2026-09-01", "2026-09-04")
+
+
+def test_reduction_refuses_to_cut_into_the_reserve_and_leaves_nothing(tmp_path: Path) -> None:
+    s = _setup(tmp_path)
+    s["out"].mkdir()
+    with pytest.raises(e.ReduceError, match="reserve"):
+        e.reduce_day(s["stored"], DAY, "sha", 15, s["out"], reserve_bytes=10**18)
+    assert list(s["out"].iterdir()) == []
+
+
+def test_an_already_present_source_still_meets_the_reduction_reserve(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    s = _setup(tmp_path)
+    (s["fetch"] / f"bars-{DAY}.parquet").write_bytes(s["stored"].read_bytes())
+    monkeypatch.setattr(e, "TEMP_CAP_BYTES", 10**18)
+    assert _run(s) == 1
+    assert not (s["out"] / e.reduced_name(DAY)).exists()
+
+
+def test_a_reduced_file_without_its_manifest_is_redone(tmp_path: Path) -> None:
+    s = _setup(tmp_path)
+    s["out"].mkdir()
+    orphan = s["out"] / e.reduced_name(DAY)
+    orphan.write_bytes(b"interrupted")
+    assert _run(s) == 0
+    manifest = json.loads(orphan.with_suffix(".manifest.json").read_text())
+    assert manifest["reduced_sha256"] == hashlib.sha256(orphan.read_bytes()).hexdigest()
+
+
+def test_a_reduced_file_that_differs_from_its_manifest_is_refused(tmp_path: Path) -> None:
+    s = _setup(tmp_path)
+    assert _run(s) == 0
+    (s["out"] / e.reduced_name(DAY)).write_bytes(b"changed")
+    assert _run(s) == 1
