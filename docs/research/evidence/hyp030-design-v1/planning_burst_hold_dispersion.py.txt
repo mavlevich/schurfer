@@ -1,0 +1,65 @@
+"""Planning input for HYP-030: dispersion of the burst proxy by hold (bars, read-2 rules).
+
+Only the standard deviation is used to compare holds; means are printed for the record but
+are in-sample and choose nothing. Inputs are verified: the firing list against its sha256
+sidecar, and the reduced bars against their manifests and the bars pinned by read 2. The
+output pins the code revision, the input hashes and the parameters.
+"""
+import statistics as st
+
+import duckdb
+
+import json
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[4]
+sys.path.insert(0, str(ROOT / "apps" / "analytics"))
+from schurfer_analytics import research_cost_power_planning as p  # noqa: E402
+from schurfer_analytics.bybit_burst_decay import verified_bars_against_read2  # noqa: E402
+from schurfer_analytics.mexc_early_trigger_hyp029 import verified_revision  # noqa: E402
+from schurfer_analytics.source_lead_multi_source_report import load_verified  # noqa: E402
+
+RUNTIME = Path("/Users/mavlevich/Desktop/Projects/schurfer/runtime/research")
+FIRINGS = ROOT / "docs/research/evidence/bybit-burst-decay-v1/decay-firings.json"
+PINNED = RUNTIME / "edge-loss/read-2/inputs.json"
+BARS = RUNTIME / "edge-loss/bars"
+head = subprocess.run(["git", "-C", str(ROOT), "rev-parse", "HEAD"], capture_output=True,
+                      text=True, check=True).stdout.strip()
+revision = verified_revision(head)  # a clean checkout of an explicit commit
+payload, firings_sha = load_verified(FIRINGS)  # the frozen decay firings and their sidecar
+firings = payload["firings"]
+
+from schurfer_analytics import edge_loss_study as s  # noqa: E402
+
+pinned_sha = verified_bars_against_read2(BARS, PINNED)
+HOLDS = (5, 15, 30, 60)
+con = duckdb.connect()
+con.execute("SET TimeZone = 'UTC'")
+s.load_bars(con, BARS, [])
+con.execute("CREATE TABLE f (symbol VARCHAR, ts BIGINT)")
+con.executemany("INSERT INTO f VALUES (?, ?)", [(x["symbol"], x["bar_start"]) for x in firings])
+cols = ", ".join(f"x{h}.o" for h in HOLDS)
+joins = " ".join(
+    f"LEFT JOIN good x{h} ON x{h}.exchange='bybit' AND x{h}.symbol=f.symbol"
+    f" AND x{h}.t = to_timestamp(f.ts) + INTERVAL {h + 1} MINUTE" for h in HOLDS)
+rows = con.execute(
+    f"SELECT f.symbol, f.ts, e.o, {cols} FROM f LEFT JOIN good e ON e.exchange='bybit'"
+    f" AND e.symbol=f.symbol AND e.t = to_timestamp(f.ts) + INTERVAL 1 MINUTE {joins}"
+).fetchall()
+out = {}
+for i, h in enumerate(HOLDS):
+    g = [(r[3 + i] / r[2] - 1) * 1e4 for r in rows if r[2] and r[3 + i]]
+    sd = st.pstdev(g)
+    out[f"hold_{h}m"] = {
+        "n": len(g), "sd_bps": round(sd, 1), "mean_bps_in_sample": round(st.fmean(g), 1),
+        "median_bps_in_sample": round(st.median(g), 1),
+        "independent_n_50bps_80pct": p.independent_sample_size(sd, 50.0, 0.8),
+        "independent_n_100bps_80pct": p.independent_sample_size(sd, 100.0, 0.8),
+    }
+out["provenance"] = {"code_revision": revision, "decay_firings_sha256": firings_sha,
+                     "read2_inputs_sha256": pinned_sha,
+                     "parameters": {"holds_min": HOLDS, "entry": "t+1 open",
+                                    "exit": "t+1+hold open", "bars": "price-complete (good)"}}
+print(json.dumps(out, indent=1))
