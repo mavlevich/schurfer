@@ -1347,5 +1347,16 @@
   "utc_days": 47,
   "per_day": 15.574468085106384,
   "instruments": 282
+ },
+ "provenance": {
+  "code_revision": "385c8cebe4624511a4d1c218a0a948062c648d19",
+  "decay_firings_sha256": "cb3f8154bb43353b7869456dfcd89d1a951787dafc7d85ebfcb94c1f60a30211",
+  "parameters": {
+   "replicates": 1000,
+   "calibration_replicates": 200,
+   "calibration_iterations": 1000,
+   "seed": 20261005,
+   "return": "t61_open / t1_open - 1"
+  }
  }
 }

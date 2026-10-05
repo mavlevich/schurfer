@@ -42,11 +42,13 @@ them. Its latency distribution is the bounded measurement's job, not an assumpti
 Planning inputs:
 
 - dispersion: the 732 frozen decay firings
-  ([power](evidence/hyp030-design-v1/planning-burst-power.json), sha256 `94f99263...`;
+  ([power](evidence/hyp030-design-v1/planning-burst-power.json), sha256 `668ff524...`;
   [dispersion by hold](evidence/hyp030-design-v1/planning-burst-hold-dispersion.json),
-  sha256 `1d496609...`);
+  sha256 `f73691d4...`);
 - method: the cost/power planning code, with centered returns and whole-cluster
-  resampling.
+  resampling;
+- provenance: both outputs pin the code revision, the decay firings' sha256, the read-2
+  inputs' sha256 (bars verified against their manifests and pins) and the parameters.
 
 The window is the one the cell was found in, so its means choose nothing. Only the
 dispersion and the dependence are used.
@@ -75,37 +77,73 @@ dispersion and the dependence are used.
 | 60 min, 100 bps  | 1,500-2,000 | 3-4 months                                                 |
 | 5 min, 50 bps    | about 1,000 | about 2 months with independence, more with the day effect |
 
-**What the evidence says about the size of a net effect.**
+**What is and is not known about the size of a net effect.** The table above is a set of
+planning scenarios, not an estimate of any hold's economics.
 
-- From the decay readout, entering 5 s after the bar loses about 30 bps of the 60-minute
-  proxy.
-- The middle cost scenario is 41 bps per round trip, before slippage just after a +5%
-  minute, which is likely higher.
-- **60 minutes:** about 125 - 30 - 41 = 54 bps of in-sample mean net. That sits at the
-  50 bps point that needs more than a year to test, and the median is much lower.
-- **5 minutes:** about 69 - 30 - 41 = about 0 in sample.
+- The decay readout measured the entry-delay loss for the 60-minute exit only. About
+  30 bps is lost at a 5 s entry, so on the 60-minute hold about 125 - 30 - 41 = 54 bps
+  of in-sample mean net remain at the middle cost scenario. That sits at the 50 bps
+  point that needs more than a year to test; the median is much lower.
+- For the 5, 15 and 30-minute holds the loss from a delayed entry was not computed on
+  these firings, so their economics after delay and costs are **not established**.
+- Slippage just after a +5% minute is not measured and is likely above the scenario's
+  15 bps.
 
 ## Decision needed before any registration
 
-As specified, HYP-030 is either testable but expected to be about zero after costs
-(short holds), or possibly positive but not testable in a reasonable time (60 minutes).
-Neither is a money path. Options for review:
+The 60-minute hold, with the one in-sample estimate of net economics available, sits
+where a test needs more than a year. The shorter holds could be tested sooner, but their
+economics after delay and costs are not established. Neither is yet a money path.
+Options for review:
 
 1. **Park HYP-030** in the discovery ledger as `parked`. Record the decay finding and
    the power result, and spend the next effort elsewhere.
-2. **Run only the bounded path measurement** (latency distribution, executable quotes
-   and depth at entry and exit at USD 50, fees, funding) for 2-4 weeks as a sealed
-   shadow. It answers whether real costs at burst moments are near the 41 bps scenario
-   or far above it. If far above, park with certainty; if near, revisit the 60-minute
-   test's calendar.
+2. **A bounded path measurement first** (latency distribution, executable quotes and
+   depth at entry and exit at USD 50, fees, funding), under the boundaries below. It
+   turns the largest unknown, the real cost at burst moments, into a number, but only
+   once the v2 blind window has ended.
 3. **Register the 60-minute rule anyway** with a sealed accrual of about a year. Not
-   recommended: it ties a slot for a long time on an in-sample effect that sits at the
-   edge of the testable range.
+   recommended.
 
-The recommendation is **option 2, then 1 or a re-plan**. The measurement is cheap if it
+The recommendation is **option 2, under its own protocol, then park or re-plan**. It
 reuses the Bybit capture (a read-only subscriber on its bars plus a quote snapshot at
-the signal), it touches neither v2 nor HYP-015, and it turns the largest unknown (real
-costs at burst moments) into a number.
+the signal and at the would-be exit) and changes neither the v2 nor the HYP-015 path.
+
+## Boundaries of the bounded measurement (to be fixed in its own protocol)
+
+HYP-012 v2 is not terminal. Until it is, nothing on or after 2026-09-29 is read for
+research on any venue (the v2 administrative stop's blind-window rule). The measurement
+therefore splits into what may be seen now and what is stored unread.
+
+- **Visible now (operational counters only):**
+  - signal counts per day;
+  - latency distributions of each stage, as times only: bar ready, signal computed,
+    quote requested, quote received;
+  - quote availability and age;
+  - missed and blocked counts;
+  - errors, reconnects and bytes.
+- **Never printed, logged, plotted or summarized before the blind window ends:** any
+  price, spread, depth, size, side or return.
+  - Quote snapshots and the exit snapshots are written to sealed files with a manifest
+    and sha256 and not opened.
+  - The health endpoint and any daily summary carry counters only; a test asserts this.
+- **After v2 is terminal:**
+  - The sealed data may be read only by a study registered after the terminal state,
+    under that study's protocol. For that study it is historical (descriptive), never
+    prospective.
+  - v2's closed windows are excluded mechanically: by canonical asset, or by base ticker
+    when no mapping exists, over any window a firing uses (lookback, entry, hold,
+    exit). Excluded firings are dropped, never imputed.
+  - Closed windows exist only after an administrative stop. If v2 ends by its completed
+    formal read instead, the blind window ends under that rule, and rule 3 of the stop
+    document (data on or after 2026-09-29 only for a study registered after the
+    terminal state) still applies.
+- **A confirmatory HYP-030 cohort**, if one is ever justified:
+  - registered separately after the measurement's readout;
+  - collected on a forward window that starts after that registration;
+  - never including the measurement's own data.
+- **Scope:** read-only towards the existing capture and the database tables of v2 and
+  HYP-015. Its own container and limits; no order is ever sent.
 
 ## Not in this design
 
