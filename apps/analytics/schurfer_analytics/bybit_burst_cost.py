@@ -441,10 +441,12 @@ def summarize(
             "half_spread_bps",
             "entry_impact_bps",
             "exit_impact_bps",
+            "fees_bps",
+            "funding_bps",
             "round_trip_cost_bps",
             "net_bps",
         ):
-            values = [c[field] for _, c in done]
+            values = [c[field] for _, c in done if field in c]
             report[field] = {"mean": fmean(values) if values else None, **quantiles(values)}
         report["share_cost_above_scenario"] = (
             sum(c["round_trip_cost_bps"] > SCENARIO_ROUND_TRIP_BPS for _, c in done) / len(done)
