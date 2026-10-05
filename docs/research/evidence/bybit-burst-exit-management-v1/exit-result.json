@@ -1,0 +1,488 @@
+{
+  "chosen": "P",
+  "contract_sha256": "43e771cbd8c62d22ce42b962d35ea8251b583d7b8f8c40eeeaeca8890954f15c",
+  "decision": "no_exit_put_forward",
+  "delayed": {
+    "choice_half": {
+      "common": 421,
+      "common_share": 1.0,
+      "days": 25,
+      "entered": 421,
+      "entry_status": {
+        "entry_unavailable": 14,
+        "ok": 421
+      },
+      "exits": {
+        "E": {
+          "decided_share_on_common": 0.4014251781472684,
+          "hold_s_on_common": {
+            "median": 3595.0,
+            "n": 421,
+            "q25": 900.0,
+            "q75": 3595.0
+          },
+          "net_on_common": {
+            "mean_bps": 68.31765561411167,
+            "median": -28.429696828462667,
+            "n": 421,
+            "q25": -313.82340198604845,
+            "q75": 295.49174997596924
+          },
+          "own_status": {
+            "ok": 421
+          }
+        },
+        "H": {
+          "decided_share_on_common": 0.0,
+          "hold_s_on_common": {
+            "median": 3595.0,
+            "n": 421,
+            "q25": 3595.0,
+            "q75": 3595.0
+          },
+          "net_on_common": {
+            "mean_bps": 71.83743363113314,
+            "median": 42.55607668456544,
+            "n": 421,
+            "q25": -361.386082098616,
+            "q75": 364.0388315056223
+          },
+          "own_status": {
+            "ok": 421
+          }
+        },
+        "P": {
+          "decided_share_on_common": 0.5201900237529691,
+          "hold_s_on_common": {
+            "median": 2499.4079999923706,
+            "n": 421,
+            "q25": 140.81399989128113,
+            "q75": 3595.0
+          },
+          "net_on_common": {
+            "mean_bps": 102.2977426195157,
+            "median": 266.80984819811914,
+            "n": 421,
+            "q25": -91.8730777472556,
+            "q75": 470.0416845724103
+          },
+          "own_status": {
+            "ok": 421
+          }
+        },
+        "S": {
+          "decided_share_on_common": 0.5961995249406176,
+          "hold_s_on_common": {
+            "median": 957.9170000553131,
+            "n": 421,
+            "q25": 124.70000004768372,
+            "q75": 3595.0
+          },
+          "net_on_common": {
+            "mean_bps": 15.059438468707944,
+            "median": -244.64496841052684,
+            "n": 421,
+            "q25": -336.30667272387285,
+            "q75": 187.86141381792163
+          },
+          "own_status": {
+            "ok": 421
+          }
+        },
+        "T": {
+          "decided_share_on_common": 0.9762470308788599,
+          "hold_s_on_common": {
+            "median": 85.69000005722046,
+            "n": 421,
+            "q25": 29.515000104904175,
+            "q75": 212.29800009727478
+          },
+          "net_on_common": {
+            "mean_bps": 3.2141252908648954,
+            "median": -44.4451338668925,
+            "n": 421,
+            "q25": -198.44799322518915,
+            "q75": 149.64638346728074
+          },
+          "own_status": {
+            "ok": 421
+          }
+        }
+      },
+      "firings": 435,
+      "instruments": 218
+    },
+    "test_half": {
+      "common": 293,
+      "common_share": 0.9932203389830508,
+      "days": 22,
+      "entered": 295,
+      "entry_status": {
+        "entry_unavailable": 2,
+        "ok": 295
+      },
+      "exits": {
+        "E": {
+          "decided_share_on_common": 0.6109215017064846,
+          "hold_s_on_common": {
+            "median": 900.0,
+            "n": 293,
+            "q25": 900.0,
+            "q75": 3595.0
+          },
+          "net_on_common": {
+            "mean_bps": 52.472453934355606,
+            "median": -190.13228310694183,
+            "n": 293,
+            "q25": -440.7350616503322,
+            "q75": 204.75428571428495
+          },
+          "own_status": {
+            "exit_unfilled:book_stale": 2,
+            "ok": 293
+          }
+        },
+        "H": {
+          "decided_share_on_common": 0.0,
+          "hold_s_on_common": {
+            "median": 3595.0,
+            "n": 293,
+            "q25": 3595.0,
+            "q75": 3595.0
+          },
+          "net_on_common": {
+            "mean_bps": 52.97491631249104,
+            "median": -134.2356222309911,
+            "n": 293,
+            "q25": -582.6424291536002,
+            "q75": 415.2103640127234
+          },
+          "own_status": {
+            "exit_unfilled:book_stale": 2,
+            "ok": 293
+          }
+        },
+        "P": {
+          "decided_share_on_common": 0.44368600682593856,
+          "hold_s_on_common": {
+            "median": 3595.0,
+            "n": 293,
+            "q25": 394.86299991607666,
+            "q75": 3595.0
+          },
+          "net_on_common": {
+            "mean_bps": -51.983913876948904,
+            "median": 81.91207230471117,
+            "n": 293,
+            "q25": -470.5508525742199,
+            "q75": 445.3119847812323
+          },
+          "own_status": {
+            "exit_unfilled:book_stale": 1,
+            "ok": 294
+          }
+        },
+        "S": {
+          "decided_share_on_common": 0.7133105802047781,
+          "hold_s_on_common": {
+            "median": 340.7579998970032,
+            "n": 293,
+            "q25": 71.53999996185303,
+            "q75": 3595.0
+          },
+          "net_on_common": {
+            "mean_bps": 17.37290786924028,
+            "median": -281.9481459500466,
+            "n": 293,
+            "q25": -338.7659049435668,
+            "q75": 19.032401377348666
+          },
+          "own_status": {
+            "exit_unfilled:book_stale": 1,
+            "ok": 294
+          }
+        },
+        "T": {
+          "decided_share_on_common": 0.9726962457337884,
+          "hold_s_on_common": {
+            "median": 79.26999998092651,
+            "n": 293,
+            "q25": 29.81599998474121,
+            "q75": 197.03800010681152
+          },
+          "net_on_common": {
+            "mean_bps": -31.306829700514957,
+            "median": -91.04137746929955,
+            "n": 293,
+            "q25": -253.07489585597637,
+            "q75": 104.65749364944877
+          },
+          "own_status": {
+            "ok": 295
+          }
+        }
+      },
+      "firings": 297,
+      "instruments": 132
+    }
+  },
+  "exit_version": "bybit_burst_exit_management_v1",
+  "firings": 732,
+  "inputs_sha256": {
+    "books": "9a6da537d1217a4916f358ef6e01d8d610a9b06b86baaf9eef81e79e36be7174",
+    "decay_result": "30356acb870adea8bb1bd0d89d15abe37a13d41df1eb4ed2e50133fbd4c797a3",
+    "firings": "cb3f8154bb43353b7869456dfcd89d1a951787dafc7d85ebfcb94c1f60a30211",
+    "funding": "c0cb3efce63a96e7b2e8d35a87692236e5c0c1e3242680bc406d5473f9cec6ca",
+    "tapes": "40571a69ecc1d3544c6017c382a67737be9b2bb55571751323346148cdae33ba"
+  },
+  "peak_rss_bytes": 2821849088,
+  "reader_code_revision": "5cf52a08d59316225c88ac8ab2f4b419d77cfc72",
+  "test_verdict": {
+    "chosen_ci95_by_instrument": [
+      -143.56309068837302,
+      28.36989234481543
+    ],
+    "chosen_ci95_by_utc_day": [
+      -139.99540245288443,
+      37.57110465111733
+    ],
+    "chosen_mean_net_bps": -51.983913876948904,
+    "chosen_median_net_bps": 81.91207230471117,
+    "h_mean_net_bps": 52.97491631249104,
+    "n": 293,
+    "paired_diff_ci95_by_instrument": [
+      -260.1170793530129,
+      41.290908181546556
+    ],
+    "paired_diff_ci95_by_utc_day": [
+      -220.3442886701422,
+      16.978771025032984
+    ],
+    "paired_diff_vs_h_mean_bps": -104.95883018943994,
+    "top5_instrument_share_of_net": -1.0310620651797677
+  },
+  "zero_delay": {
+    "choice_half": {
+      "common": 421,
+      "common_share": 1.0,
+      "days": 25,
+      "entered": 421,
+      "entry_status": {
+        "entry_unavailable": 14,
+        "ok": 421
+      },
+      "exits": {
+        "E": {
+          "decided_share_on_common": 0.4014251781472684,
+          "hold_s_on_common": {
+            "median": 3595.0,
+            "n": 421,
+            "q25": 895.0,
+            "q75": 3595.0
+          },
+          "net_on_common": {
+            "mean_bps": 69.14018202409397,
+            "median": -37.26849472754619,
+            "n": 421,
+            "q25": -312.6820328542093,
+            "q75": 295.49174997596924
+          },
+          "own_status": {
+            "ok": 421
+          }
+        },
+        "H": {
+          "decided_share_on_common": 0.0,
+          "hold_s_on_common": {
+            "median": 3595.0,
+            "n": 421,
+            "q25": 3595.0,
+            "q75": 3595.0
+          },
+          "net_on_common": {
+            "mean_bps": 71.83743363113314,
+            "median": 42.55607668456544,
+            "n": 421,
+            "q25": -361.386082098616,
+            "q75": 364.0388315056223
+          },
+          "own_status": {
+            "ok": 421
+          }
+        },
+        "P": {
+          "decided_share_on_common": 0.5201900237529691,
+          "hold_s_on_common": {
+            "median": 2494.4079999923706,
+            "n": 421,
+            "q25": 135.81399989128113,
+            "q75": 3595.0
+          },
+          "net_on_common": {
+            "mean_bps": 63.75773930891853,
+            "median": 228.62809678484908,
+            "n": 421,
+            "q25": -100.82471328608803,
+            "q75": 445.3954102826919
+          },
+          "own_status": {
+            "ok": 421
+          }
+        },
+        "S": {
+          "decided_share_on_common": 0.5961995249406176,
+          "hold_s_on_common": {
+            "median": 952.9170000553131,
+            "n": 421,
+            "q25": 119.70000004768372,
+            "q75": 3595.0
+          },
+          "net_on_common": {
+            "mean_bps": 54.58840918257773,
+            "median": -234.17569568666966,
+            "n": 421,
+            "q25": -300.4604928221141,
+            "q75": 187.86141381792163
+          },
+          "own_status": {
+            "ok": 421
+          }
+        },
+        "T": {
+          "decided_share_on_common": 0.9762470308788599,
+          "hold_s_on_common": {
+            "median": 80.69000005722046,
+            "n": 421,
+            "q25": 24.515000104904175,
+            "q75": 207.29800009727478
+          },
+          "net_on_common": {
+            "mean_bps": 38.088049977165134,
+            "median": -0.9187831128535051,
+            "n": 421,
+            "q25": -182.86682231474927,
+            "q75": 184.14872752596085
+          },
+          "own_status": {
+            "ok": 421
+          }
+        }
+      },
+      "firings": 435,
+      "instruments": 218
+    },
+    "test_half": {
+      "common": 293,
+      "common_share": 0.9932203389830508,
+      "days": 22,
+      "entered": 295,
+      "entry_status": {
+        "entry_unavailable": 2,
+        "ok": 295
+      },
+      "exits": {
+        "E": {
+          "decided_share_on_common": 0.6109215017064846,
+          "hold_s_on_common": {
+            "median": 895.0,
+            "n": 293,
+            "q25": 895.0,
+            "q75": 3595.0
+          },
+          "net_on_common": {
+            "mean_bps": 51.84093714476433,
+            "median": -200.02032943478181,
+            "n": 293,
+            "q25": -443.625575505129,
+            "q75": 204.75428571428495
+          },
+          "own_status": {
+            "exit_unfilled:book_stale": 2,
+            "ok": 293
+          }
+        },
+        "H": {
+          "decided_share_on_common": 0.0,
+          "hold_s_on_common": {
+            "median": 3595.0,
+            "n": 293,
+            "q25": 3595.0,
+            "q75": 3595.0
+          },
+          "net_on_common": {
+            "mean_bps": 52.97491631249104,
+            "median": -134.2356222309911,
+            "n": 293,
+            "q25": -582.6424291536002,
+            "q75": 415.2103640127234
+          },
+          "own_status": {
+            "exit_unfilled:book_stale": 2,
+            "ok": 293
+          }
+        },
+        "P": {
+          "decided_share_on_common": 0.44368600682593856,
+          "hold_s_on_common": {
+            "median": 3595.0,
+            "n": 293,
+            "q25": 389.86299991607666,
+            "q75": 3595.0
+          },
+          "net_on_common": {
+            "mean_bps": -80.18506181922992,
+            "median": 81.90050722613027,
+            "n": 293,
+            "q25": -467.12483221476566,
+            "q75": 434.6210832564162
+          },
+          "own_status": {
+            "exit_unfilled:book_stale": 1,
+            "ok": 294
+          }
+        },
+        "S": {
+          "decided_share_on_common": 0.7133105802047781,
+          "hold_s_on_common": {
+            "median": 335.7579998970032,
+            "n": 293,
+            "q25": 66.53999996185303,
+            "q75": 3595.0
+          },
+          "net_on_common": {
+            "mean_bps": 54.93300354650174,
+            "median": -274.83045240873383,
+            "n": 293,
+            "q25": -302.8193145796969,
+            "q75": 11.530432822362679
+          },
+          "own_status": {
+            "exit_unfilled:book_stale": 1,
+            "ok": 294
+          }
+        },
+        "T": {
+          "decided_share_on_common": 0.9726962457337884,
+          "hold_s_on_common": {
+            "median": 74.26999998092651,
+            "n": 293,
+            "q25": 24.81599998474121,
+            "q75": 192.03800010681152
+          },
+          "net_on_common": {
+            "mean_bps": 12.783408969850436,
+            "median": -67.18729721557678,
+            "n": 293,
+            "q25": -222.16337517894692,
+            "q75": 128.51451406500442
+          },
+          "own_status": {
+            "ok": 295
+          }
+        }
+      },
+      "firings": 297,
+      "instruments": 132
+    }
+  }
+}
