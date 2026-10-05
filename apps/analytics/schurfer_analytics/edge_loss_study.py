@@ -845,11 +845,11 @@ def main(argv: Sequence[str] | None = None) -> None:
         raise SystemExit("--bars-dir and --mexc-dir are required for the read")
     revision = verified_revision(args.code_revision)
     result = run_read(args.stage_dir, args.bars_dir, args.mexc_dir, revision, now)
-    primary = result["part_b"]["primary"] or {}
-    sys.stdout.write(
-        json.dumps({k: primary.get(k) for k in ("firings", "mde_bps_80pct_power", "verdict")})
-        + "\n"
-    )
+    summary = {
+        entry: {k: cell.get(k) for k in ("firings", "mde_bps_80pct_power", "verdict")}
+        for entry, cell in result["part_b"]["primary"].items()
+    }
+    sys.stdout.write(json.dumps(summary) + "\n")
 
 
 if __name__ == "__main__":
