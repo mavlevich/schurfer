@@ -1,0 +1,45 @@
+"""Diagnostic: how far the ticker-based bar opens are from the first public trade."""
+import json
+import statistics as st
+import sys
+from collections import defaultdict
+from pathlib import Path
+
+sys.path.insert(0, "/Users/mavlevich/Desktop/Projects/schurfer/.claude/worktrees/burst-decay/apps/analytics")
+from schurfer_analytics import bybit_burst_decay as d  # noqa: E402
+
+R = Path("/Users/mavlevich/Desktop/Projects/schurfer/runtime/research/bybit-burst-decay")
+payload = json.load(open(R / d.FIRINGS_NAME))
+by_symbol = defaultdict(list)
+for f in payload["firings"]:
+    by_symbol[f["symbol"]].append(f)
+entry_bps, exit_bps, g_bar, g_trade = [], [], [], []
+for symbol, firings in sorted(by_symbol.items()):
+    loaded = []
+    for s, day in d.tape_days(firings):
+        loaded += d.read_trades(R / "tapes" / f"{s}{day}.csv.gz", [d.firing_window(f) for f in firings])
+    t = d.Trades(sorted(loaded, key=lambda x: x[0]))
+    for f in firings:
+        b = f["bar_start"] + 60
+        e = t.first_from(b, d.ENTRY_WAIT_S)
+        x = t.first_from(b + d.EXIT_AFTER_S, d.EXIT_WAIT_S)
+        if not e or not x:
+            continue
+        entry_bps.append((e[0] / f["t1_open"] - 1) * 1e4)
+        exit_bps.append((x[0] / f["t61_open"] - 1) * 1e4)
+        g_bar.append((f["t61_open"] / f["t1_open"] - 1) * 1e4)
+        g_trade.append((x[0] / e[0] - 1) * 1e4)
+
+def q(v):
+    v = sorted(v)
+    at = lambda p: v[int(p * (len(v) - 1))]
+    return {"n": len(v), "mean": round(st.fmean(v), 2), "p05": round(at(0.05), 1), "p25": round(at(0.25), 1),
+            "median": round(at(0.5), 1), "p75": round(at(0.75), 1), "p95": round(at(0.95), 1),
+            "abs_median": round(st.median(abs(x) for x in v), 1)}
+
+print(json.dumps({
+    "first_trade_vs_t1_open_bps": q(entry_bps),
+    "first_trade_vs_t61_open_bps": q(exit_bps),
+    "g_bar_opens_bps": q(g_bar),
+    "g_trades_bps": q(g_trade),
+}, indent=1))

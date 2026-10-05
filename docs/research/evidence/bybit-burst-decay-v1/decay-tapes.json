@@ -1,0 +1,3041 @@
+{
+  "bytes": 13088647776,
+  "contract_sha256": "3ecb201338ab763e8909a8b79f02d0ed9952dca132941f6de7153238fad140a8",
+  "decay_version": "bybit_burst_decay_v1",
+  "files": {
+    "0GUSDT2026-08-22.csv.gz": {
+      "bytes": 956718,
+      "sha256": "e0debb7276adfae52d22bb4702640efe5e9f6c0647406b50d30b04f4af08c1b6",
+      "status": "ok"
+    },
+    "0GUSDT2026-08-31.csv.gz": {
+      "bytes": 18988031,
+      "sha256": "da22e198bf44b0820665bf745170f5037e77d92f7b3d1913221153f2280e0654",
+      "status": "ok"
+    },
+    "10000SATSUSDT2026-08-22.csv.gz": {
+      "bytes": 1074449,
+      "sha256": "1790b91a44a61523e5bf670e84459ae9f26b7ec6947da3d3c4f24284c5a11d3f",
+      "status": "ok"
+    },
+    "1000BTTUSDT2026-09-23.csv.gz": {
+      "bytes": 548245,
+      "sha256": "8a88502ae3457ea82907b108dbb0ba6b55bb1b88ae7c5ea2d41011842ced579d",
+      "status": "ok"
+    },
+    "1000CATUSDT2026-08-22.csv.gz": {
+      "bytes": 559545,
+      "sha256": "45dd5bfbec668afb8754ba0420d41b2158fd81688d0058d401a51e759940a762",
+      "status": "ok"
+    },
+    "1000FLOKIUSDT2026-08-22.csv.gz": {
+      "bytes": 3822711,
+      "sha256": "446dae3e1de58cc3e067adda4690f6a3bea36c85c8f3a15ae15ee20e1d654e91",
+      "status": "ok"
+    },
+    "1000NEIROCTOUSDT2026-08-22.csv.gz": {
+      "bytes": 14203469,
+      "sha256": "a00cd6eea4780cb5b81e99157b7aa36c8909f85c3a2e249a9e8427b67532f923",
+      "status": "ok"
+    },
+    "1000PEPEUSDT2026-08-22.csv.gz": {
+      "bytes": 42229108,
+      "sha256": "f0e9ac083d901562756e66db815749f0ec8ceeac60f0c752e24a7b0566dffa0b",
+      "status": "ok"
+    },
+    "1000RATSUSDT2026-08-22.csv.gz": {
+      "bytes": 3089221,
+      "sha256": "51624957ecf84a707d0e3db199be6a5bef8e4ed20e3bf670514a7b6ea9435ac3",
+      "status": "ok"
+    },
+    "1000RATSUSDT2026-08-23.csv.gz": {
+      "bytes": 2646310,
+      "sha256": "53253c62d2b19f06a80deaed2814e755e021884b02fe4ef0e3dfd6b42ff0653f",
+      "status": "ok"
+    },
+    "1INCHUSDT2026-08-22.csv.gz": {
+      "bytes": 1139063,
+      "sha256": "b4574869de3378577553ce290014921fba2fd75f902f64914ade065bebbc9736",
+      "status": "ok"
+    },
+    "4STOCKUSDT2026-09-21.csv.gz": {
+      "bytes": 5975693,
+      "sha256": "e1afb4a70ca428518f301db564039f90b81e55253d36d3bc4fbd10d82634d766",
+      "status": "ok"
+    },
+    "4STOCKUSDT2026-09-22.csv.gz": {
+      "bytes": 20524903,
+      "sha256": "8a58d4dae30eae93e874b9b79d1939a924d9555c6ffdd93279d61045313739ec",
+      "status": "ok"
+    },
+    "4USDT2026-08-22.csv.gz": {
+      "bytes": 863334,
+      "sha256": "794388e8ff0ca2435926ddb7ca9e869490a9ea409ef72186b74d3d8daa206ec3",
+      "status": "ok"
+    },
+    "4USDT2026-08-29.csv.gz": {
+      "bytes": 17934525,
+      "sha256": "4f049164ebd9b1fd24dcc692bd4c9cb9ef4086c074d981dcae54642725926bc1",
+      "status": "ok"
+    },
+    "4USDT2026-09-03.csv.gz": {
+      "bytes": 2881738,
+      "sha256": "c4585f80b725c6eee9e5f83a5669b24d152ef722b8aa474be4cd0443bf0b5c7f",
+      "status": "ok"
+    },
+    "4USDT2026-09-04.csv.gz": {
+      "bytes": 14442049,
+      "sha256": "b341053401f1487830add1476644b61de86355804825f7061d15c1b7136713ca",
+      "status": "ok"
+    },
+    "4USDT2026-09-05.csv.gz": {
+      "bytes": 35587626,
+      "sha256": "8e649bd129c7908ea763710cb3c25978685679b1da042051b17c9a459c0610fc",
+      "status": "ok"
+    },
+    "4USDT2026-09-08.csv.gz": {
+      "bytes": 4589057,
+      "sha256": "f7252a2f9a4bb55cda5cb994b293740125968ba00783362b1514fe0a1690667f",
+      "status": "ok"
+    },
+    "ACEUSDT2026-08-14.csv.gz": {
+      "bytes": 248013828,
+      "sha256": "be4f2135798161ac808f04ed398a895245ffbd0367a6259b3c90815cb4387346",
+      "status": "ok"
+    },
+    "ACEUSDT2026-08-15.csv.gz": {
+      "bytes": 362702133,
+      "sha256": "cf17f6ac86a7cc78abaf697b7b4bd7ac56cc39b39a391d2181ac2a31087b59c5",
+      "status": "ok"
+    },
+    "ACEUSDT2026-08-19.csv.gz": {
+      "bytes": 125902149,
+      "sha256": "7ad009112950d757aa4639288c361b9c2e179b00fd08eaa3ed47b3b3af8813fa",
+      "status": "ok"
+    },
+    "ACEUSDT2026-08-22.csv.gz": {
+      "bytes": 70545173,
+      "sha256": "f038f25651af9a2eecbb8bbfea6a9a5e88efacbcbad2831fb12f9e1742017d4e",
+      "status": "ok"
+    },
+    "ACEUSDT2026-09-09.csv.gz": {
+      "bytes": 10122462,
+      "sha256": "1e526b0fb2078b47c8cdc50b3ed44cc42afb6d8ac5c36ffb1d7f3086e48881bc",
+      "status": "ok"
+    },
+    "ACHUSDT2026-08-22.csv.gz": {
+      "bytes": 722283,
+      "sha256": "99f0c965a0e01ea10617a5a9dd5b6b8d462579881ec5790efe9603461b3cc50d",
+      "status": "ok"
+    },
+    "ACTUSDT2026-08-22.csv.gz": {
+      "bytes": 1333145,
+      "sha256": "b55af9afd44d419cd199ded35d4319de5e179945f1eae8ff6aaff4d313dc0032",
+      "status": "ok"
+    },
+    "ACUUSDT2026-08-13.csv.gz": {
+      "bytes": 18308035,
+      "sha256": "0799230b4574c10acd714ec8a2265e3258c30c63003b81b392a25c3ca5e073dd",
+      "status": "ok"
+    },
+    "ADAUSDT2026-08-22.csv.gz": {
+      "bytes": 23475456,
+      "sha256": "729eea1bc2c36b9c1cb8893b3653841395e81a102cf9a2f6252ec346927d77f6",
+      "status": "ok"
+    },
+    "AEONUSDT2026-08-15.csv.gz": {
+      "bytes": 6207042,
+      "sha256": "9f920409df464cec8f4b0587eadb52460b915942100723a988f664cd6b49c3b3",
+      "status": "ok"
+    },
+    "AEONUSDT2026-08-22.csv.gz": {
+      "bytes": 1117160,
+      "sha256": "7e595ca6154a9ff93ca4f623b04af8a8b13b92213b8dd7d847060c1aeb474287",
+      "status": "ok"
+    },
+    "AEVOUSDT2026-08-22.csv.gz": {
+      "bytes": 674174,
+      "sha256": "3323d960b48c675fb8ae04088d825c65b191ba70de0dae1e39ea751c25ecd9d5",
+      "status": "ok"
+    },
+    "AEVOUSDT2026-08-30.csv.gz": {
+      "bytes": 1624189,
+      "sha256": "378b21f28a001341b22d034b00c9944fbc10a6537e0177a3b98052264ce8c9f9",
+      "status": "ok"
+    },
+    "AGIUSDT2026-08-18.csv.gz": {
+      "bytes": 785711,
+      "sha256": "bdff1c301d187b9b0828a76a998bc6c58868dcaffe5a8eae73e7be13b90dc133",
+      "status": "ok"
+    },
+    "AGIUSDT2026-08-21.csv.gz": {
+      "bytes": 6202815,
+      "sha256": "caeb41e15853a78a60887b3d58bed05b6f4ead611069ccbcf5edb8242de89048",
+      "status": "ok"
+    },
+    "AGIUSDT2026-08-27.csv.gz": {
+      "bytes": 4444249,
+      "sha256": "00c3561fd54b255d93a5b7451fc667060032f3b7064b2dfb0ca8e0050a7bd3cf",
+      "status": "ok"
+    },
+    "AGIUSDT2026-09-17.csv.gz": {
+      "bytes": 4286627,
+      "sha256": "4a86d368b461086733355deb1a9fbd6c5a65ecba103020a41e4e4ff7fdf357c2",
+      "status": "ok"
+    },
+    "AIGENSYNUSDT2026-08-22.csv.gz": {
+      "bytes": 778597,
+      "sha256": "73bbd9c5c5a7c969c0ad9e1a1ffafdad6153f2a36eecc2879df4d7e9c4360436",
+      "status": "ok"
+    },
+    "AIOUSDT2026-08-15.csv.gz": {
+      "bytes": 4795495,
+      "sha256": "d74a9d17a3bececa9cf80461409ca72d64191c22843c038fc9c280abfe849b95",
+      "status": "ok"
+    },
+    "AIOUSDT2026-08-22.csv.gz": {
+      "bytes": 904482,
+      "sha256": "025883ad24d6335f8a3346dee424bb895e70605316198b961560134e576978ff",
+      "status": "ok"
+    },
+    "AIOUSDT2026-09-09.csv.gz": {
+      "bytes": 436875,
+      "sha256": "a1d58dfb94a9f6d4a89a22692cdc82b71002b9c37764b5462af335d96fc7db38",
+      "status": "ok"
+    },
+    "AIOZUSDT2026-09-21.csv.gz": {
+      "bytes": 9671936,
+      "sha256": "c738b7a54ced97c3004615f5c706433507bdcc41c9752b5e4fc05a39f759b296",
+      "status": "ok"
+    },
+    "AKEUSDT2026-08-14.csv.gz": {
+      "bytes": 188232431,
+      "sha256": "405a57313644253d593442b2e1401a35b1e5e91b5604bcb17be99a098b4550a3",
+      "status": "ok"
+    },
+    "AKEUSDT2026-08-17.csv.gz": {
+      "bytes": 33922961,
+      "sha256": "b6f20cc968137cf5c820908e18697aac1eacc6a2752196ce1bb4d3348a6c18df",
+      "status": "ok"
+    },
+    "AKEUSDT2026-08-18.csv.gz": {
+      "bytes": 29622567,
+      "sha256": "23cb78869ea202507f516e2ba51211292b2fa1c3b004c4e55a8194640bb2abcc",
+      "status": "ok"
+    },
+    "AKEUSDT2026-08-22.csv.gz": {
+      "bytes": 10711636,
+      "sha256": "d5b5e13525e23958496c6bdfd1a7aacc495f127917b7de23b24824d5e485081f",
+      "status": "ok"
+    },
+    "AKEUSDT2026-08-26.csv.gz": {
+      "bytes": 20199759,
+      "sha256": "0e39961a61291b797544acd21bd53326d35e4571d043a72b333006ad015ee7c2",
+      "status": "ok"
+    },
+    "AKEUSDT2026-08-27.csv.gz": {
+      "bytes": 27604856,
+      "sha256": "dcb0fc4c0a83bb7a23ffd965e64c578676c86772e564abeff297fdcb4dd6bcf5",
+      "status": "ok"
+    },
+    "AKEUSDT2026-08-28.csv.gz": {
+      "bytes": 31455328,
+      "sha256": "fe3583e2393e7ac692e0afdb3b0bcb652ca03c2a2bceea890ee38f5b689477a1",
+      "status": "ok"
+    },
+    "AKEUSDT2026-09-02.csv.gz": {
+      "bytes": 185100930,
+      "sha256": "58003caecc3e548108569b15cab5503022c9de66d24564667f3bd1723e26eb62",
+      "status": "ok"
+    },
+    "AKEUSDT2026-09-05.csv.gz": {
+      "bytes": 66753608,
+      "sha256": "3a74810285a4e0171acceca37e4b5c4a3ba80e12490a8494d277c7a297dd68a9",
+      "status": "ok"
+    },
+    "AKEUSDT2026-09-07.csv.gz": {
+      "bytes": 42574764,
+      "sha256": "225b8bf2803377b22396bca6e52a9a7d2c1dc4f1eb42ba4cca441f9e96fdc128",
+      "status": "ok"
+    },
+    "AKEUSDT2026-09-08.csv.gz": {
+      "bytes": 32486997,
+      "sha256": "7a1f2c469619af3ce7298f0dbcdb8333ae26697317c981ac7df2866b5c2049e5",
+      "status": "ok"
+    },
+    "AKEUSDT2026-09-11.csv.gz": {
+      "bytes": 23429122,
+      "sha256": "5c94532d17e3d58c0ee7bbbfcadb81927d1939e04d97d65e181918b319d97122",
+      "status": "ok"
+    },
+    "AKEUSDT2026-09-14.csv.gz": {
+      "bytes": 8799357,
+      "sha256": "15b46db3a13f1d04f9c74f0b84e229cbdc2bb63a62062ef11fe032f169e2ae44",
+      "status": "ok"
+    },
+    "AKEUSDT2026-09-16.csv.gz": {
+      "bytes": 67696756,
+      "sha256": "569a0ab58f495a5d03913341c3114c37837d5a11089332088d4dacb0c62ff1c2",
+      "status": "ok"
+    },
+    "AKEUSDT2026-09-17.csv.gz": {
+      "bytes": 21918266,
+      "sha256": "a2c35b6104e599769a898cebc881788ef897f53854ee26186102f88ff3dc5c97",
+      "status": "ok"
+    },
+    "AKEUSDT2026-09-18.csv.gz": {
+      "bytes": 61308224,
+      "sha256": "7245105ad2a8b92a851371c5e702a23123cec23a86553adac00b388517a9543d",
+      "status": "ok"
+    },
+    "AKEUSDT2026-09-19.csv.gz": {
+      "bytes": 166760771,
+      "sha256": "8f922562ab7c01a9908a44a83740584dd2ff49b3516fafc07246624b616116ca",
+      "status": "ok"
+    },
+    "AKEUSDT2026-09-20.csv.gz": {
+      "bytes": 212260122,
+      "sha256": "8d3fafdc242b1e98469bf309a02b0b76b263d3597879ae2bb48006b1f4a6d28d",
+      "status": "ok"
+    },
+    "AKEUSDT2026-09-21.csv.gz": {
+      "bytes": 148996583,
+      "sha256": "d5eb19aa5cd4671d7ffd12d04845a9fa9a584623269b6e52569b6d8b140e6f9a",
+      "status": "ok"
+    },
+    "AKEUSDT2026-09-22.csv.gz": {
+      "bytes": 50894979,
+      "sha256": "a1c391b7917add7a81167a63dfb8f956a29ab5f259cb4d25c2856f147150f95a",
+      "status": "ok"
+    },
+    "AKEUSDT2026-09-24.csv.gz": {
+      "bytes": 45494659,
+      "sha256": "da7f426a999266a2df6576955bb071b2fb950ffece296d11c01def427a713d59",
+      "status": "ok"
+    },
+    "ALCHUSDT2026-08-22.csv.gz": {
+      "bytes": 597180,
+      "sha256": "bc13076c324284fc30fc454c282c4de70d01b2d350aed378a4c783de3d2bcebf",
+      "status": "ok"
+    },
+    "ALCHUSDT2026-09-21.csv.gz": {
+      "bytes": 6315373,
+      "sha256": "71e6f1c91984917aaca6d4e83b4e2832e8e6770d702cd213e0e8da43af4eb885",
+      "status": "ok"
+    },
+    "ALICEUSDT2026-08-15.csv.gz": {
+      "bytes": 8997128,
+      "sha256": "ba316c9c8a35986a7f770d2ece4fd18374396a087f487b2cb6a746008c85eb7f",
+      "status": "ok"
+    },
+    "ALICEUSDT2026-08-22.csv.gz": {
+      "bytes": 1247015,
+      "sha256": "406f9850fff56c01be24b466becc30571027d6ad90c06cc869d826dd8ef2b13d",
+      "status": "ok"
+    },
+    "ALLOUSDT2026-08-22.csv.gz": {
+      "bytes": 2182651,
+      "sha256": "7d257020ca809b7b878dc5c27d4d2e800b8fea5da4f84392cf16cebbe21bb01f",
+      "status": "ok"
+    },
+    "ALPINEUSDT2026-08-18.csv.gz": {
+      "bytes": 8446106,
+      "sha256": "d6a168066e5682f9ad79e5f23079a0dd5666283d1e5a095fc4bf567f5a747793",
+      "status": "ok"
+    },
+    "ALPINEUSDT2026-08-22.csv.gz": {
+      "bytes": 323204,
+      "sha256": "0805b4e598ad67ad1f20f09d3a422b5f3cd5725e693294c472f040789d998a88",
+      "status": "ok"
+    },
+    "ALTUSDT2026-08-22.csv.gz": {
+      "bytes": 1031673,
+      "sha256": "52b0a7aec40d836276367085e35796c2015225dff37c7c8ed02989e511edd2bb",
+      "status": "ok"
+    },
+    "ALTUSDT2026-09-14.csv.gz": {
+      "bytes": 2450345,
+      "sha256": "916aee0c41ad5777ad09885348acf44cc4a5484256b8e9d731a293e65bd3fc0a",
+      "status": "ok"
+    },
+    "APEXUSDT2026-09-08.csv.gz": {
+      "bytes": 3816310,
+      "sha256": "343b364436a14a5332bda55692755490d38039666e2419f5150fdbe0198c9133",
+      "status": "ok"
+    },
+    "API3USDT2026-09-14.csv.gz": {
+      "bytes": 1917318,
+      "sha256": "10da60ec222fb5e869611c1047796c29bcafff6063d1113d3c846c994d01fd23",
+      "status": "ok"
+    },
+    "API3USDT2026-09-23.csv.gz": {
+      "bytes": 1660238,
+      "sha256": "a2eeef34982bdcef7cfd1fa4ac5f9a6550279205245393ec33f1ff9404f27161",
+      "status": "ok"
+    },
+    "APRUSDT2026-08-13.csv.gz": {
+      "bytes": 81918418,
+      "sha256": "d985b11d686259639c6cdff5d2a98e7941799ca9e7c56d526567f6fdb9d76301",
+      "status": "ok"
+    },
+    "APRUSDT2026-08-15.csv.gz": {
+      "bytes": 38461667,
+      "sha256": "47c9b579978c3d3c250983ab612ba558f32b509d11d48baf31d8d1765586d65e",
+      "status": "ok"
+    },
+    "APRUSDT2026-08-22.csv.gz": {
+      "bytes": 2033558,
+      "sha256": "a75edb0b127dd021c389d5dc0db4b34517de7ebe181c9fdeb8d239e4f0aa398f",
+      "status": "ok"
+    },
+    "APRUSDT2026-09-03.csv.gz": {
+      "bytes": 7083477,
+      "sha256": "3b54f911a1fd4a5c00122cd72a801bd0e51b99a48a61ea02fa36b1c2c56f43e7",
+      "status": "ok"
+    },
+    "APRUSDT2026-09-05.csv.gz": {
+      "bytes": 3263480,
+      "sha256": "c9856c0f6044da30dcd9a98e451b396cb4b28b9314b2265995fb83ed950bde63",
+      "status": "ok"
+    },
+    "APRUSDT2026-09-10.csv.gz": {
+      "bytes": 1275491,
+      "sha256": "fe1f5bd6382aeaf1a6999a88fbd9a7532f8b8539e5a623fb534e2dad46d9ac1d",
+      "status": "ok"
+    },
+    "ARCUSDT2026-08-22.csv.gz": {
+      "bytes": 961325,
+      "sha256": "8171d3a095abf2012135ca1f30ca56057ed984a22218191739ae5379ed1cd178",
+      "status": "ok"
+    },
+    "ARIAUSDT2026-08-22.csv.gz": {
+      "bytes": 1018014,
+      "sha256": "f8e467cbd0d76afef184f98768d1e51103cd61ff5e5680d5133c4fc59bf90a58",
+      "status": "ok"
+    },
+    "ARIAUSDT2026-08-26.csv.gz": {
+      "bytes": 5232525,
+      "sha256": "cd0f5c8a53174868a27d536c625dd923ce7c5abd3a96a5530f657893fd32ec3d",
+      "status": "ok"
+    },
+    "ARIAUSDT2026-08-27.csv.gz": {
+      "bytes": 12299711,
+      "sha256": "d6776d18ee2eebbaba353cb65d8bf26d61ba1756c4044cec1c086cf63e019911",
+      "status": "ok"
+    },
+    "ARKUSDT2026-09-13.csv.gz": {
+      "bytes": 21848606,
+      "sha256": "b0a49261ffc029eabc0127aabf001f66d39c79fd4f9b8bc5d83a07971fe6b566",
+      "status": "ok"
+    },
+    "ARKUSDT2026-09-14.csv.gz": {
+      "bytes": 37278697,
+      "sha256": "cd859e73ba65f5552408e9949ae5f1b08bd1b68977e68673ab88c55b4f6b9462",
+      "status": "ok"
+    },
+    "ARKUSDT2026-09-15.csv.gz": {
+      "bytes": 20034856,
+      "sha256": "63e855cffb197bca67a9e75fcf8fdc0d670cc728dd890f25712350a04fb87a75",
+      "status": "ok"
+    },
+    "ARXUSDT2026-09-21.csv.gz": {
+      "bytes": 1403620,
+      "sha256": "dd909f2fc3470d62957d4a6cf72b7fc8a6b00a84924f7d0b37265a0ec37f8102",
+      "status": "ok"
+    },
+    "ASTERUSDT2026-08-22.csv.gz": {
+      "bytes": 10844819,
+      "sha256": "4c8cbdc62c98ee60f807a3465d931662a253cf5a682afcb7681812fa87f7ea1b",
+      "status": "ok"
+    },
+    "ASTRUSDT2026-08-22.csv.gz": {
+      "bytes": 323609,
+      "sha256": "f571813b06c1bc3112bf95f0d413e21654714e1ee302b110f513f2f996cd6141",
+      "status": "ok"
+    },
+    "ASTRUSDT2026-09-15.csv.gz": {
+      "bytes": 16837057,
+      "sha256": "cc772411c7fba462dc29887390c5347a3c81a6400ea3b3feb6b86abdb893501c",
+      "status": "ok"
+    },
+    "ATHUSDT2026-08-22.csv.gz": {
+      "bytes": 1228199,
+      "sha256": "28b89f722b763b40e4fe8df615eb768d10e3d09a927f641950387e42bdb1e8b8",
+      "status": "ok"
+    },
+    "AUCTIONUSDT2026-08-30.csv.gz": {
+      "bytes": 6399416,
+      "sha256": "050cebd3df75c417d84d60f5d7cf01d89ffd5ea8c2750f24797c26018a3f2546",
+      "status": "ok"
+    },
+    "AVAAIUSDT2026-08-15.csv.gz": {
+      "bytes": 3823127,
+      "sha256": "0f3710e2090463502057e7edb9c0c286e1e5953ea966b3ac711ac71c98288d0e",
+      "status": "ok"
+    },
+    "AVAAIUSDT2026-08-22.csv.gz": {
+      "bytes": 5298902,
+      "sha256": "b2e5a6a456e40bb175d8b30f97f948a726f08809ab4fcc7ecdd53528c156e2bb",
+      "status": "ok"
+    },
+    "AVAAIUSDT2026-08-26.csv.gz": {
+      "bytes": 741870,
+      "sha256": "969734f8614277e6580ab0af15c0a33c0ec3e04d32c60d4be98a4dac0ff33ccb",
+      "status": "ok"
+    },
+    "AVAUSDT2026-09-13.csv.gz": {
+      "bytes": 1831136,
+      "sha256": "a8839a68d43304dff95dda48fcefc48657b1b0495796ff2d330b4a2ac998b401",
+      "status": "ok"
+    },
+    "AVAUSDT2026-09-17.csv.gz": {
+      "bytes": 29647226,
+      "sha256": "43437abfb0603512072187edaa3ac778585a2ed0a2073f44f894dd1c0e2af901",
+      "status": "ok"
+    },
+    "AVNTUSDT2026-08-22.csv.gz": {
+      "bytes": 1818142,
+      "sha256": "d6c9195d745813ce3c983a7baae9dc826b9201903fe776c6d6a0dd474d7b7391",
+      "status": "ok"
+    },
+    "AZTECUSDT2026-08-22.csv.gz": {
+      "bytes": 325253,
+      "sha256": "cb51d1d16ff7d4f96438a7efe7518e8e2600b721db1ee46b0c5ace1cdf4b9b19",
+      "status": "ok"
+    },
+    "AZTECUSDT2026-09-04.csv.gz": {
+      "bytes": 5745889,
+      "sha256": "ae76d92e5108b402807f97a0fd3ce496ef9ffeff0de8c08ab5b75cb11c2f1c62",
+      "status": "ok"
+    },
+    "B2USDT2026-09-19.csv.gz": {
+      "bytes": 25014732,
+      "sha256": "a5b7733ce1ef48107c3b9154c33841dc6bbe5a97c81955ce237d09e165bff298",
+      "status": "ok"
+    },
+    "B2USDT2026-09-20.csv.gz": {
+      "bytes": 8877261,
+      "sha256": "75e4cd7b7698d689a60d87c11db1e1922a33727496207b3e44400bc4546d542c",
+      "status": "ok"
+    },
+    "B2USDT2026-09-23.csv.gz": {
+      "bytes": 6893003,
+      "sha256": "3e01dc27d98e8ce43c98212bb12477f4dfd72ff73176886f8914b8f23abef60b",
+      "status": "ok"
+    },
+    "B3USDT2026-08-21.csv.gz": {
+      "bytes": 4480176,
+      "sha256": "12d1a68d4f5b61dd1f2317a814b8712e37ae5cb28d6935c0b93c8a195616caf7",
+      "status": "ok"
+    },
+    "B3USDT2026-08-23.csv.gz": {
+      "bytes": 1379725,
+      "sha256": "c8f6534d0ee66b645d7811a583456e6430ff3b4a70c41b7bec02d0aee079af61",
+      "status": "ok"
+    },
+    "B3USDT2026-09-13.csv.gz": {
+      "bytes": 16283043,
+      "sha256": "695d4c2f835c40a5af9184942674b44e47b099379bc6a3702a274668556fa5a0",
+      "status": "ok"
+    },
+    "BABYUSDT2026-09-18.csv.gz": {
+      "bytes": 3177944,
+      "sha256": "73d116a26ba8c233f7fe35d8171e869b2417401e0cad91ea3201bc4e575f9293",
+      "status": "ok"
+    },
+    "BANANAS31USDT2026-08-22.csv.gz": {
+      "bytes": 323325,
+      "sha256": "59cf820d3ce09b02368488de5b13124763345e16cf9c55c84ebe7209801c02ed",
+      "status": "ok"
+    },
+    "BANKUSDT2026-09-09.csv.gz": {
+      "bytes": 1838294,
+      "sha256": "5020663f73178c04de43ece8625fabacd82bba5db6718f92a0cffc8bb084fb86",
+      "status": "ok"
+    },
+    "BANUSDT2026-09-01.csv.gz": {
+      "bytes": 2134234,
+      "sha256": "8e2db3abd32c111847aab120472a3567da471883445e62daff959efc70519b9f",
+      "status": "ok"
+    },
+    "BANUSDT2026-09-11.csv.gz": {
+      "bytes": 741154,
+      "sha256": "0b5d2dd52561b43447f539deabcc8f8ecdf4d2318ebdaf38dbc110e1d7f5f99b",
+      "status": "ok"
+    },
+    "BASEDUSDT2026-08-22.csv.gz": {
+      "bytes": 4415740,
+      "sha256": "12d9e796e8bbbefb794c18844aca941912cc9cd356511713488a788a1bebb744",
+      "status": "ok"
+    },
+    "BASEDUSDT2026-09-26.csv.gz": {
+      "bytes": 710757,
+      "sha256": "52ab307e689c0478905a6a9ec2028570d4ed0c61daf026d637ddf635d0238bd9",
+      "status": "ok"
+    },
+    "BBUSDT2026-08-21.csv.gz": {
+      "bytes": 9259951,
+      "sha256": "b7ead7ae82d1226dfa7acf9dedea780c8349dcd7af3f4969224092d93abcf64e",
+      "status": "ok"
+    },
+    "BBUSDT2026-08-22.csv.gz": {
+      "bytes": 2202771,
+      "sha256": "a0ce7c389b42d4dc776f2f62a26fad24967f2d278047982903af0cdced20fb97",
+      "status": "ok"
+    },
+    "BEAMUSDT2026-08-27.csv.gz": {
+      "bytes": 16646516,
+      "sha256": "00f29a22ca6113ff941cc429055aeb619b71be68da56f03d581e63bcf645b648",
+      "status": "ok"
+    },
+    "BEATUSDT2026-08-20.csv.gz": {
+      "bytes": 35614264,
+      "sha256": "6bdb56d79697b2a968702b157bfe826270937b3c4089a281242962f829fbd223",
+      "status": "ok"
+    },
+    "BEATUSDT2026-08-21.csv.gz": {
+      "bytes": 43942247,
+      "sha256": "14ef73c924bba5ae73dcc7a9510c891aa447ea7256d7a2e86506d2c9e57e9e6c",
+      "status": "ok"
+    },
+    "BEATUSDT2026-08-22.csv.gz": {
+      "bytes": 49775183,
+      "sha256": "6553e4cdf5dfb7114a53e0d8d8d2b2f31fb9e4cf4e08621e386a663b7a5ca561",
+      "status": "ok"
+    },
+    "BEATUSDT2026-09-12.csv.gz": {
+      "bytes": 16145837,
+      "sha256": "e7c29b7e362916b2af3efefd83cecfbac3d8079c0f28f6114f2103c22e03640f",
+      "status": "ok"
+    },
+    "BERAUSDT2026-08-22.csv.gz": {
+      "bytes": 3167818,
+      "sha256": "ed29d395e7f50de2f60e68a10842f0697017712169c2308bbbc729f048146cae",
+      "status": "ok"
+    },
+    "BICOUSDT2026-08-22.csv.gz": {
+      "bytes": 3831527,
+      "sha256": "5039bccec7d9ca6708356d9654a1e1a579e2c3f543dd74617f72d5aa87e8cfc1",
+      "status": "ok"
+    },
+    "BICOUSDT2026-09-09.csv.gz": {
+      "bytes": 2514789,
+      "sha256": "636a6e2a623a965d22710c287d5ccc74f168dd80de08244ec5cc99f55040c690",
+      "status": "ok"
+    },
+    "BILLUSDT2026-08-22.csv.gz": {
+      "bytes": 1643444,
+      "sha256": "55f7e0bb410407ce7874c13f3d952fcdaf4b7a26d09f6500216816d6cbfc8001",
+      "status": "ok"
+    },
+    "BILLUSDT2026-09-09.csv.gz": {
+      "bytes": 981077,
+      "sha256": "25cae6bd8bbcd216db1b09476643d52e0c74797d1fdf2055bc62559bd3acfdd6",
+      "status": "ok"
+    },
+    "BIOUSDT2026-08-22.csv.gz": {
+      "bytes": 3317167,
+      "sha256": "0e0d3519df284d7f0b6ce5c79f95479b0d6df20937ade0792e121d79f0347c59",
+      "status": "ok"
+    },
+    "BLASTUSDT2026-09-13.csv.gz": {
+      "bytes": 5583919,
+      "sha256": "3cfc5ed737d0ba15ddff2ddc7df9112549571004b498d7872361b3c41106589d",
+      "status": "ok"
+    },
+    "BLESSUSDT2026-08-13.csv.gz": {
+      "bytes": 6724797,
+      "sha256": "71b5941461a78b98d28eb032711a3cf29ff7ec3c2f2ca2d8abaea00542341613",
+      "status": "ok"
+    },
+    "BLESSUSDT2026-08-22.csv.gz": {
+      "bytes": 7861365,
+      "sha256": "0963fa92dea7314ce1ec76d1ed6e42ed1b05f5c18e5ed19e87da5405a9337b4a",
+      "status": "ok"
+    },
+    "BLESSUSDT2026-09-09.csv.gz": {
+      "bytes": 1321300,
+      "sha256": "b5b74f9f3c511224d9bd272f3f7057f637e674bded674ab49444f84a5af1ca6c",
+      "status": "ok"
+    },
+    "BLUAIUSDT2026-08-22.csv.gz": {
+      "bytes": 1263214,
+      "sha256": "867fc6fdbb02e8b38dcfb1536500b9d821c78202480b6af6a56e2154b9cc8f46",
+      "status": "ok"
+    },
+    "BLUAIUSDT2026-09-07.csv.gz": {
+      "bytes": 3908758,
+      "sha256": "72cc9e1ac0346780638258e6875b6c7cf571a804d54522112b95f33c37b261ed",
+      "status": "ok"
+    },
+    "BLUAIUSDT2026-09-09.csv.gz": {
+      "bytes": 1087149,
+      "sha256": "7a9057e9578ada538247a35c2f023668ca956c2ee71671f3c7d355a22b6fb102",
+      "status": "ok"
+    },
+    "BMTUSDT2026-08-15.csv.gz": {
+      "bytes": 8482052,
+      "sha256": "fea0540f7125171b1b7cd8135480771ca640d8d52575d572d79ce6d19fec6f15",
+      "status": "ok"
+    },
+    "BMTUSDT2026-08-21.csv.gz": {
+      "bytes": 2748249,
+      "sha256": "1cb004e27b722d4e61ce3ea7fa99d4d55a96da2769eba1fe2b31fdffe228fe4d",
+      "status": "ok"
+    },
+    "BMTUSDT2026-08-22.csv.gz": {
+      "bytes": 2692545,
+      "sha256": "b9c2f13d2f4b07a6a7e0c29bd0d71bdb2efe7a1d7eeb97e8906795a6c33c6f5e",
+      "status": "ok"
+    },
+    "BMTUSDT2026-08-25.csv.gz": {
+      "bytes": 9972097,
+      "sha256": "d66642f748ed37dd9e45e165bf01d91d3879ff1abfdfe7a5e19f0e3d520a2a53",
+      "status": "ok"
+    },
+    "BOMEUSDT2026-08-22.csv.gz": {
+      "bytes": 21409475,
+      "sha256": "21e9e65d6a7bb4ffb9bacb191d30c1277bdd043f31ddf672e4c82147b48a0791",
+      "status": "ok"
+    },
+    "BRETTUSDT2026-08-22.csv.gz": {
+      "bytes": 1863638,
+      "sha256": "b2b20d52222ad187b6062d439ede8075310d447e33bc8eebca85ff0ab680d65e",
+      "status": "ok"
+    },
+    "BRETTUSDT2026-09-16.csv.gz": {
+      "bytes": 763052,
+      "sha256": "b7db29f28079b5f7bf0200aa00df0c1d13c60adb961e1150f2e498de7ddaa518",
+      "status": "ok"
+    },
+    "BRETTUSDT2026-09-17.csv.gz": {
+      "bytes": 546794,
+      "sha256": "1453735a686be577c1899b65e19dded0b8ac31ad819bd2cf13d09ab91759b6ec",
+      "status": "ok"
+    },
+    "BROCCOLIUSDT2026-08-22.csv.gz": {
+      "bytes": 1656463,
+      "sha256": "8f31377fbcf5b20b75f85926a231e2c9c34c92a101a253b7cde93ab2bf886dcb",
+      "status": "ok"
+    },
+    "BROCCOLIUSDT2026-09-24.csv.gz": {
+      "bytes": 23405550,
+      "sha256": "f01e2f5896c8b9ffbd2c53c3a6c8e9c3fddea9490394e861596b56d346dd5d9b",
+      "status": "ok"
+    },
+    "BRUSDT2026-08-15.csv.gz": {
+      "bytes": 5483131,
+      "sha256": "7bf9ba0df64bc9aa41c4bca0a5d0f86a27f25d475c3d9aa3aa3b02317916fe7a",
+      "status": "ok"
+    },
+    "BRUSDT2026-09-02.csv.gz": {
+      "bytes": 550120,
+      "sha256": "43351a864c204ecbf3dc5435c23105c8abf97866060b8b4055cb9318ff6161f9",
+      "status": "ok"
+    },
+    "BRUSDT2026-09-06.csv.gz": {
+      "bytes": 1998617,
+      "sha256": "6f1c049cb3c4bd80a68be50fc2db4db6408806d7570bfb5988fdea9e78a0db8d",
+      "status": "ok"
+    },
+    "BRUSDT2026-09-15.csv.gz": {
+      "bytes": 33075736,
+      "sha256": "7576caa901f8c0588ccdb1d8beeb8fb2af5f9efe8ef729a4115e352b25685dc5",
+      "status": "ok"
+    },
+    "BRUSDT2026-09-16.csv.gz": {
+      "bytes": 60867575,
+      "sha256": "37daf419ea306dbf2cf124130dc7c61d671b2e022fe0ec7e0703405b2dac09e6",
+      "status": "ok"
+    },
+    "BRUSDT2026-09-17.csv.gz": {
+      "bytes": 55275017,
+      "sha256": "086ac4f950b2a9b8867291a119ef47170392fd35ace02a7ed48d2c3835a24986",
+      "status": "ok"
+    },
+    "BRUSDT2026-09-18.csv.gz": {
+      "bytes": 41665937,
+      "sha256": "75568580b3424a63bb1f7909c77e52aaa7e3a1b4d82d58a08eb88fc9632af248",
+      "status": "ok"
+    },
+    "BRUSDT2026-09-19.csv.gz": {
+      "bytes": 42670532,
+      "sha256": "1b1cd4f86ff7798afe94a26836510a4d9a21ad2064de268ba64631f3c52f0b06",
+      "status": "ok"
+    },
+    "BRUSDT2026-09-20.csv.gz": {
+      "bytes": 29465535,
+      "sha256": "b66222bb68b2b2e54d7b4070c1900b4a2284097e2da155ed2232e49a5b87baa6",
+      "status": "ok"
+    },
+    "BRUSDT2026-09-25.csv.gz": {
+      "bytes": 27605791,
+      "sha256": "51e83c4102bc264ff48cde4c8fd0294792db946c6b83682a0565f799611443af",
+      "status": "ok"
+    },
+    "BSBUSDT2026-08-22.csv.gz": {
+      "bytes": 3812449,
+      "sha256": "179eb8b410075bfde2b87a7e0e23afa17f03d1195eed1cd3d00858e0dc426a60",
+      "status": "ok"
+    },
+    "BSBUSDT2026-09-12.csv.gz": {
+      "bytes": 6364948,
+      "sha256": "e4b17221f4f117d713493b5e7979e5c787be839099d6271c9e5ad504d4af7555",
+      "status": "ok"
+    },
+    "BTRUSDT2026-08-18.csv.gz": {
+      "bytes": 2270014,
+      "sha256": "77c8d0c7ec1d7a20057735ad7f90548973f2bb5e7b406c7c5cd96c3d106c2bed",
+      "status": "ok"
+    },
+    "BTRUSDT2026-08-22.csv.gz": {
+      "bytes": 2205768,
+      "sha256": "96c8fd3a99f4d63b1dc67fa9d22448d47ddb8216a1c7a756d3520e7aeefb6e1d",
+      "status": "ok"
+    },
+    "BTRUSDT2026-08-25.csv.gz": {
+      "bytes": 1249810,
+      "sha256": "9b3a2a54575f03199239b912697d665ca32edaa0bdc6a268966316dd5bc4a558",
+      "status": "ok"
+    },
+    "BTRUSDT2026-08-26.csv.gz": {
+      "bytes": 198558541,
+      "sha256": "90e0d12562fd7afcf3f2e6094aca775b8c95108887f8f9953f8f0e24691731b2",
+      "status": "ok"
+    },
+    "BTRUSDT2026-08-27.csv.gz": {
+      "bytes": 151027264,
+      "sha256": "f4d75b6b0d6d61c4ca4d0ef48b6cc42ccd0aed3a6348afcfc29558c5488d7bee",
+      "status": "ok"
+    },
+    "BTRUSDT2026-08-29.csv.gz": {
+      "bytes": 87203157,
+      "sha256": "a5a9c965d01903c39d010065096e7f124a2d8c4b706ea9fffb6f418a11d3cadb",
+      "status": "ok"
+    },
+    "BTRUSDT2026-08-31.csv.gz": {
+      "bytes": 54755062,
+      "sha256": "245cf8d043f29ec8da42464c42373707e278efd93d72304d1c799d3e145562e6",
+      "status": "ok"
+    },
+    "BTRUSDT2026-09-01.csv.gz": {
+      "bytes": 162895621,
+      "sha256": "dcbdb5ad7913eb3e8e0f6b6fc6fd50cb90ec5ba3deed2589da5d73e2fd957d80",
+      "status": "ok"
+    },
+    "BTRUSDT2026-09-02.csv.gz": {
+      "bytes": 92501543,
+      "sha256": "59590bf2781d4e14ed4fca75f8c53f9b504afaa488a6921b62c3729be5d82593",
+      "status": "ok"
+    },
+    "BTRUSDT2026-09-03.csv.gz": {
+      "bytes": 23221145,
+      "sha256": "1860980c0df60b896c9c746ab3eda301af5a6b33d6577f39257aa2eb5e2bd542",
+      "status": "ok"
+    },
+    "BTRUSDT2026-09-10.csv.gz": {
+      "bytes": 20984041,
+      "sha256": "e05361d186aacacc5d352cf3bbc0fe959c017d24fa61b65d6f396ca139ca413f",
+      "status": "ok"
+    },
+    "BTWUSDT2026-08-15.csv.gz": {
+      "bytes": 9931669,
+      "sha256": "f6415663824f36ae391c30eb292d20c34ed54ea0ba5a7feda996b565201b9632",
+      "status": "ok"
+    },
+    "BTWUSDT2026-08-19.csv.gz": {
+      "bytes": 143289937,
+      "sha256": "78e0147af6fbcb9e9e346214a3f872790ffb278edad07cfbfaca53c4eb589a67",
+      "status": "ok"
+    },
+    "BTWUSDT2026-08-25.csv.gz": {
+      "bytes": 14563428,
+      "sha256": "015da37b219087cd8be28a031b11c6e2c612611e80b67871632a6ac9e3099043",
+      "status": "ok"
+    },
+    "BTWUSDT2026-09-02.csv.gz": {
+      "bytes": 15506964,
+      "sha256": "7abc3f3abdcbb5b3e293a630d3d29c1d72af827199c5770406df755192ffb3ab",
+      "status": "ok"
+    },
+    "BTWUSDT2026-09-14.csv.gz": {
+      "bytes": 23559348,
+      "sha256": "ea29f6712b3aad59391035bb09f8b9140b12f877980270b68e234d416f60643c",
+      "status": "ok"
+    },
+    "BTWUSDT2026-09-15.csv.gz": {
+      "bytes": 12456231,
+      "sha256": "e4197eed8ee3cd023493d5360b6e1ee18ce8c91d714b1bfa87e3dbdb201bc508",
+      "status": "ok"
+    },
+    "BTWUSDT2026-09-20.csv.gz": {
+      "bytes": 10718623,
+      "sha256": "d523b114d609e29f26956cbe192c3199723316b948bb4004b75bf8332a6e611e",
+      "status": "ok"
+    },
+    "BTWUSDT2026-09-21.csv.gz": {
+      "bytes": 17340027,
+      "sha256": "af6984114dfac9e6cd55feae4fd9fcedff163a18f54084d02218c53153591af5",
+      "status": "ok"
+    },
+    "BTWUSDT2026-09-24.csv.gz": {
+      "bytes": 18767082,
+      "sha256": "2fe3b7db4431465595eaa8c0047dd4750387b8e7389f5c11543ac76e5b9d111b",
+      "status": "ok"
+    },
+    "BTWUSDT2026-09-26.csv.gz": {
+      "bytes": 21393955,
+      "sha256": "ba6397ceaea382d807ff5c48c7a03d5f0692953fa32cdd8e686dea77385ea287",
+      "status": "ok"
+    },
+    "BTWUSDT2026-09-28.csv.gz": {
+      "bytes": 32430595,
+      "sha256": "2115f3784bcb1e17d919c818e0f1f6243e17cffd4dff7801b52fc5d53ff17373",
+      "status": "ok"
+    },
+    "BUSDT2026-08-22.csv.gz": {
+      "bytes": 631786,
+      "sha256": "c0c05068a7bf7c60300a6b4c0b04c849dcf6602dafc45bc231865e8aa47c917e",
+      "status": "ok"
+    },
+    "BUSDT2026-09-05.csv.gz": {
+      "bytes": 10575129,
+      "sha256": "9b3ef7922fd928b2baf0b644c565345492511df3ea458eb45eac013896b706c2",
+      "status": "ok"
+    },
+    "C98USDT2026-08-22.csv.gz": {
+      "bytes": 330977,
+      "sha256": "c1b0571204e3cb0492deabc6bc99f6e1551a8ed196f7f7da37b01205ebf4d3d0",
+      "status": "ok"
+    },
+    "CAPUSDT2026-09-14.csv.gz": {
+      "bytes": 25021267,
+      "sha256": "0519e483225dbd1ac969a94b2157d03f61f104041e90d89fe501e34356795f3d",
+      "status": "ok"
+    },
+    "CARVUSDT2026-09-22.csv.gz": {
+      "bytes": 3266161,
+      "sha256": "33f8ade73fe1736ba9ea9e51e54c13fe81a2628f3e2e162672f662ebf0475fdd",
+      "status": "ok"
+    },
+    "CASHCATUSDT2026-08-14.csv.gz": {
+      "bytes": 5892836,
+      "sha256": "15919481025bec8ded243202d9bd10ba2e7684c4af3156ea81209b8a6765d12a",
+      "status": "ok"
+    },
+    "CASHCATUSDT2026-08-18.csv.gz": {
+      "bytes": 3359515,
+      "sha256": "668a79993de74b417d3c67ccf143b1d0a33d9449e5b907f4ae0579ad498e5acd",
+      "status": "ok"
+    },
+    "CASHCATUSDT2026-08-19.csv.gz": {
+      "bytes": 4492997,
+      "sha256": "2e042410165ee1a1ada71aba86cedc4574a83d03b0d606b11da35b0af5828a06",
+      "status": "ok"
+    },
+    "CASHCATUSDT2026-08-22.csv.gz": {
+      "bytes": 7210762,
+      "sha256": "482618192fabfd5d963cf429eb7892b189e381dfe11459b67c2a940b6d84e660",
+      "status": "ok"
+    },
+    "CASHCATUSDT2026-09-02.csv.gz": {
+      "bytes": 26445621,
+      "sha256": "bc4c947ee7e3271f507e51a7bb435ce6b73f03c04247704fb006793efc756989",
+      "status": "ok"
+    },
+    "CASHCATUSDT2026-09-28.csv.gz": {
+      "bytes": 30317715,
+      "sha256": "6cc270a5425fcc891498b840a4054c4b723e66273a6f025e0cabf56a6dd6009b",
+      "status": "ok"
+    },
+    "CATIUSDT2026-08-26.csv.gz": {
+      "bytes": 2675998,
+      "sha256": "37e5d2d3b60107e095d5d9a57af8ef091f6e5c344081392c6f65602ac98fcd19",
+      "status": "ok"
+    },
+    "CATIUSDT2026-09-03.csv.gz": {
+      "bytes": 4011015,
+      "sha256": "7f028f3135a493aca9f0c5afeb785264190824403276a12a81462345f460b7a4",
+      "status": "ok"
+    },
+    "CBRSUSDT2026-08-13.csv.gz": {
+      "bytes": 2327946,
+      "sha256": "266a1f74665754115d45c3d0d902003d99d742667aad3c46a6d46de5284b6aee",
+      "status": "ok"
+    },
+    "CHIPUSDT2026-09-21.csv.gz": {
+      "bytes": 4423831,
+      "sha256": "6f9f25aa4bb638fbcfd257ba9249b521104019374bd72baa19f5691ab0dc0610",
+      "status": "ok"
+    },
+    "CHRUSDT2026-09-22.csv.gz": {
+      "bytes": 8345972,
+      "sha256": "e7641ae98015224d45d5dd0c044a5d37833b8150a70e43f3e20bf1831e61a31b",
+      "status": "ok"
+    },
+    "CLANKERUSDT2026-09-26.csv.gz": {
+      "bytes": 2053467,
+      "sha256": "75241596329de5fbc93b6f44d27baa36a11c1d429bb8fa75eaeb0b0620d21ab2",
+      "status": "ok"
+    },
+    "CLOUSDT2026-08-22.csv.gz": {
+      "bytes": 1135153,
+      "sha256": "f7879504d91ff96ef6d2910e77d94d8e57b22b01c8d0b13738f164cfb4c8877e",
+      "status": "ok"
+    },
+    "CLOUSDT2026-09-09.csv.gz": {
+      "bytes": 693638,
+      "sha256": "99b04c570bc379e2622794f4ddd3307d9c59f0df3320b3ad06287032c13c765a",
+      "status": "ok"
+    },
+    "CLOUSDT2026-09-23.csv.gz": {
+      "bytes": 1161512,
+      "sha256": "b1e879c8470bc5793acf60434898aec47dbd59156a488d63fd50eda87cce58a1",
+      "status": "ok"
+    },
+    "COAIUSDT2026-08-22.csv.gz": {
+      "bytes": 1457186,
+      "sha256": "cd67038011c0c99308e05f09d9c5befd1b48f71cfca81ce7db42e0d353de4ef4",
+      "status": "ok"
+    },
+    "COOKIEUSDT2026-08-22.csv.gz": {
+      "bytes": 1187803,
+      "sha256": "776181b3c1d8057907dfbc3e28e48e7d8df838c4dad0e9668c3d0a32162c1f30",
+      "status": "ok"
+    },
+    "COREUSDT2026-08-22.csv.gz": {
+      "bytes": 2073816,
+      "sha256": "ed6b3ac02a99c6d9228f37971b56ee565a1413d8b62aab7239803ec7b14a8ff7",
+      "status": "ok"
+    },
+    "COTIUSDT2026-08-22.csv.gz": {
+      "bytes": 16567671,
+      "sha256": "1efd4183886a2fd3b99d15ef1fa8cee1815bd6b5e49fc9baf32f4d3f3e094ab9",
+      "status": "ok"
+    },
+    "COWUSDT2026-08-15.csv.gz": {
+      "bytes": 62235473,
+      "sha256": "8d251f8686698dcf54a46a33a9fbc58acdf60c903ff4456458e0d85e94cac18a",
+      "status": "ok"
+    },
+    "CPUSDT2026-09-20.csv.gz": {
+      "bytes": 1390988,
+      "sha256": "e4010dcaacdd6a49c4fbae46052ea19bc2d6c1eb97c935ff7af0a3e803a77737",
+      "status": "ok"
+    },
+    "CROSSUSDT2026-08-22.csv.gz": {
+      "bytes": 799145,
+      "sha256": "fa8d861a0c7520553f8ddf48695cb71c3fe9c0b47d0e9eb791293b9ce43306b5",
+      "status": "ok"
+    },
+    "CROSSUSDT2026-09-17.csv.gz": {
+      "bytes": 6834845,
+      "sha256": "c2532c23a1166806d4cf93090d9459f8d71571ff10af91592eda1d791656c1e2",
+      "status": "ok"
+    },
+    "CROUSDT2026-09-08.csv.gz": {
+      "bytes": 2863936,
+      "sha256": "adf3d08cda46b81d261a14be1722d6dde276b8ebe1700cb55b65a4e9f8698e61",
+      "status": "ok"
+    },
+    "CUSDT2026-09-18.csv.gz": {
+      "bytes": 4707328,
+      "sha256": "e0ee5f21a2befd5b2e411649617213779e867588933bb558d2925187c8035e66",
+      "status": "ok"
+    },
+    "CUSDT2026-09-19.csv.gz": {
+      "bytes": 2555683,
+      "sha256": "70ab3b51c5c3e33b2e533689684a223705423049f9054d5330e3de74f6711248",
+      "status": "ok"
+    },
+    "CVCUSDT2026-09-14.csv.gz": {
+      "bytes": 39467055,
+      "sha256": "63d156e3786c670512d1912019615d07efee3f2f5333fdc1b105b11f40d3a1c3",
+      "status": "ok"
+    },
+    "CVCUSDT2026-09-15.csv.gz": {
+      "bytes": 17846419,
+      "sha256": "6678879785e2d492ab4e1ed89b9b98f1b00b4fba12f521be8ca3beca0252d1a2",
+      "status": "ok"
+    },
+    "CYSUSDT2026-08-14.csv.gz": {
+      "bytes": 38141210,
+      "sha256": "b00944781ae28dfcd14385f2050df393e48de2e363617110ae3a5a29012b265d",
+      "status": "ok"
+    },
+    "CYSUSDT2026-08-16.csv.gz": {
+      "bytes": 40175626,
+      "sha256": "c3669041a840c7b056c604246a92a000d2cae8cd8bc67f874b66234ea8e278b5",
+      "status": "ok"
+    },
+    "CYSUSDT2026-08-22.csv.gz": {
+      "bytes": 2167859,
+      "sha256": "410c56980e216f527f0417559c156171937482cc28c77b2db35a5942c2f5e62c",
+      "status": "ok"
+    },
+    "CYSUSDT2026-09-09.csv.gz": {
+      "bytes": 3441592,
+      "sha256": "1ef74ad586122c9bfc70758ff16636a59df98197d752e4ab8380ae7498643830",
+      "status": "ok"
+    },
+    "DASHUSDT2026-08-22.csv.gz": {
+      "bytes": 15699585,
+      "sha256": "aa39b906bc6d418a3bd85d39e505bf4bbb446bfe3d87d462ca1b655fce18c89b",
+      "status": "ok"
+    },
+    "DBRUSDT2026-09-24.csv.gz": {
+      "bytes": 3269762,
+      "sha256": "95d139c2809210d29e84563bc278dbcb212d904673037a7f8559ea5e78cf5b1e",
+      "status": "ok"
+    },
+    "DOLOUSDT2026-08-14.csv.gz": {
+      "bytes": 3090170,
+      "sha256": "f852a522520fb7e43f3a05aeb4f6bb84916c518748081b025ae46b2acabec45d",
+      "status": "ok"
+    },
+    "DOLOUSDT2026-08-16.csv.gz": {
+      "bytes": 7068696,
+      "sha256": "3079f87f1c06bc72bb187344c55558bd8f3bcc397b511ce4ff8c851a312c9c90",
+      "status": "ok"
+    },
+    "DOLOUSDT2026-08-22.csv.gz": {
+      "bytes": 436475,
+      "sha256": "c3aaf524dd0485c79a2a2e1d5cb59196216892c4db5fbf28d06bdaae9997c85a",
+      "status": "ok"
+    },
+    "DOLOUSDT2026-09-22.csv.gz": {
+      "bytes": 704451,
+      "sha256": "2e13bc996ac38c4170ed09e67d7c746960ed81d4373b6c680463c344465c4df9",
+      "status": "ok"
+    },
+    "DOSUSDT2026-08-22.csv.gz": {
+      "bytes": 2147505,
+      "sha256": "3a96f049dd7080e6910000645550af069834f1a6cb3c904f27f53d037f134d5e",
+      "status": "ok"
+    },
+    "DRIFTUSDT2026-08-22.csv.gz": {
+      "bytes": 950112,
+      "sha256": "b8d9d5a470ae0610b146830e968e5ebdaa38258971c260bcaf2beb8dc3487fc2",
+      "status": "ok"
+    },
+    "DRIFTUSDT2026-09-18.csv.gz": {
+      "bytes": 12865631,
+      "sha256": "2a87205c94144a18ed44b13fe5dc0c948cf425113a5e2a48a144a6b6c20e2ee7",
+      "status": "ok"
+    },
+    "DRIFTUSDT2026-09-19.csv.gz": {
+      "bytes": 2424203,
+      "sha256": "fda0f3f7d7efb0c2843a2e3278c602da6f9494fbe5487e3df3a2fd97f3679bcc",
+      "status": "ok"
+    },
+    "DRIFTUSDT2026-09-20.csv.gz": {
+      "bytes": 1816322,
+      "sha256": "0f87cc359bf5dc549e28759625392143c1b53e5477719eb31e61fd3db5b131c9",
+      "status": "ok"
+    },
+    "DUSKUSDT2026-08-22.csv.gz": {
+      "bytes": 677262,
+      "sha256": "bea56424720d82fe3031649ea4b4b01ab0ee7de4391eeecf25b85b90f8f73942",
+      "status": "ok"
+    },
+    "DYMUSDT2026-08-22.csv.gz": {
+      "bytes": 321438,
+      "sha256": "e15bc28fd8addc9a49b518f51947ed73780160ba23d163220444d9a8edcbb6ce",
+      "status": "ok"
+    },
+    "EDENUSDT2026-08-22.csv.gz": {
+      "bytes": 1875158,
+      "sha256": "9c92e810639a79a1dc7df80dab3450d0fae0f6118c4df524afa3ccad1695d18a",
+      "status": "ok"
+    },
+    "EIGENUSDT2026-08-22.csv.gz": {
+      "bytes": 2520349,
+      "sha256": "283c5b660be2a1fb26674685e8200ba2d38d4097981313f1f30133507e0f2cd2",
+      "status": "ok"
+    },
+    "ELSAUSDT2026-09-05.csv.gz": {
+      "bytes": 2396137,
+      "sha256": "4b94b750dae7764ec9a61841bb00f68c7e37b3629515aa10237a9ff1ae637f3a",
+      "status": "ok"
+    },
+    "ENSOUSDT2026-08-22.csv.gz": {
+      "bytes": 716927,
+      "sha256": "3c1547c43c136d6dfe1438793201f53b3ce36618f3b71aacb43654c5ea69aa79",
+      "status": "ok"
+    },
+    "EPICUSDT2026-08-22.csv.gz": {
+      "bytes": 1934131,
+      "sha256": "ca915f37aa4076eb9b198b08c5b08c7576b75a855c9d3e20afbac5c37702ccb6",
+      "status": "ok"
+    },
+    "ESPORTSUSDT2026-08-22.csv.gz": {
+      "bytes": 2361510,
+      "sha256": "c77a34dea8b5f0e9996fd17b061685c9c817871b19189f81cbe8be2fbeed2da2",
+      "status": "ok"
+    },
+    "ESPORTSUSDT2026-09-02.csv.gz": {
+      "bytes": 1357447,
+      "sha256": "bc8051da4d00f62090cdbb91e05bc80ffe9ed912d035a37163fb6cb901a7cdfe",
+      "status": "ok"
+    },
+    "ESPORTSUSDT2026-09-09.csv.gz": {
+      "bytes": 1464094,
+      "sha256": "5dee04f53e8b92869153199c5c8ea60d021fa0adad40fcbc3fb0eb2ab20c483a",
+      "status": "ok"
+    },
+    "ESPUSDT2026-09-19.csv.gz": {
+      "bytes": 3857753,
+      "sha256": "884e232ca6f6c7519d6093aa134ecb8d2115222462d351c49e845a36a1ead7f9",
+      "status": "ok"
+    },
+    "ETCUSDT2026-08-22.csv.gz": {
+      "bytes": 9258463,
+      "sha256": "d77e44a72209d5397a3190fd62646d3d5e8ace856070990945b16ca4af01a531",
+      "status": "ok"
+    },
+    "EULUSDT2026-08-22.csv.gz": {
+      "bytes": 2516672,
+      "sha256": "f43e4d92ac2b0a92e7801dcb4698f7d5892c6ffc43b804627542959aacd2d7e6",
+      "status": "ok"
+    },
+    "EVAAUSDT2026-08-22.csv.gz": {
+      "bytes": 1187991,
+      "sha256": "19ed98d6e4af2199ae4306bdcf726da6723d1e2c87d7c76d837516af6e37ae77",
+      "status": "ok"
+    },
+    "EVAAUSDT2026-09-18.csv.gz": {
+      "bytes": 6328550,
+      "sha256": "a63f5bd987794ec34d6ac6cbbf084abe1d7925c2b201fda8b18992f3c16be636",
+      "status": "ok"
+    },
+    "EVAAUSDT2026-09-20.csv.gz": {
+      "bytes": 5562675,
+      "sha256": "16a5e12f841b4f3c242eb7b041e5558832549e4de41de0e3dee86b375698dfee",
+      "status": "ok"
+    },
+    "FARTCOINUSDT2026-08-22.csv.gz": {
+      "bytes": 44594405,
+      "sha256": "229789ce5b546c30811f01933a01a464fd43adadeea285acb520e831dfab1d11",
+      "status": "ok"
+    },
+    "FFUSDT2026-08-26.csv.gz": {
+      "bytes": 7165989,
+      "sha256": "3be97b83f53e36915a69dcf8a1880b0505632dace4c3d3b4e33e330bb3e5f631",
+      "status": "ok"
+    },
+    "FFUSDT2026-09-01.csv.gz": {
+      "bytes": 8331449,
+      "sha256": "0b8d21e7c8071d9072d0bfccdfc898d967cb0c38c09391a88ed2e968d8a52fd5",
+      "status": "ok"
+    },
+    "FFUSDT2026-09-03.csv.gz": {
+      "bytes": 19598993,
+      "sha256": "47fb91b9579d76709dcbc68c723497227f5e6acb3851c4661be64898f4ecc4e8",
+      "status": "ok"
+    },
+    "FHEUSDT2026-08-17.csv.gz": {
+      "bytes": 2787906,
+      "sha256": "5efae46f94daabc5099de8a04a2024fc891893229fefb572035b5658999a87fe",
+      "status": "ok"
+    },
+    "FHEUSDT2026-08-22.csv.gz": {
+      "bytes": 2674515,
+      "sha256": "c6ff2bc67a096356c28ddc6c9d4de42746cc65578e2c6ec2790ea0a9ac7eaa28",
+      "status": "ok"
+    },
+    "FIDAUSDT2026-08-22.csv.gz": {
+      "bytes": 593917,
+      "sha256": "436bc6da5b72c6283c6e5fc98c3a0f6e47f43b499de09215fafaafd3956365fb",
+      "status": "ok"
+    },
+    "FLOCKUSDT2026-09-02.csv.gz": {
+      "bytes": 10172942,
+      "sha256": "5e675c93d841fd5292a2b8e077e5d4c025455f73a33325472d4f8ee3956fac51",
+      "status": "ok"
+    },
+    "FLOCKUSDT2026-09-03.csv.gz": {
+      "bytes": 6760058,
+      "sha256": "394b8ec4ccded5dd80f6cfe08049ca49b34b303e3a74058d77080a47f12e57cf",
+      "status": "ok"
+    },
+    "FLOCKUSDT2026-09-04.csv.gz": {
+      "bytes": 27356656,
+      "sha256": "1621738d1445c392da99f68bd6ab8a3a6f69f89cdcd3cc0fe7ec99517e379e0e",
+      "status": "ok"
+    },
+    "FLOCKUSDT2026-09-05.csv.gz": {
+      "bytes": 23178357,
+      "sha256": "abbfa120f019c903e15a26084bbbe395cb74a194f48c36d5d1d25c1cf37b92c6",
+      "status": "ok"
+    },
+    "FLOCKUSDT2026-09-07.csv.gz": {
+      "bytes": 24450149,
+      "sha256": "393cd7a04be67e6534cb155b7759208d3769f80fcb8d3a77f18f32a03e593154",
+      "status": "ok"
+    },
+    "FLOCKUSDT2026-09-08.csv.gz": {
+      "bytes": 19105709,
+      "sha256": "a5eebbad8d7ed110bffbfa96dfb16d4c0bbc5a8c074f4005d23c31131e6f6096",
+      "status": "ok"
+    },
+    "FLOCKUSDT2026-09-09.csv.gz": {
+      "bytes": 9285920,
+      "sha256": "d0a5d7c89090145c60875415da1a27428d2f3591f2e22f44fa4735dbe9010e7e",
+      "status": "ok"
+    },
+    "FLOCKUSDT2026-09-11.csv.gz": {
+      "bytes": 3976891,
+      "sha256": "3f7820d07b4eff7ad2921fb36997953cb5dfcb67cf2b30795904e10de459b5ea",
+      "status": "ok"
+    },
+    "FLOCKUSDT2026-09-20.csv.gz": {
+      "bytes": 7322874,
+      "sha256": "437d9c77d9bbbbdeddc188da19976fed5d09928e90d650a7ea561cd8ed87b1fd",
+      "status": "ok"
+    },
+    "FLOCKUSDT2026-09-21.csv.gz": {
+      "bytes": 9366087,
+      "sha256": "2a1152109d93cae7ba91704317c96041c3903d0a3410658ae448368edbad3b5d",
+      "status": "ok"
+    },
+    "FLOCKUSDT2026-09-24.csv.gz": {
+      "bytes": 16218639,
+      "sha256": "fa221c42b5fdef8545112f3b4df6bd2e1ddfaabcf1fa60ac385ae14f285d6fb8",
+      "status": "ok"
+    },
+    "FOGOUSDT2026-08-22.csv.gz": {
+      "bytes": 560716,
+      "sha256": "de84f9f61a7472dd39920b000740f3c461c43d46f3e91088557002e9e91495f7",
+      "status": "ok"
+    },
+    "FOLKSUSDT2026-08-22.csv.gz": {
+      "bytes": 945048,
+      "sha256": "81805430dfec1a04396eef086a18fc8dd90217220026d94113f0b89e14284c9f",
+      "status": "ok"
+    },
+    "FOLKSUSDT2026-09-22.csv.gz": {
+      "bytes": 1996817,
+      "sha256": "438ced8e89eeb23751e9665b2dd870834479eeb264bb2f3c33e759f0d7d42b10",
+      "status": "ok"
+    },
+    "FOLKSUSDT2026-09-23.csv.gz": {
+      "bytes": 5905826,
+      "sha256": "f75fc7f4e4884d3a9d41426bfe49561e387c6bc1838444743d4d7d3284a4e324",
+      "status": "ok"
+    },
+    "FORMUSDT2026-09-08.csv.gz": {
+      "bytes": 10957570,
+      "sha256": "c0eeced96bf81cfa97769f34f18aa352fe063c243434a96864896d7ca1085b4e",
+      "status": "ok"
+    },
+    "FORMUSDT2026-09-09.csv.gz": {
+      "bytes": 3729522,
+      "sha256": "6d5e17b08efe77895fad3ebf6493a88c992fbfa90e10d81ad50a6b8734ec00de",
+      "status": "ok"
+    },
+    "FORMUSDT2026-09-21.csv.gz": {
+      "bytes": 6824065,
+      "sha256": "6c007a0bde6eb5b53683e2795a057bf246221a70d9fea4868b32ed00513c9133",
+      "status": "ok"
+    },
+    "FUSDT2026-09-18.csv.gz": {
+      "bytes": 22620476,
+      "sha256": "dc3184998a7c2bec9a5f22e1b788ed49f4ed85505f6c6d94b36352b7e0a473f0",
+      "status": "ok"
+    },
+    "GENIUSUSDT2026-08-22.csv.gz": {
+      "bytes": 767671,
+      "sha256": "7f9e26a765194528d481bf7ddf01f7287bbab9126e844df72f09a0b34db52fc9",
+      "status": "ok"
+    },
+    "GENIUSUSDT2026-09-17.csv.gz": {
+      "bytes": 11962265,
+      "sha256": "774fb18bf7eceda0a87075af52379d8334124fe0365a75ff41fae275db72abb3",
+      "status": "ok"
+    },
+    "GENIUSUSDT2026-09-18.csv.gz": {
+      "bytes": 5060884,
+      "sha256": "461c2ff4da9ca61de5f36b9550b65674331a0b495480f1a60ee8f5423ed428b9",
+      "status": "ok"
+    },
+    "GIGGLEUSDT2026-08-22.csv.gz": {
+      "bytes": 4496800,
+      "sha256": "23499e72531cc091c0cc00ed5e7929d97c70ae5bc80bc0b411b8bdaf3b63b8ec",
+      "status": "ok"
+    },
+    "GMTUSDT2026-08-25.csv.gz": {
+      "bytes": 5875117,
+      "sha256": "6430d806decd0cdb91921341818ba263f6d28be9533d7a4688da437f355ccf58",
+      "status": "ok"
+    },
+    "GOATUSDT2026-08-22.csv.gz": {
+      "bytes": 1070232,
+      "sha256": "06f07fc56a7bdc2da17f70c7e5aac2f63bdfec16df2267144cb7eff0377fbb83",
+      "status": "ok"
+    },
+    "GOATUSDT2026-09-05.csv.gz": {
+      "bytes": 988670,
+      "sha256": "cf7c48545c6569523084a0bde2fa898e574dc71340b0dddd46a6a2603884ec5b",
+      "status": "ok"
+    },
+    "GPSUSDT2026-08-13.csv.gz": {
+      "bytes": 2878361,
+      "sha256": "7d3edf3863f549e5f1daf7247614ed8e10681fca3fb8e31828a9fa0085be0a6f",
+      "status": "ok"
+    },
+    "GPSUSDT2026-08-16.csv.gz": {
+      "bytes": 3806364,
+      "sha256": "cb78677e87eb3b1e1166ec42dcb9c6c5abb4dec9650e025b31d8074f4aa17ef0",
+      "status": "ok"
+    },
+    "GPSUSDT2026-08-20.csv.gz": {
+      "bytes": 10368177,
+      "sha256": "55980819ff4a897decfab6e419b64e32f9dd5cf648cc90ba9bef8bccb58cc30a",
+      "status": "ok"
+    },
+    "GPSUSDT2026-08-22.csv.gz": {
+      "bytes": 8721309,
+      "sha256": "ebb0b745957550f422605feb09cfff66dbf529bef088fe5156298f902de50ba8",
+      "status": "ok"
+    },
+    "GRASSUSDT2026-08-22.csv.gz": {
+      "bytes": 5169673,
+      "sha256": "410d432504e150afa97d2c538bc998e3136297d6b2bb6a71a802ef398883d4c3",
+      "status": "ok"
+    },
+    "GRIFFAINUSDT2026-08-22.csv.gz": {
+      "bytes": 474206,
+      "sha256": "5eab13bc574a45a18abb511e17ecda912d0026d069a3f102cb42c47b69657996",
+      "status": "ok"
+    },
+    "GRIFFAINUSDT2026-09-03.csv.gz": {
+      "bytes": 594548,
+      "sha256": "44b0b93ed4daf9b7ac64edcd9f2f98f09357c45077e66a54d577fa0c432117e7",
+      "status": "ok"
+    },
+    "GRIFFAINUSDT2026-09-12.csv.gz": {
+      "bytes": 13637754,
+      "sha256": "4aad929227da2157949a6a27c474c5e5887dde3d889eedca9a4efef4f656dc74",
+      "status": "ok"
+    },
+    "GRIFFAINUSDT2026-09-13.csv.gz": {
+      "bytes": 6560437,
+      "sha256": "3fd8891dc0ebe67698626f687dabe987ce32be267226fd4a7147479405b0aac7",
+      "status": "ok"
+    },
+    "GRVTUSDT2026-08-22.csv.gz": {
+      "bytes": 4298067,
+      "sha256": "2166d87b4dba3ce4eb0c30145fa7a921344b3be8b6f5e6c4960b4803c90d440b",
+      "status": "ok"
+    },
+    "GUNUSDT2026-08-17.csv.gz": {
+      "bytes": 1596124,
+      "sha256": "7aabe7ac557bee44793903f7d25d3e1aa09fe7247f27b610bbde04bf547b9c96",
+      "status": "ok"
+    },
+    "GUNUSDT2026-08-22.csv.gz": {
+      "bytes": 836217,
+      "sha256": "a9cd2c0ecba02bc8a9f4d7d48b5c195ba99cd9212b1856d4d40df2ac12effe66",
+      "status": "ok"
+    },
+    "GUNUSDT2026-09-20.csv.gz": {
+      "bytes": 3858328,
+      "sha256": "dc0f570876c364285e3ed225fa0088ea265dbcbcb6f52235b5cd1410025a1023",
+      "status": "ok"
+    },
+    "GWEIUSDT2026-08-22.csv.gz": {
+      "bytes": 1700429,
+      "sha256": "d1f2d5aa6644fe07254be4e503006516086d5b21a09e1732d80fbd5d3599b5ca",
+      "status": "ok"
+    },
+    "GWEIUSDT2026-09-09.csv.gz": {
+      "bytes": 608782,
+      "sha256": "b8b96f6cdcd2db6b5c5dd0a019fd5b8bd8f5f02c66aaac564489ad917f9a10b5",
+      "status": "ok"
+    },
+    "HAEDALUSDT2026-08-22.csv.gz": {
+      "bytes": 215610,
+      "sha256": "19ca255474c799aae620ee53772ac7799a62d1af88e412e6bf370b404013ad1c",
+      "status": "ok"
+    },
+    "HAEDALUSDT2026-09-09.csv.gz": {
+      "bytes": 658514,
+      "sha256": "87c2d15a75197307adbf02c7d2df4be0a2d79ab5ed12fe16d316ba2fb4be0529",
+      "status": "ok"
+    },
+    "HANAUSDT2026-08-25.csv.gz": {
+      "bytes": 3139563,
+      "sha256": "092f05816d4497a986e325474eec54a03bf85dd0dac44dbf032802296450f0c2",
+      "status": "ok"
+    },
+    "HANAUSDT2026-09-07.csv.gz": {
+      "bytes": 817499,
+      "sha256": "ead9aafdf2670887f8229e2b9438974f3ff179bc31a95fc461513feb6f4a36fc",
+      "status": "ok"
+    },
+    "HANAUSDT2026-09-20.csv.gz": {
+      "bytes": 432032,
+      "sha256": "1f5aa4f34b00ce06b089a30dbae880009e443b731d2e4261e4244961eb34d6e4",
+      "status": "ok"
+    },
+    "HEIUSDT2026-08-22.csv.gz": {
+      "bytes": 2508266,
+      "sha256": "f5da6a29021769d28aedf6ddc797b730f6d613fb791884530377fa51fb1ea20b",
+      "status": "ok"
+    },
+    "HEIUSDT2026-09-09.csv.gz": {
+      "bytes": 891651,
+      "sha256": "09f5d463c64e3a4390a1970e8397ba82d09c89b84107d7889e34a8105b9a72fa",
+      "status": "ok"
+    },
+    "HEIUSDT2026-09-19.csv.gz": {
+      "bytes": 2701109,
+      "sha256": "ee258d98e15111e7f5a67d55cd0d649e037b1d810724f7b0b884ca284f9d391b",
+      "status": "ok"
+    },
+    "HEMIUSDT2026-08-19.csv.gz": {
+      "bytes": 55673292,
+      "sha256": "5216a31af22482e89977d474a31afd02e7db9f37d06255ddff64789425a97006",
+      "status": "ok"
+    },
+    "HEMIUSDT2026-08-21.csv.gz": {
+      "bytes": 79370418,
+      "sha256": "563ca343939ab34e3630779a0da2420909ffd5f36689048cb5bfd8e60351b50c",
+      "status": "ok"
+    },
+    "HEMIUSDT2026-08-22.csv.gz": {
+      "bytes": 21982610,
+      "sha256": "0afe8fdcf057ce4a807ac4956391d1f25b9bd75830f9a97a808858acaeaf2385",
+      "status": "ok"
+    },
+    "HEMIUSDT2026-09-02.csv.gz": {
+      "bytes": 53456383,
+      "sha256": "bf3e39417ecc8e91fb28cfe9430f3d448cccd3e15d989367b5d60da4c0e80a29",
+      "status": "ok"
+    },
+    "HEMIUSDT2026-09-03.csv.gz": {
+      "bytes": 84383509,
+      "sha256": "d94b9c50ce035df289b0ae8fc4be1001a4cf842af18faa95d5168887361751c3",
+      "status": "ok"
+    },
+    "HEMIUSDT2026-09-08.csv.gz": {
+      "bytes": 18744031,
+      "sha256": "faba1824d6829048b4c3ec4f91e0309a4f8a3f2490fa350d999361cc017fbcc3",
+      "status": "ok"
+    },
+    "HEMIUSDT2026-09-09.csv.gz": {
+      "bytes": 13054035,
+      "sha256": "72ab58520f86957828ff10ad185b5e66c58e4560b204742c7a68ee04ab92d4c6",
+      "status": "ok"
+    },
+    "HFTUSDT2026-08-16.csv.gz": {
+      "bytes": 11845986,
+      "sha256": "a2ca0ab08f089992afbe1c00caf7caf921f2cc17f0982191cefb506080f32ad3",
+      "status": "ok"
+    },
+    "HFTUSDT2026-08-20.csv.gz": {
+      "bytes": 1317875,
+      "sha256": "0ca82f5651c8e127755a0b5b33a233aab98f6627d6500925ed59a5eee138f794",
+      "status": "ok"
+    },
+    "HFTUSDT2026-08-21.csv.gz": {
+      "bytes": 1250012,
+      "sha256": "3951639eab852a7c4382cc76b574ad821cfa0ee137ad32af3d2dcc8f197c4017",
+      "status": "ok"
+    },
+    "HIVEUSDT2026-09-15.csv.gz": {
+      "bytes": 4244357,
+      "sha256": "c9f5c896e6baaaa678e1f0e15aac01a42c00d3ea28eb22c7159a5730ef17e069",
+      "status": "ok"
+    },
+    "HMSTRUSDT2026-08-22.csv.gz": {
+      "bytes": 5184256,
+      "sha256": "ee428048953a0d6389573275af265dbba39b3cd931c1ec60cb4d294c7e287627",
+      "status": "ok"
+    },
+    "HNTUSDT2026-08-28.csv.gz": {
+      "bytes": 1411268,
+      "sha256": "5690bbc8b9761daf30f42f2ed20116494fa9c42326ccc9c3511785d53ee9bb20",
+      "status": "ok"
+    },
+    "HNTUSDT2026-08-29.csv.gz": {
+      "bytes": 61463521,
+      "sha256": "e29ae42428cec411e6390a981d56d0aad1297cf20a9d75eae92977afc833f567",
+      "status": "ok"
+    },
+    "HNTUSDT2026-08-30.csv.gz": {
+      "bytes": 162875186,
+      "sha256": "714622a7a340970de257673aaecb9c877756cf0f6ecc32b641a2894a2e02cdd7",
+      "status": "ok"
+    },
+    "HNTUSDT2026-08-31.csv.gz": {
+      "bytes": 66908704,
+      "sha256": "eba1f4a585171d66257126021bcd0f8a9772053f48f438eb77fc32bf89b6b32d",
+      "status": "ok"
+    },
+    "HNTUSDT2026-09-02.csv.gz": {
+      "bytes": 14320489,
+      "sha256": "57b0605fba1645096c644172b613daf51c442d32f40bbc26f498253431541dc6",
+      "status": "ok"
+    },
+    "HNTUSDT2026-09-03.csv.gz": {
+      "bytes": 20980603,
+      "sha256": "fefa4965fe29cc8fb2034b928b186b62d40070002bdf885a4de1e0174a9957f9",
+      "status": "ok"
+    },
+    "HOLOUSDT2026-08-22.csv.gz": {
+      "bytes": 1620743,
+      "sha256": "ef11fb4aeb1963b147d51ab965523dbf97806b12e34598f1ebb99c7620fc1267",
+      "status": "ok"
+    },
+    "HOMEUSDT2026-08-22.csv.gz": {
+      "bytes": 3850213,
+      "sha256": "a86fa00ee8c44a8d69d8e622768d3ea50fd63d6d42c7f5ff956ce2d04b2a92b7",
+      "status": "ok"
+    },
+    "HUSDT2026-08-16.csv.gz": {
+      "bytes": 47663654,
+      "sha256": "2e880a39be2a27898bdcf18c3d435f7f36b6ddbeabea91eb5b87763733bb7ed6",
+      "status": "ok"
+    },
+    "HUSDT2026-08-22.csv.gz": {
+      "bytes": 7739908,
+      "sha256": "a9a604c2d4b6d9138039334d0c5aeae2ca2f07f4a431551f807969e8b08c371e",
+      "status": "ok"
+    },
+    "HYPERUSDT2026-08-22.csv.gz": {
+      "bytes": 987760,
+      "sha256": "5e0fb7eab13401322d56d5789080e06498779b794fdee65da19ed7d81f789cd0",
+      "status": "ok"
+    },
+    "ICXUSDT2026-08-22.csv.gz": {
+      "bytes": 804851,
+      "sha256": "b3c89f24b7ca845488a61f8b43e25009d1d11bd654fc472ab43aaa679a3b40f5",
+      "status": "ok"
+    },
+    "ICXUSDT2026-09-05.csv.gz": {
+      "bytes": 8966331,
+      "sha256": "c2fe7c27c7ab42796c448c0fb8604ecb08d7e2bf05868a7bb060bd29f94a95b1",
+      "status": "ok"
+    },
+    "ICXUSDT2026-09-17.csv.gz": {
+      "bytes": 197021,
+      "sha256": "92e85bfac84a7fd39027a67f4fda6221dc8dcde4c5346ba371b8c15237d59524",
+      "status": "ok"
+    },
+    "ILVUSDT2026-09-13.csv.gz": {
+      "bytes": 4363491,
+      "sha256": "4135bd14b116fccfaa1f6319a946571caa2e3e457289ecfa2768e9831aa91f38",
+      "status": "ok"
+    },
+    "INXUSDT2026-08-22.csv.gz": {
+      "bytes": 1793821,
+      "sha256": "56909e53706cc3d50754e1a4b1d47b4f3f26fc496b231a67beb744cfad97aaf3",
+      "status": "ok"
+    },
+    "INXUSDT2026-09-09.csv.gz": {
+      "bytes": 445070,
+      "sha256": "e3b01de92cffba03859199605972a9a9869d51afc64b6d496a1fee9076da6b44",
+      "status": "ok"
+    },
+    "INXUSDT2026-09-27.csv.gz": {
+      "bytes": 3450368,
+      "sha256": "21b857ede1cec3d7ad6f89ee808caf70220faac3c5990fa27aa327c5acfb0e77",
+      "status": "ok"
+    },
+    "IOSTUSDT2026-09-09.csv.gz": {
+      "bytes": 245195410,
+      "sha256": "7fddc382a58082dc8c9dd46a00dd8cf2217074dd773ce11c3b493ec981f287ef",
+      "status": "ok"
+    },
+    "IOTXUSDT2026-08-22.csv.gz": {
+      "bytes": 442420,
+      "sha256": "67cfd3d30406b6c46e9283c7b53c03f945352b5ae7b5d87d6351a382d927c832",
+      "status": "ok"
+    },
+    "IOTXUSDT2026-09-22.csv.gz": {
+      "bytes": 1200559,
+      "sha256": "dee7a69aaa3b0fbec5541af6e0898e5aeb38815894c11244c7be51a0b87e9987",
+      "status": "ok"
+    },
+    "IOUSDT2026-09-17.csv.gz": {
+      "bytes": 1187153,
+      "sha256": "00b1ea8faa320e2aa95fea46a3f53795339d052e65eb13d4defc98118e68f311",
+      "status": "ok"
+    },
+    "IRYSUSDT2026-09-28.csv.gz": {
+      "bytes": 6437231,
+      "sha256": "88063a8a6d2cb7a690df0fd765f3bb18c3f7418221257da4ec41e3f1aec2318c",
+      "status": "ok"
+    },
+    "JCTUSDT2026-08-15.csv.gz": {
+      "bytes": 3675568,
+      "sha256": "5759e18d3c761c8ab6a13e75fa2e54aa5cc6d779a10f73916e09e490334f0046",
+      "status": "ok"
+    },
+    "JCTUSDT2026-08-18.csv.gz": {
+      "bytes": 4167902,
+      "sha256": "0348f0b6d19c293c5748144f71a182e9edddda7a73d5fa82138561cd2e426581",
+      "status": "ok"
+    },
+    "JCTUSDT2026-09-09.csv.gz": {
+      "bytes": 660753,
+      "sha256": "4eaad3d3fe75eb0bfdeaa13aa147e4b11e2b86aa648e3c8d9684044d64979fb2",
+      "status": "ok"
+    },
+    "JTOUSDT2026-08-22.csv.gz": {
+      "bytes": 5859204,
+      "sha256": "e0252cd17b5aee8edbe33c3b1b22d1664c83c549ef5edf9b047ecc61a5a1ad0e",
+      "status": "ok"
+    },
+    "KAITOUSDT2026-08-22.csv.gz": {
+      "bytes": 5983407,
+      "sha256": "509e39c0896a16ffa9d364ddbf406a3acd368679d7596e3c8bc30f489af6f615",
+      "status": "ok"
+    },
+    "KERNELUSDT2026-08-27.csv.gz": {
+      "bytes": 1681946,
+      "sha256": "5b048afefdf7fab3e50f545b2a0b787d12791a1242a89fc4e89667f359605662",
+      "status": "ok"
+    },
+    "KGENUSDT2026-08-22.csv.gz": {
+      "bytes": 615489,
+      "sha256": "025adf003b0ff0aab2218418349fa5ef5144d1fcfd69f8dba219c9053ebdbb15",
+      "status": "ok"
+    },
+    "KSMUSDT2026-09-17.csv.gz": {
+      "bytes": 5376582,
+      "sha256": "dc187b406508c1ca91f7ae55426b982c05d20a960a3f06aba50b0b6491ab4be4",
+      "status": "ok"
+    },
+    "LABUSDT2026-08-22.csv.gz": {
+      "bytes": 5863939,
+      "sha256": "0349e45cf27e57ecc9466099deecca81faec8c43623a89d9e8d33f3c71c9945b",
+      "status": "ok"
+    },
+    "LABUSDT2026-09-09.csv.gz": {
+      "bytes": 2776284,
+      "sha256": "c6f500a1f760c17d9b69cb59d98dc13b253fe390cc4147407fc449506d086e6b",
+      "status": "ok"
+    },
+    "LABUSDT2026-09-11.csv.gz": {
+      "bytes": 16706841,
+      "sha256": "44a078ee2e377a16c030d73472ce501257fdb8b0e1c3a38417bfac9b4d0b453b",
+      "status": "ok"
+    },
+    "LABUSDT2026-09-12.csv.gz": {
+      "bytes": 17391517,
+      "sha256": "50a161aca38f16636899608c99b23050f683b02831aae38a125dc015159cd55c",
+      "status": "ok"
+    },
+    "LAUSDT2026-08-22.csv.gz": {
+      "bytes": 2928650,
+      "sha256": "66f8433db30de94325e0b8fc5a4e66ac0db89cc9b71744fec8c1b037260ad577",
+      "status": "ok"
+    },
+    "LIGHTUSDT2026-08-22.csv.gz": {
+      "bytes": 1018939,
+      "sha256": "a41066b2acc725ce735634d2b16fad2be007f7a002b80e58c610c8b93605737a",
+      "status": "ok"
+    },
+    "LITUSDT2026-08-22.csv.gz": {
+      "bytes": 12681528,
+      "sha256": "319e65cee626282935704f42284649ff9742424d7ff28261537fd5a9f890135d",
+      "status": "ok"
+    },
+    "LONGXIAUSDT2026-09-21.csv.gz": {
+      "bytes": 6748349,
+      "sha256": "97ee809e9eeca56cdd4cfd452007ac2d62fec8327f0c7f92599fd0d2a1b15f0b",
+      "status": "ok"
+    },
+    "LONGXIAUSDT2026-09-23.csv.gz": {
+      "bytes": 8149107,
+      "sha256": "47af1e3c34c36c507222759a8b84fe5ad296a5a164de9f12df633ba29af9f639",
+      "status": "ok"
+    },
+    "LONGXIAUSDT2026-09-24.csv.gz": {
+      "bytes": 7360913,
+      "sha256": "9591721efe85843a7e4351a386c1eccd1419c16fc18853c5d2eafb1a2f83f03a",
+      "status": "ok"
+    },
+    "LONGXIAUSDT2026-09-25.csv.gz": {
+      "bytes": 4736416,
+      "sha256": "04cd7b5ad0b50d58e947fcfa2f112669bff97ab845e84defee86bbaa6faf4d9c",
+      "status": "ok"
+    },
+    "LPTUSDT2026-09-04.csv.gz": {
+      "bytes": 2776942,
+      "sha256": "4e0259dedc7d9d0dc7e59680ff59ba4325e90f96bc70222cd57bbac61db79899",
+      "status": "ok"
+    },
+    "LRCUSDT2026-09-12.csv.gz": {
+      "bytes": 4342738,
+      "sha256": "edb047baeb9c7cc394e1feaeea9f7ca1e208c983674d3324f0636cb9140ffb03",
+      "status": "ok"
+    },
+    "LSKUSDT2026-08-26.csv.gz": {
+      "bytes": 3253917,
+      "sha256": "ea9709e3b4955d7f88470317d8025724322c6448c98cecf93658899ccd209bb4",
+      "status": "ok"
+    },
+    "LSKUSDT2026-09-12.csv.gz": {
+      "bytes": 162326640,
+      "sha256": "41636d8509b589e7a46f5953d84ec4ee87580a8be8541c771d56b00fa08911e2",
+      "status": "ok"
+    },
+    "LSKUSDT2026-09-13.csv.gz": {
+      "bytes": 768779916,
+      "sha256": "c6bde193e978c4608279ecf9b04bf033fb4523e8096c7b25e9463c316670acdb",
+      "status": "ok"
+    },
+    "LSKUSDT2026-09-14.csv.gz": {
+      "bytes": 542677131,
+      "sha256": "4257725a109581747a01a1b975c1ddebd455bb5c30487c822dffdf6fa4003069",
+      "status": "ok"
+    },
+    "LSKUSDT2026-09-16.csv.gz": {
+      "bytes": 431686514,
+      "sha256": "a2f200fe3bf3193deab569b369b6c5f731d429d5da68e64a4ad1f28994f39bcf",
+      "status": "ok"
+    },
+    "LUNA2USDT2026-09-07.csv.gz": {
+      "bytes": 3066701,
+      "sha256": "7240779ea645569d3ff2220fee8992e35935857d61cdc323c0c1aea069329d4c",
+      "status": "ok"
+    },
+    "LYNUSDT2026-09-25.csv.gz": {
+      "bytes": 21974715,
+      "sha256": "f6d647f256c4008b4413e21da8445cda12d649aaa62e8f780a562038d448db78",
+      "status": "ok"
+    },
+    "MAGMAUSDT2026-08-22.csv.gz": {
+      "bytes": 8794059,
+      "sha256": "75c168e86e8c2a4271d5613e836183f017dc2c0513fad150988da19579788488",
+      "status": "ok"
+    },
+    "MAGMAUSDT2026-08-29.csv.gz": {
+      "bytes": 29746036,
+      "sha256": "ec3f47eaae03b38d9bc0f2848177d1e0501942651259262f69e3244916453df5",
+      "status": "ok"
+    },
+    "MAGMAUSDT2026-08-30.csv.gz": {
+      "bytes": 17022121,
+      "sha256": "491e6adb1abcc77d963375e58d4e6b8b0d057354e48b2b790aa5bc272500c96c",
+      "status": "ok"
+    },
+    "MAGMAUSDT2026-09-02.csv.gz": {
+      "bytes": 31238733,
+      "sha256": "945a6bddeb20243a54b52d2f1f19e61a23a49cc82b22aaae030d432b92a39e2a",
+      "status": "ok"
+    },
+    "MAGMAUSDT2026-09-04.csv.gz": {
+      "bytes": 16215235,
+      "sha256": "0a0bdb6274cab60a59cf7bb36943480a34062a818496bfebdb9100b24a001d15",
+      "status": "ok"
+    },
+    "MAGMAUSDT2026-09-05.csv.gz": {
+      "bytes": 9903305,
+      "sha256": "3d491d1d57eb015ac3ec9b64d8c673ae4a59df148d1d5a862c3cbea4941d000f",
+      "status": "ok"
+    },
+    "MAGMAUSDT2026-09-18.csv.gz": {
+      "bytes": 4924614,
+      "sha256": "3e293c763bce59b1e527801b80fcb72bc9009a2acfff02d115e724408e7148eb",
+      "status": "ok"
+    },
+    "MARSCOINUSDT2026-09-28.csv.gz": {
+      "bytes": 53199107,
+      "sha256": "237da219f5529fde8d93968022e5b511cdac145d02cb86c910b58ba344b16ac3",
+      "status": "ok"
+    },
+    "MASKUSDT2026-09-21.csv.gz": {
+      "bytes": 1246970,
+      "sha256": "c8f3e42e0db7eb7c54bd811d1b68cf06f3af51d44dd629da8951d978065e08a4",
+      "status": "ok"
+    },
+    "MAVIAUSDT2026-08-22.csv.gz": {
+      "bytes": 1537176,
+      "sha256": "0cc0a637384ebbbeaf86dd5fbefa7a31d5033a52699946425b08e4ed54a35d32",
+      "status": "ok"
+    },
+    "MAVIAUSDT2026-09-18.csv.gz": {
+      "bytes": 647019,
+      "sha256": "9441ab6d8b04eaf0aa02cff0163f06fee8f596c873ec10497f2153816cfb5a5f",
+      "status": "ok"
+    },
+    "MEMEUSDT2026-08-22.csv.gz": {
+      "bytes": 945375,
+      "sha256": "7d66bef16b84ba862b3440133880e517abf0149717b3a530a3c62089cc908a3d",
+      "status": "ok"
+    },
+    "MERLUSDT2026-08-22.csv.gz": {
+      "bytes": 969548,
+      "sha256": "871f1d380bde5cb97cd22580ac305536e5d4b3020f3aeccc0c0d76e4ad99b708",
+      "status": "ok"
+    },
+    "MERLUSDT2026-09-16.csv.gz": {
+      "bytes": 1087626,
+      "sha256": "18f542601ad5f32fc79df88343bfcb1dcad7f6c8858c8f551df9f79838294b16",
+      "status": "ok"
+    },
+    "METISUSDT2026-08-22.csv.gz": {
+      "bytes": 346270,
+      "sha256": "943cdf16c620cdee5283a0f59acf9da2f16b1c667753beebebd78b40f0ddc049",
+      "status": "ok"
+    },
+    "MEWUSDT2026-08-22.csv.gz": {
+      "bytes": 806761,
+      "sha256": "887a2e9b58d3cc559fbea51a61f69f77aa3630d2270d80a76339c458059ec925",
+      "status": "ok"
+    },
+    "MITOUSDT2026-08-22.csv.gz": {
+      "bytes": 522575,
+      "sha256": "89ef3a35756d24f9789f1b03bfe7a910eb796f891ecdd7f15c4b9a7f77512a6e",
+      "status": "ok"
+    },
+    "MOODENGUSDT2026-08-22.csv.gz": {
+      "bytes": 3009280,
+      "sha256": "9901b011a3627f51176ea0d4889940fadc70ba925b746c950ea1bfdbaf614ad4",
+      "status": "ok"
+    },
+    "MOVEUSDT2026-08-22.csv.gz": {
+      "bytes": 6692196,
+      "sha256": "6d252e7e3b6048762facd3a8fbd1d959f63954bbd9c5fe89a6bdaedb503ba057",
+      "status": "ok"
+    },
+    "MOVRUSDT2026-08-15.csv.gz": {
+      "bytes": 3279988,
+      "sha256": "7f2c8d695c445cd33fac7199ae99031eaaa19d36fa41e15a924a5cc22edaf876",
+      "status": "ok"
+    },
+    "MOVRUSDT2026-08-22.csv.gz": {
+      "bytes": 755126,
+      "sha256": "9d2c866c70a922e80c2e978a9a27f4a9735e187459a76b54adf4c3a8d0a2397a",
+      "status": "ok"
+    },
+    "MOVRUSDT2026-08-27.csv.gz": {
+      "bytes": 16105133,
+      "sha256": "73b63a8f8f09bb42ed151954286599da44314965c1d718d4405177e0953ad6f9",
+      "status": "ok"
+    },
+    "MOVRUSDT2026-08-28.csv.gz": {
+      "bytes": 9204220,
+      "sha256": "f5b24ab011d1d13fb822b8acf7feabdb7867ee21b4e5728468f7b870bcc07843",
+      "status": "ok"
+    },
+    "MOVRUSDT2026-09-22.csv.gz": {
+      "bytes": 480285,
+      "sha256": "aee26c11c0962957c7b9906e31af647105cea21b64a4495b3eb7d5815f7bb4d4",
+      "status": "ok"
+    },
+    "MTLUSDT2026-09-12.csv.gz": {
+      "bytes": 5565344,
+      "sha256": "f43f38e28d81cd1db3518c32b07602872fe4ac9ce295f2c7dde4e5037b64c79a",
+      "status": "ok"
+    },
+    "MUBARAKUSDT2026-09-22.csv.gz": {
+      "bytes": 73344978,
+      "sha256": "67aa9ba6495d4146124c42bd34185f908016fb11a2ee058690407dcc295be335",
+      "status": "ok"
+    },
+    "MUSDT2026-08-19.csv.gz": {
+      "bytes": 2764035,
+      "sha256": "9b68f7f3a5f4dab35ee89c636b7d45cdbff3a20924431cb40fbc8ae384566fe5",
+      "status": "ok"
+    },
+    "MUSDT2026-08-30.csv.gz": {
+      "bytes": 653990,
+      "sha256": "37897336d0de95f2fed594113d45e20fc9a9461daa2fe79516956af5ffa23b3e",
+      "status": "ok"
+    },
+    "MUSDT2026-09-19.csv.gz": {
+      "bytes": 1771590,
+      "sha256": "11ed591fa921e59e527ad23e2a114f9143f77e6308ec27df74b3797f530efff3",
+      "status": "ok"
+    },
+    "MYXUSDT2026-08-22.csv.gz": {
+      "bytes": 5956439,
+      "sha256": "bfade509e0697e6077de7330a470f4c3eb719246e3d05cc235f97cbbca17c751",
+      "status": "ok"
+    },
+    "MYXUSDT2026-09-18.csv.gz": {
+      "bytes": 30012890,
+      "sha256": "9c4f334a0856a8056b44c1a00b045e80a6658cc4cfd6b57d946d2415be965760",
+      "status": "ok"
+    },
+    "MYXUSDT2026-09-19.csv.gz": {
+      "bytes": 17679156,
+      "sha256": "03a24beb83953d433c68bcdd9f5640727b86400d9fe935ce648d512164397a4c",
+      "status": "ok"
+    },
+    "NEARUSDT2026-08-22.csv.gz": {
+      "bytes": 19791600,
+      "sha256": "7a653a79cbae63a6bde2c1d12b186cb7c74cecc286de4ddd7e1fd7c258611743",
+      "status": "ok"
+    },
+    "NESAUSDT2026-08-24.csv.gz": {
+      "bytes": 4107776,
+      "sha256": "37f54db68941eaaa28aadaa110b6308e271b5a8c3963a76ce745dfadf64323e0",
+      "status": "ok"
+    },
+    "NESAUSDT2026-08-25.csv.gz": {
+      "bytes": 2218155,
+      "sha256": "f7e60b305fecafd0274f5c4297a976907a6c919ce603c0cb878ab4cc5ec7c45e",
+      "status": "ok"
+    },
+    "NILUSDT2026-08-21.csv.gz": {
+      "bytes": 2250675,
+      "sha256": "a21d3201cda40d693332b7d03a11d730e06cd557f41497f27ac98fea2ffe2b2d",
+      "status": "ok"
+    },
+    "NILUSDT2026-08-22.csv.gz": {
+      "bytes": 2263682,
+      "sha256": "ed11548ec7b03b6d179df96c0f9355d4b0594b975dcfcdd68f26293861c0de1a",
+      "status": "ok"
+    },
+    "NOMUSDT2026-08-22.csv.gz": {
+      "bytes": 583607,
+      "sha256": "b5397be58ce811a26bc0d9f7c160df65ec896e1955b077b644add42899709fe7",
+      "status": "ok"
+    },
+    "NOMUSDT2026-09-05.csv.gz": {
+      "bytes": 16713923,
+      "sha256": "f96d08b70821305915749841adac6ff58aab8c5b129a3837ac83d605271580c8",
+      "status": "ok"
+    },
+    "NOTUSDT2026-08-22.csv.gz": {
+      "bytes": 2439275,
+      "sha256": "b2d108789ce6a8b6bdc6423620b06d35af854d954b3b969ca27e974bd05750a1",
+      "status": "ok"
+    },
+    "NXPCUSDT2026-09-22.csv.gz": {
+      "bytes": 1699712,
+      "sha256": "414bb24d3e5cf171b585cbfbb2ddb414f237366726168c810276a4fc9229fba5",
+      "status": "ok"
+    },
+    "ONDOUSDT2026-08-22.csv.gz": {
+      "bytes": 22274892,
+      "sha256": "c06b79b4025858cde557af41f726f880b5723453a32eee0caebb9d6402866bf0",
+      "status": "ok"
+    },
+    "ONDOUSDT2026-09-24.csv.gz": {
+      "bytes": 49366118,
+      "sha256": "09a9b6ad5d618e70517144e7ff4b412def4fd0360911d8803661bbe7914e04a3",
+      "status": "ok"
+    },
+    "ONGUSDT2026-08-21.csv.gz": {
+      "bytes": 128957526,
+      "sha256": "44a0eea48c857c538f93f00bc422f67b871f8b7a77540d750b78035cce658331",
+      "status": "ok"
+    },
+    "ONGUSDT2026-08-22.csv.gz": {
+      "bytes": 27769519,
+      "sha256": "50ad8d13fdeb8147f38d2c9978ad4fd6c8155bb21bcfcc40f03dea13431bb691",
+      "status": "ok"
+    },
+    "ONGUSDT2026-08-26.csv.gz": {
+      "bytes": 180357390,
+      "sha256": "27a03816a7d8f7f34832851138ce5df36e62daf8702d9e60083f31f72237babb",
+      "status": "ok"
+    },
+    "ONGUSDT2026-09-09.csv.gz": {
+      "bytes": 2394291,
+      "sha256": "97c627b198a4515aea8ec47a96ef3bf9763293fe165add2c0458fdbc21ddb438",
+      "status": "ok"
+    },
+    "OPGUSDT2026-08-22.csv.gz": {
+      "bytes": 962557,
+      "sha256": "5d5b788d712e82ce57eaca6793bd6f2b18ef11cee7575a8eb0864908feec49df",
+      "status": "ok"
+    },
+    "OPNUSDT2026-08-22.csv.gz": {
+      "bytes": 967250,
+      "sha256": "6622af114216b608f84b7b4685c76d1d924e62c94b669c68b3162ec6a316be21",
+      "status": "ok"
+    },
+    "ORDIUSDT2026-08-22.csv.gz": {
+      "bytes": 10482541,
+      "sha256": "acb9f5880d7891b84f15c119186582fe596021f29091b1adbe0415bc7ea0401c",
+      "status": "ok"
+    },
+    "PARTIUSDT2026-08-22.csv.gz": {
+      "bytes": 838237,
+      "sha256": "d67f516bbc3170d29d47b34e3bf9812d1212ea8c5a4b3fce44f658fc5335ff1f",
+      "status": "ok"
+    },
+    "PENGUUSDT2026-08-22.csv.gz": {
+      "bytes": 26595717,
+      "sha256": "545899a5aac185673efee43ba9e3a1365d64a82c9368b56b4c1b1d584fbbb3c5",
+      "status": "ok"
+    },
+    "PEOPLEUSDT2026-08-22.csv.gz": {
+      "bytes": 6288577,
+      "sha256": "3bcff3810893abce4d19239aa0fcf7b87f9681b6cd4097a75c4bef825f757343",
+      "status": "ok"
+    },
+    "PHAROSUSDT2026-09-07.csv.gz": {
+      "bytes": 551773,
+      "sha256": "bc6f79d5aa0e319e49c0ff216d842ab922b29711bc0c4abe92f37f01ec9913f8",
+      "status": "ok"
+    },
+    "PHAUSDT2026-09-21.csv.gz": {
+      "bytes": 12519995,
+      "sha256": "98310b04625b6377cf0f533a0a82621ff7435484afd893d2197e82077c2c0a5c",
+      "status": "ok"
+    },
+    "PHAUSDT2026-09-25.csv.gz": {
+      "bytes": 36811520,
+      "sha256": "d01296ee4fcbe03a8baf894ae0a8b5dbcb50dfbf83f0bec110185fc717bf93a3",
+      "status": "ok"
+    },
+    "PIEVERSEUSDT2026-08-21.csv.gz": {
+      "bytes": 6795192,
+      "sha256": "51a52cbfbe25d1caab06e5c962fa5113620a662377454031e445862ea6a93c85",
+      "status": "ok"
+    },
+    "PIEVERSEUSDT2026-09-17.csv.gz": {
+      "bytes": 3039205,
+      "sha256": "ec621f4994e85b684e56ea958c2fc50a6b7dccd3d7837dc9c9709195354f1e16",
+      "status": "ok"
+    },
+    "PIEVERSEUSDT2026-09-18.csv.gz": {
+      "bytes": 10113279,
+      "sha256": "3419a2a1c8740be11aaf283d753edbdaba633f60e6cd3dc0dda3c6035330b18d",
+      "status": "ok"
+    },
+    "PIPPINUSDT2026-08-22.csv.gz": {
+      "bytes": 4228850,
+      "sha256": "26bfd1928c784d47543aa1dd8f884637d28f26657a6411e4c393bfb093e92572",
+      "status": "ok"
+    },
+    "PIXELUSDT2026-08-15.csv.gz": {
+      "bytes": 786703,
+      "sha256": "fda9379fe3a7aca21ce9a05a4978464a8e7e5dd2ebdfe9f3f86587b7f052e461",
+      "status": "ok"
+    },
+    "PLUMEUSDT2026-08-22.csv.gz": {
+      "bytes": 2912513,
+      "sha256": "ec6bfbc42731c224832dfa38b161cc0a3502ff65403479d06d90f5e75ce1a0dc",
+      "status": "ok"
+    },
+    "PNUTUSDT2026-08-22.csv.gz": {
+      "bytes": 2643357,
+      "sha256": "bde2ee71df9184509301e61599bb704d273f825481c778aef9afbbd23ccf504c",
+      "status": "ok"
+    },
+    "PORTALUSDT2026-08-14.csv.gz": {
+      "bytes": 498031,
+      "sha256": "0e7e2b02eddbdebb06fcaf699e1ff11faeb68bdcb1efc52709c29c318374cd9e",
+      "status": "ok"
+    },
+    "PORTALUSDT2026-08-16.csv.gz": {
+      "bytes": 61937434,
+      "sha256": "4808eb69ffb29084f7d723f2f249f7a037ef3184ef4378229aa59d9c6384b938",
+      "status": "ok"
+    },
+    "PORTALUSDT2026-08-17.csv.gz": {
+      "bytes": 115143875,
+      "sha256": "cf7d00aed9ceb61e0e7e13992d97dd5ccc961db98db0bec03a3c38003dc25c34",
+      "status": "ok"
+    },
+    "PORTALUSDT2026-08-22.csv.gz": {
+      "bytes": 43155391,
+      "sha256": "aefbe0144e20c591c72b9c36e4dfe9045582d32c2025f6a91f9e48ea9a7aa2e0",
+      "status": "ok"
+    },
+    "PORTALUSDT2026-09-09.csv.gz": {
+      "bytes": 13887158,
+      "sha256": "e590ff0cf55e4c445378e362235eedcfd79fabf26c8c6d99587a058f09e2d8ef",
+      "status": "ok"
+    },
+    "POWERUSDT2026-09-13.csv.gz": {
+      "bytes": 7577628,
+      "sha256": "1ab6b2fd51d160d8bb489d1b2584be770fe462dae308f1aecdfadf855c95a204",
+      "status": "ok"
+    },
+    "POWERUSDT2026-09-14.csv.gz": {
+      "bytes": 15762210,
+      "sha256": "cf5b1eac990c6fc39e707dd67a7d0f7840129137e6a5f7dc49eeba8a5420995a",
+      "status": "ok"
+    },
+    "POWERUSDT2026-09-16.csv.gz": {
+      "bytes": 21989374,
+      "sha256": "f840d111d9368183444d21c39168b50abd821a682752316d52007f9d154acf51",
+      "status": "ok"
+    },
+    "POWERUSDT2026-09-20.csv.gz": {
+      "bytes": 1747442,
+      "sha256": "a34a499e7809b759873076bab49b8a31dc0b34b806f1577ee5e2b10a03a89103",
+      "status": "ok"
+    },
+    "POWERUSDT2026-09-23.csv.gz": {
+      "bytes": 2276598,
+      "sha256": "3d9d63bbeae7d01817c92ea8069462453608267f4d77bce4e5707b39c0068805",
+      "status": "ok"
+    },
+    "POWRUSDT2026-09-13.csv.gz": {
+      "bytes": 16303454,
+      "sha256": "d13be87cf2e0df61de742cc3c38241c3f876b6088fc3cdbad3e9e9b551c8d64d",
+      "status": "ok"
+    },
+    "POWRUSDT2026-09-15.csv.gz": {
+      "bytes": 9692235,
+      "sha256": "2ac1195acdc73e69fcc33c49dd606350fd9d494441d18f5c039213451f42ad1f",
+      "status": "ok"
+    },
+    "PRLUSDT2026-08-22.csv.gz": {
+      "bytes": 2360663,
+      "sha256": "b6d4396a162e890f17f50c4b5ac3c59ea43ef89cb1f1b6d7598999d7b9e5c8ee",
+      "status": "ok"
+    },
+    "PROVEUSDT2026-09-21.csv.gz": {
+      "bytes": 6842929,
+      "sha256": "bc945cbce88524486e6bac6978d348d0ac9327925ecd7d4a9c5359811ee5d7cb",
+      "status": "ok"
+    },
+    "PTBUSDT2026-08-22.csv.gz": {
+      "bytes": 2831950,
+      "sha256": "51927560b713c53467e37c0558f9102831f5d48bf13f5098627948716965459e",
+      "status": "ok"
+    },
+    "PTBUSDT2026-09-20.csv.gz": {
+      "bytes": 7311974,
+      "sha256": "6fbdcbee2d225cf408a0599564f8714a7431bc5d2db95516acd5f134e58547a4",
+      "status": "ok"
+    },
+    "PTBUSDT2026-09-21.csv.gz": {
+      "bytes": 31643231,
+      "sha256": "8920e9f9a8e6dd6ed3b6a72b5263cbedd3f2facc3b77051d689468b02ba78119",
+      "status": "ok"
+    },
+    "PUFFERUSDT2026-08-27.csv.gz": {
+      "bytes": 1003185,
+      "sha256": "b7b53bbf0f5504c6175a6c627f90cc8bd971a0b39207205dd891d4c2a99a874c",
+      "status": "ok"
+    },
+    "PUFFERUSDT2026-09-02.csv.gz": {
+      "bytes": 1399421,
+      "sha256": "7486ce25005692f04fec3409395058e01f0bf3bca684a49996b15f828dd57d5e",
+      "status": "ok"
+    },
+    "PUFFERUSDT2026-09-03.csv.gz": {
+      "bytes": 4188924,
+      "sha256": "3d4b6399e0d7b3050130582cb8b971cdbecc9a283b800e37ee19bb433c2be7a1",
+      "status": "ok"
+    },
+    "PUFFERUSDT2026-09-11.csv.gz": {
+      "bytes": 8693113,
+      "sha256": "a80f78b0aa76a6cd3546d16788777bf67496c5f708558cef918bb6727f56455f",
+      "status": "ok"
+    },
+    "PUFFERUSDT2026-09-21.csv.gz": {
+      "bytes": 2507433,
+      "sha256": "b01118bedc62dbad59d817b6e42ccf60420aed1c67f64faa6d7ba681f81d67bc",
+      "status": "ok"
+    },
+    "PUMPFUNUSDT2026-08-22.csv.gz": {
+      "bytes": 47681788,
+      "sha256": "fc3881d1361e97deac7743107080fecacc3e6a9ebc91b735bf43c7b4d23b58e2",
+      "status": "ok"
+    },
+    "PUNDIXUSDT2026-08-25.csv.gz": {
+      "bytes": 1199739,
+      "sha256": "fd020ffaf19a63adda6c21b2b97f937cc1de76108157bd10f58103e943e789f5",
+      "status": "ok"
+    },
+    "PUNDIXUSDT2026-09-13.csv.gz": {
+      "bytes": 12944421,
+      "sha256": "644ce7520eb8142a7a834d40db0a6490fd478bb79475105785cc35dc932a6f3d",
+      "status": "ok"
+    },
+    "PYTHUSDT2026-09-22.csv.gz": {
+      "bytes": 5340355,
+      "sha256": "d667cb31da9e07b6a3056d72ea1e6e888370d73568037713edbde5ccad869f67",
+      "status": "ok"
+    },
+    "QNTUSDT2026-09-27.csv.gz": {
+      "bytes": 138831321,
+      "sha256": "ce76b1cf549d1ee3070ea469b8a14d1ef16d3634ce3d595683ead863951f991b",
+      "status": "ok"
+    },
+    "QUSDT2026-09-12.csv.gz": {
+      "bytes": 1128591,
+      "sha256": "da776d416a21a007565473b8007f2d9161937144399979342854e8948c3db46d",
+      "status": "ok"
+    },
+    "QUSDT2026-09-17.csv.gz": {
+      "bytes": 440796,
+      "sha256": "17753e9bec420406cad14d44153eb629fcbbe55c73653fd1cb39a23b515a9844",
+      "status": "ok"
+    },
+    "QUSDT2026-09-26.csv.gz": {
+      "bytes": 27288579,
+      "sha256": "80527bb0ae92f26451524f46849d06997b8700e59fc2bb5d6927bd3ae94f2be0",
+      "status": "ok"
+    },
+    "QUSDT2026-09-27.csv.gz": {
+      "bytes": 47438566,
+      "sha256": "8b95519cdfaf4278ab4e2dc5ec0f6c52d5ce2e0f7dad406888ca712cc621d9a1",
+      "status": "ok"
+    },
+    "QUSDT2026-09-28.csv.gz": {
+      "bytes": 18369534,
+      "sha256": "53c771c3352af8ce0c3dd238888d449ad9f8c8d17c9086f3cc9a9074216d48a8",
+      "status": "ok"
+    },
+    "RAREUSDT2026-08-22.csv.gz": {
+      "bytes": 611200,
+      "sha256": "390ca7985ac0ba0934e2372aa7ee8a9e67b1becf8aa034be4375a590d490d161",
+      "status": "ok"
+    },
+    "RAREUSDT2026-09-26.csv.gz": {
+      "bytes": 55363201,
+      "sha256": "e91b828e7634b2f987ce013f1909c6cb27a14417c4524885932fc55c2f47b6ab",
+      "status": "ok"
+    },
+    "RAVEUSDT2026-08-22.csv.gz": {
+      "bytes": 1647991,
+      "sha256": "09105d9481c0773e9cb2a96c5295b2648dd51fd5483fe9674ef49cbb69ee8a3d",
+      "status": "ok"
+    },
+    "REDUSDT2026-08-15.csv.gz": {
+      "bytes": 4180598,
+      "sha256": "00b02b062d77dc57a5d02a6100e01c83a8b8e12e449c1c33809d582d433a702e",
+      "status": "ok"
+    },
+    "REDUSDT2026-08-21.csv.gz": {
+      "bytes": 7249513,
+      "sha256": "f5d796da25c2e850ea33f528126779bf188aa01bcd60b448affcd39f79eb0e97",
+      "status": "ok"
+    },
+    "REDUSDT2026-08-22.csv.gz": {
+      "bytes": 6972231,
+      "sha256": "ccd60a8e3b358d8b323caaa23efad30a3246f6e41eb241d2da6ef3ac5aaf4e16",
+      "status": "ok"
+    },
+    "REDUSDT2026-09-19.csv.gz": {
+      "bytes": 3057723,
+      "sha256": "cdd91998af8ac160aa9cea3f1eece9c2a04d83ed793a7a67f53cddd3bebe8df5",
+      "status": "ok"
+    },
+    "RESOLVUSDT2026-08-22.csv.gz": {
+      "bytes": 580144,
+      "sha256": "a9d4eeab71466c0503e34c877ac03af4faff6c50b30f2a4d3bddfb2c4f771e02",
+      "status": "ok"
+    },
+    "REUSDT2026-08-22.csv.gz": {
+      "bytes": 11672643,
+      "sha256": "108f1f92477783057767122544fc1027279146ee1381dd220f076fc440fe171f",
+      "status": "ok"
+    },
+    "REZUSDT2026-09-10.csv.gz": {
+      "bytes": 9211986,
+      "sha256": "ad7c8c7204b22f746fb1080b9af63ec30bcca26483a7e599c0c4900df7a69794",
+      "status": "ok"
+    },
+    "REZUSDT2026-09-13.csv.gz": {
+      "bytes": 14939773,
+      "sha256": "24b84d167a237114dbe3648e9fd4b927cb1fe2984ad7816c24d53eaa84bea70f",
+      "status": "ok"
+    },
+    "RIVERUSDT2026-08-22.csv.gz": {
+      "bytes": 4189981,
+      "sha256": "29a26c24106a98749952ed4c49ef93e58066a1a38bc47c328ce32653dd6020a5",
+      "status": "ok"
+    },
+    "RLCUSDT2026-09-25.csv.gz": {
+      "bytes": 454061,
+      "sha256": "f545e1f1047b1addc8f73f294b3894bbcbfbce8ce309343d8cab2df5a87f410f",
+      "status": "ok"
+    },
+    "ROBOUSDT2026-08-22.csv.gz": {
+      "bytes": 1701999,
+      "sha256": "a695a690b303dd0d6a85163d0f976e02a5033fa5f943856a7f1d8a8b06c0efd1",
+      "status": "ok"
+    },
+    "RONINUSDT2026-08-14.csv.gz": {
+      "bytes": 457132,
+      "sha256": "14caa6d613046e93cc553ae40735f64f4e880ba484c329c8e80d4befc3413515",
+      "status": "ok"
+    },
+    "ROSEUSDT2026-08-22.csv.gz": {
+      "bytes": 691521,
+      "sha256": "69260d3f5ffe710fc24a755a1fdce33d919447233b2b1a325f87a4bb3b2834bb",
+      "status": "ok"
+    },
+    "RSRUSDT2026-08-22.csv.gz": {
+      "bytes": 495255,
+      "sha256": "bb62309cd9bdcdfbdd58a71f70bc8eac6ca59b8766771157161101aa47472151",
+      "status": "ok"
+    },
+    "SAGAUSDT2026-08-22.csv.gz": {
+      "bytes": 1007536,
+      "sha256": "1c9f0a67d123e7a9bfcd0cb41d1a621742c1241ff66eb4bd7b202bcaed6f9816",
+      "status": "ok"
+    },
+    "SAGAUSDT2026-09-10.csv.gz": {
+      "bytes": 12959907,
+      "sha256": "b2caa879f72d02b61ac370ef020f926b49cc502c6649e48a370517c22815bf67",
+      "status": "ok"
+    },
+    "SAGAUSDT2026-09-18.csv.gz": {
+      "bytes": 22913021,
+      "sha256": "4210cbf8dacfed10b56b814d206e5fa4f0dec58b0fb3db2a81ef142ee905697c",
+      "status": "ok"
+    },
+    "SAGAUSDT2026-09-21.csv.gz": {
+      "bytes": 21233112,
+      "sha256": "ca6668f52baf8c8ae8441bb85d39ccf810e7c7e422b6ba103cccb3be64007d34",
+      "status": "ok"
+    },
+    "SAGAUSDT2026-09-22.csv.gz": {
+      "bytes": 38115570,
+      "sha256": "097f8b5bb9a2f2519681e3c3b02897cb6c0f4189553d3c0e86dd504a3a6c0ca1",
+      "status": "ok"
+    },
+    "SAGAUSDT2026-09-24.csv.gz": {
+      "bytes": 29160426,
+      "sha256": "88de081a144d4c0e491571282e3715dff38d6803fa070f61bbeb0deded5ef40d",
+      "status": "ok"
+    },
+    "SAGAUSDT2026-09-25.csv.gz": {
+      "bytes": 134886290,
+      "sha256": "e13cdd05805774b0f6cbbe900875817ada49c61f8177c2513d54075f46cfbb2c",
+      "status": "ok"
+    },
+    "SAGAUSDT2026-09-26.csv.gz": {
+      "bytes": 19449455,
+      "sha256": "9a39ad4a20339ab00e4686491fdb8f452cfa47c4a93bfbcd2bd8aff371ed2284",
+      "status": "ok"
+    },
+    "SANDUSDT2026-08-22.csv.gz": {
+      "bytes": 12996251,
+      "sha256": "357368aa322482adaf809ee7660ed6a45be507921bad0cca79b4151989323c09",
+      "status": "ok"
+    },
+    "SAPIENUSDT2026-08-22.csv.gz": {
+      "bytes": 693359,
+      "sha256": "7cd78a37cb9b6e47055c3a7fd597ae904fb2d4cbd79fba67c27e2c28a4952525",
+      "status": "ok"
+    },
+    "SCRTUSDT2026-08-20.csv.gz": {
+      "bytes": 4290857,
+      "sha256": "992bf1fca99a70faccaa2afc2311ba9f4767a48ddefdb343153292956a749d54",
+      "status": "ok"
+    },
+    "SCRTUSDT2026-08-21.csv.gz": {
+      "bytes": 5715572,
+      "sha256": "9e6da3199569055fea4dc3f0301957c15c5bb14d48b77eef9c9f8a7780439a8e",
+      "status": "ok"
+    },
+    "SCRTUSDT2026-08-22.csv.gz": {
+      "bytes": 3942446,
+      "sha256": "4cc22f39615a99fb2359ac362abaebff33b30a2b4b44237260889e2f831b03d8",
+      "status": "ok"
+    },
+    "SCRTUSDT2026-08-24.csv.gz": {
+      "bytes": 6804166,
+      "sha256": "7bcc1eb121c100c98ace151261e605b4d6a1b71d8c99ebeccb90a613d7a669fa",
+      "status": "ok"
+    },
+    "SCRTUSDT2026-08-30.csv.gz": {
+      "bytes": 3169228,
+      "sha256": "ab4912c429dae74212f74c48ccc234fe5ec1775839d763fe8a23e70d07ac964a",
+      "status": "ok"
+    },
+    "SCRTUSDT2026-09-02.csv.gz": {
+      "bytes": 3086353,
+      "sha256": "cb71dc7bfa6c5b1f1296552bfdab9dce26422d2fddfa1c92adc6476cc144994d",
+      "status": "ok"
+    },
+    "SCRTUSDT2026-09-03.csv.gz": {
+      "bytes": 1277149,
+      "sha256": "ed56df57710abb3723ac2dfa9de1c43436f660e22394bcf3db46f364cb85e8aa",
+      "status": "ok"
+    },
+    "SHIB1000USDT2026-08-22.csv.gz": {
+      "bytes": 15415186,
+      "sha256": "d77dc4a61ab494b21a4d50f1272a350353d43c90bee87b595bcd8fe2aa404fb5",
+      "status": "ok"
+    },
+    "SIRENUSDT2026-08-22.csv.gz": {
+      "bytes": 1784587,
+      "sha256": "cd443d07aed963e0a3fe4a37588e60e94a31181fc02e72b502391a3abfb00f96",
+      "status": "ok"
+    },
+    "SIRENUSDT2026-09-09.csv.gz": {
+      "bytes": 861400,
+      "sha256": "8c3f290b119b0cdf42b5b21825b4051c288eb38d94a67a903d4f4ee516e9f95e",
+      "status": "ok"
+    },
+    "SIRENUSDT2026-09-28.csv.gz": {
+      "bytes": 743477,
+      "sha256": "9476b4c7daffdcd77f5016451650d10f3a1efbc041b117861a7dd523bcabb4ef",
+      "status": "ok"
+    },
+    "SKLUSDT2026-09-19.csv.gz": {
+      "bytes": 1873485,
+      "sha256": "cb191f15f5e8e432e1497afcb05e919be5b001f0ae0a8da4ae60ccd3d09d0cd2",
+      "status": "ok"
+    },
+    "SKRUSDT2026-08-28.csv.gz": {
+      "bytes": 16543117,
+      "sha256": "6d12dd09cdcb2e716aa6b762552e56efc1d26dbe0fcf7c3d8846aea61f997a28",
+      "status": "ok"
+    },
+    "SKRUSDT2026-08-31.csv.gz": {
+      "bytes": 157430923,
+      "sha256": "149084ace2a9f09a446bcd317be757f7ba715d1a9ef11397a7e0e8ab99ec30c5",
+      "status": "ok"
+    },
+    "SKRUSDT2026-09-22.csv.gz": {
+      "bytes": 5137812,
+      "sha256": "3c9bc59cb33b45430c72760f6f8972ed8940429fea9f19248f8ce11e2d931ae2",
+      "status": "ok"
+    },
+    "SKYAI1USDT2026-08-21.csv.gz": {
+      "bytes": 2283964,
+      "sha256": "cad5a83335cf0bed63a1abac07121db79749c0dccc1514d42ecefb7b748d3a82",
+      "status": "ok"
+    },
+    "SLXUSDT2026-08-22.csv.gz": {
+      "bytes": 2260587,
+      "sha256": "6e093cde01bd81db44adce956ef08c85f4177a0b75fd6154c3652fb990d8ecae",
+      "status": "ok"
+    },
+    "SNTUSDT2026-08-21.csv.gz": {
+      "bytes": 2448289,
+      "sha256": "47578f211675cde5b26ca4ecea8b2a1286649d3e93a35483dc13e74ed6edce84",
+      "status": "ok"
+    },
+    "SNTUSDT2026-08-26.csv.gz": {
+      "bytes": 1951637,
+      "sha256": "744c4306be79dac34e70d6179075dd945398806ddd422438b634962bfe842fdd",
+      "status": "ok"
+    },
+    "SOLAYERUSDT2026-09-09.csv.gz": {
+      "bytes": 504268,
+      "sha256": "de1b2563d53148d7594f5c8dc5e15223a9f1fd3fe3fb931c1857615f52180334",
+      "status": "ok"
+    },
+    "SOPHUSDT2026-09-08.csv.gz": {
+      "bytes": 170722560,
+      "sha256": "e087cebf25d110ab6aa8db152eced017bafce5e93ccbc753a4f918788e5759f5",
+      "status": "ok"
+    },
+    "SOPHUSDT2026-09-14.csv.gz": {
+      "bytes": 2451285,
+      "sha256": "3c98fc7129600672436973b60dd03463fc363fb56f2eef030a7d9dc9b4b9dec2",
+      "status": "ok"
+    },
+    "SPACEUSDT2026-08-22.csv.gz": {
+      "bytes": 714027,
+      "sha256": "c021b5a28d6c9fe8f4c4af03576edf07b249ca0d10aeb1c545d1385084b5bcc9",
+      "status": "ok"
+    },
+    "SPORTFUNUSDT2026-08-15.csv.gz": {
+      "bytes": 6653058,
+      "sha256": "0276a9be69d06da07b2c63f1e01782c6b679b0d00916d17a8bc8decd7287ef3c",
+      "status": "ok"
+    },
+    "SPORTFUNUSDT2026-08-22.csv.gz": {
+      "bytes": 192142,
+      "sha256": "509e8ab27aa03dee19e533954143e2047d3c3379f3e10a9c95d6e6145c626b0e",
+      "status": "ok"
+    },
+    "SQDUSDT2026-08-13.csv.gz": {
+      "bytes": 2254059,
+      "sha256": "ef8c753732ee5a766def75033e1f6b405d37858b4d150a05da7b22b74ca84e52",
+      "status": "ok"
+    },
+    "STABLEUSDT2026-08-16.csv.gz": {
+      "bytes": 1562842,
+      "sha256": "854fd7be845e2daff4563661c5e59c9536c5186aa092e387534f628c4de68907",
+      "status": "ok"
+    },
+    "STBLUSDT2026-09-15.csv.gz": {
+      "bytes": 682572,
+      "sha256": "f7cc3cec19866f384e56f8e3ca9099a2c3ea695eb0c0f75e9754957bf6f4b181",
+      "status": "ok"
+    },
+    "STBLUSDT2026-09-24.csv.gz": {
+      "bytes": 454452,
+      "sha256": "3c4e4d50e44048658358dc96c96b4d6ca0765af51f11c3113c7104c74ccde15d",
+      "status": "ok"
+    },
+    "STEEMUSDT2026-09-13.csv.gz": {
+      "bytes": 37107925,
+      "sha256": "d14ea2a92fd113121e24e5c1ac7fd5f6523e0a58df026d9a310cdf695cfc0ee6",
+      "status": "ok"
+    },
+    "STEEMUSDT2026-09-26.csv.gz": {
+      "bytes": 1645848,
+      "sha256": "2c80b2b6c946076fc847f7a4c5f5faf96c849e69cc52e536427ae7d81f74f71d",
+      "status": "ok"
+    },
+    "STGUSDT2026-09-18.csv.gz": {
+      "bytes": 6192480,
+      "sha256": "d6a8bf6506242d5ae9b69f8089bbb89bf71ca3e67d66aaa394163120e2c3e4f4",
+      "status": "ok"
+    },
+    "STGUSDT2026-09-19.csv.gz": {
+      "bytes": 3929067,
+      "sha256": "f3c131a9e0a091e2a72f903e345ae17703688427f6a4c069439296bced60ea9a",
+      "status": "ok"
+    },
+    "STGUSDT2026-09-20.csv.gz": {
+      "bytes": 7089707,
+      "sha256": "d0380b873a3e50570b3d132056a2ccc132ff3dd4c3f4131495594696adafe9af",
+      "status": "ok"
+    },
+    "STORJUSDT2026-08-22.csv.gz": {
+      "bytes": 1043848,
+      "sha256": "0b431c5789c9dc93a715feb115e5b2b12e28a25ec8605de1155983d350160225",
+      "status": "ok"
+    },
+    "STORJUSDT2026-08-23.csv.gz": {
+      "bytes": 1797719,
+      "sha256": "7b9ae957a32fd7fae35b5c2759536416d844dce502a66e28cbf3facf83410390",
+      "status": "ok"
+    },
+    "STORJUSDT2026-09-01.csv.gz": {
+      "bytes": 1143211,
+      "sha256": "01f9cf99b7307070e73fc5ab22f0a26b4331b8427a4fc7271bc8044da1124e9d",
+      "status": "ok"
+    },
+    "STORJUSDT2026-09-11.csv.gz": {
+      "bytes": 77530068,
+      "sha256": "0460978aa4bdf3711ee515b14272fb2f4d87c90c0f7100e107aff0e9114d752c",
+      "status": "ok"
+    },
+    "STORJUSDT2026-09-12.csv.gz": {
+      "bytes": 129367045,
+      "sha256": "992dce300294b12123105a261c2e3f8201da9ff16510c85f73ea4d14b09e0a08",
+      "status": "ok"
+    },
+    "STRKUSDT2026-08-22.csv.gz": {
+      "bytes": 4347656,
+      "sha256": "a2034a0e9a937672acbdaf8888977c157db81808b075eae76e59fa8fc0e60aab",
+      "status": "ok"
+    },
+    "SXTUSDT2026-08-22.csv.gz": {
+      "bytes": 802725,
+      "sha256": "1a7117775045b6cb2c2e2e4d59446a2a845edd0bdecbff22e941bd7ff0839089",
+      "status": "ok"
+    },
+    "TACUSDT2026-08-22.csv.gz": {
+      "bytes": 8340007,
+      "sha256": "ef21cf8d92ff3a4d2f13c8ce268bc829df00122efe2fef773a4a3a02ed08458e",
+      "status": "ok"
+    },
+    "TACUSDT2026-08-23.csv.gz": {
+      "bytes": 4967074,
+      "sha256": "1e766e8723a99929b02684ed5bb60a864c0928e06593a81d44bd04d0c9a5d0c3",
+      "status": "ok"
+    },
+    "TACUSDT2026-08-26.csv.gz": {
+      "bytes": 32343042,
+      "sha256": "0341ab2977c316d6115831968e5f0e76245448af123534a98d47f118c8da2e3e",
+      "status": "ok"
+    },
+    "TACUSDT2026-08-27.csv.gz": {
+      "bytes": 66388225,
+      "sha256": "d52d3555c3e31088dd1efcb02f2ec2958e6e086f2ff6f0815047255d4018048a",
+      "status": "ok"
+    },
+    "TACUSDT2026-09-04.csv.gz": {
+      "bytes": 4127937,
+      "sha256": "a041bcd2d333b295eebc6909856f820e391b74eda49992fc322d0c1e22a878c7",
+      "status": "ok"
+    },
+    "TACUSDT2026-09-09.csv.gz": {
+      "bytes": 2563438,
+      "sha256": "316697067d2365c4997c0c384e1bcc83ecaa2cc776e478c3762318630641e0a3",
+      "status": "ok"
+    },
+    "TAOUSDT2026-08-22.csv.gz": {
+      "bytes": 28346399,
+      "sha256": "e69fefb3b0d5247f0c24ff4b82b248f0ba41e954675b6a3e5f4921d84f5fe660",
+      "status": "ok"
+    },
+    "TAUSDT2026-08-22.csv.gz": {
+      "bytes": 1851747,
+      "sha256": "fe12d377d5519ff4958de3fdcc32d765110220577b5745d3516bcd608cab4cdb",
+      "status": "ok"
+    },
+    "THEUSDT2026-08-22.csv.gz": {
+      "bytes": 438106,
+      "sha256": "aebce64c62f72fedfef25d8dced7e6e761776fbd40ac0f8bbe77e976930b5127",
+      "status": "ok"
+    },
+    "TIAUSDT2026-08-22.csv.gz": {
+      "bytes": 6054411,
+      "sha256": "d3868c1273ef066620348eb2ddd2967da1c3bb5487ef303c3307591ee80775a1",
+      "status": "ok"
+    },
+    "TMXUSDT2026-09-01.csv.gz": {
+      "bytes": 2195998,
+      "sha256": "ea283fb025f4d50d71d00d6bcdee5637c3d6858aacecdd49a438093d1871a96e",
+      "status": "ok"
+    },
+    "TMXUSDT2026-09-12.csv.gz": {
+      "bytes": 3340950,
+      "sha256": "d946ff108a1bbfb0c2ce20a633f0132e5e022ade33dd592a4e4aa99931441ee9",
+      "status": "ok"
+    },
+    "TMXUSDT2026-09-18.csv.gz": {
+      "bytes": 504635,
+      "sha256": "6457b81bcde532e03e89c8a8da116d275265cb8ddf511ad94b69540e550c265f",
+      "status": "ok"
+    },
+    "TMXUSDT2026-09-25.csv.gz": {
+      "bytes": 5689932,
+      "sha256": "5c45324a21ae333d8313b7bd5921f80fe0f04f41b385319043f832cd0d1e918d",
+      "status": "ok"
+    },
+    "TOWNSUSDT2026-08-22.csv.gz": {
+      "bytes": 376071,
+      "sha256": "7d1406ddee5ff5bfe1ffc5f3d538cce0d16e3642b525412487a47f74608fec57",
+      "status": "ok"
+    },
+    "TREEUSDT2026-08-19.csv.gz": {
+      "bytes": 11344674,
+      "sha256": "c09ac82b4348bab3034f361d4a52d8d035f114f1525f18fd3f55814ecf2123ed",
+      "status": "ok"
+    },
+    "TRIAUSDT2026-08-22.csv.gz": {
+      "bytes": 3659080,
+      "sha256": "133e72d5d955a4bd5e5cf12d037c0f2a3a81f305d774686ed403585602cda26f",
+      "status": "ok"
+    },
+    "TRIAUSDT2026-09-09.csv.gz": {
+      "bytes": 1716122,
+      "sha256": "e1e5eaad2c973d8f1a0506594d0c9ac3c33109bc83da4ba851bcd52aab0abcbc",
+      "status": "ok"
+    },
+    "TRIAUSDT2026-09-26.csv.gz": {
+      "bytes": 1889484,
+      "sha256": "b1d3958bfa9169e6c2c91c98a93abb0a92b2d79b8e6bc14dbff8ac0b9fc93887",
+      "status": "ok"
+    },
+    "TUTUSDT2026-08-14.csv.gz": {
+      "bytes": 106987345,
+      "sha256": "64befeb3df99d74f81f8459574355b209ae44b3bd9e44a14f34edf1b15ea6005",
+      "status": "ok"
+    },
+    "TUTUSDT2026-08-17.csv.gz": {
+      "bytes": 108620738,
+      "sha256": "9c43cf400454d64f1622ef2d8ea0bcb6d2239ceac5a4290152012067a62e90e7",
+      "status": "ok"
+    },
+    "TUTUSDT2026-08-22.csv.gz": {
+      "bytes": 62439390,
+      "sha256": "1be2006ed89206eae08e84e43fe098cb24b293bd6c76bcec4cbe2c20ebddd90c",
+      "status": "ok"
+    },
+    "TUTUSDT2026-08-23.csv.gz": {
+      "bytes": 51061061,
+      "sha256": "7d5eaea60ce044d47c4acdb60bbfe4e806dc62781a02eab6ef57e7259393ab3f",
+      "status": "ok"
+    },
+    "TUTUSDT2026-08-24.csv.gz": {
+      "bytes": 97882409,
+      "sha256": "c8cadb71241c8669275ec17da2cbe1086fbcbc97779ea45712b7dc826fa9e394",
+      "status": "ok"
+    },
+    "TUTUSDT2026-08-29.csv.gz": {
+      "bytes": 48452983,
+      "sha256": "91cf977a3afdf5f54493760a7d703cbc1854b839f32f0b0271323e39efc69f96",
+      "status": "ok"
+    },
+    "TUTUSDT2026-09-09.csv.gz": {
+      "bytes": 3189482,
+      "sha256": "ac19b8f0c5288d3033ec541448e2d39ee2b3d8d3f32f5ae7fd151edfec048ecc",
+      "status": "ok"
+    },
+    "UAIUSDT2026-08-22.csv.gz": {
+      "bytes": 2605701,
+      "sha256": "780632066cf3abd005c96edbb56497b441d7c818271ae32d755c8ab20c71c585",
+      "status": "ok"
+    },
+    "UAIUSDT2026-09-03.csv.gz": {
+      "bytes": 14264603,
+      "sha256": "0a02caee03be440e8fc5b513af5e3cb80ee9caa1a1a5af9d2a970dbac5ff538e",
+      "status": "ok"
+    },
+    "UAIUSDT2026-09-04.csv.gz": {
+      "bytes": 13143113,
+      "sha256": "1e11b6c3952703f6a314fc28a47633e5bf6af28c27156febb2475c36c7520128",
+      "status": "ok"
+    },
+    "UAIUSDT2026-09-07.csv.gz": {
+      "bytes": 26240304,
+      "sha256": "37685c19629e7b4ae74ea5cdaa6e3238ad8c9034f559e6ce7149fbdd383c0c01",
+      "status": "ok"
+    },
+    "UAIUSDT2026-09-09.csv.gz": {
+      "bytes": 13306596,
+      "sha256": "4eb25fe7f4046a8894745eedf28d1f2caf145db5b92f252556d0aad66ece0d15",
+      "status": "ok"
+    },
+    "UAIUSDT2026-09-12.csv.gz": {
+      "bytes": 32878822,
+      "sha256": "136e02f55b7392cd2ce43bcf6df743c2deced81612974c00687dbd9a900229c1",
+      "status": "ok"
+    },
+    "UAIUSDT2026-09-13.csv.gz": {
+      "bytes": 13218313,
+      "sha256": "a0cc3eace13020f0a631372e8f46152cc12a1870b33dfabff9b44474debc7f5b",
+      "status": "ok"
+    },
+    "UNIUSDT2026-08-22.csv.gz": {
+      "bytes": 19735155,
+      "sha256": "964f6882c1ceecfc64e72b8510cdc85de47b284d828307731bd087687847c01c",
+      "status": "ok"
+    },
+    "USELESSUSDT2026-08-22.csv.gz": {
+      "bytes": 10467750,
+      "sha256": "58a3135fd24ac4224bf51c34e9c8139e80bce6e347c8bf7be6232f9cae7c2874",
+      "status": "ok"
+    },
+    "USELESSUSDT2026-09-03.csv.gz": {
+      "bytes": 66907680,
+      "sha256": "dfcf70bc44036f2b693b3f76cead442084bb0b9ede26aee24e36b69dd6fc96c0",
+      "status": "ok"
+    },
+    "USELESSUSDT2026-09-05.csv.gz": {
+      "bytes": 81055061,
+      "sha256": "4f329af6d70ceb4963a25a48c7f2428529daa698f434cbc5accf7a534eb8f227",
+      "status": "ok"
+    },
+    "USELESSUSDT2026-09-06.csv.gz": {
+      "bytes": 48553189,
+      "sha256": "5217f7fc806d5e8a7fc7b58dc09336d0267dd8aedbe6fece97fc0156851effc0",
+      "status": "ok"
+    },
+    "USELESSUSDT2026-09-08.csv.gz": {
+      "bytes": 78565512,
+      "sha256": "3537b0160fa2fd9ab0a5c89f307c6c46e02f4dfff16a3dc9e4b8f80489f27955",
+      "status": "ok"
+    },
+    "USUALUSDT2026-08-21.csv.gz": {
+      "bytes": 2122375,
+      "sha256": "3b6331054af5067020a4875c8ee2821613aecbc3984512524cbbda00f63a9596",
+      "status": "ok"
+    },
+    "USUALUSDT2026-08-22.csv.gz": {
+      "bytes": 2050254,
+      "sha256": "3e130767f3d29eaba42e99cdcef69000f045b715af601bf1c4dc36efa4f67bf6",
+      "status": "ok"
+    },
+    "USUSDT2026-08-13.csv.gz": {
+      "bytes": 20584811,
+      "sha256": "791e10b473e4acc1fc90cb83b611c039cb86fd30beff1f15739b753121254c17",
+      "status": "ok"
+    },
+    "USUSDT2026-08-14.csv.gz": {
+      "bytes": 16088386,
+      "sha256": "77839cbe8f0fa8c52d2e1dd2b74078cb22a68b9520564a49c6885426c6520253",
+      "status": "ok"
+    },
+    "USUSDT2026-08-22.csv.gz": {
+      "bytes": 3976019,
+      "sha256": "d8a796b6e487190d52d893263e50b7386427ca3c77954da3e59e47d418d409f0",
+      "status": "ok"
+    },
+    "USUSDT2026-08-24.csv.gz": {
+      "bytes": 4143469,
+      "sha256": "a5e9dac6523e888f4afd6084f7e330976b10001e3e93a94af6a083b70deee140",
+      "status": "ok"
+    },
+    "VELVETUSDT2026-08-14.csv.gz": {
+      "bytes": 38314245,
+      "sha256": "1531d277018197a68cfba7cc99c477c76b6443eee9a6f70f72f95b97ece783ac",
+      "status": "ok"
+    },
+    "VELVETUSDT2026-08-15.csv.gz": {
+      "bytes": 27233606,
+      "sha256": "e14d24abd16a52e9405a94be11feab49d503259680c91975a24e3706386a3096",
+      "status": "ok"
+    },
+    "VELVETUSDT2026-08-16.csv.gz": {
+      "bytes": 15431720,
+      "sha256": "0bb49f1e72c161703bf4c834a0eab97cf144e9d7df16816536f67c6f27a29ac0",
+      "status": "ok"
+    },
+    "VELVETUSDT2026-08-17.csv.gz": {
+      "bytes": 14225885,
+      "sha256": "8b21677e20b94558b82ec68f4fccff1d17efbb617729c203beddaa5ab6ef108f",
+      "status": "ok"
+    },
+    "VELVETUSDT2026-08-18.csv.gz": {
+      "bytes": 14243825,
+      "sha256": "2030142873cf610adb2524a695aa25b06c73f75b9195c780e6b20685eb3c22cd",
+      "status": "ok"
+    },
+    "VELVETUSDT2026-08-20.csv.gz": {
+      "bytes": 6013315,
+      "sha256": "c4d78a07080d22756dcc11ddfd98dd901c58346b9f99f9ef8263e139b840c261",
+      "status": "ok"
+    },
+    "VELVETUSDT2026-08-24.csv.gz": {
+      "bytes": 42892799,
+      "sha256": "e27bc75543b961377621a88f028109ef9573210c9d4d41e18026c6fe2ee846ec",
+      "status": "ok"
+    },
+    "VELVETUSDT2026-09-09.csv.gz": {
+      "bytes": 1164002,
+      "sha256": "70ab7af8da2990a9a8466fa84de2df30594f508598c5d96b2ff7a01a0df852db",
+      "status": "ok"
+    },
+    "VELVETUSDT2026-09-11.csv.gz": {
+      "bytes": 1185435,
+      "sha256": "cf7d03cafc412f084bde0485abb240411659a9d77646a27857497101674a62f5",
+      "status": "ok"
+    },
+    "VINEUSDT2026-08-20.csv.gz": {
+      "bytes": 462418,
+      "sha256": "65f7b16302eb4a303342f3bc503d4601b3399c103c04ead08b4a421f69040edf",
+      "status": "ok"
+    },
+    "WALUSDT2026-08-15.csv.gz": {
+      "bytes": 13250615,
+      "sha256": "ce27ac6abcf0d60330664a79d6d1b5875108e15599509378aeee5c011f798d75",
+      "status": "ok"
+    },
+    "WAVESUSDT2026-08-23.csv.gz": {
+      "bytes": 3444543,
+      "sha256": "475524b540885fbba7afb98dec176a68cdb3deab36a02a744556cb7e809b1770",
+      "status": "ok"
+    },
+    "WAXPUSDT2026-09-13.csv.gz": {
+      "bytes": 1706844,
+      "sha256": "a198fdcf26dbd84a14421d9d49b68a3b87da5f7608d521d82beb8f1102dee59a",
+      "status": "ok"
+    },
+    "WLDUSDT2026-08-22.csv.gz": {
+      "bytes": 31246487,
+      "sha256": "e0770c8734227063df6af8bccb44726fcdcfd1b7745951d21b9eea69bea68600",
+      "status": "ok"
+    },
+    "WOOUSDT2026-09-06.csv.gz": {
+      "bytes": 5050642,
+      "sha256": "575aba26f5b3e05fa8accaadf1ff8edbd099d904ed1709b086bc3dd1a91c677e",
+      "status": "ok"
+    },
+    "XAIUSDT2026-08-22.csv.gz": {
+      "bytes": 1007831,
+      "sha256": "becf52b4b764af7f79ed2e41058326804c8b2754e5f0cdb305a99e80ecccc643",
+      "status": "ok"
+    },
+    "XAIUSDT2026-09-24.csv.gz": {
+      "bytes": 14873841,
+      "sha256": "5a4eed8e63fba66015160914ed83c99deedbbadaabc2de9d48503e14a1662eea",
+      "status": "ok"
+    },
+    "XNYUSDT2026-08-22.csv.gz": {
+      "bytes": 425166,
+      "sha256": "d151efc07e3eb8011f8a0ace866fbb5077c1e8644c37082e33dac6bdbb3d0add",
+      "status": "ok"
+    },
+    "XPINUSDT2026-08-17.csv.gz": {
+      "bytes": 6260384,
+      "sha256": "b90525d914a888ceaf2619df034aecc10f6a160926eb8b4e1649cca870c67a10",
+      "status": "ok"
+    },
+    "XPINUSDT2026-08-21.csv.gz": {
+      "bytes": 2138749,
+      "sha256": "e19d376d88ccff13619bb718a808223436bfc95c0e8aac7ed2f126070bf465cd",
+      "status": "ok"
+    },
+    "XPINUSDT2026-09-13.csv.gz": {
+      "bytes": 1608215,
+      "sha256": "fcf144fde1cc779a3de0c5398ccfe3ad20808d1dca80c8a00c4a687e7d19d38a",
+      "status": "ok"
+    },
+    "XPINUSDT2026-09-14.csv.gz": {
+      "bytes": 2154015,
+      "sha256": "454a2d18c1bfdcfe6ff0ec1e23a16e3189cf5d1cddebaf16abcb79faeb1abc12",
+      "status": "ok"
+    },
+    "XPLUSDT2026-08-22.csv.gz": {
+      "bytes": 20645115,
+      "sha256": "5f0732428a06e7e36e38c1abccaf5b51a97271590ba6a440cbff31cbd9de7cdc",
+      "status": "ok"
+    },
+    "XTZUSDT2026-09-19.csv.gz": {
+      "bytes": 12968363,
+      "sha256": "2a78078e7b28b1af24f0cb876e19c89c1d3b5247d69e237a852ab53cdba4720e",
+      "status": "ok"
+    },
+    "XVGUSDT2026-08-22.csv.gz": {
+      "bytes": 1125172,
+      "sha256": "c40cd485262390b95c7dd1cbdbba5e03df7912b1abadbb835506a9a237149f6f",
+      "status": "ok"
+    },
+    "YBUSDT2026-08-22.csv.gz": {
+      "bytes": 770936,
+      "sha256": "758cb7e8a3825a29d44a0d8fd0005c289da27003bfc50189becb3539c521098d",
+      "status": "ok"
+    },
+    "ZAMAUSDT2026-08-22.csv.gz": {
+      "bytes": 7907400,
+      "sha256": "d8ff192f49d4f52afd6a8c993bbe0585c7f422f5cc9fe35a2fc98a0b67a0b9be",
+      "status": "ok"
+    },
+    "ZENUSDT2026-08-22.csv.gz": {
+      "bytes": 4986806,
+      "sha256": "5b3846d78998d56d1f71955898e0f23d8d64421654cdbe78b1d3b98ae046312d",
+      "status": "ok"
+    },
+    "ZESTUSDT2026-09-03.csv.gz": {
+      "bytes": 1629830,
+      "sha256": "8f229f4fe769a5bd0d1c3b1448c466d53cfdcbb6424e3c12fdfbe74e33c98501",
+      "status": "ok"
+    },
+    "ZETAUSDT2026-09-21.csv.gz": {
+      "bytes": 47878808,
+      "sha256": "8bc70495ab9d91f555ebd8a03374eab6c448686426a2acc93eb99be0064baa97",
+      "status": "ok"
+    },
+    "ZETAUSDT2026-09-22.csv.gz": {
+      "bytes": 18003935,
+      "sha256": "6245bc872d7114a241a22f8ebc64239a7f66ce136c7db8d9377cc9306f447267",
+      "status": "ok"
+    },
+    "ZILUSDT2026-09-08.csv.gz": {
+      "bytes": 796578,
+      "sha256": "50472dd51f1426ae5702b76fe2f14087c7084a429fcc25b2354e512b08be3894",
+      "status": "ok"
+    },
+    "ZKCUSDT2026-08-31.csv.gz": {
+      "bytes": 29257415,
+      "sha256": "28039a798606ff8103bdd587f35ff7250868beb212565fdaf6bd7d7f307e8bc9",
+      "status": "ok"
+    },
+    "ZORAUSDT2026-08-21.csv.gz": {
+      "bytes": 13079774,
+      "sha256": "9fb99e47ab37680eeb278a487c0c71510e3f6d6443f5be59078fa8973dbd98d2",
+      "status": "ok"
+    },
+    "ZORAUSDT2026-08-31.csv.gz": {
+      "bytes": 69552223,
+      "sha256": "84e9c123554064ee26e3489cccd624866d6b1a061c6d055b518f5b205375b8d8",
+      "status": "ok"
+    },
+    "ZROUSDT2026-08-22.csv.gz": {
+      "bytes": 10324778,
+      "sha256": "c843b1a7578b36c3324cc8f79e6067fad46b3d374cfac746092788096a0b1697",
+      "status": "ok"
+    },
+    "ZROUSDT2026-08-25.csv.gz": {
+      "bytes": 55119229,
+      "sha256": "cb1b8424108cf54ee6378ba8778cf9d6e13db91a6d57e9c53e370ce68aa7f6bf",
+      "status": "ok"
+    }
+  },
+  "firings_sha256": "cb3f8154bb43353b7869456dfcd89d1a951787dafc7d85ebfcb94c1f60a30211",
+  "status": {
+    "ok": 606
+  }
+}

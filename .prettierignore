@@ -18,3 +18,7 @@ docs/research/evidence/edge-loss-decomposition-v1/read-2/exploratory-burst-paire
 docs/research/evidence/edge-loss-decomposition-v1/read-2/gate-identity.json
 docs/research/evidence/edge-loss-decomposition-v1/read-2/gate-tapes.json
 docs/research/evidence/edge-loss-decomposition-v1/read-2/gate-result.json
+docs/research/evidence/bybit-burst-decay-v1/decay-firings.json
+docs/research/evidence/bybit-burst-decay-v1/decay-tapes.json
+docs/research/evidence/bybit-burst-decay-v1/decay-result.json
+docs/research/evidence/bybit-burst-decay-v1/diagnostic-open-vs-first-trade.json
