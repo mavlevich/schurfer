@@ -7,6 +7,9 @@ amendments 1 and 2.
   (bar quality, verdict minimums, entry timing, Gate prices and identity).
 - **Read 2** (reader `f8c99fa`, Gate `72ecb55`) uses the same verified inputs; only the
   amendment 2 fixes differ. `9999a0e` changed only the command's printed summary.
+- **Review 3** found that Gate ordered trades with the same timestamp by price. With
+  Gate's deal order (`348b96f`) the Gate read reproduces the same `gate-result.json`
+  byte for byte (sha256 `c8359904...`).
 
 **Evidence** ([read-2](evidence/edge-loss-decomposition-v1/read-2/); read 1 is kept
 under `read-1-superseded/`):
@@ -67,10 +70,11 @@ Share of the move (24h low to the 24h peak after the crossing) already gone, med
 
 - **About two thirds of a scanner pump is over when its 24h change reaches +20%.** The
   crossing comes about 22 hours after the 24h low.
-- **For this trigger, seconds do not matter.** On Gate's tapes the share is 0.62 at
-  the crossing and 0.61-0.63 at 5, 15, 45 and 101 s later. The median price age is
-  0.5-2 s. Up to 14 of 195 moments are missing for stale prices, so the delay columns
-  are not exactly the same events.
+- **Gate, 0 to 101 seconds after the crossing:** the medians of this descriptive share
+  are close (0.62 at the crossing, 0.61-0.63 at 5, 15, 45 and 101 s; the median price
+  age is 0.5-2 s). They are medians over different event sets (195 at 0 s, 181 at 101 s,
+  after stale prices are dropped). They are a share of the later move, not a loss in bps
+  and not executable economics. **An acceptable delay is not established.**
 - **The scanner itself** adds about one cycle on Bybit and Binance, but sees MEXC and
   Gate pumps about half an hour late. That cause is not investigated here.
 - Part A describes pumps that happened. It says nothing about the economics of early
