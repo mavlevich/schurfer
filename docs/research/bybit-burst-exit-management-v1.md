@@ -1,6 +1,7 @@
 # Bybit 1-minute burst: exit management v1 (protocol draft)
 
-Status: **draft for design review; registered before any exit is simulated.** It runs
+Status: **design review 1 folded in (2026-10-05); registered before any exit is
+simulated.** Exploratory throughout. It runs
 after the [cost history](bybit-burst-cost-history-v1.md) and only if that study does not
 park HYP-030. Data before 2026-09-29 only. No trading rule follows from it directly.
 
@@ -33,35 +34,60 @@ one half of the window, judged on the other.
 | E   | early check: at 15 minutes exit if the last trade is below the entry price, else 60 minutes |
 | P   | take-profit: the first trade at least 5% above the entry price, else 60 minutes             |
 
-A trigger fills at the book at the trigger trade's time (the bids walked for the held
-quantity). A book that is broken, stale or too thin at that moment makes the firing
-`exit_unfilled`, counted, never filled at the trade price.
+**Execution.**
 
-## The split (fixed now)
+- A triggered exit (S, T, P) fills at the book 5 s after the trigger trade, the same
+  latency target as the entry. The signal must still be received, processed and sent;
+  on a sharp move that delay matters.
+- A scheduled exit (H at 60 minutes, E at 15 minutes) fills at the book at its moment:
+  that moment is known in advance.
+- The same results with a zero exit delay are reported beside them, labelled as the
+  optimistic bound only.
+- A book that is broken, stale or too thin at the fill moment makes the firing
+  `exit_unfilled` for that exit. It is counted and never filled at the trade price.
 
-- **Choice half:** firings with bar start before 2026-09-07 00:00 UTC (ISO weeks 33 to
-  36).
-  - All five exits are evaluated.
-  - The one with the highest mean net is chosen, H included.
-  - With fewer than 150 resolved firings in this half, nothing is chosen and the study
-    stops.
-- **Test half:** firings from 2026-09-07 (ISO weeks 37 to 40).
-  - Only the chosen exit and H are evaluated.
-  - The result is the mean net of the chosen exit and its paired difference against H
-    on the same firings.
-  - 95% cluster bootstrap intervals by instrument and by UTC day (10,000 iterations,
-    fixed seed).
-  - The same evidence minimums as the cost study apply, scaled to the half: at least
-    150 resolved firings, 30 instruments and 10 UTC days.
+## The split (fixed now; both halves exploratory)
+
+Both halves lie inside the window in which the trigger was found and its results were
+studied. The split helps choose a candidate; it is **not** an independent confirmation.
+Every interval below is descriptive, and confirmation is left to a new registered
+cohort.
+
+**A common denominator for every comparison.**
+
+- Within a half, exits are compared only on the firings where the entry and all five
+  exits resolve (with costs and funding).
+- This common set must hold at least 60% of the half's firings with a resolved entry,
+  or the half is `insufficient_data` and nothing is chosen.
+- Each exit's own exclusions are reported apart, by reason. An exit can never win
+  because its losers were excluded.
+
+**Choice half:** firings with bar start before 2026-09-07 00:00 UTC (ISO weeks 33 to
+36).
+
+- On the common set, all five exits are evaluated.
+- The one with the highest mean net is chosen, H included.
+- With fewer than 150 firings in the common set, nothing is chosen and the study
+  stops.
+
+**Test half:** firings from 2026-09-07 (ISO weeks 37 to 40).
+
+- Only the chosen exit and H are evaluated, on the half's common set.
+- Reported: the mean net of the chosen exit and its paired difference against H.
+- Descriptive 95% cluster bootstrap intervals by instrument and by UTC day (10,000
+  iterations, fixed seed).
+- The same minimums apply: at least 150 firings in the common set, 30 instruments and
+  10 UTC days.
 
 ## What it decides
 
-- **The chosen exit's mean net on the test half has both lower bounds above zero:**
-  the exit becomes the candidate rule of a separately registered forward test (on the
-  sealed path, an untouched window). Otherwise nothing is chosen for a forward test.
-- **The chosen exit differs from H:** whether its paired difference has both lower
-  bounds above zero is reported as evidence that the exit itself adds value. It is not
-  needed for the decision above.
+- **The chosen exit's mean net on the test half has both descriptive lower bounds above
+  zero:** the exit becomes the candidate rule of a separately registered forward
+  cohort (on the sealed path, an untouched window). That cohort, not this study, is
+  the confirmation.
+- **Otherwise:** no exit is put forward.
+- The paired difference against H is reported as evidence of whether the exit itself
+  adds value; it is not needed for the decision above.
 - **Not decided here:** any order, size, or live trading.
 
 ## Not in this study

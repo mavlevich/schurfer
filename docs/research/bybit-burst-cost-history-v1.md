@@ -40,6 +40,10 @@ its sha256 before anything is downloaded. **No data on or after 2026-09-29.**
   instrument over its firings' span, with each response's hash, and the mark price at
   every settlement inside a hold (the open of the 1-minute mark-price candle starting
   at the settlement, `/v5/market/mark-price-kline`). Only timestamps before 2026-09-29.
+  - A failed mark-price request leaves that settlement without a mark, so any hold that
+    crosses it is `funding_missing`. An interrupted fetch resumes: the recorded books
+    are kept only if they are this contract's and every file still matches its sha256,
+    and only the funding is fetched again.
   - Missing data is never a zero. An instrument whose fetch failed, or that shows no
     settlement over a span longer than 24 hours, is `funding_missing`; so is a
     settlement inside a hold without a mark price.

@@ -186,7 +186,12 @@ def fetch_funding(firings: Sequence[dict[str, Any]]) -> dict[str, Any]:
             settlements = []
             for ts in sorted(rows):
                 inside = any(a < ts <= b for a, b in holds[symbol])
-                mark = _mark_open(client, symbol, ts) if inside else None
+                mark = None
+                if inside:
+                    try:
+                        mark = _mark_open(client, symbol, ts)
+                    except (httpx.HTTPError, ValueError, KeyError):
+                        mark = None  # explicit: a hold crossing it is funding_missing
                 settlements.append([ts, rows[ts], mark])
             out[symbol] = {
                 "status": "ok",
@@ -565,11 +570,25 @@ def main(argv: Sequence[str] | None = None) -> None:
     args.stage_dir.mkdir(parents=True, exist_ok=True)
     firings = load_firings(args.firings)
     if args.phase == "fetch":
-        for name in (BOOKS_NAME, FUNDING_NAME):
-            if (args.stage_dir / name).exists():
-                raise SystemExit(f"{name} is recorded once")
-        books = fetch_books(firings, args.books_dir)
-        write_once(args.stage_dir / BOOKS_NAME, {"contract_sha256": contract_sha256(), **books})
+        if (args.stage_dir / FUNDING_NAME).exists():
+            raise SystemExit(f"{FUNDING_NAME} is recorded once")
+        books_path = args.stage_dir / BOOKS_NAME
+        if books_path.exists():
+            # resume an interrupted fetch: the books are kept only if they are this
+            # contract's and every recorded file still matches its sha256
+            recorded, _ = load_verified(books_path)
+            if recorded.get("contract_sha256") != contract_sha256():
+                raise SystemExit("the recorded books are of another contract; refusing")
+            for name, entry in recorded["files"].items():
+                if (
+                    entry.get("status") == "ok"
+                    and sha256_file(args.books_dir / name) != entry["sha256"]
+                ):
+                    raise SystemExit(f"{name} no longer matches its recorded sha256")
+            books = {k: v for k, v in recorded.items() if k != "contract_sha256"}
+        else:
+            books = fetch_books(firings, args.books_dir)
+            write_once(books_path, {"contract_sha256": contract_sha256(), **books})
         funding = fetch_funding(firings)
         write_once(
             args.stage_dir / FUNDING_NAME,

@@ -162,3 +162,63 @@ def test_fetch_refuses_days_on_or_after_the_blind_boundary(tmp_path: Path) -> No
     with pytest.raises(SystemExit, match="blind boundary"):
         c.fetch_books([{"symbol": "AAAUSDT", "bar_start": late}], tmp_path / "books")
     assert not (tmp_path / "books").exists()
+
+
+def test_a_mark_price_failure_is_explicit_and_a_fetch_resumes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import httpx
+    from schurfer_analytics.source_lead_multi_source_report import write_once
+
+    firing = {"symbol": "AAAUSDT", "bar_start": BAR}
+    settle = c.moments(firing)["entry_0"] + 1000
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "mark-price-kline" in str(request.url):
+            raise httpx.ReadTimeout("synthetic", request=request)
+        body = {
+            "retCode": 0,
+            "result": {
+                "list": [
+                    {
+                        "symbol": "AAAUSDT",
+                        "fundingRate": "0.0001",
+                        "fundingRateTimestamp": str(settle),
+                    }
+                ]
+            },
+        }
+        return httpx.Response(200, json=body)
+
+    original = httpx.Client
+    monkeypatch.setattr(
+        httpx, "Client", lambda **kw: original(transport=httpx.MockTransport(handler), **kw)
+    )
+    funding = c.fetch_funding([firing])
+    assert funding["AAAUSDT"]["status"] == "ok"
+    assert funding["AAAUSDT"]["settlements"][0][2] is None  # no mark: explicit, not a crash
+
+    # an interrupted fetch (books recorded, funding not) resumes on the same inputs
+    stage, books_dir = tmp_path / "stage", tmp_path / "books"
+    stage.mkdir()
+    books_dir.mkdir()
+    write_once(
+        stage / c.BOOKS_NAME,
+        {"contract_sha256": c.contract_sha256(), "status": {}, "bytes": 0, "files": {}},
+    )
+    monkeypatch.setattr(c, "load_firings", lambda _: [firing])
+    c.main(
+        [
+            "--phase",
+            "fetch",
+            "--stage-dir",
+            str(stage),
+            "--books-dir",
+            str(books_dir),
+            "--firings",
+            "x",
+            "--decay-result",
+            "y",
+        ]
+    )
+    assert (stage / c.FUNDING_NAME).exists()
