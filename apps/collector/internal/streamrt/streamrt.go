@@ -18,15 +18,18 @@
 //   - Disconnected: the session ended (error, liveness timeout or a codec error).
 //     LastFrameAt is the last frame received: the gap starts there, not at the
 //     detection, which can come a whole read timeout later;
-//   - Heartbeat: the connection is alive; LastFrameAt is its latest received frame. At
+//   - Heartbeat: the connection is alive and its subscription acknowledged (never sent
+//     before Subscribed); LastFrameAt is its latest received frame. At
 //     most one per HeartbeatEvery per shard, carried by received frames, so a dead
 //     connection sends none. A consumer may treat the stream as delivered through
 //     LastFrameAt (frames of one connection arrive in order);
 //   - Overflow: events of this shard were dropped because the consumer queue was full,
 //     from Since (the first drop) to At by receive time. DroppedFrom and DroppedTo
-//     bound the dropped trades by exchange time, and DroppedLifecycle says whether a
-//     lifecycle event was among them (a consumer can then no longer trust its
-//     connection state until the next Subscribed).
+//     bound the dropped trades by exchange time. DroppedState says whether a state
+//     event (Connected, Subscribed, Disconnected; never a Heartbeat) was among them. In
+//     that case the runtime re-confirms its current state right after the report: a
+//     Subscribed for a session that is still subscribed, so a consumer's gap closes
+//     without a resubscription.
 //
 // The queue is bounded and the reader never blocks on it. A dropped event is counted
 // and the shard owes an Overflow event, delivered before its next delivered event, so
@@ -78,18 +81,18 @@ const (
 
 // Lifecycle is an in-band connection event for exactly the shard's own symbols.
 type Lifecycle struct {
-	Kind             LifecycleKind
-	Shard            int
-	SessionID        string
-	Symbols          []string
-	At               time.Time
-	Dropped          int64     // Overflow: events dropped since the last delivered event
-	Since            time.Time // Overflow: when the first of them was dropped (receive time)
-	DroppedFrom      time.Time // Overflow: earliest exchange time among dropped trades
-	DroppedTo        time.Time // Overflow: latest exchange time among dropped trades
-	DroppedLifecycle bool      // Overflow: a lifecycle event was dropped too
-	LastFrameAt      time.Time // Disconnected: the session's last received frame (or its dial)
-	Reason           string    // Disconnected: why
+	Kind         LifecycleKind
+	Shard        int
+	SessionID    string
+	Symbols      []string
+	At           time.Time
+	Dropped      int64     // Overflow: events dropped since the last delivered event
+	Since        time.Time // Overflow: when the first of them was dropped (receive time)
+	DroppedFrom  time.Time // Overflow: earliest exchange time among dropped trades
+	DroppedTo    time.Time // Overflow: latest exchange time among dropped trades
+	DroppedState bool      // Overflow: a state event (not a heartbeat) was dropped too
+	LastFrameAt  time.Time // Disconnected: the session's last received frame (or its dial)
+	Reason       string    // Disconnected: why
 }
 
 // Event is either a trade or a lifecycle event; exactly one pointer is set.
@@ -206,19 +209,21 @@ func (r *Runtime) Run(ctx context.Context, symbols []string) error {
 // shard is one connection's state; owed counts events dropped and not yet reported,
 // owedSince is when the first of them was dropped.
 type shard struct {
-	index         int
-	symbols       []string
-	owed          int64
-	owedSince     time.Time
-	owedFrom      time.Time
-	owedTo        time.Time
-	owedLifecycle bool
+	index     int
+	symbols   []string
+	owed      int64
+	owedSince time.Time
+	owedFrom  time.Time
+	owedTo    time.Time
+	owedState bool
+	// subscribedSession is the current session id while it is subscribed, else "".
+	subscribedSession string
 }
 
 func (s *shard) drop(r *Runtime, event Event) {
 	if s.owed == 0 {
 		s.owedSince = time.Now()
-		s.owedFrom, s.owedTo, s.owedLifecycle = time.Time{}, time.Time{}, false
+		s.owedFrom, s.owedTo, s.owedState = time.Time{}, time.Time{}, false
 	}
 	switch {
 	case event.Trade != nil:
@@ -229,8 +234,8 @@ func (s *shard) drop(r *Runtime, event Event) {
 		if at.After(s.owedTo) {
 			s.owedTo = at
 		}
-	case event.Lifecycle != nil:
-		s.owedLifecycle = true
+	case event.Lifecycle != nil && event.Lifecycle.Kind != Heartbeat:
+		s.owedState = true
 	}
 	s.owed++
 	r.Stats.Dropped.Add(1)
@@ -243,11 +248,26 @@ func (r *Runtime) emit(s *shard, event Event) {
 		overflow := Event{Lifecycle: &Lifecycle{
 			Kind: Overflow, Shard: s.index, Symbols: s.symbols, At: time.Now(),
 			Dropped: s.owed, Since: s.owedSince, DroppedFrom: s.owedFrom, DroppedTo: s.owedTo,
-			DroppedLifecycle: s.owedLifecycle,
+			DroppedState: s.owedState,
 		}}
 		select {
 		case r.events <- overflow:
+			stateLost := s.owedState
 			s.owed = 0
+			if stateLost && s.subscribedSession != "" {
+				// re-confirm the live subscription, so the consumer's gap closes
+				confirm := Event{Lifecycle: &Lifecycle{
+					Kind: Subscribed, Shard: s.index, SessionID: s.subscribedSession,
+					Symbols: s.symbols, At: time.Now(),
+				}}
+				select {
+				case r.events <- confirm:
+				default:
+					s.drop(r, confirm)
+					s.drop(r, event) // keep order: nothing passes an undelivered state
+					return
+				}
+			}
 		default:
 			s.drop(r, event)
 			return
@@ -319,6 +339,7 @@ func (r *Runtime) session(ctx context.Context, s *shard) (connected bool, err er
 		Kind: Connected, Shard: s.index, SessionID: sessionID, Symbols: s.symbols, At: dialedAt,
 	}})
 	defer func() {
+		s.subscribedSession = ""
 		if ctx.Err() != nil {
 			return // a clean shutdown is not a feed interruption
 		}
@@ -408,6 +429,7 @@ func (r *Runtime) readLoop(
 			acked += parsed.Acks
 			if !subscribed && acked >= requested {
 				subscribed = true
+				s.subscribedSession = sessionID
 				r.emit(s, Event{Lifecycle: &Lifecycle{
 					Kind: Subscribed, Shard: s.index, SessionID: sessionID, Symbols: s.symbols,
 					At: received,

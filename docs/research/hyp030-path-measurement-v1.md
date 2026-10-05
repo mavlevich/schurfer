@@ -35,8 +35,13 @@ actually cost to enter and exit at those moments?
      power planning are approximations for it, and its firings will not match the
      research list one for one.
    - A minute is decided only once the connection is confirmed delivered past its end
-     plus 250 ms (an in-band heartbeat of that connection), and every queued event is
-     applied first. While a gap is open the clock alone finalizes, and the minute is
+     plus 250 ms plus the 2 s lag allowance (an in-band heartbeat of that connection; a
+     break found later starts 2 s before its last frame), and every queued event is
+     applied first. Decisions therefore come at least about 2.3 s after the bar's end.
+   - Heartbeats are sent only for an acknowledged subscription and are never a state
+     event: a dropped heartbeat leaves no gap. If a state event is dropped, the runtime
+     re-confirms a live subscription right after the overflow report, and a heartbeat
+     also closes the gap. While a gap is open the clock alone finalizes, and the minute is
      incomplete. So a break detected late still removes the minutes after the
      connection's last frame. Until then a trade of the minute still
      updates it; after that it is late, counted and never added.

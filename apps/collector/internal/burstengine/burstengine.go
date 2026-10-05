@@ -14,8 +14,9 @@
 //   - A trade belongs to the minute of its exchange time. Open and Close are the
 //     first and last trade by (exchange time, venue sequence, arrival order).
 //   - A minute is finalized only when the stream is confirmed delivered past its end
-//     plus Grace: a Heartbeat or Subscribed of the instrument's connection at or after
-//     that point (frames of one connection arrive in order), and the clock past it too.
+//     plus Grace plus LagAllowance: a Heartbeat or Subscribed of the instrument's
+//     connection that far after it (frames of one connection arrive in order; a break
+//     found later starts LagAllowance before its last frame), and the clock past it.
 //     While a gap is open the clock alone finalizes, and those minutes are incomplete.
 //     So a break detected late (a read timeout) is known before the minutes after the
 //     connection's last frame are decided. Until finalization a trade of the minute
@@ -35,8 +36,9 @@
 //   - from the start until the first Subscribed;
 //   - from a Disconnected's last received frame until the next Subscribed;
 //   - over an Overflow: the union of its dropped trades' exchange times and its
-//     receive-time span; when a lifecycle event was dropped too, the connection state
-//     is unknown, so the gap stays open until the next Subscribed.
+//     receive-time span; when a state event was dropped too (never a heartbeat), the
+//     connection state is unknown, so the gap stays open until a Subscribed (the
+//     runtime re-confirms a live subscription right after the report).
 //
 // Completeness is evaluated against the gaps known at the time of the decision, for
 // the bar, its previous bar and every bar of the median window, so a gap discovered
@@ -216,6 +218,9 @@ func (e *Engine) onLifecycle(l *streamrt.Lifecycle) {
 				s.aliveThrough = l.At
 			}
 		case streamrt.Heartbeat:
+			// the runtime sends heartbeats only for an acknowledged subscription, in order,
+			// so one proves the subscription is live: it closes a gap left by a lost state
+			s.closeGap(l.At)
 			if l.LastFrameAt.After(s.aliveThrough) {
 				s.aliveThrough = l.LastFrameAt
 			}
@@ -230,8 +235,10 @@ func (e *Engine) onLifecycle(l *streamrt.Lifecycle) {
 			if l.DroppedTo.After(to) {
 				to = l.DroppedTo
 			}
-			if l.DroppedLifecycle {
-				s.openGap(from) // the connection state is unknown until the next Subscribed
+			if l.DroppedState {
+				// the connection state is unknown until a Subscribed: the runtime
+				// re-confirms a live subscription right after this report
+				s.openGap(from)
 				continue
 			}
 			if n := len(s.gaps); n > 0 && s.gaps[n-1].to.IsZero() {
@@ -362,8 +369,11 @@ func (e *Engine) Tick(now time.Time) []Signal {
 	for _, symbol := range symbols {
 		s := e.symbols[symbol]
 		limit := now
-		if !s.gapOpen() && s.aliveThrough.Before(limit) {
-			limit = s.aliveThrough // not confirmed delivered past this point yet
+		// a break detected later starts LagAllowance before its last frame, so only
+		// what lies that far behind the confirmed delivery is safe to decide
+		confirmed := s.aliveThrough.Add(-e.config.LagAllowance)
+		if !s.gapOpen() && confirmed.Before(limit) {
+			limit = confirmed
 		}
 		due := limit.Add(-time.Minute - e.config.Grace).Truncate(time.Minute)
 		if newest, ok := e.newest(s); ok && newest.Before(due) {
