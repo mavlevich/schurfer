@@ -21,15 +21,21 @@
 //   - A repeated trade id is dropped before it touches any price or turnover (a bounded
 //     memory of recent ids per instrument). A trade without an id is refused.
 //
-// Completeness is part of the data, from gap intervals per instrument:
+// Completeness is part of the data, from gap intervals per instrument. Receive times
+// are moved back by LagAllowance, because a trade executed shortly before the last
+// received frame can be among the ones lost:
 //
 //   - from the start until the first Subscribed;
 //   - from a Disconnected's last received frame until the next Subscribed;
-//   - over an Overflow's span, from its first dropped event to its report.
+//   - over an Overflow: the union of its dropped trades' exchange times and its
+//     receive-time span; when a lifecycle event was dropped too, the connection state
+//     is unknown, so the gap stays open until the next Subscribed.
 //
-// At finalization a bar is complete only if no gap interval overlaps its minute. No
-// signal fires on an incomplete bar or an incomplete previous bar, and incomplete bars
-// never enter the turnover median.
+// Completeness is evaluated against the gaps known at the time of the decision, for
+// the bar, its previous bar and every bar of the median window, so a gap discovered
+// after a minute was finalized still removes that minute. No signal fires on an
+// incomplete bar or an incomplete previous bar, and incomplete bars never enter the
+// turnover median.
 //
 // The engine is single-goroutine and deterministic: the caller feeds events in order
 // and calls Tick with the clock.
@@ -55,13 +61,14 @@ type Config struct {
 	MinMedianBars    int
 	Cooldown         time.Duration
 	Grace            time.Duration
+	LagAllowance     time.Duration // receive-time gap starts move back by this much
 }
 
 // HYP030 is the designed rule's thresholds on this engine's contract.
 func HYP030() Config {
 	return Config{
 		ReturnThreshold: 0.05, TurnoverMultiple: 5, MedianWindow: 60, MinMedianBars: 30,
-		Cooldown: time.Hour, Grace: 250 * time.Millisecond,
+		Cooldown: time.Hour, Grace: 250 * time.Millisecond, LagAllowance: 2 * time.Second,
 	}
 }
 
@@ -74,7 +81,6 @@ type Bar struct {
 	Close      float64
 	Turnover   float64
 	Trades     int
-	Complete   bool
 	LastRecvAt time.Time // the latest receive time among the bar's trades
 	first      orderKey
 	last       orderKey
@@ -194,18 +200,28 @@ func (e *Engine) onLifecycle(l *streamrt.Lifecycle) {
 			if from.IsZero() {
 				from = l.At
 			}
-			s.openGap(from)
+			s.openGap(from.Add(-e.config.LagAllowance))
 		case streamrt.Subscribed:
 			s.closeGap(l.At)
 		case streamrt.Overflow:
-			from := l.Since
-			if from.IsZero() {
-				from = l.At
+			from, to := l.At, l.At
+			if !l.Since.IsZero() {
+				from = l.Since.Add(-e.config.LagAllowance)
+			}
+			if !l.DroppedFrom.IsZero() && l.DroppedFrom.Before(from) {
+				from = l.DroppedFrom
+			}
+			if l.DroppedTo.After(to) {
+				to = l.DroppedTo
+			}
+			if l.DroppedLifecycle {
+				s.openGap(from) // the connection state is unknown until the next Subscribed
+				continue
 			}
 			if n := len(s.gaps); n > 0 && s.gaps[n-1].to.IsZero() {
 				continue // inside an open gap already
 			}
-			s.gaps = append(s.gaps, gap{from: from, to: l.At})
+			s.gaps = append(s.gaps, gap{from: from, to: to.Add(time.Nanosecond)})
 		case streamrt.Connected:
 			// data is complete only from Subscribed
 		}
@@ -266,9 +282,18 @@ func (e *Engine) onTrade(t *streamrt.Trade) {
 	}
 }
 
-// barFor returns the open bar of a minute after finalThrough, creating it and any
-// minutes between the newest known minute and it.
+// barFor returns the open bar of a minute after finalThrough, creating it and every
+// minute between it and the open span, so the open span stays contiguous.
 func (e *Engine) barFor(s *symbolState, start time.Time) *Bar {
+	if len(s.open) > 0 && start.Before(s.open[0].Start) {
+		// earlier than the open span (possible before anything was finalized)
+		var prefix []*Bar
+		for minute := start; minute.Before(s.open[0].Start); minute = minute.Add(time.Minute) {
+			prefix = append(prefix, &Bar{Start: minute})
+		}
+		s.open = append(prefix, s.open...)
+		return s.open[0]
+	}
 	for i := len(s.open) - 1; i >= 0; i-- {
 		if s.open[i].Start.Equal(start) {
 			return s.open[i]
@@ -368,8 +393,7 @@ func (e *Engine) admit(symbol string, s *symbolState, bar Bar, now time.Time) (S
 			bar.Open, bar.High, bar.Low, bar.Close = price, price, price, price
 		}
 	}
-	bar.Complete = s.complete(bar.Start)
-	if !bar.Complete {
+	if !s.complete(bar.Start) {
 		e.Stats.IncompleteBars++
 	}
 	s.history = append(s.history, bar)
@@ -388,14 +412,15 @@ func (e *Engine) admit(symbol string, s *symbolState, bar Bar, now time.Time) (S
 	if ret < e.config.ReturnThreshold {
 		return Signal{}, false
 	}
-	if !bar.Complete || !prev.Complete {
+	// completeness against the gaps known now, not when each bar was finalized
+	if !s.complete(bar.Start) || !s.complete(prev.Start) {
 		e.Stats.SuppressedByGap++
 		return Signal{}, false
 	}
 	earliest := bar.Start.Add(-time.Duration(e.config.MedianWindow) * time.Minute)
 	window := make([]float64, 0, e.config.MedianWindow)
 	for _, past := range s.history[:n-1] {
-		if past.Complete && !past.Start.Before(earliest) {
+		if !past.Start.Before(earliest) && s.complete(past.Start) {
 			window = append(window, past.Turnover)
 		}
 	}

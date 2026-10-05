@@ -41,8 +41,15 @@ actually cost to enter and exit at those moments?
    - **Completeness starts only when the venue has acknowledged as many subscriptions
      as were requested** (a count match: acknowledgements name no instrument), within
      10 s or the session restarts. Gap intervals run:
-     - from a disconnect's last received frame to the next acknowledged subscription;
-     - over an overflow, from its first dropped event to its report.
+     - from a disconnect's last received frame, moved back by a 2 s lag allowance, to
+       the next acknowledged subscription;
+     - over an overflow, the union of the dropped trades' exchange times and its
+       receive-time span (moved back by the same allowance). If a lifecycle event was
+       dropped too, the gap stays open until the next acknowledged subscription.
+
+     Completeness is evaluated against the gaps known at the decision, for the bar,
+     its previous bar and every bar of the median window. A gap found after a minute
+     was finalized still removes that minute.
 
      A bar that overlaps a gap is incomplete, empty minutes included. Incomplete bars
      never fire and never enter the median.

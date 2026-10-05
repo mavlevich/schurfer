@@ -19,7 +19,10 @@
 //     LastFrameAt is the last frame received: the gap starts there, not at the
 //     detection, which can come a whole read timeout later;
 //   - Overflow: events of this shard were dropped because the consumer queue was full,
-//     from Since (the first drop) to At.
+//     from Since (the first drop) to At by receive time. DroppedFrom and DroppedTo
+//     bound the dropped trades by exchange time, and DroppedLifecycle says whether a
+//     lifecycle event was among them (a consumer can then no longer trust its
+//     connection state until the next Subscribed).
 //
 // The queue is bounded and the reader never blocks on it. A dropped event is counted
 // and the shard owes an Overflow event, delivered before its next delivered event, so
@@ -70,15 +73,18 @@ const (
 
 // Lifecycle is an in-band connection event for exactly the shard's own symbols.
 type Lifecycle struct {
-	Kind        LifecycleKind
-	Shard       int
-	SessionID   string
-	Symbols     []string
-	At          time.Time
-	Dropped     int64     // Overflow: events dropped since the last delivered event
-	Since       time.Time // Overflow: when the first of them was dropped
-	LastFrameAt time.Time // Disconnected: the session's last received frame (or its dial)
-	Reason      string    // Disconnected: why
+	Kind             LifecycleKind
+	Shard            int
+	SessionID        string
+	Symbols          []string
+	At               time.Time
+	Dropped          int64     // Overflow: events dropped since the last delivered event
+	Since            time.Time // Overflow: when the first of them was dropped (receive time)
+	DroppedFrom      time.Time // Overflow: earliest exchange time among dropped trades
+	DroppedTo        time.Time // Overflow: latest exchange time among dropped trades
+	DroppedLifecycle bool      // Overflow: a lifecycle event was dropped too
+	LastFrameAt      time.Time // Disconnected: the session's last received frame (or its dial)
+	Reason           string    // Disconnected: why
 }
 
 // Event is either a trade or a lifecycle event; exactly one pointer is set.
@@ -191,15 +197,31 @@ func (r *Runtime) Run(ctx context.Context, symbols []string) error {
 // shard is one connection's state; owed counts events dropped and not yet reported,
 // owedSince is when the first of them was dropped.
 type shard struct {
-	index     int
-	symbols   []string
-	owed      int64
-	owedSince time.Time
+	index         int
+	symbols       []string
+	owed          int64
+	owedSince     time.Time
+	owedFrom      time.Time
+	owedTo        time.Time
+	owedLifecycle bool
 }
 
-func (s *shard) drop(r *Runtime) {
+func (s *shard) drop(r *Runtime, event Event) {
 	if s.owed == 0 {
 		s.owedSince = time.Now()
+		s.owedFrom, s.owedTo, s.owedLifecycle = time.Time{}, time.Time{}, false
+	}
+	switch {
+	case event.Trade != nil:
+		at := event.Trade.EventAt
+		if s.owedFrom.IsZero() || at.Before(s.owedFrom) {
+			s.owedFrom = at
+		}
+		if at.After(s.owedTo) {
+			s.owedTo = at
+		}
+	case event.Lifecycle != nil:
+		s.owedLifecycle = true
 	}
 	s.owed++
 	r.Stats.Dropped.Add(1)
@@ -211,20 +233,21 @@ func (r *Runtime) emit(s *shard, event Event) {
 	if s.owed > 0 {
 		overflow := Event{Lifecycle: &Lifecycle{
 			Kind: Overflow, Shard: s.index, Symbols: s.symbols, At: time.Now(),
-			Dropped: s.owed, Since: s.owedSince,
+			Dropped: s.owed, Since: s.owedSince, DroppedFrom: s.owedFrom, DroppedTo: s.owedTo,
+			DroppedLifecycle: s.owedLifecycle,
 		}}
 		select {
 		case r.events <- overflow:
 			s.owed = 0
 		default:
-			s.drop(r)
+			s.drop(r, event)
 			return
 		}
 	}
 	select {
 	case r.events <- event:
 	default:
-		s.drop(r)
+		s.drop(r, event)
 	}
 }
 

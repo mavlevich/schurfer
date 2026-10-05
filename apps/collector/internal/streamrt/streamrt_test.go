@@ -231,3 +231,23 @@ func TestAnUnacknowledgedSubscriptionEndsTheSession(t *testing.T) {
 		}
 	}
 }
+
+func TestOverflowCarriesTheExchangeTimesOfTheDroppedTrades(t *testing.T) {
+	rt := New(BybitCodec{}, Config{QueueSize: 1})
+	s := &shard{index: 0, symbols: []string{"AAAUSDT"}}
+	base := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
+	tradeAt := func(sec int) Event {
+		return Event{Trade: &Trade{Symbol: "AAAUSDT", EventAt: base.Add(time.Duration(sec) * time.Second)}}
+	}
+	rt.emit(s, tradeAt(1))                                       // fills the queue
+	rt.emit(s, tradeAt(30))                                      // dropped
+	rt.emit(s, tradeAt(10))                                      // dropped, earlier by exchange time
+	rt.emit(s, Event{Lifecycle: &Lifecycle{Kind: Disconnected}}) // dropped lifecycle
+	<-rt.events
+	rt.emit(s, tradeAt(40))
+	report := (<-rt.events).Lifecycle
+	if report == nil || report.Kind != Overflow || report.Dropped != 3 || !report.DroppedLifecycle ||
+		!report.DroppedFrom.Equal(base.Add(10*time.Second)) || !report.DroppedTo.Equal(base.Add(30*time.Second)) {
+		t.Fatalf("report %+v", report)
+	}
+}

@@ -94,11 +94,14 @@ func TestMissedMinutesOfADisconnectAreIncomplete(t *testing.T) {
 	e.OnEvent(trade(44, 30, 1.0, 1_000))
 	e.Tick(at(45, 1))
 	s := e.symbols["AAAUSDT"]
-	for _, bar := range s.history[len(s.history)-5:] {
+	for _, bar := range s.history[len(s.history)-6:] {
 		minute := int(bar.Start.Sub(t0) / time.Minute)
-		want := minute >= 44 // 40..43 overlap the gap
-		if bar.Complete != want {
-			t.Fatalf("minute %d complete=%v", minute, bar.Complete)
+		want := minute >= 44 // 39 (lag allowance) .. 43 overlap the gap
+		if minute == 39 {
+			want = false
+		}
+		if got := s.complete(bar.Start); got != want {
+			t.Fatalf("minute %d complete=%v", minute, got)
 		}
 	}
 }
@@ -196,5 +199,63 @@ func TestTooFewCompleteBarsAndTheCooldownBlock(t *testing.T) {
 	e2.OnEvent(trade(42, 30, 1.12, 50_000))
 	if got := e2.Tick(at(43, 1)); len(got) != 1 {
 		t.Fatalf("the cooldown must keep one firing per hour: %d", len(got))
+	}
+}
+
+func TestAnOverflowCountsTheExchangeTimeOfTheDroppedTrades(t *testing.T) {
+	for _, since := range []time.Time{at(41, 0.1), {}} {
+		e := New(HYP030())
+		quiet(e)
+		e.OnEvent(trade(40, 30, 1.06, 10_000))
+		e.OnEvent(streamrt.Event{Lifecycle: &streamrt.Lifecycle{
+			Kind: streamrt.Overflow, Symbols: []string{"AAAUSDT"}, At: at(41, 0.15),
+			Since: since, DroppedFrom: at(40, 59.95), DroppedTo: at(40, 59.95), Dropped: 1,
+		}})
+		if got := e.Tick(at(41, 0.3)); len(got) != 0 {
+			t.Fatalf("a trade of minute 40 lost at 41:00.10 left minute 40 complete: %+v", got)
+		}
+	}
+}
+
+func TestADroppedLifecycleEventKeepsTheGapOpenUntilSubscribed(t *testing.T) {
+	e := New(HYP030())
+	quiet(e)
+	e.OnEvent(streamrt.Event{Lifecycle: &streamrt.Lifecycle{
+		Kind: streamrt.Overflow, Symbols: []string{"AAAUSDT"}, At: at(40, 2),
+		Since: at(40, 1), DroppedLifecycle: true, Dropped: 2,
+	}})
+	e.OnEvent(trade(41, 30, 1.06, 10_000))
+	if got := e.Tick(at(42, 1)); len(got) != 0 || !e.symbols["AAAUSDT"].gaps[len(e.symbols["AAAUSDT"].gaps)-1].to.IsZero() {
+		t.Fatalf("the gap must stay open: %+v", got)
+	}
+}
+
+func TestAGapFoundAfterFinalizationRemovesThoseMinutes(t *testing.T) {
+	e := New(HYP030())
+	quiet(e)
+	e.Tick(at(40, 1)) // minutes 0..39 finalized as complete at the time
+	e.OnEvent(streamrt.Event{Lifecycle: &streamrt.Lifecycle{
+		Kind: streamrt.Disconnected, Symbols: []string{"AAAUSDT"},
+		At: at(40, 2), LastFrameAt: at(39, 30), // detected only now
+	}})
+	e.OnEvent(lifecycle(streamrt.Subscribed, 40, 3))
+	e.OnEvent(trade(40, 30, 1.06, 10_000))
+	if got := e.Tick(at(41, 1)); len(got) != 0 {
+		t.Fatalf("fired with a previous bar now known to be incomplete: %+v", got)
+	}
+	if e.Stats.SuppressedByGap != 1 {
+		t.Fatalf("stats %+v", e.Stats)
+	}
+}
+
+func TestATradeBeforeTheOpenSpanGetsItsOwnMinute(t *testing.T) {
+	e := New(HYP030())
+	e.OnEvent(lifecycle(streamrt.Subscribed, 38, 0))
+	e.OnEvent(trade(40, 10, 1.0, 1_000))
+	e.OnEvent(trade(39, 50, 2.0, 7_000)) // earlier, nothing finalized yet
+	e.Tick(at(41, 1))
+	h := e.symbols["AAAUSDT"].history
+	if len(h) != 2 || !h[0].Start.Equal(at(39, 0)) || h[0].Turnover != 7_000 || h[1].Turnover != 1_000 {
+		t.Fatalf("history %+v", h)
 	}
 }
