@@ -1,6 +1,6 @@
 # Bybit 1-minute burst: exit management v1 (protocol draft)
 
-Status: **design review 1 folded in (2026-10-05); registered before any exit is
+Status: **design reviews 1 and 2 folded in (2026-10-05); registered before any exit is
 simulated.** Exploratory throughout. It runs
 after the [cost history](bybit-burst-cost-history-v1.md) and only if that study does not
 park HYP-030. Data before 2026-09-29 only. No trading rule follows from it directly.
@@ -18,6 +18,8 @@ one half of the window, judged on the other.
 - **Firings:** the 732 frozen decay firings (sha256 `cb3f8154bb43...`).
 - **Entry:** the first trade at or after B + 5 s, then the cost study's executable entry
   (USD 50 walked through the asks at that moment).
+- **The entry price** for every exit rule (S, P, E) is that executable entry's average
+  price, the price actually paid, not the first trade (fixed with review 2).
 - **Prices during the hold:** the decay study's verified Bybit trade tapes. Exits are
   triggered on trade prices and filled at the order book at the trigger moment, read
   from the cost study's verified archive.
@@ -39,8 +41,11 @@ one half of the window, judged on the other.
 - A triggered exit (S, T, P) fills at the book 5 s after the trigger trade, the same
   latency target as the entry. The signal must still be received, processed and sent;
   on a sharp move that delay matters.
-- A scheduled exit (H at 60 minutes, E at 15 minutes) fills at the book at its moment:
-  that moment is known in advance.
+- E's check is a decision too: the last trade before minute 15 must be received and
+  compared with the entry before an order goes out. When E exits, it fills at the book
+  at minute 15 plus 5 s (amended by review 2, before any exit is simulated).
+- Only H is a scheduled exit: its moment and its outcome are known in advance, so it
+  fills at the book at minute 60.
 - The same results with a zero exit delay are reported beside them, labelled as the
   optimistic bound only.
 - A book that is broken, stale or too thin at the fill moment makes the firing

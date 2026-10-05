@@ -14,6 +14,21 @@ trigger was found.
 | `cost-funding.json` | `c0cb3efce63a...` | funding settlements of all 282 instruments, status ok         |
 | `cost-result.json`  | `b3f1f4a4c722...` | the result                                                    |
 
+`cost-funding.json` (1.25 MB) is above the repository's 1 MB file limit, so it is
+committed gzipped as `cost-funding.json.gz` (70 KB, `gzip -n -9`); the sha256 above is
+of the uncompressed file. To restore it into a stage directory and check it:
+
+```bash
+E=docs/research/evidence/bybit-burst-cost-history-v1
+gunzip -c $E/cost-funding.json.gz > STAGE/cost-funding.json
+cp $E/cost-funding.json.sha256 STAGE/
+test "$(shasum -a 256 STAGE/cost-funding.json | cut -d' ' -f1)" = "$(cat $E/cost-funding.json.sha256)"
+```
+
+The 606 order-book files (30.4 GB) are not kept in the repository: each is Bybit's own
+public file at the URL in the protocol, and `cost-books.json` holds its sha256, so a
+re-download is checked file by file.
+
 **Coverage:** 730 of 732 firings resolved; 2 exit books were stale. That is 282
 instruments and 47 days, above every registered minimum.
 
