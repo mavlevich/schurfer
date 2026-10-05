@@ -100,20 +100,26 @@ bar ended below the threshold are not in this population.
   - Slippage just after a +5% minute is not measured and is very likely above 15 bps.
   - The population is the window in which the cell was found.
 
-## Next (for review)
+## Next (agreed order after review)
 
-Per the protocol, a forward test of a registered rule (proposed HYP-030) becomes worth
-designing:
+1. **HYP-030 design:**
+   - one rule: the 1-minute burst on Bybit, unchanged;
+   - the moment its features are available;
+   - the universe and how gaps are handled;
+   - portfolio limits;
+   - the decision criterion.
+2. **Power for bursts specifically:**
+   - their dispersion;
+   - the dependence between firings (about 16 a day are not 16 independent
+     observations).
+3. **A bounded measurement of a new path:**
+   - the distribution of its latencies;
+   - executable quotes at entry and exit for the probe size, fees and funding.
 
-- **Rule:** the 1-minute burst on Bybit, unchanged.
-- **Entry:** at the measured latency of the path that would trade it, with a target of
-  5 s or less from the bar's end.
-- **Costs:** from real quotes at the entry moment (spread and depth for the probe
-  size), not from scenarios.
-- **Accrual:** sealed, read after HYP-012 v2 is terminal.
-- **Sizing first:** with about 16 firings a day, the cost/power planning report's
-  numbers decide how long the accrual must run.
+   The v2 and HYP-015 paths stay as they are.
 
-Architecture: the fast path this points to is Bybit (where the owner can probably
-trade, unconfirmed), built from the existing Bybit capture with the fixed waits
-removed. That is a design question for the HYP-030 review, not a change made here.
+4. **Registration and a sealed forward test.** It is read only once HYP-012 v2 is
+   terminal; 2026-10-31 alone does not make it so.
+
+No architecture or library change follows from this readout. The measured slack is in
+today's fixed waits and polling.
