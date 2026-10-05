@@ -66,44 +66,51 @@ type mexcDeal struct {
 	TradeID *int64   `json:"i"`
 }
 
-// Parse returns the trades of a push.deal frame. rs.error ends the session; acks and
-// pongs give no trades. The payload may be one deal or a list of deals.
-func (c MexcCodec) Parse(frame []byte, receivedAt time.Time) ([]Trade, error) {
+// Parse returns the trades of a push.deal frame, or one acknowledgement for an
+// rs.sub.deal success (one per subscription). rs.error or a failed subscription ends
+// the session; pongs give nothing. The payload may be one deal or a list of deals.
+// Deals without an id are skipped: they could not be deduplicated.
+func (c MexcCodec) Parse(frame []byte, receivedAt time.Time) (Parsed, error) {
 	var message struct {
 		Channel string          `json:"channel"`
 		Symbol  string          `json:"symbol"`
 		Data    json.RawMessage `json:"data"`
 	}
 	if err := json.Unmarshal(frame, &message); err != nil {
-		return nil, fmt.Errorf("decode: %w", err)
+		return Parsed{}, fmt.Errorf("decode: %w", err)
 	}
 	switch message.Channel {
 	case "rs.error":
-		return nil, errors.New("mexc rs.error")
+		return Parsed{}, errors.New("mexc rs.error")
+	case "rs.sub.deal":
+		if string(message.Data) != `"success"` {
+			return Parsed{}, fmt.Errorf("mexc subscription refused: %s", message.Data)
+		}
+		return Parsed{Acks: 1}, nil
 	case "push.deal":
 	default:
-		return nil, nil
+		return Parsed{}, nil
 	}
 	size, ok := c.ContractSizes[message.Symbol]
 	if !ok || size <= 0 {
-		return nil, nil // not ours: never converted with a guessed size
+		return Parsed{}, nil // not ours: never converted with a guessed size
 	}
 	var deals []mexcDeal
 	if len(message.Data) > 0 && message.Data[0] == '[' {
 		if err := json.Unmarshal(message.Data, &deals); err != nil {
-			return nil, fmt.Errorf("decode deals: %w", err)
+			return Parsed{}, fmt.Errorf("decode deals: %w", err)
 		}
 	} else {
 		var one mexcDeal
 		if err := json.Unmarshal(message.Data, &one); err != nil {
-			return nil, fmt.Errorf("decode deal: %w", err)
+			return Parsed{}, fmt.Errorf("decode deal: %w", err)
 		}
 		deals = []mexcDeal{one}
 	}
 	trades := make([]Trade, 0, len(deals))
 	for _, d := range deals {
 		if d.Price == nil || d.Volume == nil || d.Taker == nil || d.Time == nil ||
-			*d.Price <= 0 || *d.Volume <= 0 || *d.Time <= 0 {
+			d.TradeID == nil || *d.Price <= 0 || *d.Volume <= 0 || *d.Time <= 0 {
 			continue
 		}
 		var side string
@@ -120,14 +127,11 @@ func (c MexcCodec) Parse(frame []byte, receivedAt time.Time) ([]Trade, error) {
 			continue
 		}
 		base := *d.Volume * size
-		trade := Trade{
-			Exchange: "mexc", Symbol: message.Symbol, Side: side, Price: *d.Price,
-			Size: base, Notional: *d.Price * base, EventAt: eventAt, ReceivedAt: receivedAt,
-		}
-		if d.TradeID != nil {
-			trade.TradeID = fmt.Sprint(*d.TradeID)
-		}
-		trades = append(trades, trade)
+		trades = append(trades, Trade{
+			Exchange: "mexc", Symbol: message.Symbol, TradeID: fmt.Sprint(*d.TradeID), Side: side,
+			Price: *d.Price, Size: base, Notional: *d.Price * base, EventAt: eventAt,
+			ReceivedAt: receivedAt,
+		})
 	}
-	return trades, nil
+	return Parsed{Trades: trades}, nil
 }

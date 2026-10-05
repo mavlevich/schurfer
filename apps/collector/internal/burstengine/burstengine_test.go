@@ -1,6 +1,7 @@
 package burstengine
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -9,31 +10,39 @@ import (
 
 var t0 = time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
 
+func at(minute int, second float64) time.Time {
+	return t0.Add(time.Duration(minute)*time.Minute + time.Duration(second*float64(time.Second)))
+}
+
+var ids int
+
 func trade(minute int, second float64, price, notional float64) streamrt.Event {
-	at := t0.Add(time.Duration(minute)*time.Minute + time.Duration(second*float64(time.Second)))
+	ids++
+	return tradeID(fmt.Sprint(ids), minute, second, price, notional)
+}
+
+func tradeID(id string, minute int, second float64, price, notional float64) streamrt.Event {
+	when := at(minute, second)
 	return streamrt.Event{Trade: &streamrt.Trade{
-		Exchange: "bybit", Symbol: "AAAUSDT", Price: price, Notional: notional,
-		EventAt: at, ReceivedAt: at.Add(100 * time.Millisecond),
+		Exchange: "bybit", Symbol: "AAAUSDT", TradeID: id, Price: price, Notional: notional,
+		EventAt: when, ReceivedAt: when.Add(100 * time.Millisecond),
 	}}
 }
 
 func lifecycle(kind streamrt.LifecycleKind, minute int, second float64) streamrt.Event {
-	at := t0.Add(time.Duration(minute)*time.Minute + time.Duration(second*float64(time.Second)))
-	return streamrt.Event{Lifecycle: &streamrt.Lifecycle{Kind: kind, Symbols: []string{"AAAUSDT"}, At: at}}
+	return streamrt.Event{Lifecycle: &streamrt.Lifecycle{
+		Kind: kind, Symbols: []string{"AAAUSDT"}, At: at(minute, second),
+	}}
 }
 
-// quiet feeds 40 ordinary minutes (turnover 1,000 at price 1.0) starting at minute 0,
-// after a Connected in minute -1.
+// quiet subscribes in minute -1 and feeds 40 ordinary minutes (turnover 1,000 at 1.0).
 func quiet(e *Engine) {
-	e.OnEvent(lifecycle(streamrt.Connected, -1, 30))
+	e.OnEvent(lifecycle(streamrt.Connected, -1, 20))
+	e.OnEvent(lifecycle(streamrt.Subscribed, -1, 30))
 	for m := range 40 {
 		e.OnEvent(trade(m, 10, 1.0, 600))
 		e.OnEvent(trade(m, 40, 1.0, 400))
 	}
-}
-
-func at(minute int, second float64) time.Time {
-	return t0.Add(time.Duration(minute)*time.Minute + time.Duration(second*float64(time.Second)))
 }
 
 func TestABurstFiresAfterTheBarEndPlusGrace(t *testing.T) {
@@ -49,68 +58,130 @@ func TestABurstFiresAfterTheBarEndPlusGrace(t *testing.T) {
 		t.Fatalf("signals %d stats %+v", len(got), e.Stats)
 	}
 	s := got[0]
-	if !s.BarStart.Equal(at(40, 0)) || s.Median != 1_000 || s.Turnover != 10_000 {
+	if !s.BarStart.Equal(at(40, 0)) || s.Median != 1_000 || s.Turnover != 10_000 ||
+		s.Contract != ContractVersion || s.LastTradeLag != 0 {
 		t.Fatalf("%+v", s)
-	}
-	if s.LastTradeLag != 0 {
-		t.Fatalf("last trade at 59.9 s received 0.1 s later: lag %v", s.LastTradeLag)
 	}
 }
 
-func TestASignalIsNotLostWhenTheNextMinuteTradesFirst(t *testing.T) {
+func TestATradeWithinGraceStillCountsAfterTheNextMinuteStarted(t *testing.T) {
+	e := New(HYP030())
+	quiet(e)
+	e.OnEvent(trade(40, 30, 1.03, 4_000))
+	e.OnEvent(trade(41, 0.05, 1.03, 100))    // the next minute arrives first
+	e.OnEvent(trade(40, 59.95, 1.06, 6_000)) // minute 40, inside the grace
+	if e.Stats.LateTrades != 0 {
+		t.Fatalf("a trade inside the grace was dropped: %+v", e.Stats)
+	}
+	if got := e.Tick(at(41, 0.3)); len(got) != 1 || got[0].Turnover != 10_000 {
+		t.Fatalf("signals %+v", got)
+	}
+	e.OnEvent(trade(40, 59.99, 9.0, 1e9)) // after finalization: late, never reopens
+	if e.Stats.LateTrades != 1 || len(e.symbols["AAAUSDT"].open) != 1 {
+		t.Fatalf("stats %+v open %d", e.Stats, len(e.symbols["AAAUSDT"].open))
+	}
+}
+
+func TestMissedMinutesOfADisconnectAreIncomplete(t *testing.T) {
+	e := New(HYP030())
+	quiet(e)
+	e.OnEvent(streamrt.Event{Lifecycle: &streamrt.Lifecycle{
+		Kind: streamrt.Disconnected, Symbols: []string{"AAAUSDT"},
+		At: at(43, 0), LastFrameAt: at(40, 1), // detected late; the gap starts at 40:01
+	}})
+	e.OnEvent(lifecycle(streamrt.Connected, 43, 5))
+	e.OnEvent(lifecycle(streamrt.Subscribed, 43, 10))
+	e.OnEvent(trade(44, 30, 1.0, 1_000))
+	e.Tick(at(45, 1))
+	s := e.symbols["AAAUSDT"]
+	for _, bar := range s.history[len(s.history)-5:] {
+		minute := int(bar.Start.Sub(t0) / time.Minute)
+		want := minute >= 44 // 40..43 overlap the gap
+		if bar.Complete != want {
+			t.Fatalf("minute %d complete=%v", minute, bar.Complete)
+		}
+	}
+}
+
+func TestAnOverflowSpanningAPendingBarSuppressesItsSignal(t *testing.T) {
 	e := New(HYP030())
 	quiet(e)
 	e.OnEvent(trade(40, 30, 1.06, 10_000))
-	e.OnEvent(trade(41, 0.05, 1.07, 100)) // the next minute arrives before the tick
-	if got := e.Tick(at(41, 0.3)); len(got) != 1 {
-		t.Fatalf("signals %d", len(got))
-	}
-}
-
-func TestAGapDuringTheBurstMinuteSuppressesTheSignal(t *testing.T) {
-	e := New(HYP030())
-	quiet(e)
-	e.OnEvent(trade(40, 5, 1.03, 4_000))
-	e.OnEvent(lifecycle(streamrt.Disconnected, 40, 20))
-	e.OnEvent(lifecycle(streamrt.Connected, 40, 25))
-	e.OnEvent(trade(40, 50, 1.06, 6_000))
-	if got := e.Tick(at(41, 1)); len(got) != 0 {
-		t.Fatalf("fired on an incomplete bar: %+v", got)
+	e.OnEvent(trade(41, 0.05, 1.06, 100)) // minute 40 is now pending, not current
+	e.OnEvent(streamrt.Event{Lifecycle: &streamrt.Lifecycle{
+		Kind: streamrt.Overflow, Symbols: []string{"AAAUSDT"},
+		At: at(41, 0.1), Since: at(40, 50), Dropped: 3,
+	}})
+	if got := e.Tick(at(41, 0.3)); len(got) != 0 {
+		t.Fatalf("fired over dropped data: %+v", got)
 	}
 	if e.Stats.SuppressedByGap != 1 {
 		t.Fatalf("stats %+v", e.Stats)
 	}
 }
 
-func TestAnOverflowMarksTheOpenBarIncomplete(t *testing.T) {
+func TestARepeatedTradeIDNeverCountsTwice(t *testing.T) {
 	e := New(HYP030())
 	quiet(e)
-	e.OnEvent(trade(40, 5, 1.06, 10_000))
-	e.OnEvent(lifecycle(streamrt.Overflow, 40, 30))
+	e.OnEvent(tradeID("burst", 40, 30, 1.06, 3_000))
+	e.OnEvent(tradeID("burst", 40, 30, 1.06, 3_000)) // a retransmit would make 6,000
 	if got := e.Tick(at(41, 1)); len(got) != 0 {
-		t.Fatalf("fired after an overflow: %+v", got)
+		t.Fatalf("a duplicate crossed the turnover threshold: %+v", got)
+	}
+	if e.Stats.Duplicates != 1 {
+		t.Fatalf("stats %+v", e.Stats)
+	}
+	e.OnEvent(tradeID("", 41, 30, 1.0, 1))
+	if e.Stats.MissingID != 1 {
+		t.Fatalf("a trade without an id must be refused: %+v", e.Stats)
+	}
+}
+
+func TestCloseFollowsExchangeTimeNotArrival(t *testing.T) {
+	e := New(HYP030())
+	quiet(e)
+	e.OnEvent(trade(40, 50, 1.00, 5_000))
+	e.OnEvent(trade(40, 10, 1.06, 5_000)) // earlier by exchange time, arrives later
+	if got := e.Tick(at(41, 1)); len(got) != 0 {
+		t.Fatalf("an earlier trade became the close: %+v", got)
+	}
+	bar := e.symbols["AAAUSDT"].history[len(e.symbols["AAAUSDT"].history)-1]
+	if bar.Open != 1.06 || bar.Close != 1.00 {
+		t.Fatalf("open %v close %v", bar.Open, bar.Close)
+	}
+}
+
+func TestNothingIsCompleteBeforeTheFirstSubscribed(t *testing.T) {
+	e := New(HYP030())
+	e.OnEvent(lifecycle(streamrt.Connected, -1, 20))
+	for m := range 40 {
+		e.OnEvent(trade(m, 10, 1.0, 1_000))
+	}
+	e.OnEvent(trade(40, 30, 1.06, 10_000))
+	if got := e.Tick(at(41, 1)); len(got) != 0 {
+		t.Fatalf("fired without any acknowledged subscription: %+v", got)
+	}
+	if e.Stats.IncompleteBars != e.Stats.Bars {
+		t.Fatalf("stats %+v", e.Stats)
 	}
 }
 
 func TestEmptyMinutesEnterTheMedianAsZeroTurnover(t *testing.T) {
 	e := New(HYP030())
-	e.OnEvent(lifecycle(streamrt.Connected, -1, 30))
-	for m := 0; m < 40; m += 2 { // trades only every other minute
+	e.OnEvent(lifecycle(streamrt.Subscribed, -1, 30))
+	for m := 0; m < 40; m += 2 {
 		e.OnEvent(trade(m, 10, 1.0, 1_000))
 	}
-	e.OnEvent(trade(40, 30, 1.06, 2_000)) // 2x the traded minutes, but the median is 0..1000
+	e.OnEvent(trade(40, 30, 1.06, 2_000))
 	e.Tick(at(41, 1))
-	if e.Stats.EmptyBars == 0 {
-		t.Fatalf("no empty bars were built: %+v", e.Stats)
-	}
-	if e.Stats.Signals != 0 {
-		t.Fatal("empty minutes must pull the median down, not be skipped")
+	if e.Stats.EmptyBars == 0 || e.Stats.Signals != 0 {
+		t.Fatalf("stats %+v", e.Stats)
 	}
 }
 
 func TestTooFewCompleteBarsAndTheCooldownBlock(t *testing.T) {
 	e := New(HYP030())
-	e.OnEvent(lifecycle(streamrt.Connected, -1, 30))
+	e.OnEvent(lifecycle(streamrt.Subscribed, -1, 30))
 	for m := range 20 {
 		e.OnEvent(trade(m, 10, 1.0, 1_000))
 	}
@@ -125,30 +196,5 @@ func TestTooFewCompleteBarsAndTheCooldownBlock(t *testing.T) {
 	e2.OnEvent(trade(42, 30, 1.12, 50_000))
 	if got := e2.Tick(at(43, 1)); len(got) != 1 {
 		t.Fatalf("the cooldown must keep one firing per hour: %d", len(got))
-	}
-}
-
-func TestALateTradeIsCountedNotAdded(t *testing.T) {
-	e := New(HYP030())
-	quiet(e)
-	e.OnEvent(trade(39, 59, 5.0, 1e9)) // older than the newest bar
-	if e.Stats.LateTrades != 0 {
-		t.Fatalf("a trade of the open minute is not late: %+v", e.Stats)
-	}
-	e.OnEvent(trade(38, 10, 5.0, 1e9))
-	if e.Stats.LateTrades != 1 {
-		t.Fatalf("stats %+v", e.Stats)
-	}
-}
-
-func TestTheFirstBarAfterAConnectIsIncomplete(t *testing.T) {
-	e := New(HYP030())
-	quiet(e)
-	e.OnEvent(lifecycle(streamrt.Disconnected, 40, 0))
-	e.OnEvent(lifecycle(streamrt.Connected, 41, 20))
-	e.OnEvent(trade(41, 30, 1.0, 1_000))
-	e.OnEvent(trade(42, 30, 1.06, 10_000)) // previous bar (minute 41) is incomplete
-	if got := e.Tick(at(43, 1)); len(got) != 0 {
-		t.Fatalf("fired with an incomplete previous bar: %+v", got)
 	}
 }

@@ -1,6 +1,6 @@
 # HYP-030 bounded path measurement v1 (protocol draft)
 
-Status: **draft for design review; nothing runs until it is approved.** It implements
+Status: **design review 1 folded in (2026-10-05); nothing runs until it is approved.** It implements
 option 2 of [hyp030-burst-design-v1](hyp030-burst-design-v1.md) under that design's
 boundaries. It registers no hypothesis and sends no order.
 
@@ -24,16 +24,36 @@ actually cost to enter and exit at those moments?
    - Bybit linear USDT perpetuals in `Trading` status at the run start, from the
      existing `bybit.Adapter.FetchUniverse` with its exclusion counts.
    - Frozen for the run with its sha256; new listings wait for the next run.
-3. **Rule.**
-   - `burstengine` with `HYP030()`: the rule of the design, unchanged.
-   - Bars by exchange time. Minutes without trades are bars with zero turnover and the
-     last price.
-   - Evaluated 250 ms after the bar's end.
-   - Gaps make bars incomplete and block signals.
+3. **Rule, on its own data contract `burst_trade_bars_v1`.**
+   - `burstengine` with `HYP030()`: the design's thresholds, cooldown and median window.
+   - The data contract differs from the research. The research bars took OHLC from the
+     ticker's last price; these take it from trades:
+     - Open and Close are the first and last trade by exchange time, then the venue's
+       sequence, then arrival;
+     - a minute without trades is a bar with zero turnover and the previous close.
+   - So this is a new signal contract. The historical flow (about 15 a day) and the
+     power planning are approximations for it, and its firings will not match the
+     research list one for one.
+   - Bars are evaluated 250 ms after their end. Until then a trade of the minute still
+     updates it; after that it is late, counted and never added.
+   - A repeated trade id is dropped before it touches price or turnover; a trade
+     without an id is refused.
+   - **Completeness starts only when the venue has acknowledged as many subscriptions
+     as were requested** (a count match: acknowledgements name no instrument), within
+     10 s or the session restarts. Gap intervals run:
+     - from a disconnect's last received frame to the next acknowledged subscription;
+     - over an overflow, from its first dropped event to its report.
+
+     A bar that overlaps a gap is incomplete, empty minutes included. Incomplete bars
+     never fire and never enter the median.
+
 4. **At a signal:**
    - one REST order-book snapshot: `GET /v5/market/orderbook`, linear, 50 levels;
-   - the funding rate and the next funding time from the ticker;
-   - 60 minutes after the bar's end, a second book snapshot for the exit.
+   - the funding rate and the next funding time from the ticker at entry;
+   - 60 minutes after the bar's end, a second book snapshot for the exit;
+   - after the exit, the **settled funding** of every settlement time the hold crossed,
+     from the funding history (`/v5/market/funding/history`). The rate at entry alone is
+     not the charge.
 5. **Never:** an order, a write to the v2 or HYP-015 tables, or a change to the existing
    capture, watch or paper paths.
 
@@ -59,7 +79,7 @@ summary.
 
 - every signal's instrument, return, turnover, median and prices;
 - both book snapshots;
-- the funding values.
+- the funding rate at entry and the settled funding of any crossed settlement.
 
 These are appended to daily NDJSON files (gzip), mode 0600, each closed day with a
 manifest (line count, sha256). Nothing opens them before v2 is terminal. A test asserts
@@ -85,9 +105,9 @@ check the 41 bps scenario.
 
 The latency part can be read at any time, because it holds no market value.
 
-## Review questions
+## Review answers (design review 1)
 
-1. Is a REST book snapshot at the signal adequate, or should the path keep a live
-   `orderbook.50` subscription for instruments with a recent burst?
-2. Are 28 days enough to size the costs, at about 15 signals a day?
-3. Is a run-frozen universe acceptable for a bounded measurement?
+- **Order books:** a REST book snapshot is enough for a first measurement of quoted
+  costs. It is not evidence of execution or profitability.
+- **Universe:** a run-frozen universe is acceptable.
+- **Duration:** 28 days is reasonable for latency and collection quality.

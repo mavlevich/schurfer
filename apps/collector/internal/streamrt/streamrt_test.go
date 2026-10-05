@@ -17,19 +17,22 @@ const tradeFrame = `{"topic":"publicTrade.AAAUSDT","type":"snapshot","ts":1,"dat
 	`{"T":1790000000001,"s":"AAAUSDT","S":"Sell","v":"0","p":"1.5","i":"bad"}]}`
 
 func TestBybitCodecParsesTradesAndSkipsInvalidItems(t *testing.T) {
-	got, err := BybitCodec{}.Parse([]byte(tradeFrame), time.UnixMilli(1790000000500))
+	parsed, err := BybitCodec{}.Parse([]byte(tradeFrame), time.UnixMilli(1790000000500))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 {
-		t.Fatalf("trades %d", len(got))
+	if len(parsed.Trades) != 1 {
+		t.Fatalf("trades %d", len(parsed.Trades))
 	}
-	trade := got[0]
+	trade := parsed.Trades[0]
 	if trade.Symbol != "AAAUSDT" || trade.Side != "buy" || trade.Notional != 3 || trade.Seq != 7 {
 		t.Fatalf("%+v", trade)
 	}
-	if none, err := (BybitCodec{}).Parse([]byte(`{"op":"pong","success":true}`), time.Now()); err != nil || none != nil {
+	if none, err := (BybitCodec{}).Parse([]byte(`{"op":"pong","success":true}`), time.Now()); err != nil || none.Trades != nil || none.Acks != 0 {
 		t.Fatalf("pong: %v %v", none, err)
+	}
+	if ack, err := (BybitCodec{}).Parse([]byte(`{"op":"subscribe","success":true}`), time.Now()); err != nil || ack.Acks != 1 {
+		t.Fatalf("ack: %v %v", ack, err)
 	}
 	if _, err := (BybitCodec{}).Parse([]byte(`{"op":"subscribe","success":false,"ret_msg":"x"}`), time.Now()); err == nil {
 		t.Fatal("a refused subscription must end the session")
@@ -38,7 +41,7 @@ func TestBybitCodecParsesTradesAndSkipsInvalidItems(t *testing.T) {
 
 func TestBybitCodecRejectsTradesFromTheFuture(t *testing.T) {
 	got, _ := BybitCodec{}.Parse([]byte(tradeFrame), time.UnixMilli(1790000000000-10_000))
-	if len(got) != 0 {
+	if len(got.Trades) != 0 {
 		t.Fatalf("a trade 10 s ahead of the receive time was accepted: %+v", got)
 	}
 }
@@ -57,8 +60,9 @@ func TestBybitSubscribeFramesChunkTopics(t *testing.T) {
 	}
 }
 
-// fakeVenue serves tradeFrame after each subscribe and drops the first session.
-func fakeVenue(t *testing.T, dials *atomic.Int64, pings *atomic.Int64, trades int) *httptest.Server {
+// fakeVenue acknowledges the subscription (unless ack is false), serves tradeFrame
+// and drops the first session.
+func fakeVenue(t *testing.T, dials *atomic.Int64, pings *atomic.Int64, trades int, ack bool) *httptest.Server {
 	t.Helper()
 	upgrader := websocket.Upgrader{}
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -71,14 +75,17 @@ func fakeVenue(t *testing.T, dials *atomic.Int64, pings *atomic.Int64, trades in
 		if _, _, err := conn.ReadMessage(); err != nil { // the subscribe frame
 			return
 		}
+		if ack && conn.WriteMessage(websocket.TextMessage, []byte(`{"op":"subscribe","success":true}`)) != nil {
+			return
+		}
 		frame := strings.ReplaceAll(tradeFrame, "1790000000000", "1")
 		for range trades {
 			if conn.WriteMessage(websocket.TextMessage, []byte(frame)) != nil {
 				return
 			}
 		}
-		if n == 1 {
-			return // drop the first session
+		if n == 1 && ack {
+			return // drop the first session (an unacknowledging venue keeps it open)
 		}
 		for {
 			_, msg, err := conn.ReadMessage()
@@ -101,7 +108,7 @@ func (c testCodec) PingInterval() time.Duration { return c.ping }
 
 func TestRuntimeEmitsLifecycleInBandAndReconnects(t *testing.T) {
 	var dials, pings atomic.Int64
-	server := fakeVenue(t, &dials, &pings, 1)
+	server := fakeVenue(t, &dials, &pings, 1, true)
 	defer server.Close()
 	codec := testCodec{BybitCodec{Endpoint: "ws" + strings.TrimPrefix(server.URL, "http")}, 50 * time.Millisecond}
 	rt := New(codec, Config{BackoffInitial: 20 * time.Millisecond, BackoffMax: 50 * time.Millisecond})
@@ -120,7 +127,7 @@ func TestRuntimeEmitsLifecycleInBandAndReconnects(t *testing.T) {
 		}
 	}
 	got := strings.Join(kinds, ",")
-	if !strings.HasPrefix(got, "connected,trade,disconnected,connected,trade") {
+	if !strings.HasPrefix(got, "connected,subscribed,trade,disconnected,connected,subscribed,trade") {
 		t.Fatalf("event order %s", got)
 	}
 	if len(sessions) < 2 || dials.Load() < 2 || pings.Load() < 1 {
@@ -131,6 +138,7 @@ func TestRuntimeEmitsLifecycleInBandAndReconnects(t *testing.T) {
 func TestOverflowIsReportedBeforeTheNextDeliveredEvent(t *testing.T) {
 	rt := New(BybitCodec{}, Config{QueueSize: 2})
 	s := &shard{index: 0, symbols: []string{"AAAUSDT"}}
+	before := time.Now()
 	trade := func() Event { return Event{Trade: &Trade{Symbol: "AAAUSDT"}} }
 	for range 5 {
 		rt.emit(s, trade()) // 2 fit, 3 dropped
@@ -142,7 +150,8 @@ func TestOverflowIsReportedBeforeTheNextDeliveredEvent(t *testing.T) {
 	<-rt.events // the consumer catches up
 	rt.emit(s, trade())
 	first, second := <-rt.events, <-rt.events
-	if first.Lifecycle == nil || first.Lifecycle.Kind != Overflow || first.Lifecycle.Dropped != 3 {
+	if first.Lifecycle == nil || first.Lifecycle.Kind != Overflow || first.Lifecycle.Dropped != 3 ||
+		first.Lifecycle.Since.Before(before) || first.Lifecycle.Since.After(first.Lifecycle.At) {
 		t.Fatalf("expected an overflow report first, got %+v", first)
 	}
 	if second.Trade == nil || s.owed != 0 {
@@ -160,18 +169,24 @@ func TestMexcCodecConvertsContractsToBaseUnits(t *testing.T) {
 	codec := MexcCodec{ContractSizes: map[string]float64{"BTC_USDT": 0.0001}}
 	frame := `{"channel":"push.deal","symbol":"BTC_USDT","ts":2,` +
 		`"data":{"p":60000,"v":20,"T":2,"O":1,"M":2,"t":1790000000000,"i":42}}`
-	got, err := codec.Parse([]byte(frame), time.UnixMilli(1790000000100))
-	if err != nil || len(got) != 1 {
-		t.Fatalf("trades %v err %v", got, err)
+	parsed, err := codec.Parse([]byte(frame), time.UnixMilli(1790000000100))
+	if err != nil || len(parsed.Trades) != 1 {
+		t.Fatalf("trades %v err %v", parsed, err)
 	}
-	trade := got[0]
+	trade := parsed.Trades[0]
 	if trade.Size != 0.002 || trade.Notional != 120 || trade.Side != "sell" || trade.TradeID != "42" {
 		t.Fatalf("%+v", trade)
 	}
 	list := `{"channel":"push.deal","symbol":"BTC_USDT","data":[` +
-		`{"p":1,"v":1,"T":1,"t":1},{"p":1,"v":1,"T":9,"t":1}]}`
-	if got, _ := codec.Parse([]byte(list), time.UnixMilli(2)); len(got) != 1 {
-		t.Fatalf("list payload: %v", got)
+		`{"p":1,"v":1,"T":1,"t":1,"i":1},{"p":1,"v":1,"T":9,"t":1,"i":2},{"p":1,"v":1,"T":1,"t":1}]}`
+	if got, _ := codec.Parse([]byte(list), time.UnixMilli(2)); len(got.Trades) != 1 {
+		t.Fatalf("list payload (a bad side and a missing id are skipped): %v", got)
+	}
+	if ack, err := codec.Parse([]byte(`{"channel":"rs.sub.deal","data":"success"}`), time.Now()); err != nil || ack.Acks != 1 {
+		t.Fatalf("ack %v %v", ack, err)
+	}
+	if _, err := codec.Parse([]byte(`{"channel":"rs.sub.deal","data":"failed"}`), time.Now()); err == nil {
+		t.Fatal("a refused subscription must end the session")
 	}
 }
 
@@ -180,11 +195,39 @@ func TestMexcCodecNeverGuessesAContractSize(t *testing.T) {
 	if _, err := codec.SubscribeFrames([]string{"BTC_USDT", "NEW_USDT"}); err == nil {
 		t.Fatal("a symbol without a contract size must be refused")
 	}
-	frame := `{"channel":"push.deal","symbol":"NEW_USDT","data":{"p":1,"v":1,"T":1,"t":1}}`
-	if got, _ := codec.Parse([]byte(frame), time.Now()); got != nil {
+	frame := `{"channel":"push.deal","symbol":"NEW_USDT","data":{"p":1,"v":1,"T":1,"t":1,"i":3}}`
+	if got, _ := codec.Parse([]byte(frame), time.Now()); got.Trades != nil {
 		t.Fatalf("converted with a guessed size: %v", got)
 	}
 	if _, err := codec.Parse([]byte(`{"channel":"rs.error","data":"x"}`), time.Now()); err == nil {
 		t.Fatal("rs.error must end the session")
+	}
+}
+
+func TestAnUnacknowledgedSubscriptionEndsTheSession(t *testing.T) {
+	var dials, pings atomic.Int64
+	server := fakeVenue(t, &dials, &pings, 0, false)
+	defer server.Close()
+	codec := testCodec{BybitCodec{Endpoint: "ws" + strings.TrimPrefix(server.URL, "http")}, time.Second}
+	rt := New(codec, Config{SubscribeTimeout: 150 * time.Millisecond, BackoffInitial: time.Second})
+	ctx, cancel := context.WithTimeout(context.Background(), 600*time.Millisecond)
+	defer cancel()
+	go func() { _ = rt.Run(ctx, []string{"AAAUSDT"}) }()
+	var events []*Lifecycle
+	for event := range rt.Events() {
+		if event.Lifecycle != nil {
+			events = append(events, event.Lifecycle)
+		}
+	}
+	if len(events) < 2 || events[0].Kind != Connected || events[1].Kind != Disconnected {
+		t.Fatalf("events %+v", events)
+	}
+	if !strings.Contains(events[1].Reason, "subscribe timeout") || events[1].LastFrameAt.IsZero() {
+		t.Fatalf("disconnect %+v", events[1])
+	}
+	for _, e := range events {
+		if e.Kind == Subscribed {
+			t.Fatal("never acknowledged, never subscribed")
+		}
 	}
 }

@@ -11,8 +11,15 @@
 // consumer learns of a break at once, not at the next trade:
 //
 //   - Connected: a dial succeeded and every subscribe frame was written;
-//   - Disconnected: the session ended (error, liveness timeout or a codec error);
-//   - Overflow: events of this shard were dropped because the consumer queue was full.
+//   - Subscribed: the venue acknowledged as many subscriptions as were requested.
+//     Data is complete only from here. Acknowledgements name no instrument on the
+//     supported venues, so this is a count match. Without it within SubscribeTimeout
+//     the session ends;
+//   - Disconnected: the session ended (error, liveness timeout or a codec error).
+//     LastFrameAt is the last frame received: the gap starts there, not at the
+//     detection, which can come a whole read timeout later;
+//   - Overflow: events of this shard were dropped because the consumer queue was full,
+//     from Since (the first drop) to At.
 //
 // The queue is bounded and the reader never blocks on it. A dropped event is counted
 // and the shard owes an Overflow event, delivered before its next delivered event, so
@@ -56,19 +63,22 @@ type LifecycleKind string
 
 const (
 	Connected    LifecycleKind = "connected"
+	Subscribed   LifecycleKind = "subscribed"
 	Disconnected LifecycleKind = "disconnected"
 	Overflow     LifecycleKind = "overflow"
 )
 
 // Lifecycle is an in-band connection event for exactly the shard's own symbols.
 type Lifecycle struct {
-	Kind      LifecycleKind
-	Shard     int
-	SessionID string
-	Symbols   []string
-	At        time.Time
-	Dropped   int64  // Overflow: events dropped since the last delivered event
-	Reason    string // Disconnected: why
+	Kind        LifecycleKind
+	Shard       int
+	SessionID   string
+	Symbols     []string
+	At          time.Time
+	Dropped     int64     // Overflow: events dropped since the last delivered event
+	Since       time.Time // Overflow: when the first of them was dropped
+	LastFrameAt time.Time // Disconnected: the session's last received frame (or its dial)
+	Reason      string    // Disconnected: why
 }
 
 // Event is either a trade or a lifecycle event; exactly one pointer is set.
@@ -87,18 +97,26 @@ type Codec interface {
 	SubscribeFrames(symbols []string) ([][]byte, error)
 	PingFrame() []byte
 	PingInterval() time.Duration
-	// Parse turns one frame into trades. Control frames (pong, acks) give none. An
-	// error ends the session (for example a refused subscription).
-	Parse(frame []byte, receivedAt time.Time) ([]Trade, error)
+	// Parse turns one frame into trades and counts subscription acknowledgements.
+	// Other control frames (pong) give neither. An error ends the session (for example
+	// a refused subscription).
+	Parse(frame []byte, receivedAt time.Time) (Parsed, error)
+}
+
+// Parsed is one frame's content.
+type Parsed struct {
+	Trades []Trade
+	Acks   int
 }
 
 // Config holds the runtime's own limits.
 type Config struct {
-	QueueSize      int
-	ReadTimeout    time.Duration // no frame for this long ends the session
-	BackoffInitial time.Duration
-	BackoffMax     time.Duration
-	Dialer         *websocket.Dialer
+	QueueSize        int
+	ReadTimeout      time.Duration // no frame for this long ends the session
+	SubscribeTimeout time.Duration // all acknowledgements must arrive within this
+	BackoffInitial   time.Duration
+	BackoffMax       time.Duration
+	Dialer           *websocket.Dialer
 }
 
 func (c Config) withDefaults(codec Codec) Config {
@@ -107,6 +125,9 @@ func (c Config) withDefaults(codec Codec) Config {
 	}
 	if c.ReadTimeout <= 0 {
 		c.ReadTimeout = 3 * codec.PingInterval()
+	}
+	if c.SubscribeTimeout <= 0 {
+		c.SubscribeTimeout = 10 * time.Second
 	}
 	if c.BackoffInitial <= 0 {
 		c.BackoffInitial = time.Second
@@ -125,6 +146,7 @@ type Stats struct {
 	Frames      atomic.Int64
 	Bytes       atomic.Int64
 	Trades      atomic.Int64
+	Acks        atomic.Int64
 	Dropped     atomic.Int64
 	Sessions    atomic.Int64
 	Disconnects atomic.Int64
@@ -166,11 +188,21 @@ func (r *Runtime) Run(ctx context.Context, symbols []string) error {
 	return nil
 }
 
-// shard is one connection's state; owed counts events dropped and not yet reported.
+// shard is one connection's state; owed counts events dropped and not yet reported,
+// owedSince is when the first of them was dropped.
 type shard struct {
-	index   int
-	symbols []string
-	owed    int64
+	index     int
+	symbols   []string
+	owed      int64
+	owedSince time.Time
+}
+
+func (s *shard) drop(r *Runtime) {
+	if s.owed == 0 {
+		s.owedSince = time.Now()
+	}
+	s.owed++
+	r.Stats.Dropped.Add(1)
 }
 
 // emit delivers without blocking. A drop is counted and reported by an Overflow event
@@ -178,22 +210,21 @@ type shard struct {
 func (r *Runtime) emit(s *shard, event Event) {
 	if s.owed > 0 {
 		overflow := Event{Lifecycle: &Lifecycle{
-			Kind: Overflow, Shard: s.index, Symbols: s.symbols, At: time.Now(), Dropped: s.owed,
+			Kind: Overflow, Shard: s.index, Symbols: s.symbols, At: time.Now(),
+			Dropped: s.owed, Since: s.owedSince,
 		}}
 		select {
 		case r.events <- overflow:
 			s.owed = 0
 		default:
-			s.owed++
-			r.Stats.Dropped.Add(1)
+			s.drop(r)
 			return
 		}
 	}
 	select {
 	case r.events <- event:
 	default:
-		s.owed++
-		r.Stats.Dropped.Add(1)
+		s.drop(r)
 	}
 }
 
@@ -250,8 +281,10 @@ func (r *Runtime) session(ctx context.Context, s *shard) (connected bool, err er
 		}
 	}
 	r.Stats.Sessions.Add(1)
+	dialedAt := time.Now()
+	lastFrameAt := dialedAt
 	r.emit(s, Event{Lifecycle: &Lifecycle{
-		Kind: Connected, Shard: s.index, SessionID: sessionID, Symbols: s.symbols, At: time.Now(),
+		Kind: Connected, Shard: s.index, SessionID: sessionID, Symbols: s.symbols, At: dialedAt,
 	}})
 	defer func() {
 		if ctx.Err() != nil {
@@ -264,7 +297,7 @@ func (r *Runtime) session(ctx context.Context, s *shard) (connected bool, err er
 		}
 		r.emit(s, Event{Lifecycle: &Lifecycle{
 			Kind: Disconnected, Shard: s.index, SessionID: sessionID, Symbols: s.symbols,
-			At: time.Now(), Reason: reason,
+			At: time.Now(), LastFrameAt: lastFrameAt, Reason: reason,
 		}})
 	}()
 
@@ -291,25 +324,55 @@ func (r *Runtime) session(ctx context.Context, s *shard) (connected bool, err er
 	if err := wsstream.ConfigureReadLiveness(conn, r.config.ReadTimeout); err != nil {
 		return true, err
 	}
+	acked, subscribed := 0, false
+	subscribeBy := dialedAt.Add(r.config.SubscribeTimeout)
 	for {
+		if !subscribed {
+			// the earlier of liveness and the subscription deadline
+			deadline := time.Now().Add(r.config.ReadTimeout)
+			if subscribeBy.Before(deadline) {
+				deadline = subscribeBy
+			}
+			if subscribeBy.Before(time.Now()) {
+				return true, fmt.Errorf("subscribe timeout: %d of %d acknowledged", acked, len(frames))
+			}
+			if err := conn.SetReadDeadline(deadline); err != nil {
+				return true, err
+			}
+		}
 		_, frame, readErr := conn.ReadMessage()
 		if readErr != nil {
+			if !subscribed && !time.Now().Before(subscribeBy) {
+				return true, fmt.Errorf("subscribe timeout: %d of %d acknowledged", acked, len(frames))
+			}
 			return true, wsstream.ClassifyReadError(readErr)
 		}
 		received := time.Now()
+		lastFrameAt = received
 		if err := wsstream.RefreshReadDeadline(conn, r.config.ReadTimeout); err != nil {
 			return true, err
 		}
 		r.Stats.Frames.Add(1)
 		r.Stats.Bytes.Add(int64(len(frame)))
-		trades, parseErr := r.codec.Parse(frame, received)
+		parsed, parseErr := r.codec.Parse(frame, received)
 		if parseErr != nil {
 			r.Stats.ParseErrors.Add(1)
 			return true, fmt.Errorf("parse: %w", parseErr)
 		}
-		for i := range trades {
+		if parsed.Acks > 0 {
+			r.Stats.Acks.Add(int64(parsed.Acks))
+			acked += parsed.Acks
+			if !subscribed && acked >= len(frames) {
+				subscribed = true
+				r.emit(s, Event{Lifecycle: &Lifecycle{
+					Kind: Subscribed, Shard: s.index, SessionID: sessionID, Symbols: s.symbols,
+					At: received,
+				}})
+			}
+		}
+		for i := range parsed.Trades {
 			r.Stats.Trades.Add(1)
-			r.emit(s, Event{Trade: &trades[i]})
+			r.emit(s, Event{Trade: &parsed.Trades[i]})
 		}
 	}
 }

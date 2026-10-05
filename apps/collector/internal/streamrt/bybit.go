@@ -75,19 +75,23 @@ type bybitMessage struct {
 	} `json:"data"`
 }
 
-// Parse returns the valid trades of a publicTrade frame. A refused subscription is an
-// error; pongs and other control frames give no trades. Invalid items are skipped, as
-// in the existing adapter.
-func (BybitCodec) Parse(frame []byte, receivedAt time.Time) ([]Trade, error) {
+// Parse returns the valid trades of a publicTrade frame, or one acknowledgement for a
+// successful subscribe response (one per subscribe frame). A refused subscription is
+// an error; pongs give nothing. Invalid items, and trades without an id (which could
+// not be deduplicated), are skipped, as in the existing adapter.
+func (BybitCodec) Parse(frame []byte, receivedAt time.Time) (Parsed, error) {
 	var message bybitMessage
 	if err := json.Unmarshal(frame, &message); err != nil {
-		return nil, fmt.Errorf("decode: %w", err)
+		return Parsed{}, fmt.Errorf("decode: %w", err)
 	}
-	if message.Op == "subscribe" && message.Success != nil && !*message.Success {
-		return nil, fmt.Errorf("subscribe refused: %s", message.RetMsg)
+	if message.Op == "subscribe" {
+		if message.Success == nil || !*message.Success {
+			return Parsed{}, fmt.Errorf("subscribe refused: %s", message.RetMsg)
+		}
+		return Parsed{Acks: 1}, nil
 	}
 	if !strings.HasPrefix(message.Topic, "publicTrade.") {
-		return nil, nil
+		return Parsed{}, nil
 	}
 	trades := make([]Trade, 0, len(message.Data))
 	for _, item := range message.Data {
@@ -99,7 +103,7 @@ func (BybitCodec) Parse(frame []byte, receivedAt time.Time) ([]Trade, error) {
 		if priceErr != nil || sizeErr != nil || !wsstream.FinitePositiveNumber(price) ||
 			!wsstream.FinitePositiveNumber(size) || item.EventAt <= 0 ||
 			eventAt.After(receivedAt.Add(maxFutureSkew)) || symbol == "" ||
-			(side != "buy" && side != "sell") {
+			strings.TrimSpace(item.TradeID) == "" || (side != "buy" && side != "sell") {
 			continue
 		}
 		trades = append(trades, Trade{
@@ -108,5 +112,5 @@ func (BybitCodec) Parse(frame []byte, receivedAt time.Time) ([]Trade, error) {
 			EventAt: eventAt, ReceivedAt: receivedAt, Seq: item.Seq,
 		})
 	}
-	return trades, nil
+	return Parsed{Trades: trades}, nil
 }
