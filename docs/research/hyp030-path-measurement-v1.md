@@ -36,8 +36,9 @@ actually cost to enter and exit at those moments?
      research list one for one.
    - Bars are evaluated 250 ms after their end. Until then a trade of the minute still
      updates it; after that it is late, counted and never added.
-   - A repeated trade id is dropped before it touches price or turnover; a trade
-     without an id is refused.
+   - A repeated trade id is dropped before it touches price or turnover. Ids are kept
+     per open minute and freed at finalization; a repeat of a finalized minute is
+     already refused as late. A trade without an id is refused.
    - **Completeness starts only when the venue has acknowledged as many subscriptions
      as were requested** (a count match: acknowledgements name no instrument), within
      10 s or the session restarts. Gap intervals run:
@@ -101,6 +102,21 @@ name.
   latency).
 - **Disk:** about 15 signals a day with two 50-level books each is small. The trade
   stream is not stored.
+
+## Implementation and a local check
+
+- **Code:** `cmd/burstprobe` (process), `internal/burstprobe` (REST snapshots, sealed
+  daily NDJSON with manifests, counters-only health), `internal/burstengine`,
+  `internal/streamrt`.
+- **Operations:** `make prod-burstprobe-start | -stop | -health`; compose profile
+  `burst-probe`, no restart, 256 MB and 0.5 CPU.
+- **Local check on live Bybit (counters only, 2026-10-05, 150 s):**
+  - 3 connections, 53 acknowledgements for 53 subscribe frames;
+  - no drops, disconnects, duplicates or parse errors; about 300 trades/s;
+  - the first minute after the subscription marked incomplete, as designed;
+  - peak RSS about 25 MB after moving the id deduplication into the open minutes (an
+    earlier ring of recent ids per instrument grew past 100 MB).
+- No sealed file was opened.
 
 ## Readout (later, separately registered)
 
