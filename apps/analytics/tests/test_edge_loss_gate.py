@@ -17,6 +17,10 @@ START = g.MONTH_START.timestamp()
 DAY = 86_400
 
 
+def _ids(trades: list[tuple[float, float]]) -> list[tuple[float, int, float]]:
+    return [(t, i, p) for i, (t, p) in enumerate(trades)]
+
+
 def _pump_trades() -> list[tuple[float, float]]:
     """A trade every 10 s at 1.0 for 23 days, then +1% every 10 s to about 1.35, then a
     trade every 10 s at that level."""
@@ -31,17 +35,17 @@ def _pump_trades() -> list[tuple[float, float]]:
 
 
 def test_a_price_is_never_taken_from_a_later_trade_in_the_same_second() -> None:
-    tape = g.Tape([(START + 60.2, 1.0), (START + 60.9, 2.0)])
+    tape = g.Tape([(START + 60.2, 1, 1.0), (START + 60.9, 2, 2.0)])
     assert tape.at(60) is None  # no trade at or before 60.0
     assert tape.at(61) == 2.0 and tape.age[61] == pytest.approx(0.1)
-    late = g.Tape([(START + 10, 1.0)])
+    late = g.Tape([(START + 10, 1, 1.0)])
     assert late.at(10 + g.MAX_PRICE_AGE_S) == 1.0
     assert late.at(11 + g.MAX_PRICE_AGE_S) is None  # stale
 
 
 def test_a_gate_timeline_measures_shares_after_each_delay() -> None:
     trades = _pump_trades()
-    tape = g.Tape(trades)
+    tape = g.Tape(_ids(trades))
     cross_t = next(t for t, p in trades if p >= 1.2)
     seen = datetime.fromtimestamp(cross_t + 70, UTC)
     got = g.timeline(tape, seen)
@@ -55,12 +59,14 @@ def test_a_gate_timeline_measures_shares_after_each_delay() -> None:
 
 
 def test_a_gate_timeline_reports_censoring_and_missing_crossings() -> None:
-    tape = g.Tape(_pump_trades())
+    tape = g.Tape(_ids(_pump_trades()))
     assert g.timeline(tape, g.MONTH_START + timedelta(days=1))["status"] == "insufficient_history"
     assert g.timeline(tape, g.MONTH_START + timedelta(days=10))["status"] == "no_tape_crossing"
     late = g.Tape(
-        [(START + s, 1.0) for s in range(0, 30 * DAY + DAY // 2, 10)]
-        + [(START + 30 * DAY + DAY // 2 + s, 1.5) for s in range(0, DAY // 2, 10)]
+        _ids(
+            [(START + s, 1.0) for s in range(0, 30 * DAY + DAY // 2, 10)]
+            + [(START + 30 * DAY + DAY // 2 + s, 1.5) for s in range(0, DAY // 2, 10)]
+        )
     )  # crosses on July 31 at noon: the 24h peak window leaves July
     assert g.timeline(late, g.MONTH_START + timedelta(days=30.6))["status"] == "censored_peak"
 
@@ -114,3 +120,10 @@ def test_read_verifies_tapes_and_counts_sources(tmp_path: Path) -> None:
     assert json.loads((stage / g.RESULT_NAME).read_text())["scanner_sources"] == 3
     with pytest.raises(SystemExit, match="read once"):
         g.read(stage, tapes_dir)
+
+
+def test_trades_at_the_same_time_keep_their_deal_order_not_their_price_order() -> None:
+    tape = g.Tape([(START + 5, 7, 200.0), (START + 5, 8, 100.0)])
+    assert tape.at(6) == 100.0
+    reversed_input = g.Tape([(START + 5, 8, 100.0), (START + 5, 7, 200.0)])
+    assert reversed_input.at(6) == 100.0

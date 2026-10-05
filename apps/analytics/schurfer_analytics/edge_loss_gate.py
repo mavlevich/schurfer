@@ -189,14 +189,19 @@ class Tape:
     `price[k]` is the last trade at or before boundary k (MONTH_START + k seconds) and
     `age[k]` its age in seconds; a boundary before the first trade has no price.
     Lows and highs over a window are taken from the trades themselves.
+
+    Trades are `(time, deal id, price)`. Trades with the same time keep Gate's own
+    sequence (the deal id), never an order by price.
     """
 
-    def __init__(self, trades: Sequence[tuple[float, float]]) -> None:
+    def __init__(self, trades: Sequence[tuple[float, int, float]]) -> None:
         self.start = MONTH_START.timestamp()
         self.n = int((MONTH_END - MONTH_START).total_seconds()) + 1
-        ordered = sorted((t, p) for t, p in trades if p > 0)
-        self.times = array("d", (t for t, _ in ordered))
-        self.prices = array("d", (p for _, p in ordered))
+        ordered = sorted(
+            ((t, deal, p) for t, deal, p in trades if p > 0), key=lambda x: (x[0], x[1])
+        )
+        self.times = array("d", (t for t, _, _ in ordered))
+        self.prices = array("d", (p for _, _, p in ordered))
         self.price = array("d", [0.0]) * self.n
         self.age = array("d", [-1.0]) * self.n
         j, count = -1, len(self.times)
@@ -233,20 +238,21 @@ class Tape:
         return target, self.times[index]
 
 
-def read_tape(path: Path) -> list[tuple[float, float]]:
+def read_tape(path: Path) -> list[tuple[float, int, float]]:
     import duckdb
 
     rows = (
         duckdb.connect()
         .execute(
-            "SELECT column0::DOUBLE, column2::DOUBLE FROM read_csv(?, header = false,"
+            "SELECT column0::DOUBLE, column1::BIGINT, column2::DOUBLE"
+            " FROM read_csv(?, header = false,"
             " columns = {'column0': 'VARCHAR', 'column1': 'VARCHAR', 'column2': 'VARCHAR',"
             " 'column3': 'VARCHAR'}) WHERE TRY_CAST(column0 AS DOUBLE) IS NOT NULL",
             [str(path)],
         )
         .fetchall()
     )
-    return [(float(t), float(p)) for t, p in rows]
+    return [(float(t), int(deal), float(p)) for t, deal, p in rows]
 
 
 def timeline(tape: Tape, first_seen: datetime) -> dict[str, Any]:
