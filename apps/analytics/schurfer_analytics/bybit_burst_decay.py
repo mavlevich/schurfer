@@ -236,22 +236,41 @@ def fetch_tapes(stage_dir: Path, tapes_dir: Path) -> dict[str, Any]:
 # ---------------------------------------------------------------- trades
 
 
-def read_trades(path: Path) -> list[Trade]:
-    """A day's trades in time order; trades at one timestamp keep the file's row order
-    (the archive has no sequence id), never a price order."""
+def firing_window(firing: dict[str, Any]) -> tuple[float, float]:
+    """The span of trades one firing needs: its burst minute to its exit wait."""
+    b = float(firing["bar_start"]) + 60
+    return b - 60, b + EXIT_AFTER_S + EXIT_WAIT_S
+
+
+def read_trades(path: Path, windows: Sequence[tuple[float, float]]) -> list[Trade]:
+    """A day's trades inside the given windows, in time order; trades at one timestamp
+    keep the file's row order (the archive has no sequence id), never a price order.
+    Only the windows are kept in memory, never the whole day."""
     import duckdb
 
+    if not windows:
+        return []
+    within = " OR ".join("t BETWEEN ? AND ?" for _ in windows)
     rows = (
         duckdb.connect()
         .execute(
-            "SELECT timestamp::DOUBLE, price::DOUBLE, foreignNotional::DOUBLE"
-            " FROM (SELECT *, row_number() OVER () AS row FROM read_csv(?, header = true,"
-            " all_varchar = true)) ORDER BY timestamp::DOUBLE, row",
-            [str(path)],
+            "SELECT t, p, n FROM (SELECT timestamp::DOUBLE AS t, price::DOUBLE AS p,"  # noqa: S608 -- placeholders only
+            " foreignNotional::DOUBLE AS n, row_number() OVER () AS row"
+            " FROM read_csv(?, header = true, all_varchar = true))"
+            f" WHERE p > 0 AND ({within}) ORDER BY t, row",
+            [str(path), *(bound for window in windows for bound in window)],
         )
         .fetchall()
     )
-    return [(float(t), float(p), float(n)) for t, p, n in rows if float(p) > 0]
+    return [(float(t), float(p), float(n)) for t, p, n in rows]
+
+
+def peak_rss_bytes() -> int:
+    """The process's peak resident set size (ru_maxrss is bytes on macOS, KiB on Linux)."""
+    import resource
+
+    peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+    return int(peak) if sys.platform == "darwin" else int(peak) * 1024
 
 
 class Trades:
@@ -437,7 +456,7 @@ def summarize(rows: Sequence[dict[str, Any]], seed: int) -> dict[str, Any]:
     }
 
 
-def read(stage_dir: Path, tapes_dir: Path) -> dict[str, Any]:
+def read(stage_dir: Path, tapes_dir: Path, reader_revision: str) -> dict[str, Any]:
     if (stage_dir / RESULT_NAME).exists():
         raise SystemExit(f"{stage_dir / RESULT_NAME} exists: read once")
     payload, firings_sha = load_verified(stage_dir / FIRINGS_NAME)
@@ -460,7 +479,8 @@ def read(stage_dir: Path, tapes_dir: Path) -> dict[str, Any]:
             path = tapes_dir / name
             if sha256_file(path) != tapes["files"][name]["sha256"]:
                 raise ValueError(f"{name} does not match its recorded sha256")
-            loaded += read_trades(path)  # each file once per instrument
+            # each file once per instrument, only the instrument's firing windows
+            loaded += read_trades(path, [firing_window(f) for f in firings])
         trades = Trades(sorted(loaded, key=lambda t: t[0]))
         for firing in firings:
             own = {f"{s}{d}.csv.gz" for s, d in tape_days([firing])}
@@ -473,8 +493,10 @@ def read(stage_dir: Path, tapes_dir: Path) -> dict[str, Any]:
         "firings_sha256": firings_sha,
         "tapes_sha256": tapes_sha,
         "firings_code_revision": payload["code_revision"],
+        "reader_code_revision": reader_revision,
         **summarize(rows, BOOTSTRAP_SEED),
     }
+    result["peak_rss_bytes"] = peak_rss_bytes()
     write_once(stage_dir / RESULT_NAME, result)
     return result
 
@@ -525,7 +547,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         digest = write_once(args.stage_dir / TAPES_NAME, tapes)
         sys.stdout.write(json.dumps({"sha256": digest, "status": tapes["status"]}) + "\n")
         return
-    result = read(args.stage_dir, args.tapes_dir)
+    from .mexc_early_trigger_hyp029 import verified_revision
+
+    result = read(args.stage_dir, args.tapes_dir, verified_revision(args.code_revision))
     sys.stdout.write(json.dumps({"statuses": result["statuses"]}) + "\n")
 
 

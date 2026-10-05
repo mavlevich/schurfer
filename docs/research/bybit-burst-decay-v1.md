@@ -1,6 +1,6 @@
 # Bybit 1-minute burst: seconds-level decay v1 (descriptive protocol)
 
-Status: **design review 1 folded in (2026-10-05); registered before any trade file is
+Status: **design reviews 1 and 2 folded in (2026-10-05); registered before any trade file is
 read.** A
 descriptive study. It confirms nothing and creates no trading rule.
 
@@ -50,7 +50,12 @@ and size; none are here.
   - Each file's sha256 is recorded.
   - The cap is 20 GiB, counting files already on disk.
   - A missing file makes its firings `no_tape`.
-  - Each file is hashed and parsed once per instrument.
+  - Each file is hashed and parsed once per instrument. Only the firings' windows (the
+    burst minute to the exit wait, about 62 minutes each) are kept in memory, and the
+    result records the read's peak resident memory.
+- **Reader revision:** the read runs only from a clean checkout of an explicit commit.
+  The result records it as `reader_code_revision`, apart from the revision that froze
+  the firing list.
 - **Order:** trades keep the file's row order. With no sequence id, ties at the same
   timestamp are ordered by row, never by price.
 

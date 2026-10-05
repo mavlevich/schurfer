@@ -56,8 +56,15 @@ def _firing(**over: Any) -> dict[str, Any]:
 def test_trades_at_one_timestamp_keep_their_row_order(tmp_path: Path) -> None:
     path = tmp_path / "t.csv.gz"
     path.write_bytes(_csv([(B, 200.0, 1.0), (B, 100.0, 1.0)]))
-    trades = d.Trades(d.read_trades(path))
+    trades = d.Trades(d.read_trades(path, [(B - 1, B + 1)]))
     assert trades.last_at(B) == (100.0, 0.0)
+
+
+def test_only_the_firing_windows_are_read(tmp_path: Path) -> None:
+    path = tmp_path / "t.csv.gz"
+    path.write_bytes(_csv([(B - 500, 1.0, 1.0), (B, 2.0, 1.0), (B + 5000, 3.0, 1.0)]))
+    assert d.read_trades(path, [(B - 60, B + 60)]) == [(float(B), 2.0, 1.0)]
+    assert d.read_trades(path, []) == []
 
 
 def test_entry_is_the_first_trade_after_the_moment_not_the_last_one_before() -> None:
@@ -173,13 +180,16 @@ def test_read_verifies_files_once_per_instrument_and_writes_once(
         return sha256_file(path)
 
     monkeypatch.setattr(d, "sha256_file", spy)
-    result = d.read(stage, tapes_dir)
+    result = d.read(stage, tapes_dir, "reader-rev")
     assert hashed == [name]
+    assert result["reader_code_revision"] == "reader-rev"
+    assert result["firings_code_revision"] == "rev"
+    assert result["peak_rss_bytes"] > 0
     assert result["statuses"] == {"ok": 1, "exit_unavailable": 1}
     assert result["checks"]["entry_not_t1_open"] == 0
     assert result["checks"]["exit_not_t61_open"] == 0
     with pytest.raises(SystemExit, match="read once"):
-        d.read(stage, tapes_dir)
+        d.read(stage, tapes_dir, "reader-rev")
 
 
 def test_every_phase_refuses_another_contract(tmp_path: Path) -> None:
@@ -187,7 +197,7 @@ def test_every_phase_refuses_another_contract(tmp_path: Path) -> None:
     with pytest.raises(SystemExit, match="another contract"):
         d.fetch_tapes(stage, tmp_path / "tapes")
     with pytest.raises(SystemExit, match="another contract"):
-        d.read(stage, tmp_path / "tapes")
+        d.read(stage, tmp_path / "tapes", "reader-rev")
 
 
 def test_the_cap_counts_files_already_on_disk(
@@ -208,3 +218,9 @@ def test_fetch_refuses_days_on_or_after_the_blind_boundary(tmp_path: Path) -> No
     with pytest.raises(SystemExit, match="blind boundary"):
         d.fetch_tapes(stage, tmp_path / "tapes")
     assert not (tmp_path / "tapes").exists()
+
+
+def test_the_read_phase_requires_the_checked_out_revision(tmp_path: Path) -> None:
+    stage, _ = _stage(tmp_path, [_firing()])
+    with pytest.raises(SystemExit, match="code-revision"):
+        d.main(["--phase", "read", "--stage-dir", str(stage), "--tapes-dir", str(tmp_path)])
