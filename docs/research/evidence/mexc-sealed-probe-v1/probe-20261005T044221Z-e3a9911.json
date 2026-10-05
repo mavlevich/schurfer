@@ -1,0 +1,90 @@
+{
+ "version": "mexc_sealed_probe_v2",
+ "started_at": "2026-10-05T04:42:21.34692425Z",
+ "ended_at": "2026-10-05T05:12:21.363741389Z",
+ "compress": false,
+ "symbols": 1077,
+ "symbols_missing_contract_size": 0,
+ "universe_excluded": {
+  "not_usdt": 109
+ },
+ "connections": 22,
+ "symbols_per_connection": 50,
+ "subscription_acks": 1077,
+ "sessions": 22,
+ "sessions_fully_acknowledged": 22,
+ "excess_acknowledgements": 0,
+ "instruments_with_trades": 1077,
+ "lag_values_seen": {
+  "receive_minus_push_ts": 253147,
+  "receive_minus_trade_time": 253147
+ },
+ "errors_by_code": {},
+ "messages_by_channel": {
+  "pong": 2618,
+  "push.deal": 253147,
+  "rs.sub.deal": 1077
+ },
+ "bytes_by_channel": {
+  "pong": 151844,
+  "push.deal": 42463788,
+  "rs.sub.deal": 65697
+ },
+ "trades": 253147,
+ "malformed_trades": 0,
+ "payload_shape": {
+  "list": 0,
+  "object": 253147
+ },
+ "fields_seen": {
+  "M": 253147,
+  "O": 253147,
+  "T": 253147,
+  "cts": 253147,
+  "i": 253147,
+  "p": 253147,
+  "t": 253147,
+  "v": 253147
+ },
+ "messages_per_second": {
+  "max": 833,
+  "n": 1799,
+  "p50": 135,
+  "p90": 182,
+  "p99": 267
+ },
+ "lag_ms": {
+  "ping_round_trip": {
+   "max": 3679,
+   "n": 2618,
+   "p50": 228,
+   "p90": 243,
+   "p99": 270
+  },
+  "receive_minus_pong_time": {
+   "max": 226,
+   "n": 2618,
+   "p50": 112,
+   "p90": 117,
+   "p99": 130
+  },
+  "receive_minus_push_ts": {
+   "max": 2733,
+   "n": 200000,
+   "p50": 113,
+   "p90": 118,
+   "p99": 155
+  },
+  "receive_minus_trade_time": {
+   "max": 2737,
+   "n": 200000,
+   "p50": 120,
+   "p90": 127,
+   "p99": 164
+  }
+ },
+ "reconnects": 0,
+ "reconnect_gap_ms": {},
+ "bytes_per_day_estimate": 2048684651,
+ "trades_per_day_estimate": 12150942
+}
