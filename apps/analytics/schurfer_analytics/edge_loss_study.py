@@ -845,9 +845,17 @@ def main(argv: Sequence[str] | None = None) -> None:
         raise SystemExit("--bars-dir and --mexc-dir are required for the read")
     revision = verified_revision(args.code_revision)
     result = run_read(args.stage_dir, args.bars_dir, args.mexc_dir, revision, now)
+    part_b = result["part_b"]
+    registered = part_b["primary_registered_estimand"]
+    keys = ("firings", "mde_bps_80pct_power", "verdict")
     summary = {
-        entry: {k: cell.get(k) for k in ("firings", "mde_bps_80pct_power", "verdict")}
-        for entry, cell in result["part_b"]["primary"].items()
+        "registered": {"entry": registered}
+        | {k: part_b["primary"][registered].get(k) for k in keys},
+        "also_reported": {
+            entry: {k: cell.get(k) for k in keys}
+            for entry, cell in part_b["primary"].items()
+            if entry != registered
+        },
     }
     sys.stdout.write(json.dumps(summary) + "\n")
 

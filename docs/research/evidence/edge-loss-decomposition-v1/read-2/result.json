@@ -1,0 +1,6674 @@
+{
+  "caveats": [
+    "fees are Bybit's published base-tier rate, not measured fills",
+    "MEXC holds only symbols listed on 2026-09-27; its costs are not measured",
+    "minute bars quantize every delay below a minute to the next open"
+  ],
+  "contract_sha256": "a4636f9c343f049b0e16b8737766694540fd7f823458adbd6d9f8ac5a0ced46e",
+  "inputs_sha256": "e3e1615f60a139a6963a8fe892128a997bd2245b1e8249ca878df494a864b234",
+  "part_a": {
+    "binance": {
+      "first_day": "2026-08-18",
+      "moments": {
+        "24h_0.2": {
+          "crossing_close": {
+            "median": 0.6658496732026141,
+            "n": 2643,
+            "q25": 0.4925748011473595,
+            "q75": 0.82172047613424
+          },
+          "minutes_after_move_start": {
+            "median": 1353.0,
+            "n": 2643,
+            "q25": 1158.5,
+            "q75": 1427.0
+          },
+          "scanner_actual_entry": {
+            "median": 0.6764141898370086,
+            "n": 2637,
+            "q25": 0.5098131574815513,
+            "q75": 0.8338624338624337
+          },
+          "scanner_lag_s": {
+            "median": 56.47199988365173,
+            "n": 2643,
+            "q25": 27.340499997138977,
+            "q75": 624.8555001020432
+          },
+          "scanner_model_entry": {
+            "median": 0.673359816067737,
+            "n": 2630,
+            "q25": 0.49836870512451686,
+            "q75": 0.8235097148601189
+          },
+          "stream_ideal_next_open": {
+            "median": 0.665160288094902,
+            "n": 2637,
+            "q25": 0.49211356466876965,
+            "q75": 0.820726622989875
+          },
+          "watch_path_entry": {
+            "median": 0.6715321953327572,
+            "n": 2638,
+            "q25": 0.497634485426312,
+            "q75": 0.8247632304375121
+          }
+        },
+        "5m_0.03": {
+          "crossing_close": {
+            "median": 0.29514963880288947,
+            "n": 2125,
+            "q25": 0.17275348390197004,
+            "q75": 0.4808510638297875
+          },
+          "minutes_after_move_start": {
+            "median": 353.0,
+            "n": 2125,
+            "q25": 57.0,
+            "q75": 855.0
+          },
+          "stream_ideal_next_open": {
+            "median": 0.29439567859554333,
+            "n": 2117,
+            "q25": 0.17282035370772578,
+            "q75": 0.48023504273504264
+          },
+          "watch_path_entry": {
+            "median": 0.304010349288486,
+            "n": 2125,
+            "q25": 0.1715942525780558,
+            "q75": 0.5018696581196579
+          }
+        },
+        "5m_0.05": {
+          "crossing_close": {
+            "median": 0.3751525790693725,
+            "n": 1400,
+            "q25": 0.22435177694332747,
+            "q75": 0.6265164644714037
+          },
+          "minutes_after_move_start": {
+            "median": 399.0,
+            "n": 1400,
+            "q25": 57.0,
+            "q75": 813.75
+          },
+          "stream_ideal_next_open": {
+            "median": 0.37490007993605134,
+            "n": 1397,
+            "q25": 0.22530957414678332,
+            "q75": 0.6261752538548325
+          },
+          "watch_path_entry": {
+            "median": 0.3930021868166201,
+            "n": 1400,
+            "q25": 0.2303161478770511,
+            "q75": 0.6474747140384318
+          }
+        },
+        "5m_0.1": {
+          "crossing_close": {
+            "median": 0.5390334572490706,
+            "n": 459,
+            "q25": 0.3588976893169904,
+            "q75": 0.8159722222222221
+          },
+          "minutes_after_move_start": {
+            "median": 260.0,
+            "n": 459,
+            "q25": 30.0,
+            "q75": 773.0
+          },
+          "stream_ideal_next_open": {
+            "median": 0.5372129849564532,
+            "n": 459,
+            "q25": 0.35902119482555395,
+            "q75": 0.8234508547008547
+          },
+          "watch_path_entry": {
+            "median": 0.5915721231766615,
+            "n": 459,
+            "q25": 0.3710697439102423,
+            "q75": 0.8596532346939179
+          }
+        }
+      },
+      "not_crossed_before_24h_crossing": {
+        "5m_0.03": 518,
+        "5m_0.05": 1243,
+        "5m_0.1": 2184
+      },
+      "scanner_sources": 3210,
+      "statuses": {
+        "censored_peak": 21,
+        "insufficient_history": 255,
+        "no_bar_crossing": 291,
+        "ok": 2643
+      }
+    },
+    "bybit": {
+      "first_day": "2026-08-13",
+      "moments": {
+        "24h_0.2": {
+          "crossing_close": {
+            "median": 0.6883720930232556,
+            "n": 2907,
+            "q25": 0.5105925634209059,
+            "q75": 0.8312511081953258
+          },
+          "minutes_after_move_start": {
+            "median": 1351.0,
+            "n": 2907,
+            "q25": 1162.0,
+            "q75": 1426.0
+          },
+          "scanner_actual_entry": {
+            "median": 0.7016109045848821,
+            "n": 2901,
+            "q25": 0.5291405992756006,
+            "q75": 0.8421052631578951
+          },
+          "scanner_lag_s": {
+            "median": 63.41199994087219,
+            "n": 2907,
+            "q25": 24.381500005722046,
+            "q75": 1432.8759999275208
+          },
+          "scanner_model_entry": {
+            "median": 0.691301570947376,
+            "n": 2897,
+            "q25": 0.5149208481931319,
+            "q75": 0.8344208346336071
+          },
+          "stream_ideal_next_open": {
+            "median": 0.6883996613039794,
+            "n": 2903,
+            "q25": 0.5094560835691448,
+            "q75": 0.8310378013378767
+          },
+          "watch_path_entry": {
+            "median": 0.6921824104234527,
+            "n": 2903,
+            "q25": 0.5148621833206481,
+            "q75": 0.8352265652023521
+          }
+        },
+        "5m_0.03": {
+          "crossing_close": {
+            "median": 0.2966977642721713,
+            "n": 2400,
+            "q25": 0.1736627827134557,
+            "q75": 0.47972972972972977
+          },
+          "minutes_after_move_start": {
+            "median": 410.5,
+            "n": 2400,
+            "q25": 86.75,
+            "q75": 846.25
+          },
+          "stream_ideal_next_open": {
+            "median": 0.2966977642721713,
+            "n": 2400,
+            "q25": 0.1717549464480969,
+            "q75": 0.4804429081321813
+          },
+          "watch_path_entry": {
+            "median": 0.30828609774853577,
+            "n": 2400,
+            "q25": 0.17874984255935542,
+            "q75": 0.501349892008639
+          }
+        },
+        "5m_0.05": {
+          "crossing_close": {
+            "median": 0.4239588207767898,
+            "n": 1601,
+            "q25": 0.2614933159439191,
+            "q75": 0.6534458004307248
+          },
+          "minutes_after_move_start": {
+            "median": 437.0,
+            "n": 1601,
+            "q25": 114.0,
+            "q75": 861.0
+          },
+          "stream_ideal_next_open": {
+            "median": 0.421121740761583,
+            "n": 1601,
+            "q25": 0.2614933159439191,
+            "q75": 0.6518237801989578
+          },
+          "watch_path_entry": {
+            "median": 0.4438500207444175,
+            "n": 1598,
+            "q25": 0.27054648075714893,
+            "q75": 0.6630888491353607
+          }
+        },
+        "5m_0.1": {
+          "crossing_close": {
+            "median": 0.6037309214245337,
+            "n": 528,
+            "q25": 0.39528487229862475,
+            "q75": 0.8687809185800264
+          },
+          "minutes_after_move_start": {
+            "median": 372.0,
+            "n": 528,
+            "q25": 62.0,
+            "q75": 820.5
+          },
+          "stream_ideal_next_open": {
+            "median": 0.6043141712566811,
+            "n": 528,
+            "q25": 0.39528487229862475,
+            "q75": 0.8690838264960199
+          },
+          "watch_path_entry": {
+            "median": 0.6298031865042173,
+            "n": 528,
+            "q25": 0.4420732905955136,
+            "q75": 0.8836993435134589
+          }
+        }
+      },
+      "not_crossed_before_24h_crossing": {
+        "5m_0.03": 507,
+        "5m_0.05": 1306,
+        "5m_0.1": 2379
+      },
+      "scanner_sources": 3785,
+      "statuses": {
+        "censored_peak": 19,
+        "insufficient_history": 379,
+        "no_bar_crossing": 480,
+        "ok": 2907
+      }
+    },
+    "mexc": {
+      "first_day": "2026-08-28",
+      "moments": {
+        "24h_0.2": {
+          "crossing_close": {
+            "median": 0.585100598151169,
+            "n": 1911,
+            "q25": 0.40168067226890763,
+            "q75": 0.7826163386427907
+          },
+          "minutes_after_move_start": {
+            "median": 1162.0,
+            "n": 1911,
+            "q25": 781.0,
+            "q75": 1369.0
+          },
+          "scanner_actual_entry": {
+            "median": 0.6404593403188554,
+            "n": 1892,
+            "q25": 0.44749498150131867,
+            "q75": 0.8042012553974743
+          },
+          "scanner_lag_s": {
+            "median": 1734.108999967575,
+            "n": 1911,
+            "q25": 191.95500004291534,
+            "q75": 9621.181500077248
+          },
+          "scanner_model_entry": {
+            "median": 0.5892502515263074,
+            "n": 1904,
+            "q25": 0.4042514190539434,
+            "q75": 0.7746160086953677
+          },
+          "stream_ideal_next_open": {
+            "median": 0.585100598151169,
+            "n": 1911,
+            "q25": 0.40168067226890763,
+            "q75": 0.7826163386427907
+          },
+          "watch_path_entry": {
+            "median": 0.5951881465897708,
+            "n": 1904,
+            "q25": 0.40139220246454266,
+            "q75": 0.775127768313458
+          }
+        },
+        "5m_0.03": {
+          "crossing_close": {
+            "median": 0.13438688802517157,
+            "n": 1838,
+            "q25": 0.08147321428571426,
+            "q75": 0.25071472510616716
+          },
+          "minutes_after_move_start": {
+            "median": 36.0,
+            "n": 1838,
+            "q25": 6.0,
+            "q75": 358.5
+          },
+          "stream_ideal_next_open": {
+            "median": 0.13438688802517157,
+            "n": 1838,
+            "q25": 0.08147321428571426,
+            "q75": 0.25071472510616716
+          },
+          "watch_path_entry": {
+            "median": 0.13626834381551353,
+            "n": 1838,
+            "q25": 0.08053694291947366,
+            "q75": 0.2563694267515922
+          }
+        },
+        "5m_0.05": {
+          "crossing_close": {
+            "median": 0.22823529411764698,
+            "n": 1593,
+            "q25": 0.12388280096370573,
+            "q75": 0.39534883720930253
+          },
+          "minutes_after_move_start": {
+            "median": 111.0,
+            "n": 1593,
+            "q25": 17.0,
+            "q75": 489.0
+          },
+          "stream_ideal_next_open": {
+            "median": 0.22823529411764698,
+            "n": 1593,
+            "q25": 0.12388280096370573,
+            "q75": 0.39534883720930253
+          },
+          "watch_path_entry": {
+            "median": 0.2241001564945227,
+            "n": 1593,
+            "q25": 0.11639549436795979,
+            "q75": 0.3968253968253967
+          }
+        },
+        "5m_0.1": {
+          "crossing_close": {
+            "median": 0.41630484415606384,
+            "n": 908,
+            "q25": 0.25225903614457834,
+            "q75": 0.6513950073421437
+          },
+          "minutes_after_move_start": {
+            "median": 211.0,
+            "n": 908,
+            "q25": 66.5,
+            "q75": 585.0
+          },
+          "stream_ideal_next_open": {
+            "median": 0.41630484415606384,
+            "n": 908,
+            "q25": 0.25225903614457834,
+            "q75": 0.6513950073421437
+          },
+          "watch_path_entry": {
+            "median": 0.4099244387822345,
+            "n": 908,
+            "q25": 0.2419793365959759,
+            "q75": 0.6412556053811659
+          }
+        }
+      },
+      "not_crossed_before_24h_crossing": {
+        "5m_0.03": 73,
+        "5m_0.05": 318,
+        "5m_0.1": 1003
+      },
+      "scanner_sources": 3414,
+      "statuses": {
+        "insufficient_history": 791,
+        "no_bar_crossing": 712,
+        "ok": 1911
+      }
+    }
+  },
+  "part_b": {
+    "descriptive_cells": [
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 7394,
+        "gross_bps": {
+          "mean": -1.192006231933835,
+          "median": -33.86004514672636,
+          "n": 7379,
+          "q25": -180.67754865329633,
+          "q75": 124.04742053205631
+        },
+        "horizon": 15,
+        "instruments": 539,
+        "net_mean_bps": {
+          "10.5": -22.192006231933835,
+          "20.5": -42.19200623193383,
+          "25": -51.19200623193383,
+          "45.5": -92.19200623193383
+        },
+        "resolved": 7379,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 7,
+          "exit_bar_missing": 8
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 7394,
+        "gross_bps": {
+          "mean": -2.2673257061313095,
+          "median": -26.360828722171714,
+          "n": 7368,
+          "q25": -165.52822159793203,
+          "q75": 126.69771532871022
+        },
+        "horizon": 15,
+        "instruments": 538,
+        "net_mean_bps": {
+          "10.5": -23.26732570613131,
+          "20.5": -43.26732570613131,
+          "25": -52.26732570613131,
+          "45.5": -93.26732570613132
+        },
+        "resolved": 7368,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 11,
+          "exit_bar_missing": 15
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 7394,
+        "gross_bps": {
+          "mean": 1.9680881209163859,
+          "median": -54.764653230797705,
+          "n": 7370,
+          "q25": -289.2717557969224,
+          "q75": 209.84345490617395
+        },
+        "horizon": 60,
+        "instruments": 538,
+        "net_mean_bps": {
+          "10.5": -19.031911879083616,
+          "20.5": -39.031911879083616,
+          "25": -48.031911879083616,
+          "45.5": -89.03191187908361
+        },
+        "resolved": 7370,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 7,
+          "exit_bar_missing": 17
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 7394,
+        "gross_bps": {
+          "mean": 1.0059619864355533,
+          "median": -43.06882222072595,
+          "n": 7366,
+          "q25": -285.7577284433185,
+          "q75": 218.30451961023178
+        },
+        "horizon": 60,
+        "instruments": 539,
+        "net_mean_bps": {
+          "10.5": -19.994038013564445,
+          "20.5": -39.99403801356445,
+          "25": -48.99403801356445,
+          "45.5": -89.99403801356445
+        },
+        "resolved": 7366,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 11,
+          "exit_bar_missing": 17
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 4,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 7394,
+        "gross_bps": {
+          "mean": -30.660051664120036,
+          "median": -110.3895657659848,
+          "n": 7364,
+          "q25": -490.448029928599,
+          "q75": 299.9976003231569
+        },
+        "horizon": 240,
+        "instruments": 539,
+        "net_mean_bps": {
+          "10.5": -51.66005166412003,
+          "20.5": -71.66005166412003,
+          "25": -80.66005166412003,
+          "45.5": -121.66005166412003
+        },
+        "resolved": 7364,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 7,
+          "exit_bar_missing": 19
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 4,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 7394,
+        "gross_bps": {
+          "mean": -29.86345249422994,
+          "median": -99.67314585642652,
+          "n": 7350,
+          "q25": -477.78700338284796,
+          "q75": 299.76996168718074
+        },
+        "horizon": 240,
+        "instruments": 537,
+        "net_mean_bps": {
+          "10.5": -50.86345249422994,
+          "20.5": -70.86345249422993,
+          "25": -79.86345249422993,
+          "45.5": -120.86345249422993
+        },
+        "resolved": 7350,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 11,
+          "exit_bar_missing": 29
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 7394,
+        "gross_bps": {
+          "mean": 1.192006231933835,
+          "median": 33.86004514672636,
+          "n": 7379,
+          "q25": -124.04742053205631,
+          "q75": 180.67754865329633
+        },
+        "horizon": 15,
+        "instruments": 539,
+        "net_mean_bps": {
+          "10.5": -19.807993768066165,
+          "20.5": -39.80799376806617,
+          "25": -48.80799376806617,
+          "45.5": -89.80799376806617
+        },
+        "resolved": 7379,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 7,
+          "exit_bar_missing": 8
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 7394,
+        "gross_bps": {
+          "mean": 2.2673257061313095,
+          "median": 26.360828722171714,
+          "n": 7368,
+          "q25": -126.69771532871022,
+          "q75": 165.52822159793203
+        },
+        "horizon": 15,
+        "instruments": 538,
+        "net_mean_bps": {
+          "10.5": -18.73267429386869,
+          "20.5": -38.73267429386869,
+          "25": -47.73267429386869,
+          "45.5": -88.73267429386868
+        },
+        "resolved": 7368,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 11,
+          "exit_bar_missing": 15
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 7394,
+        "gross_bps": {
+          "mean": -1.9680881209163859,
+          "median": 54.764653230797705,
+          "n": 7370,
+          "q25": -209.84345490617395,
+          "q75": 289.2717557969224
+        },
+        "horizon": 60,
+        "instruments": 538,
+        "net_mean_bps": {
+          "10.5": -22.968088120916384,
+          "20.5": -42.968088120916384,
+          "25": -51.968088120916384,
+          "45.5": -92.96808812091639
+        },
+        "resolved": 7370,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 7,
+          "exit_bar_missing": 17
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 7394,
+        "gross_bps": {
+          "mean": -1.0059619864355533,
+          "median": 43.06882222072595,
+          "n": 7366,
+          "q25": -218.30451961023178,
+          "q75": 285.7577284433185
+        },
+        "horizon": 60,
+        "instruments": 539,
+        "net_mean_bps": {
+          "10.5": -22.005961986435555,
+          "20.5": -42.00596198643555,
+          "25": -51.00596198643555,
+          "45.5": -92.00596198643555
+        },
+        "resolved": 7366,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 11,
+          "exit_bar_missing": 17
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 4,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 7394,
+        "gross_bps": {
+          "mean": 30.660051664120036,
+          "median": 110.3895657659848,
+          "n": 7364,
+          "q25": -299.9976003231569,
+          "q75": 490.448029928599
+        },
+        "horizon": 240,
+        "instruments": 539,
+        "net_mean_bps": {
+          "10.5": 9.660051664120036,
+          "20.5": -10.339948335879964,
+          "25": -19.339948335879964,
+          "45.5": -60.33994833587997
+        },
+        "resolved": 7364,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 7,
+          "exit_bar_missing": 19
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 4,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 7394,
+        "gross_bps": {
+          "mean": 29.86345249422994,
+          "median": 99.67314585642652,
+          "n": 7350,
+          "q25": -299.76996168718074,
+          "q75": 477.78700338284796
+        },
+        "horizon": 240,
+        "instruments": 537,
+        "net_mean_bps": {
+          "10.5": 8.86345249422994,
+          "20.5": -11.13654750577006,
+          "25": -20.13654750577006,
+          "45.5": -61.13654750577006
+        },
+        "resolved": 7350,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 11,
+          "exit_bar_missing": 29
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 2595,
+        "gross_bps": {
+          "mean": -4.78381503554914,
+          "median": -56.97389297562472,
+          "n": 2587,
+          "q25": -265.5007587616626,
+          "q75": 179.7102523999572
+        },
+        "horizon": 15,
+        "instruments": 420,
+        "net_mean_bps": {
+          "10.5": -25.78381503554914,
+          "20.5": -45.78381503554914,
+          "25": -54.78381503554914,
+          "45.5": -95.78381503554914
+        },
+        "resolved": 2587,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 3,
+          "exit_bar_missing": 5
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 2595,
+        "gross_bps": {
+          "mean": -1.6808964785196254,
+          "median": -28.491381357139687,
+          "n": 2581,
+          "q25": -237.12006898038317,
+          "q75": 181.70555440842452
+        },
+        "horizon": 15,
+        "instruments": 420,
+        "net_mean_bps": {
+          "10.5": -22.680896478519625,
+          "20.5": -42.68089647851963,
+          "25": -51.68089647851963,
+          "45.5": -92.68089647851963
+        },
+        "resolved": 2581,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 7,
+          "exit_bar_missing": 7
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 2595,
+        "gross_bps": {
+          "mean": 0.5450794767616578,
+          "median": -93.5426698336722,
+          "n": 2584,
+          "q25": -449.6074839673084,
+          "q75": 265.4350428507374
+        },
+        "horizon": 60,
+        "instruments": 419,
+        "net_mean_bps": {
+          "10.5": -20.454920523238343,
+          "20.5": -40.45492052323834,
+          "25": -49.45492052323834,
+          "45.5": -90.45492052323834
+        },
+        "resolved": 2584,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 3,
+          "exit_bar_missing": 8
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 2595,
+        "gross_bps": {
+          "mean": 0.617467048181819,
+          "median": -73.85071221010564,
+          "n": 2582,
+          "q25": -415.0873548570458,
+          "q75": 277.64497702263304
+        },
+        "horizon": 60,
+        "instruments": 419,
+        "net_mean_bps": {
+          "10.5": -20.38253295181818,
+          "20.5": -40.38253295181818,
+          "25": -49.38253295181818,
+          "45.5": -90.38253295181818
+        },
+        "resolved": 2582,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 7,
+          "exit_bar_missing": 6
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 2,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 2595,
+        "gross_bps": {
+          "mean": -53.01972059961983,
+          "median": -167.4704211931738,
+          "n": 2582,
+          "q25": -645.7713314963937,
+          "q75": 351.62110779981606
+        },
+        "horizon": 240,
+        "instruments": 418,
+        "net_mean_bps": {
+          "10.5": -74.01972059961983,
+          "20.5": -94.01972059961983,
+          "25": -103.01972059961983,
+          "45.5": -144.01972059961983
+        },
+        "resolved": 2582,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 3,
+          "exit_bar_missing": 8
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 2,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 2595,
+        "gross_bps": {
+          "mean": -49.866049162795946,
+          "median": -127.21585118632028,
+          "n": 2576,
+          "q25": -632.546721992506,
+          "q75": 370.89195227919816
+        },
+        "horizon": 240,
+        "instruments": 418,
+        "net_mean_bps": {
+          "10.5": -70.86604916279595,
+          "20.5": -90.86604916279595,
+          "25": -99.86604916279595,
+          "45.5": -140.86604916279595
+        },
+        "resolved": 2576,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 7,
+          "exit_bar_missing": 10
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 2595,
+        "gross_bps": {
+          "mean": 4.78381503554914,
+          "median": 56.97389297562472,
+          "n": 2587,
+          "q25": -179.7102523999572,
+          "q75": 265.5007587616626
+        },
+        "horizon": 15,
+        "instruments": 420,
+        "net_mean_bps": {
+          "10.5": -16.21618496445086,
+          "20.5": -36.21618496445086,
+          "25": -45.21618496445086,
+          "45.5": -86.21618496445086
+        },
+        "resolved": 2587,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 3,
+          "exit_bar_missing": 5
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 2595,
+        "gross_bps": {
+          "mean": 1.6808964785196254,
+          "median": 28.491381357139687,
+          "n": 2581,
+          "q25": -181.70555440842452,
+          "q75": 237.12006898038317
+        },
+        "horizon": 15,
+        "instruments": 420,
+        "net_mean_bps": {
+          "10.5": -19.319103521480375,
+          "20.5": -39.31910352148037,
+          "25": -48.31910352148037,
+          "45.5": -89.31910352148037
+        },
+        "resolved": 2581,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 7,
+          "exit_bar_missing": 7
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 2595,
+        "gross_bps": {
+          "mean": -0.5450794767616578,
+          "median": 93.5426698336722,
+          "n": 2584,
+          "q25": -265.4350428507374,
+          "q75": 449.6074839673084
+        },
+        "horizon": 60,
+        "instruments": 419,
+        "net_mean_bps": {
+          "10.5": -21.545079476761657,
+          "20.5": -41.54507947676166,
+          "25": -50.54507947676166,
+          "45.5": -91.54507947676166
+        },
+        "resolved": 2584,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 3,
+          "exit_bar_missing": 8
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 2595,
+        "gross_bps": {
+          "mean": -0.617467048181819,
+          "median": 73.85071221010564,
+          "n": 2582,
+          "q25": -277.64497702263304,
+          "q75": 415.0873548570458
+        },
+        "horizon": 60,
+        "instruments": 419,
+        "net_mean_bps": {
+          "10.5": -21.61746704818182,
+          "20.5": -41.61746704818182,
+          "25": -50.61746704818182,
+          "45.5": -91.61746704818182
+        },
+        "resolved": 2582,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 7,
+          "exit_bar_missing": 6
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 2,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 2595,
+        "gross_bps": {
+          "mean": 53.01972059961983,
+          "median": 167.4704211931738,
+          "n": 2582,
+          "q25": -351.62110779981606,
+          "q75": 645.7713314963937
+        },
+        "horizon": 240,
+        "instruments": 418,
+        "net_mean_bps": {
+          "10.5": 32.01972059961983,
+          "20.5": 12.01972059961983,
+          "25": 3.0197205996198306,
+          "45.5": -37.98027940038017
+        },
+        "resolved": 2582,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 3,
+          "exit_bar_missing": 8
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 2,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 2595,
+        "gross_bps": {
+          "mean": 49.866049162795946,
+          "median": 127.21585118632028,
+          "n": 2576,
+          "q25": -370.89195227919816,
+          "q75": 632.546721992506
+        },
+        "horizon": 240,
+        "instruments": 418,
+        "net_mean_bps": {
+          "10.5": 28.866049162795946,
+          "20.5": 8.866049162795946,
+          "25": -0.1339508372040541,
+          "45.5": -41.133950837204054
+        },
+        "resolved": 2576,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 7,
+          "exit_bar_missing": 10
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 523,
+        "gross_bps": {
+          "mean": 9.828581599253548,
+          "median": -42.073845783390794,
+          "n": 522,
+          "q25": -479.41887482962545,
+          "q75": 314.38486981865464
+        },
+        "horizon": 15,
+        "instruments": 218,
+        "net_mean_bps": {
+          "10.5": -11.171418400746452,
+          "20.5": -31.171418400746454,
+          "25": -40.171418400746454,
+          "45.5": -81.17141840074645
+        },
+        "resolved": 522,
+        "side": "long",
+        "threshold": 0.1,
+        "unresolved": {
+          "entry_bar_missing": 1
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 523,
+        "gross_bps": {
+          "mean": 2.7142972192810437,
+          "median": -24.264482863209924,
+          "n": 523,
+          "q25": -378.5502942902952,
+          "q75": 264.11007042092984
+        },
+        "horizon": 15,
+        "instruments": 218,
+        "net_mean_bps": {
+          "10.5": -18.285702780718957,
+          "20.5": -38.28570278071896,
+          "25": -47.28570278071896,
+          "45.5": -88.28570278071895
+        },
+        "resolved": 523,
+        "side": "long",
+        "threshold": 0.1,
+        "unresolved": {},
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 523,
+        "gross_bps": {
+          "mean": -3.900398558381457,
+          "median": -124.44279346211063,
+          "n": 519,
+          "q25": -659.8787071861395,
+          "q75": 366.6530005132762
+        },
+        "horizon": 60,
+        "instruments": 217,
+        "net_mean_bps": {
+          "10.5": -24.900398558381458,
+          "20.5": -44.900398558381454,
+          "25": -53.900398558381454,
+          "45.5": -94.90039855838145
+        },
+        "resolved": 519,
+        "side": "long",
+        "threshold": 0.1,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 3
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 523,
+        "gross_bps": {
+          "mean": -13.519658156040384,
+          "median": -105.2028097737534,
+          "n": 522,
+          "q25": -624.8264397842984,
+          "q75": 285.54409413000195
+        },
+        "horizon": 60,
+        "instruments": 217,
+        "net_mean_bps": {
+          "10.5": -34.519658156040386,
+          "20.5": -54.519658156040386,
+          "25": -63.519658156040386,
+          "45.5": -104.51965815604038
+        },
+        "resolved": 522,
+        "side": "long",
+        "threshold": 0.1,
+        "unresolved": {
+          "exit_bar_missing": 1
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 1,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 523,
+        "gross_bps": {
+          "mean": -76.93483509929533,
+          "median": -254.16301489921133,
+          "n": 519,
+          "q25": -951.251148521457,
+          "q75": 356.3734992313927
+        },
+        "horizon": 240,
+        "instruments": 216,
+        "net_mean_bps": {
+          "10.5": -97.93483509929533,
+          "20.5": -117.93483509929533,
+          "25": -126.93483509929533,
+          "45.5": -167.93483509929533
+        },
+        "resolved": 519,
+        "side": "long",
+        "threshold": 0.1,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 2
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 1,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 523,
+        "gross_bps": {
+          "mean": -87.11789340236024,
+          "median": -184.29870751555777,
+          "n": 519,
+          "q25": -931.9926068844037,
+          "q75": 347.9459029448617
+        },
+        "horizon": 240,
+        "instruments": 216,
+        "net_mean_bps": {
+          "10.5": -108.11789340236024,
+          "20.5": -128.11789340236024,
+          "25": -137.11789340236024,
+          "45.5": -178.11789340236024
+        },
+        "resolved": 519,
+        "side": "long",
+        "threshold": 0.1,
+        "unresolved": {
+          "exit_bar_missing": 3
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 523,
+        "gross_bps": {
+          "mean": -9.828581599253548,
+          "median": 42.073845783390794,
+          "n": 522,
+          "q25": -314.38486981865464,
+          "q75": 479.41887482962545
+        },
+        "horizon": 15,
+        "instruments": 218,
+        "net_mean_bps": {
+          "10.5": -30.828581599253546,
+          "20.5": -50.828581599253546,
+          "25": -59.828581599253546,
+          "45.5": -100.82858159925355
+        },
+        "resolved": 522,
+        "side": "short",
+        "threshold": 0.1,
+        "unresolved": {
+          "entry_bar_missing": 1
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 523,
+        "gross_bps": {
+          "mean": -2.7142972192810437,
+          "median": 24.264482863209924,
+          "n": 523,
+          "q25": -264.11007042092984,
+          "q75": 378.5502942902952
+        },
+        "horizon": 15,
+        "instruments": 218,
+        "net_mean_bps": {
+          "10.5": -23.714297219281043,
+          "20.5": -43.71429721928104,
+          "25": -52.71429721928104,
+          "45.5": -93.71429721928105
+        },
+        "resolved": 523,
+        "side": "short",
+        "threshold": 0.1,
+        "unresolved": {},
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 523,
+        "gross_bps": {
+          "mean": 3.900398558381457,
+          "median": 124.44279346211063,
+          "n": 519,
+          "q25": -366.6530005132762,
+          "q75": 659.8787071861395
+        },
+        "horizon": 60,
+        "instruments": 217,
+        "net_mean_bps": {
+          "10.5": -17.099601441618542,
+          "20.5": -37.099601441618546,
+          "25": -46.099601441618546,
+          "45.5": -87.09960144161855
+        },
+        "resolved": 519,
+        "side": "short",
+        "threshold": 0.1,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 3
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 523,
+        "gross_bps": {
+          "mean": 13.519658156040384,
+          "median": 105.2028097737534,
+          "n": 522,
+          "q25": -285.54409413000195,
+          "q75": 624.8264397842984
+        },
+        "horizon": 60,
+        "instruments": 217,
+        "net_mean_bps": {
+          "10.5": -7.480341843959616,
+          "20.5": -27.480341843959614,
+          "25": -36.480341843959614,
+          "45.5": -77.48034184395962
+        },
+        "resolved": 522,
+        "side": "short",
+        "threshold": 0.1,
+        "unresolved": {
+          "exit_bar_missing": 1
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 1,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 523,
+        "gross_bps": {
+          "mean": 76.93483509929533,
+          "median": 254.16301489921133,
+          "n": 519,
+          "q25": -356.3734992313927,
+          "q75": 951.251148521457
+        },
+        "horizon": 240,
+        "instruments": 216,
+        "net_mean_bps": {
+          "10.5": 55.93483509929533,
+          "20.5": 35.93483509929533,
+          "25": 26.934835099295327,
+          "45.5": -14.065164900704673
+        },
+        "resolved": 519,
+        "side": "short",
+        "threshold": 0.1,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 2
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 1,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 523,
+        "gross_bps": {
+          "mean": 87.11789340236024,
+          "median": 184.29870751555777,
+          "n": 519,
+          "q25": -347.9459029448617,
+          "q75": 931.9926068844037
+        },
+        "horizon": 240,
+        "instruments": 216,
+        "net_mean_bps": {
+          "10.5": 66.11789340236024,
+          "20.5": 46.11789340236024,
+          "25": 37.11789340236024,
+          "45.5": -3.882106597639762
+        },
+        "resolved": 519,
+        "side": "short",
+        "threshold": 0.1,
+        "unresolved": {
+          "exit_bar_missing": 3
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 4608,
+        "gross_bps": {
+          "mean": 27.90337673118953,
+          "median": -15.200135112312108,
+          "n": 4601,
+          "q25": -179.97506369599515,
+          "q75": 176.27726322079428
+        },
+        "horizon": 15,
+        "instruments": 507,
+        "net_mean_bps": {
+          "10.5": 6.903376731189532,
+          "20.5": -13.096623268810468,
+          "25": -22.09662326881047,
+          "45.5": -63.09662326881047
+        },
+        "resolved": 4601,
+        "side": "long",
+        "threshold": 0.02,
+        "unresolved": {
+          "entry_bar_missing": 3,
+          "exit_bar_missing": 4
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 4608,
+        "gross_bps": {
+          "mean": 5.9038944667402005,
+          "median": -19.513925847083335,
+          "n": 4603,
+          "q25": -167.14676327735543,
+          "q75": 135.87407520330052
+        },
+        "horizon": 15,
+        "instruments": 507,
+        "net_mean_bps": {
+          "10.5": -15.096105533259799,
+          "20.5": -35.0961055332598,
+          "25": -44.0961055332598,
+          "45.5": -85.0961055332598
+        },
+        "resolved": 4603,
+        "side": "long",
+        "threshold": 0.02,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 4
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 1,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 4608,
+        "gross_bps": {
+          "mean": 30.26305823233328,
+          "median": -28.565731127838667,
+          "n": 4596,
+          "q25": -282.3100043336668,
+          "q75": 244.9441150309467
+        },
+        "horizon": 60,
+        "instruments": 507,
+        "net_mean_bps": {
+          "10.5": 9.263058232333279,
+          "20.5": -10.736941767666721,
+          "25": -19.73694176766672,
+          "45.5": -60.73694176766672
+        },
+        "resolved": 4596,
+        "side": "long",
+        "threshold": 0.02,
+        "unresolved": {
+          "entry_bar_missing": 3,
+          "exit_bar_missing": 8
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 1,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 4608,
+        "gross_bps": {
+          "mean": 7.033103668206606,
+          "median": -33.47280334727976,
+          "n": 4597,
+          "q25": -281.6144874155935,
+          "q75": 204.7669751822423
+        },
+        "horizon": 60,
+        "instruments": 507,
+        "net_mean_bps": {
+          "10.5": -13.966896331793393,
+          "20.5": -33.96689633179339,
+          "25": -42.96689633179339,
+          "45.5": -83.9668963317934
+        },
+        "resolved": 4597,
+        "side": "long",
+        "threshold": 0.02,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 9
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 3,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 4608,
+        "gross_bps": {
+          "mean": -17.96678738724918,
+          "median": -84.28300094966757,
+          "n": 4589,
+          "q25": -461.851935702966,
+          "q75": 303.22580645161247
+        },
+        "horizon": 240,
+        "instruments": 507,
+        "net_mean_bps": {
+          "10.5": -38.966787387249184,
+          "20.5": -58.966787387249184,
+          "25": -67.96678738724918,
+          "45.5": -108.96678738724918
+        },
+        "resolved": 4589,
+        "side": "long",
+        "threshold": 0.02,
+        "unresolved": {
+          "entry_bar_missing": 3,
+          "exit_bar_missing": 13
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 3,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 4608,
+        "gross_bps": {
+          "mean": -39.42744096522161,
+          "median": -95.85514585196076,
+          "n": 4592,
+          "q25": -460.77447507479417,
+          "q75": 263.7839642722978
+        },
+        "horizon": 240,
+        "instruments": 507,
+        "net_mean_bps": {
+          "10.5": -60.42744096522161,
+          "20.5": -80.4274409652216,
+          "25": -89.4274409652216,
+          "45.5": -130.4274409652216
+        },
+        "resolved": 4592,
+        "side": "long",
+        "threshold": 0.02,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 12
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 4608,
+        "gross_bps": {
+          "mean": -27.90337673118953,
+          "median": 15.200135112312108,
+          "n": 4601,
+          "q25": -176.27726322079428,
+          "q75": 179.97506369599515
+        },
+        "horizon": 15,
+        "instruments": 507,
+        "net_mean_bps": {
+          "10.5": -48.90337673118953,
+          "20.5": -68.90337673118952,
+          "25": -77.90337673118952,
+          "45.5": -118.90337673118952
+        },
+        "resolved": 4601,
+        "side": "short",
+        "threshold": 0.02,
+        "unresolved": {
+          "entry_bar_missing": 3,
+          "exit_bar_missing": 4
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 4608,
+        "gross_bps": {
+          "mean": -5.9038944667402005,
+          "median": 19.513925847083335,
+          "n": 4603,
+          "q25": -135.87407520330052,
+          "q75": 167.14676327735543
+        },
+        "horizon": 15,
+        "instruments": 507,
+        "net_mean_bps": {
+          "10.5": -26.9038944667402,
+          "20.5": -46.9038944667402,
+          "25": -55.9038944667402,
+          "45.5": -96.9038944667402
+        },
+        "resolved": 4603,
+        "side": "short",
+        "threshold": 0.02,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 4
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 1,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 4608,
+        "gross_bps": {
+          "mean": -30.26305823233328,
+          "median": 28.565731127838667,
+          "n": 4596,
+          "q25": -244.9441150309467,
+          "q75": 282.3100043336668
+        },
+        "horizon": 60,
+        "instruments": 507,
+        "net_mean_bps": {
+          "10.5": -51.26305823233328,
+          "20.5": -71.26305823233328,
+          "25": -80.26305823233328,
+          "45.5": -121.26305823233328
+        },
+        "resolved": 4596,
+        "side": "short",
+        "threshold": 0.02,
+        "unresolved": {
+          "entry_bar_missing": 3,
+          "exit_bar_missing": 8
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 1,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 4608,
+        "gross_bps": {
+          "mean": -7.033103668206606,
+          "median": 33.47280334727976,
+          "n": 4597,
+          "q25": -204.7669751822423,
+          "q75": 281.6144874155935
+        },
+        "horizon": 60,
+        "instruments": 507,
+        "net_mean_bps": {
+          "10.5": -28.033103668206607,
+          "20.5": -48.03310366820661,
+          "25": -57.03310366820661,
+          "45.5": -98.0331036682066
+        },
+        "resolved": 4597,
+        "side": "short",
+        "threshold": 0.02,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 9
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 3,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 4608,
+        "gross_bps": {
+          "mean": 17.96678738724918,
+          "median": 84.28300094966757,
+          "n": 4589,
+          "q25": -303.22580645161247,
+          "q75": 461.851935702966
+        },
+        "horizon": 240,
+        "instruments": 507,
+        "net_mean_bps": {
+          "10.5": -3.0332126127508197,
+          "20.5": -23.03321261275082,
+          "25": -32.033212612750816,
+          "45.5": -73.03321261275082
+        },
+        "resolved": 4589,
+        "side": "short",
+        "threshold": 0.02,
+        "unresolved": {
+          "entry_bar_missing": 3,
+          "exit_bar_missing": 13
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 3,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 4608,
+        "gross_bps": {
+          "mean": 39.42744096522161,
+          "median": 95.85514585196076,
+          "n": 4592,
+          "q25": -263.7839642722978,
+          "q75": 460.77447507479417
+        },
+        "horizon": 240,
+        "instruments": 507,
+        "net_mean_bps": {
+          "10.5": 18.427440965221606,
+          "20.5": -1.5725590347783935,
+          "25": -10.572559034778394,
+          "45.5": -51.57255903477839
+        },
+        "resolved": 4592,
+        "side": "short",
+        "threshold": 0.02,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 12
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 2208,
+        "gross_bps": {
+          "mean": 49.71349952774936,
+          "median": -3.7755078405476983,
+          "n": 2206,
+          "q25": -244.95158934552674,
+          "q75": 258.3639996584314
+        },
+        "horizon": 15,
+        "instruments": 431,
+        "net_mean_bps": {
+          "10.5": 28.713499527749363,
+          "20.5": 8.713499527749363,
+          "25": -0.286500472250637,
+          "45.5": -41.28650047225064
+        },
+        "resolved": 2206,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 1
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 2208,
+        "gross_bps": {
+          "mean": 12.592977349464764,
+          "median": -19.06717512467071,
+          "n": 2205,
+          "q25": -217.29745287091595,
+          "q75": 173.9598278335741
+        },
+        "horizon": 15,
+        "instruments": 431,
+        "net_mean_bps": {
+          "10.5": -8.407022650535236,
+          "20.5": -28.407022650535236,
+          "25": -37.40702265053524,
+          "45.5": -78.40702265053524
+        },
+        "resolved": 2205,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 2
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 1,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 2208,
+        "gross_bps": {
+          "mean": 50.198507823197765,
+          "median": -15.882319750672448,
+          "n": 2202,
+          "q25": -373.5272589001373,
+          "q75": 305.6007215999906
+        },
+        "horizon": 60,
+        "instruments": 431,
+        "net_mean_bps": {
+          "10.5": 29.198507823197765,
+          "20.5": 9.198507823197765,
+          "25": 0.19850782319776528,
+          "45.5": -40.801492176802235
+        },
+        "resolved": 2202,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 4
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 1,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 2208,
+        "gross_bps": {
+          "mean": 13.74748413360316,
+          "median": -35.0415055286879,
+          "n": 2202,
+          "q25": -363.9078772985069,
+          "q75": 247.54176162626817
+        },
+        "horizon": 60,
+        "instruments": 431,
+        "net_mean_bps": {
+          "10.5": -7.252515866396839,
+          "20.5": -27.25251586639684,
+          "25": -36.25251586639684,
+          "45.5": -77.25251586639683
+        },
+        "resolved": 2202,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 4
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 2,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 2208,
+        "gross_bps": {
+          "mean": 8.021058639603769,
+          "median": -71.68322840021224,
+          "n": 2197,
+          "q25": -549.0848585690511,
+          "q75": 384.4593223777637
+        },
+        "horizon": 240,
+        "instruments": 430,
+        "net_mean_bps": {
+          "10.5": -12.978941360396231,
+          "20.5": -32.978941360396234,
+          "25": -41.978941360396234,
+          "45.5": -82.97894136039623
+        },
+        "resolved": 2197,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 8
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 2,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 2208,
+        "gross_bps": {
+          "mean": -27.575867124949394,
+          "median": -92.46287475483284,
+          "n": 2199,
+          "q25": -538.4574398886077,
+          "q75": 336.76065949063474
+        },
+        "horizon": 240,
+        "instruments": 430,
+        "net_mean_bps": {
+          "10.5": -48.5758671249494,
+          "20.5": -68.5758671249494,
+          "25": -77.5758671249494,
+          "45.5": -118.5758671249494
+        },
+        "resolved": 2199,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 6
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 2208,
+        "gross_bps": {
+          "mean": -49.71349952774936,
+          "median": 3.7755078405476983,
+          "n": 2206,
+          "q25": -258.3639996584314,
+          "q75": 244.95158934552674
+        },
+        "horizon": 15,
+        "instruments": 431,
+        "net_mean_bps": {
+          "10.5": -70.71349952774936,
+          "20.5": -90.71349952774936,
+          "25": -99.71349952774936,
+          "45.5": -140.71349952774938
+        },
+        "resolved": 2206,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 1
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 2208,
+        "gross_bps": {
+          "mean": -12.592977349464764,
+          "median": 19.06717512467071,
+          "n": 2205,
+          "q25": -173.9598278335741,
+          "q75": 217.29745287091595
+        },
+        "horizon": 15,
+        "instruments": 431,
+        "net_mean_bps": {
+          "10.5": -33.59297734946476,
+          "20.5": -53.59297734946476,
+          "25": -62.59297734946476,
+          "45.5": -103.59297734946476
+        },
+        "resolved": 2205,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 2
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 1,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 2208,
+        "gross_bps": {
+          "mean": -50.198507823197765,
+          "median": 15.882319750672448,
+          "n": 2202,
+          "q25": -305.6007215999906,
+          "q75": 373.5272589001373
+        },
+        "horizon": 60,
+        "instruments": 431,
+        "net_mean_bps": {
+          "10.5": -71.19850782319776,
+          "20.5": -91.19850782319776,
+          "25": -100.19850782319776,
+          "45.5": -141.19850782319776
+        },
+        "resolved": 2202,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 4
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 1,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 2208,
+        "gross_bps": {
+          "mean": -13.74748413360316,
+          "median": 35.0415055286879,
+          "n": 2202,
+          "q25": -247.54176162626817,
+          "q75": 363.9078772985069
+        },
+        "horizon": 60,
+        "instruments": 431,
+        "net_mean_bps": {
+          "10.5": -34.74748413360316,
+          "20.5": -54.74748413360316,
+          "25": -63.74748413360316,
+          "45.5": -104.74748413360317
+        },
+        "resolved": 2202,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 4
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 2,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 2208,
+        "gross_bps": {
+          "mean": -8.021058639603769,
+          "median": 71.68322840021224,
+          "n": 2197,
+          "q25": -384.4593223777637,
+          "q75": 549.0848585690511
+        },
+        "horizon": 240,
+        "instruments": 430,
+        "net_mean_bps": {
+          "10.5": -29.02105863960377,
+          "20.5": -49.021058639603766,
+          "25": -58.021058639603766,
+          "45.5": -99.02105863960377
+        },
+        "resolved": 2197,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 8
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 2,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 2208,
+        "gross_bps": {
+          "mean": 27.575867124949394,
+          "median": 92.46287475483284,
+          "n": 2199,
+          "q25": -336.76065949063474,
+          "q75": 538.4574398886077
+        },
+        "horizon": 240,
+        "instruments": 430,
+        "net_mean_bps": {
+          "10.5": 6.575867124949394,
+          "20.5": -13.424132875050606,
+          "25": -22.424132875050606,
+          "45.5": -63.4241328750506
+        },
+        "resolved": 2199,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 6
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 736,
+        "gross_bps": {
+          "mean": 110.36320630276467,
+          "median": 42.7402613261707,
+          "n": 735,
+          "q25": -282.6327757629987,
+          "q75": 398.85166918526505
+        },
+        "horizon": 15,
+        "instruments": 283,
+        "net_mean_bps": {
+          "10.5": 89.36320630276467,
+          "20.5": 69.36320630276467,
+          "25": 60.36320630276467,
+          "45.5": 19.363206302764667
+        },
+        "resolved": 735,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 1
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 736,
+        "gross_bps": {
+          "mean": 28.268945226936708,
+          "median": 2.9090909090911943,
+          "n": 735,
+          "q25": -266.55132479931956,
+          "q75": 251.39041962335295
+        },
+        "horizon": 15,
+        "instruments": 283,
+        "net_mean_bps": {
+          "10.5": 7.268945226936708,
+          "20.5": -12.731054773063292,
+          "25": -21.731054773063292,
+          "45.5": -62.73105477306329
+        },
+        "resolved": 735,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 1
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 736,
+        "gross_bps": {
+          "mean": 122.49997592938504,
+          "median": 50.286299013582166,
+          "n": 734,
+          "q25": -458.8702656828522,
+          "q75": 465.99409193773977
+        },
+        "horizon": 60,
+        "instruments": 283,
+        "net_mean_bps": {
+          "10.5": 101.49997592938504,
+          "20.5": 81.49997592938504,
+          "25": 72.49997592938504,
+          "45.5": 31.499975929385045
+        },
+        "resolved": 734,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 1
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 736,
+        "gross_bps": {
+          "mean": 37.84951445004062,
+          "median": -10.88931621787248,
+          "n": 734,
+          "q25": -414.7504884410788,
+          "q75": 320.2688707825979
+        },
+        "horizon": 60,
+        "instruments": 283,
+        "net_mean_bps": {
+          "10.5": 16.849514450040623,
+          "20.5": -3.1504855499593774,
+          "25": -12.150485549959377,
+          "45.5": -53.15048554995938
+        },
+        "resolved": 734,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 1
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 736,
+        "gross_bps": {
+          "mean": 60.50702982190292,
+          "median": 0.880630531460147,
+          "n": 734,
+          "q25": -655.8236281712213,
+          "q75": 512.6324384898568
+        },
+        "horizon": 240,
+        "instruments": 283,
+        "net_mean_bps": {
+          "10.5": 39.50702982190292,
+          "20.5": 19.50702982190292,
+          "25": 10.507029821902918,
+          "45.5": -30.49297017809708
+        },
+        "resolved": 734,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 1
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 736,
+        "gross_bps": {
+          "mean": -11.23616552376142,
+          "median": -49.72730189284569,
+          "n": 735,
+          "q25": -648.7696117057085,
+          "q75": 387.6136947115649
+        },
+        "horizon": 240,
+        "instruments": 283,
+        "net_mean_bps": {
+          "10.5": -32.23616552376142,
+          "20.5": -52.23616552376142,
+          "25": -61.23616552376142,
+          "45.5": -102.23616552376141
+        },
+        "resolved": 735,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 1
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 736,
+        "gross_bps": {
+          "mean": -110.36320630276467,
+          "median": -42.7402613261707,
+          "n": 735,
+          "q25": -398.85166918526505,
+          "q75": 282.6327757629987
+        },
+        "horizon": 15,
+        "instruments": 283,
+        "net_mean_bps": {
+          "10.5": -131.36320630276467,
+          "20.5": -151.36320630276467,
+          "25": -160.36320630276467,
+          "45.5": -201.36320630276467
+        },
+        "resolved": 735,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 1
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 736,
+        "gross_bps": {
+          "mean": -28.268945226936708,
+          "median": -2.9090909090911943,
+          "n": 735,
+          "q25": -251.39041962335295,
+          "q75": 266.55132479931956
+        },
+        "horizon": 15,
+        "instruments": 283,
+        "net_mean_bps": {
+          "10.5": -49.26894522693671,
+          "20.5": -69.26894522693671,
+          "25": -78.26894522693671,
+          "45.5": -119.26894522693671
+        },
+        "resolved": 735,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 1
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 736,
+        "gross_bps": {
+          "mean": -122.49997592938504,
+          "median": -50.286299013582166,
+          "n": 734,
+          "q25": -465.99409193773977,
+          "q75": 458.8702656828522
+        },
+        "horizon": 60,
+        "instruments": 283,
+        "net_mean_bps": {
+          "10.5": -143.49997592938504,
+          "20.5": -163.49997592938504,
+          "25": -172.49997592938504,
+          "45.5": -213.49997592938504
+        },
+        "resolved": 734,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 1
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 736,
+        "gross_bps": {
+          "mean": -37.84951445004062,
+          "median": 10.88931621787248,
+          "n": 734,
+          "q25": -320.2688707825979,
+          "q75": 414.7504884410788
+        },
+        "horizon": 60,
+        "instruments": 283,
+        "net_mean_bps": {
+          "10.5": -58.84951445004062,
+          "20.5": -78.84951445004063,
+          "25": -87.84951445004063,
+          "45.5": -128.84951445004063
+        },
+        "resolved": 734,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 1
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 736,
+        "gross_bps": {
+          "mean": -60.50702982190292,
+          "median": -0.880630531460147,
+          "n": 734,
+          "q25": -512.6324384898568,
+          "q75": 655.8236281712213
+        },
+        "horizon": 240,
+        "instruments": 283,
+        "net_mean_bps": {
+          "10.5": -81.50702982190292,
+          "20.5": -101.50702982190292,
+          "25": -110.50702982190292,
+          "45.5": -151.5070298219029
+        },
+        "resolved": 734,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 1
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 736,
+        "gross_bps": {
+          "mean": 11.23616552376142,
+          "median": 49.72730189284569,
+          "n": 735,
+          "q25": -387.6136947115649,
+          "q75": 648.7696117057085
+        },
+        "horizon": 240,
+        "instruments": 283,
+        "net_mean_bps": {
+          "10.5": -9.76383447623858,
+          "20.5": -29.76383447623858,
+          "25": -38.76383447623858,
+          "45.5": -79.76383447623859
+        },
+        "resolved": 735,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 1
+        },
+        "venue": "bybit"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 6622,
+        "gross_bps": {
+          "mean": 11.989958196271665,
+          "median": -26.428879509804435,
+          "n": 6572,
+          "q25": -173.2930433833943,
+          "q75": 129.50092450003558
+        },
+        "horizon": 15,
+        "instruments": 506,
+        "net_mean_bps": {
+          "10.5": -9.010041803728335,
+          "20.5": -29.010041803728335,
+          "25": -38.010041803728335,
+          "45.5": -79.01004180372834
+        },
+        "resolved": 6572,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 13,
+          "exit_bar_missing": 37
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 6622,
+        "gross_bps": {
+          "mean": 7.8740305400153865,
+          "median": -23.041474654379446,
+          "n": 6587,
+          "q25": -159.45074951406625,
+          "q75": 126.30463001900961
+        },
+        "horizon": 15,
+        "instruments": 508,
+        "net_mean_bps": {
+          "10.5": -13.125969459984614,
+          "20.5": -33.12596945998462,
+          "25": -42.12596945998462,
+          "45.5": -83.12596945998462
+        },
+        "resolved": 6587,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 15,
+          "exit_bar_missing": 20
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 6622,
+        "gross_bps": {
+          "mean": 18.83337317900823,
+          "median": -48.564499704493166,
+          "n": 6584,
+          "q25": -286.39261393069523,
+          "q75": 228.06523370053733
+        },
+        "horizon": 60,
+        "instruments": 508,
+        "net_mean_bps": {
+          "10.5": -2.1666268209917696,
+          "20.5": -22.16662682099177,
+          "25": -31.16662682099177,
+          "45.5": -72.16662682099177
+        },
+        "resolved": 6584,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 13,
+          "exit_bar_missing": 25
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 6622,
+        "gross_bps": {
+          "mean": 15.02096150287436,
+          "median": -40.430162864462105,
+          "n": 6578,
+          "q25": -280.3262344570676,
+          "q75": 228.95774948367531
+        },
+        "horizon": 60,
+        "instruments": 508,
+        "net_mean_bps": {
+          "10.5": -5.979038497125639,
+          "20.5": -25.97903849712564,
+          "25": -34.97903849712564,
+          "45.5": -75.97903849712564
+        },
+        "resolved": 6578,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 15,
+          "exit_bar_missing": 29
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 2,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 6622,
+        "gross_bps": {
+          "mean": -2.0773733239087395,
+          "median": -96.34706655811564,
+          "n": 6568,
+          "q25": -478.9784193268812,
+          "q75": 313.3397680514927
+        },
+        "horizon": 240,
+        "instruments": 508,
+        "net_mean_bps": {
+          "10.5": -23.077373323908738,
+          "20.5": -43.07737332390874,
+          "25": -52.07737332390874,
+          "45.5": -93.07737332390874
+        },
+        "resolved": 6568,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 13,
+          "exit_bar_missing": 39
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 2,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 6622,
+        "gross_bps": {
+          "mean": -4.266429433671845,
+          "median": -88.81967369669897,
+          "n": 6570,
+          "q25": -465.61989791273436,
+          "q75": 306.5470114469915
+        },
+        "horizon": 240,
+        "instruments": 508,
+        "net_mean_bps": {
+          "10.5": -25.266429433671846,
+          "20.5": -45.266429433671846,
+          "25": -54.266429433671846,
+          "45.5": -95.26642943367185
+        },
+        "resolved": 6570,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 15,
+          "exit_bar_missing": 35
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 6622,
+        "gross_bps": {
+          "mean": -11.989958196271665,
+          "median": 26.428879509804435,
+          "n": 6572,
+          "q25": -129.50092450003558,
+          "q75": 173.2930433833943
+        },
+        "horizon": 15,
+        "instruments": 506,
+        "net_mean_bps": {
+          "10.5": -32.989958196271665,
+          "20.5": -52.989958196271665,
+          "25": -61.989958196271665,
+          "45.5": -102.98995819627166
+        },
+        "resolved": 6572,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 13,
+          "exit_bar_missing": 37
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 6622,
+        "gross_bps": {
+          "mean": -7.8740305400153865,
+          "median": 23.041474654379446,
+          "n": 6587,
+          "q25": -126.30463001900961,
+          "q75": 159.45074951406625
+        },
+        "horizon": 15,
+        "instruments": 508,
+        "net_mean_bps": {
+          "10.5": -28.874030540015386,
+          "20.5": -48.87403054001538,
+          "25": -57.87403054001538,
+          "45.5": -98.87403054001538
+        },
+        "resolved": 6587,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 15,
+          "exit_bar_missing": 20
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 6622,
+        "gross_bps": {
+          "mean": -18.83337317900823,
+          "median": 48.564499704493166,
+          "n": 6584,
+          "q25": -228.06523370053733,
+          "q75": 286.39261393069523
+        },
+        "horizon": 60,
+        "instruments": 508,
+        "net_mean_bps": {
+          "10.5": -39.833373179008234,
+          "20.5": -59.833373179008234,
+          "25": -68.83337317900823,
+          "45.5": -109.83337317900823
+        },
+        "resolved": 6584,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 13,
+          "exit_bar_missing": 25
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 6622,
+        "gross_bps": {
+          "mean": -15.02096150287436,
+          "median": 40.430162864462105,
+          "n": 6578,
+          "q25": -228.95774948367531,
+          "q75": 280.3262344570676
+        },
+        "horizon": 60,
+        "instruments": 508,
+        "net_mean_bps": {
+          "10.5": -36.02096150287436,
+          "20.5": -56.02096150287436,
+          "25": -65.02096150287436,
+          "45.5": -106.02096150287436
+        },
+        "resolved": 6578,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 15,
+          "exit_bar_missing": 29
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 2,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 6622,
+        "gross_bps": {
+          "mean": 2.0773733239087395,
+          "median": 96.34706655811564,
+          "n": 6568,
+          "q25": -313.3397680514927,
+          "q75": 478.9784193268812
+        },
+        "horizon": 240,
+        "instruments": 508,
+        "net_mean_bps": {
+          "10.5": -18.922626676091262,
+          "20.5": -38.92262667609126,
+          "25": -47.92262667609126,
+          "45.5": -88.92262667609126
+        },
+        "resolved": 6568,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 13,
+          "exit_bar_missing": 39
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 2,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 6622,
+        "gross_bps": {
+          "mean": 4.266429433671845,
+          "median": 88.81967369669897,
+          "n": 6570,
+          "q25": -306.5470114469915,
+          "q75": 465.61989791273436
+        },
+        "horizon": 240,
+        "instruments": 508,
+        "net_mean_bps": {
+          "10.5": -16.733570566328154,
+          "20.5": -36.733570566328154,
+          "25": -45.733570566328154,
+          "45.5": -86.73357056632815
+        },
+        "resolved": 6570,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 15,
+          "exit_bar_missing": 35
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 2425,
+        "gross_bps": {
+          "mean": 12.255717277308934,
+          "median": -47.16981132075526,
+          "n": 2409,
+          "q25": -254.66250118337587,
+          "q75": 195.3727506426728
+        },
+        "horizon": 15,
+        "instruments": 413,
+        "net_mean_bps": {
+          "10.5": -8.744282722691066,
+          "20.5": -28.744282722691068,
+          "25": -37.74428272269107,
+          "45.5": -78.74428272269107
+        },
+        "resolved": 2409,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 6,
+          "exit_bar_missing": 10
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 2425,
+        "gross_bps": {
+          "mean": 12.739081011028178,
+          "median": -23.632549983059192,
+          "n": 2416,
+          "q25": -231.89436510537593,
+          "q75": 183.80613242017563
+        },
+        "horizon": 15,
+        "instruments": 417,
+        "net_mean_bps": {
+          "10.5": -8.260918988971822,
+          "20.5": -28.260918988971824,
+          "25": -37.260918988971824,
+          "45.5": -78.26091898897182
+        },
+        "resolved": 2416,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 5,
+          "exit_bar_missing": 4
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 2425,
+        "gross_bps": {
+          "mean": 40.3175133959724,
+          "median": -71.27062494257208,
+          "n": 2414,
+          "q25": -424.89456676063855,
+          "q75": 304.7517197054728
+        },
+        "horizon": 60,
+        "instruments": 417,
+        "net_mean_bps": {
+          "10.5": 19.317513395972398,
+          "20.5": -0.6824866040276021,
+          "25": -9.682486604027602,
+          "45.5": -50.6824866040276
+        },
+        "resolved": 2414,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 6,
+          "exit_bar_missing": 5
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 2425,
+        "gross_bps": {
+          "mean": 38.993016708982644,
+          "median": -58.67014341590648,
+          "n": 2411,
+          "q25": -392.64134853706554,
+          "q75": 287.5501212308251
+        },
+        "horizon": 60,
+        "instruments": 416,
+        "net_mean_bps": {
+          "10.5": 17.993016708982644,
+          "20.5": -2.006983291017356,
+          "25": -11.006983291017356,
+          "45.5": -52.006983291017356
+        },
+        "resolved": 2411,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 5,
+          "exit_bar_missing": 9
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 2,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 2425,
+        "gross_bps": {
+          "mean": -0.8096060428531263,
+          "median": -129.12746725696422,
+          "n": 2401,
+          "q25": -630.8243727598561,
+          "q75": 378.1732530751114
+        },
+        "horizon": 240,
+        "instruments": 415,
+        "net_mean_bps": {
+          "10.5": -21.809606042853126,
+          "20.5": -41.809606042853126,
+          "25": -50.809606042853126,
+          "45.5": -91.80960604285313
+        },
+        "resolved": 2401,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 6,
+          "exit_bar_missing": 16
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 2,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 2425,
+        "gross_bps": {
+          "mean": -0.012769231599729139,
+          "median": -106.18391286435991,
+          "n": 2404,
+          "q25": -606.7439813351533,
+          "q75": 394.5715320866711
+        },
+        "horizon": 240,
+        "instruments": 416,
+        "net_mean_bps": {
+          "10.5": -21.01276923159973,
+          "20.5": -41.01276923159973,
+          "25": -50.01276923159973,
+          "45.5": -91.01276923159973
+        },
+        "resolved": 2404,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 5,
+          "exit_bar_missing": 14
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 2425,
+        "gross_bps": {
+          "mean": -12.255717277308934,
+          "median": 47.16981132075526,
+          "n": 2409,
+          "q25": -195.3727506426728,
+          "q75": 254.66250118337587
+        },
+        "horizon": 15,
+        "instruments": 413,
+        "net_mean_bps": {
+          "10.5": -33.25571727730893,
+          "20.5": -53.25571727730893,
+          "25": -62.25571727730893,
+          "45.5": -103.25571727730893
+        },
+        "resolved": 2409,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 6,
+          "exit_bar_missing": 10
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 2425,
+        "gross_bps": {
+          "mean": -12.739081011028178,
+          "median": 23.632549983059192,
+          "n": 2416,
+          "q25": -183.80613242017563,
+          "q75": 231.89436510537593
+        },
+        "horizon": 15,
+        "instruments": 417,
+        "net_mean_bps": {
+          "10.5": -33.739081011028176,
+          "20.5": -53.739081011028176,
+          "25": -62.739081011028176,
+          "45.5": -103.73908101102818
+        },
+        "resolved": 2416,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 5,
+          "exit_bar_missing": 4
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 2425,
+        "gross_bps": {
+          "mean": -40.3175133959724,
+          "median": 71.27062494257208,
+          "n": 2414,
+          "q25": -304.7517197054728,
+          "q75": 424.89456676063855
+        },
+        "horizon": 60,
+        "instruments": 417,
+        "net_mean_bps": {
+          "10.5": -61.3175133959724,
+          "20.5": -81.3175133959724,
+          "25": -90.3175133959724,
+          "45.5": -131.3175133959724
+        },
+        "resolved": 2414,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 6,
+          "exit_bar_missing": 5
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 2425,
+        "gross_bps": {
+          "mean": -38.993016708982644,
+          "median": 58.67014341590648,
+          "n": 2411,
+          "q25": -287.5501212308251,
+          "q75": 392.64134853706554
+        },
+        "horizon": 60,
+        "instruments": 416,
+        "net_mean_bps": {
+          "10.5": -59.993016708982644,
+          "20.5": -79.99301670898265,
+          "25": -88.99301670898265,
+          "45.5": -129.99301670898265
+        },
+        "resolved": 2411,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 5,
+          "exit_bar_missing": 9
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 2,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 2425,
+        "gross_bps": {
+          "mean": 0.8096060428531263,
+          "median": 129.12746725696422,
+          "n": 2401,
+          "q25": -378.1732530751114,
+          "q75": 630.8243727598561
+        },
+        "horizon": 240,
+        "instruments": 415,
+        "net_mean_bps": {
+          "10.5": -20.190393957146874,
+          "20.5": -40.190393957146874,
+          "25": -49.190393957146874,
+          "45.5": -90.19039395714687
+        },
+        "resolved": 2401,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 6,
+          "exit_bar_missing": 16
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 2,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 2425,
+        "gross_bps": {
+          "mean": 0.012769231599729139,
+          "median": 106.18391286435991,
+          "n": 2404,
+          "q25": -394.5715320866711,
+          "q75": 606.7439813351533
+        },
+        "horizon": 240,
+        "instruments": 416,
+        "net_mean_bps": {
+          "10.5": -20.98723076840027,
+          "20.5": -40.98723076840027,
+          "25": -49.98723076840027,
+          "45.5": -90.98723076840027
+        },
+        "resolved": 2404,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 5,
+          "exit_bar_missing": 14
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 510,
+        "gross_bps": {
+          "mean": 83.26381504620997,
+          "median": 32.062104427330596,
+          "n": 508,
+          "q25": -391.258263767123,
+          "q75": 350.7066230606387
+        },
+        "horizon": 15,
+        "instruments": 209,
+        "net_mean_bps": {
+          "10.5": 62.26381504620997,
+          "20.5": 42.26381504620997,
+          "25": 33.26381504620997,
+          "45.5": -7.73618495379003
+        },
+        "resolved": 508,
+        "side": "long",
+        "threshold": 0.1,
+        "unresolved": {
+          "exit_bar_missing": 2
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 510,
+        "gross_bps": {
+          "mean": 65.86526341154698,
+          "median": 15.822784810126667,
+          "n": 509,
+          "q25": -312.3225440090871,
+          "q75": 314.3189755529674
+        },
+        "horizon": 15,
+        "instruments": 211,
+        "net_mean_bps": {
+          "10.5": 44.86526341154698,
+          "20.5": 24.865263411546977,
+          "25": 15.865263411546977,
+          "45.5": -25.134736588453023
+        },
+        "resolved": 509,
+        "side": "long",
+        "threshold": 0.1,
+        "unresolved": {
+          "exit_bar_missing": 1
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 510,
+        "gross_bps": {
+          "mean": 107.84921129890107,
+          "median": -27.918684205165412,
+          "n": 510,
+          "q25": -579.4922952876235,
+          "q75": 486.80054257368874
+        },
+        "horizon": 60,
+        "instruments": 211,
+        "net_mean_bps": {
+          "10.5": 86.84921129890107,
+          "20.5": 66.84921129890107,
+          "25": 57.84921129890107,
+          "45.5": 16.849211298901068
+        },
+        "resolved": 510,
+        "side": "long",
+        "threshold": 0.1,
+        "unresolved": {},
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 510,
+        "gross_bps": {
+          "mean": 79.19532172226337,
+          "median": -58.21001932052705,
+          "n": 510,
+          "q25": -563.2735887345783,
+          "q75": 332.3806785912453
+        },
+        "horizon": 60,
+        "instruments": 211,
+        "net_mean_bps": {
+          "10.5": 58.19532172226337,
+          "20.5": 38.19532172226337,
+          "25": 29.195321722263373,
+          "45.5": -11.804678277736627
+        },
+        "resolved": 510,
+        "side": "long",
+        "threshold": 0.1,
+        "unresolved": {},
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 1,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 510,
+        "gross_bps": {
+          "mean": 68.91481739787395,
+          "median": -127.00291825338218,
+          "n": 506,
+          "q25": -853.7645219986201,
+          "q75": 467.72153136732
+        },
+        "horizon": 240,
+        "instruments": 209,
+        "net_mean_bps": {
+          "10.5": 47.91481739787395,
+          "20.5": 27.914817397873946,
+          "25": 18.914817397873946,
+          "45.5": -22.085182602126054
+        },
+        "resolved": 506,
+        "side": "long",
+        "threshold": 0.1,
+        "unresolved": {
+          "exit_bar_missing": 3
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 1,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 510,
+        "gross_bps": {
+          "mean": 42.40966157983532,
+          "median": -139.74178664587498,
+          "n": 506,
+          "q25": -870.1428345466383,
+          "q75": 409.11193919388353
+        },
+        "horizon": 240,
+        "instruments": 209,
+        "net_mean_bps": {
+          "10.5": 21.409661579835323,
+          "20.5": 1.4096615798353227,
+          "25": -7.590338420164677,
+          "45.5": -48.59033842016468
+        },
+        "resolved": 506,
+        "side": "long",
+        "threshold": 0.1,
+        "unresolved": {
+          "exit_bar_missing": 3
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 510,
+        "gross_bps": {
+          "mean": -83.26381504620997,
+          "median": -32.062104427330596,
+          "n": 508,
+          "q25": -350.7066230606387,
+          "q75": 391.258263767123
+        },
+        "horizon": 15,
+        "instruments": 209,
+        "net_mean_bps": {
+          "10.5": -104.26381504620997,
+          "20.5": -124.26381504620997,
+          "25": -133.26381504620997,
+          "45.5": -174.26381504620997
+        },
+        "resolved": 508,
+        "side": "short",
+        "threshold": 0.1,
+        "unresolved": {
+          "exit_bar_missing": 2
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 510,
+        "gross_bps": {
+          "mean": -65.86526341154698,
+          "median": -15.822784810126667,
+          "n": 509,
+          "q25": -314.3189755529674,
+          "q75": 312.3225440090871
+        },
+        "horizon": 15,
+        "instruments": 211,
+        "net_mean_bps": {
+          "10.5": -86.86526341154698,
+          "20.5": -106.86526341154698,
+          "25": -115.86526341154698,
+          "45.5": -156.86526341154698
+        },
+        "resolved": 509,
+        "side": "short",
+        "threshold": 0.1,
+        "unresolved": {
+          "exit_bar_missing": 1
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 510,
+        "gross_bps": {
+          "mean": -107.84921129890107,
+          "median": 27.918684205165412,
+          "n": 510,
+          "q25": -486.80054257368874,
+          "q75": 579.4922952876235
+        },
+        "horizon": 60,
+        "instruments": 211,
+        "net_mean_bps": {
+          "10.5": -128.84921129890108,
+          "20.5": -148.84921129890108,
+          "25": -157.84921129890108,
+          "45.5": -198.84921129890108
+        },
+        "resolved": 510,
+        "side": "short",
+        "threshold": 0.1,
+        "unresolved": {},
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 510,
+        "gross_bps": {
+          "mean": -79.19532172226337,
+          "median": 58.21001932052705,
+          "n": 510,
+          "q25": -332.3806785912453,
+          "q75": 563.2735887345783
+        },
+        "horizon": 60,
+        "instruments": 211,
+        "net_mean_bps": {
+          "10.5": -100.19532172226337,
+          "20.5": -120.19532172226337,
+          "25": -129.19532172226337,
+          "45.5": -170.19532172226337
+        },
+        "resolved": 510,
+        "side": "short",
+        "threshold": 0.1,
+        "unresolved": {},
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 1,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 510,
+        "gross_bps": {
+          "mean": -68.91481739787395,
+          "median": 127.00291825338218,
+          "n": 506,
+          "q25": -467.72153136732,
+          "q75": 853.7645219986201
+        },
+        "horizon": 240,
+        "instruments": 209,
+        "net_mean_bps": {
+          "10.5": -89.91481739787395,
+          "20.5": -109.91481739787395,
+          "25": -118.91481739787395,
+          "45.5": -159.91481739787395
+        },
+        "resolved": 506,
+        "side": "short",
+        "threshold": 0.1,
+        "unresolved": {
+          "exit_bar_missing": 3
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 1,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 510,
+        "gross_bps": {
+          "mean": -42.40966157983532,
+          "median": 139.74178664587498,
+          "n": 506,
+          "q25": -409.11193919388353,
+          "q75": 870.1428345466383
+        },
+        "horizon": 240,
+        "instruments": 209,
+        "net_mean_bps": {
+          "10.5": -63.40966157983532,
+          "20.5": -83.40966157983533,
+          "25": -92.40966157983533,
+          "45.5": -133.40966157983533
+        },
+        "resolved": 506,
+        "side": "short",
+        "threshold": 0.1,
+        "unresolved": {
+          "exit_bar_missing": 3
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 4181,
+        "gross_bps": {
+          "mean": 44.57411593828043,
+          "median": -6.584945800831576,
+          "n": 4159,
+          "q25": -168.24158755773422,
+          "q75": 186.83277727834292
+        },
+        "horizon": 15,
+        "instruments": 506,
+        "net_mean_bps": {
+          "10.5": 23.57411593828043,
+          "20.5": 3.5741159382804284,
+          "25": -5.425884061719572,
+          "45.5": -46.42588406171957
+        },
+        "resolved": 4159,
+        "side": "long",
+        "threshold": 0.02,
+        "unresolved": {
+          "entry_bar_missing": 11,
+          "exit_bar_missing": 11
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 4181,
+        "gross_bps": {
+          "mean": 23.991811063742823,
+          "median": -11.636229008383792,
+          "n": 4158,
+          "q25": -150.75037212703091,
+          "q75": 142.0374914993655
+        },
+        "horizon": 15,
+        "instruments": 506,
+        "net_mean_bps": {
+          "10.5": 2.991811063742823,
+          "20.5": -17.008188936257177,
+          "25": -26.008188936257177,
+          "45.5": -67.00818893625717
+        },
+        "resolved": 4158,
+        "side": "long",
+        "threshold": 0.02,
+        "unresolved": {
+          "entry_bar_missing": 12,
+          "exit_bar_missing": 11
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 1,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 4181,
+        "gross_bps": {
+          "mean": 56.43819284452161,
+          "median": -16.307893020222064,
+          "n": 4159,
+          "q25": -266.166821264997,
+          "q75": 252.70523747877303
+        },
+        "horizon": 60,
+        "instruments": 506,
+        "net_mean_bps": {
+          "10.5": 35.43819284452161,
+          "20.5": 15.438192844521609,
+          "25": 6.438192844521609,
+          "45.5": -34.56180715547839
+        },
+        "resolved": 4159,
+        "side": "long",
+        "threshold": 0.02,
+        "unresolved": {
+          "entry_bar_missing": 11,
+          "exit_bar_missing": 10
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 1,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 4181,
+        "gross_bps": {
+          "mean": 34.84648491613824,
+          "median": -23.716617416709163,
+          "n": 4150,
+          "q25": -256.81536128932646,
+          "q75": 214.063289010904
+        },
+        "horizon": 60,
+        "instruments": 506,
+        "net_mean_bps": {
+          "10.5": 13.846484916138238,
+          "20.5": -6.1535150838617625,
+          "25": -15.153515083861762,
+          "45.5": -56.15351508386176
+        },
+        "resolved": 4150,
+        "side": "long",
+        "threshold": 0.02,
+        "unresolved": {
+          "entry_bar_missing": 12,
+          "exit_bar_missing": 18
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 2,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 4181,
+        "gross_bps": {
+          "mean": 34.5949202396502,
+          "median": -54.76804123711432,
+          "n": 4141,
+          "q25": -421.1150652431783,
+          "q75": 309.1684434968034
+        },
+        "horizon": 240,
+        "instruments": 506,
+        "net_mean_bps": {
+          "10.5": 13.5949202396502,
+          "20.5": -6.4050797603498,
+          "25": -15.4050797603498,
+          "45.5": -56.4050797603498
+        },
+        "resolved": 4141,
+        "side": "long",
+        "threshold": 0.02,
+        "unresolved": {
+          "entry_bar_missing": 11,
+          "exit_bar_missing": 27
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 2,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 4181,
+        "gross_bps": {
+          "mean": 16.775997480806087,
+          "median": -67.6213206046139,
+          "n": 4147,
+          "q25": -414.41086541034235,
+          "q75": 267.4940322322972
+        },
+        "horizon": 240,
+        "instruments": 506,
+        "net_mean_bps": {
+          "10.5": -4.224002519193913,
+          "20.5": -24.224002519193913,
+          "25": -33.22400251919392,
+          "45.5": -74.22400251919392
+        },
+        "resolved": 4147,
+        "side": "long",
+        "threshold": 0.02,
+        "unresolved": {
+          "entry_bar_missing": 12,
+          "exit_bar_missing": 20
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 4181,
+        "gross_bps": {
+          "mean": -44.57411593828043,
+          "median": 6.584945800831576,
+          "n": 4159,
+          "q25": -186.83277727834292,
+          "q75": 168.24158755773422
+        },
+        "horizon": 15,
+        "instruments": 506,
+        "net_mean_bps": {
+          "10.5": -65.57411593828043,
+          "20.5": -85.57411593828043,
+          "25": -94.57411593828043,
+          "45.5": -135.57411593828044
+        },
+        "resolved": 4159,
+        "side": "short",
+        "threshold": 0.02,
+        "unresolved": {
+          "entry_bar_missing": 11,
+          "exit_bar_missing": 11
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 4181,
+        "gross_bps": {
+          "mean": -23.991811063742823,
+          "median": 11.636229008383792,
+          "n": 4158,
+          "q25": -142.0374914993655,
+          "q75": 150.75037212703091
+        },
+        "horizon": 15,
+        "instruments": 506,
+        "net_mean_bps": {
+          "10.5": -44.99181106374282,
+          "20.5": -64.99181106374283,
+          "25": -73.99181106374283,
+          "45.5": -114.99181106374283
+        },
+        "resolved": 4158,
+        "side": "short",
+        "threshold": 0.02,
+        "unresolved": {
+          "entry_bar_missing": 12,
+          "exit_bar_missing": 11
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 1,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 4181,
+        "gross_bps": {
+          "mean": -56.43819284452161,
+          "median": 16.307893020222064,
+          "n": 4159,
+          "q25": -252.70523747877303,
+          "q75": 266.166821264997
+        },
+        "horizon": 60,
+        "instruments": 506,
+        "net_mean_bps": {
+          "10.5": -77.43819284452161,
+          "20.5": -97.43819284452161,
+          "25": -106.43819284452161,
+          "45.5": -147.4381928445216
+        },
+        "resolved": 4159,
+        "side": "short",
+        "threshold": 0.02,
+        "unresolved": {
+          "entry_bar_missing": 11,
+          "exit_bar_missing": 10
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 1,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 4181,
+        "gross_bps": {
+          "mean": -34.84648491613824,
+          "median": 23.716617416709163,
+          "n": 4150,
+          "q25": -214.063289010904,
+          "q75": 256.81536128932646
+        },
+        "horizon": 60,
+        "instruments": 506,
+        "net_mean_bps": {
+          "10.5": -55.84648491613824,
+          "20.5": -75.84648491613824,
+          "25": -84.84648491613824,
+          "45.5": -125.84648491613824
+        },
+        "resolved": 4150,
+        "side": "short",
+        "threshold": 0.02,
+        "unresolved": {
+          "entry_bar_missing": 12,
+          "exit_bar_missing": 18
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 2,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 4181,
+        "gross_bps": {
+          "mean": -34.5949202396502,
+          "median": 54.76804123711432,
+          "n": 4141,
+          "q25": -309.1684434968034,
+          "q75": 421.1150652431783
+        },
+        "horizon": 240,
+        "instruments": 506,
+        "net_mean_bps": {
+          "10.5": -55.5949202396502,
+          "20.5": -75.59492023965021,
+          "25": -84.59492023965021,
+          "45.5": -125.59492023965021
+        },
+        "resolved": 4141,
+        "side": "short",
+        "threshold": 0.02,
+        "unresolved": {
+          "entry_bar_missing": 11,
+          "exit_bar_missing": 27
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 2,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 4181,
+        "gross_bps": {
+          "mean": -16.775997480806087,
+          "median": 67.6213206046139,
+          "n": 4147,
+          "q25": -267.4940322322972,
+          "q75": 414.41086541034235
+        },
+        "horizon": 240,
+        "instruments": 506,
+        "net_mean_bps": {
+          "10.5": -37.77599748080608,
+          "20.5": -57.77599748080608,
+          "25": -66.77599748080608,
+          "45.5": -107.77599748080608
+        },
+        "resolved": 4147,
+        "side": "short",
+        "threshold": 0.02,
+        "unresolved": {
+          "entry_bar_missing": 12,
+          "exit_bar_missing": 20
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 2098,
+        "gross_bps": {
+          "mean": 80.69406878555955,
+          "median": 5.183068838783278,
+          "n": 2084,
+          "q25": -226.06509160697507,
+          "q75": 267.6418558536742
+        },
+        "horizon": 15,
+        "instruments": 434,
+        "net_mean_bps": {
+          "10.5": 59.69406878555955,
+          "20.5": 39.69406878555955,
+          "25": 30.69406878555955,
+          "45.5": -10.305931214440449
+        },
+        "resolved": 2084,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 8,
+          "exit_bar_missing": 6
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 2098,
+        "gross_bps": {
+          "mean": 51.83095822649745,
+          "median": -2.721088435373442,
+          "n": 2091,
+          "q25": -191.07110284122655,
+          "q75": 193.07091991653814
+        },
+        "horizon": 15,
+        "instruments": 438,
+        "net_mean_bps": {
+          "10.5": 30.83095822649745,
+          "20.5": 10.83095822649745,
+          "25": 1.8309582264974509,
+          "45.5": -39.16904177350255
+        },
+        "resolved": 2091,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 4,
+          "exit_bar_missing": 3
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 1,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 2098,
+        "gross_bps": {
+          "mean": 100.45323723080406,
+          "median": 11.08093119068121,
+          "n": 2084,
+          "q25": -335.87741447498433,
+          "q75": 346.16601166091334
+        },
+        "horizon": 60,
+        "instruments": 435,
+        "net_mean_bps": {
+          "10.5": 79.45323723080406,
+          "20.5": 59.45323723080406,
+          "25": 50.45323723080406,
+          "45.5": 9.453237230804064
+        },
+        "resolved": 2084,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 8,
+          "exit_bar_missing": 5
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 1,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 2098,
+        "gross_bps": {
+          "mean": 66.71888107252532,
+          "median": -3.8172795521040914,
+          "n": 2083,
+          "q25": -310.1484646973035,
+          "q75": 272.6706459625261
+        },
+        "horizon": 60,
+        "instruments": 438,
+        "net_mean_bps": {
+          "10.5": 45.71888107252532,
+          "20.5": 25.71888107252532,
+          "25": 16.71888107252532,
+          "45.5": -24.28111892747468
+        },
+        "resolved": 2083,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 4,
+          "exit_bar_missing": 10
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 2,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 2098,
+        "gross_bps": {
+          "mean": 74.34406727919043,
+          "median": -33.144119775991854,
+          "n": 2073,
+          "q25": -520.3308063404555,
+          "q75": 402.70346381301005
+        },
+        "horizon": 240,
+        "instruments": 434,
+        "net_mean_bps": {
+          "10.5": 53.344067279190426,
+          "20.5": 33.344067279190426,
+          "25": 24.344067279190426,
+          "45.5": -16.655932720809574
+        },
+        "resolved": 2073,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 8,
+          "exit_bar_missing": 15
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 2,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 2098,
+        "gross_bps": {
+          "mean": 43.39264681861239,
+          "median": -68.18359383827911,
+          "n": 2076,
+          "q25": -502.8087789323457,
+          "q75": 344.0948064306476
+        },
+        "horizon": 240,
+        "instruments": 437,
+        "net_mean_bps": {
+          "10.5": 22.39264681861239,
+          "20.5": 2.3926468186123913,
+          "25": -6.607353181387609,
+          "45.5": -47.60735318138761
+        },
+        "resolved": 2076,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 4,
+          "exit_bar_missing": 16
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 2098,
+        "gross_bps": {
+          "mean": -80.69406878555955,
+          "median": -5.183068838783278,
+          "n": 2084,
+          "q25": -267.6418558536742,
+          "q75": 226.06509160697507
+        },
+        "horizon": 15,
+        "instruments": 434,
+        "net_mean_bps": {
+          "10.5": -101.69406878555955,
+          "20.5": -121.69406878555955,
+          "25": -130.69406878555955,
+          "45.5": -171.69406878555955
+        },
+        "resolved": 2084,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 8,
+          "exit_bar_missing": 6
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 2098,
+        "gross_bps": {
+          "mean": -51.83095822649745,
+          "median": 2.721088435373442,
+          "n": 2091,
+          "q25": -193.07091991653814,
+          "q75": 191.07110284122655
+        },
+        "horizon": 15,
+        "instruments": 438,
+        "net_mean_bps": {
+          "10.5": -72.83095822649744,
+          "20.5": -92.83095822649744,
+          "25": -101.83095822649744,
+          "45.5": -142.83095822649744
+        },
+        "resolved": 2091,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 4,
+          "exit_bar_missing": 3
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 1,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 2098,
+        "gross_bps": {
+          "mean": -100.45323723080406,
+          "median": -11.08093119068121,
+          "n": 2084,
+          "q25": -346.16601166091334,
+          "q75": 335.87741447498433
+        },
+        "horizon": 60,
+        "instruments": 435,
+        "net_mean_bps": {
+          "10.5": -121.45323723080406,
+          "20.5": -141.45323723080406,
+          "25": -150.45323723080406,
+          "45.5": -191.45323723080406
+        },
+        "resolved": 2084,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 8,
+          "exit_bar_missing": 5
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 1,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 2098,
+        "gross_bps": {
+          "mean": -66.71888107252532,
+          "median": 3.8172795521040914,
+          "n": 2083,
+          "q25": -272.6706459625261,
+          "q75": 310.1484646973035
+        },
+        "horizon": 60,
+        "instruments": 438,
+        "net_mean_bps": {
+          "10.5": -87.71888107252532,
+          "20.5": -107.71888107252532,
+          "25": -116.71888107252532,
+          "45.5": -157.71888107252533
+        },
+        "resolved": 2083,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 4,
+          "exit_bar_missing": 10
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 2,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 2098,
+        "gross_bps": {
+          "mean": -74.34406727919043,
+          "median": 33.144119775991854,
+          "n": 2073,
+          "q25": -402.70346381301005,
+          "q75": 520.3308063404555
+        },
+        "horizon": 240,
+        "instruments": 434,
+        "net_mean_bps": {
+          "10.5": -95.34406727919043,
+          "20.5": -115.34406727919043,
+          "25": -124.34406727919043,
+          "45.5": -165.34406727919043
+        },
+        "resolved": 2073,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 8,
+          "exit_bar_missing": 15
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 2,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 2098,
+        "gross_bps": {
+          "mean": -43.39264681861239,
+          "median": 68.18359383827911,
+          "n": 2076,
+          "q25": -344.0948064306476,
+          "q75": 502.8087789323457
+        },
+        "horizon": 240,
+        "instruments": 437,
+        "net_mean_bps": {
+          "10.5": -64.39264681861239,
+          "20.5": -84.39264681861239,
+          "25": -93.39264681861239,
+          "45.5": -134.39264681861238
+        },
+        "resolved": 2076,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 4,
+          "exit_bar_missing": 16
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 770,
+        "gross_bps": {
+          "mean": 152.87977124437768,
+          "median": 69.91479134804467,
+          "n": 765,
+          "q25": -251.10782865583548,
+          "q75": 396.30836047774176
+        },
+        "horizon": 15,
+        "instruments": 297,
+        "net_mean_bps": {
+          "10.5": 131.87977124437768,
+          "20.5": 111.87977124437768,
+          "25": 102.87977124437768,
+          "45.5": 61.87977124437768
+        },
+        "resolved": 765,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 5
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 770,
+        "gross_bps": {
+          "mean": 102.39752219633846,
+          "median": 31.85212260456316,
+          "n": 769,
+          "q25": -231.1998053054265,
+          "q75": 264.2206068997344
+        },
+        "horizon": 15,
+        "instruments": 299,
+        "net_mean_bps": {
+          "10.5": 81.39752219633846,
+          "20.5": 61.39752219633846,
+          "25": 52.39752219633846,
+          "45.5": 11.397522196338457
+        },
+        "resolved": 769,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "exit_bar_missing": 1
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 770,
+        "gross_bps": {
+          "mean": 183.04219231349452,
+          "median": 88.26867378159741,
+          "n": 764,
+          "q25": -385.02404155857425,
+          "q75": 494.4212852483798
+        },
+        "horizon": 60,
+        "instruments": 297,
+        "net_mean_bps": {
+          "10.5": 162.04219231349452,
+          "20.5": 142.04219231349452,
+          "25": 133.04219231349452,
+          "45.5": 92.04219231349452
+        },
+        "resolved": 764,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 5,
+          "exit_bar_missing": 1
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 770,
+        "gross_bps": {
+          "mean": 120.06555297670187,
+          "median": 36.11293499671709,
+          "n": 769,
+          "q25": -353.7626066718369,
+          "q75": 337.15441672285795
+        },
+        "horizon": 60,
+        "instruments": 299,
+        "net_mean_bps": {
+          "10.5": 99.06555297670187,
+          "20.5": 79.06555297670187,
+          "25": 70.06555297670187,
+          "45.5": 29.065552976701866
+        },
+        "resolved": 769,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "exit_bar_missing": 1
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 770,
+        "gross_bps": {
+          "mean": 196.74341741434858,
+          "median": 25.751072961373023,
+          "n": 761,
+          "q25": -550.2494103089606,
+          "q75": 573.1156651615144
+        },
+        "horizon": 240,
+        "instruments": 296,
+        "net_mean_bps": {
+          "10.5": 175.74341741434858,
+          "20.5": 155.74341741434858,
+          "25": 146.74341741434858,
+          "45.5": 105.74341741434858
+        },
+        "resolved": 761,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 5,
+          "exit_bar_missing": 4
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 770,
+        "gross_bps": {
+          "mean": 133.6946832924709,
+          "median": -13.524936601860826,
+          "n": 767,
+          "q25": -506.2996408946191,
+          "q75": 432.89347287060906
+        },
+        "horizon": 240,
+        "instruments": 298,
+        "net_mean_bps": {
+          "10.5": 112.6946832924709,
+          "20.5": 92.6946832924709,
+          "25": 83.6946832924709,
+          "45.5": 42.6946832924709
+        },
+        "resolved": 767,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "exit_bar_missing": 3
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 770,
+        "gross_bps": {
+          "mean": -152.87977124437768,
+          "median": -69.91479134804467,
+          "n": 765,
+          "q25": -396.30836047774176,
+          "q75": 251.10782865583548
+        },
+        "horizon": 15,
+        "instruments": 297,
+        "net_mean_bps": {
+          "10.5": -173.87977124437768,
+          "20.5": -193.87977124437768,
+          "25": -202.87977124437768,
+          "45.5": -243.87977124437768
+        },
+        "resolved": 765,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 5
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 770,
+        "gross_bps": {
+          "mean": -102.39752219633846,
+          "median": -31.85212260456316,
+          "n": 769,
+          "q25": -264.2206068997344,
+          "q75": 231.1998053054265
+        },
+        "horizon": 15,
+        "instruments": 299,
+        "net_mean_bps": {
+          "10.5": -123.39752219633846,
+          "20.5": -143.39752219633846,
+          "25": -152.39752219633846,
+          "45.5": -193.39752219633846
+        },
+        "resolved": 769,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "exit_bar_missing": 1
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 770,
+        "gross_bps": {
+          "mean": -183.04219231349452,
+          "median": -88.26867378159741,
+          "n": 764,
+          "q25": -494.4212852483798,
+          "q75": 385.02404155857425
+        },
+        "horizon": 60,
+        "instruments": 297,
+        "net_mean_bps": {
+          "10.5": -204.04219231349452,
+          "20.5": -224.04219231349452,
+          "25": -233.04219231349452,
+          "45.5": -274.0421923134945
+        },
+        "resolved": 764,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 5,
+          "exit_bar_missing": 1
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 770,
+        "gross_bps": {
+          "mean": -120.06555297670187,
+          "median": -36.11293499671709,
+          "n": 769,
+          "q25": -337.15441672285795,
+          "q75": 353.7626066718369
+        },
+        "horizon": 60,
+        "instruments": 299,
+        "net_mean_bps": {
+          "10.5": -141.06555297670187,
+          "20.5": -161.06555297670187,
+          "25": -170.06555297670187,
+          "45.5": -211.06555297670187
+        },
+        "resolved": 769,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "exit_bar_missing": 1
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 770,
+        "gross_bps": {
+          "mean": -196.74341741434858,
+          "median": -25.751072961373023,
+          "n": 761,
+          "q25": -573.1156651615144,
+          "q75": 550.2494103089606
+        },
+        "horizon": 240,
+        "instruments": 296,
+        "net_mean_bps": {
+          "10.5": -217.74341741434858,
+          "20.5": -237.74341741434858,
+          "25": -246.74341741434858,
+          "45.5": -287.7434174143486
+        },
+        "resolved": 761,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 5,
+          "exit_bar_missing": 4
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 770,
+        "gross_bps": {
+          "mean": -133.6946832924709,
+          "median": 13.524936601860826,
+          "n": 767,
+          "q25": -432.89347287060906,
+          "q75": 506.2996408946191
+        },
+        "horizon": 240,
+        "instruments": 298,
+        "net_mean_bps": {
+          "10.5": -154.6946832924709,
+          "20.5": -174.6946832924709,
+          "25": -183.6946832924709,
+          "45.5": -224.6946832924709
+        },
+        "resolved": 767,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "exit_bar_missing": 3
+        },
+        "venue": "binance"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 20973,
+        "gross_bps": {
+          "mean": -6.115138700953914,
+          "median": -36.63003663003539,
+          "n": 20969,
+          "q25": -219.33387489845634,
+          "q75": 145.13788098693635
+        },
+        "horizon": 15,
+        "instruments": 775,
+        "net_mean_bps": {
+          "10.5": -27.115138700953914,
+          "20.5": -47.11513870095391,
+          "25": -56.11513870095391,
+          "45.5": -97.11513870095392
+        },
+        "resolved": 20969,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 3
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 20973,
+        "gross_bps": {
+          "mean": 13.60805020317798,
+          "median": -17.13369302743517,
+          "n": 20968,
+          "q25": -183.99865104570785,
+          "q75": 161.9964184662226
+        },
+        "horizon": 15,
+        "instruments": 775,
+        "net_mean_bps": {
+          "10.5": -7.39194979682202,
+          "20.5": -27.39194979682202,
+          "25": -36.39194979682202,
+          "45.5": -77.39194979682202
+        },
+        "resolved": 20968,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 4
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 20973,
+        "gross_bps": {
+          "mean": 0.7254295617299875,
+          "median": -75.6859035004731,
+          "n": 20945,
+          "q25": -376.5690376569042,
+          "q75": 275.319567354968
+        },
+        "horizon": 60,
+        "instruments": 775,
+        "net_mean_bps": {
+          "10.5": -20.27457043827001,
+          "20.5": -40.27457043827001,
+          "25": -49.27457043827001,
+          "45.5": -90.27457043827002
+        },
+        "resolved": 20945,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 27
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 20973,
+        "gross_bps": {
+          "mean": 17.95256563361434,
+          "median": -50.955414012737734,
+          "n": 20945,
+          "q25": -355.82822085889364,
+          "q75": 282.82304099636946
+        },
+        "horizon": 60,
+        "instruments": 775,
+        "net_mean_bps": {
+          "10.5": -3.0474343663856587,
+          "20.5": -23.04743436638566,
+          "25": -32.04743436638566,
+          "45.5": -73.04743436638566
+        },
+        "resolved": 20945,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 27
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 20973,
+        "gross_bps": {
+          "mean": -6.87643721425404,
+          "median": -158.59766277128705,
+          "n": 20871,
+          "q25": -661.6395631660615,
+          "q75": 414.49074301206036
+        },
+        "horizon": 240,
+        "instruments": 775,
+        "net_mean_bps": {
+          "10.5": -27.87643721425404,
+          "20.5": -47.87643721425404,
+          "25": -56.87643721425404,
+          "45.5": -97.87643721425404
+        },
+        "resolved": 20871,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 101
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 20973,
+        "gross_bps": {
+          "mean": 9.78592682110358,
+          "median": -132.3511050068671,
+          "n": 20871,
+          "q25": -640.4524757920921,
+          "q75": 430.7779768402287
+        },
+        "horizon": 240,
+        "instruments": 775,
+        "net_mean_bps": {
+          "10.5": -11.21407317889642,
+          "20.5": -31.21407317889642,
+          "25": -40.21407317889642,
+          "45.5": -81.21407317889643
+        },
+        "resolved": 20871,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 101
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 20973,
+        "gross_bps": {
+          "mean": 6.115138700953914,
+          "median": 36.63003663003539,
+          "n": 20969,
+          "q25": -145.13788098693635,
+          "q75": 219.33387489845634
+        },
+        "horizon": 15,
+        "instruments": 775,
+        "net_mean_bps": {
+          "10.5": -14.884861299046086,
+          "20.5": -34.88486129904609,
+          "25": -43.88486129904609,
+          "45.5": -84.88486129904608
+        },
+        "resolved": 20969,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 3
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 20973,
+        "gross_bps": {
+          "mean": -13.60805020317798,
+          "median": 17.13369302743517,
+          "n": 20968,
+          "q25": -161.9964184662226,
+          "q75": 183.99865104570785
+        },
+        "horizon": 15,
+        "instruments": 775,
+        "net_mean_bps": {
+          "10.5": -34.60805020317798,
+          "20.5": -54.60805020317798,
+          "25": -63.60805020317798,
+          "45.5": -104.60805020317798
+        },
+        "resolved": 20968,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 4
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 20973,
+        "gross_bps": {
+          "mean": -0.7254295617299875,
+          "median": 75.6859035004731,
+          "n": 20945,
+          "q25": -275.319567354968,
+          "q75": 376.5690376569042
+        },
+        "horizon": 60,
+        "instruments": 775,
+        "net_mean_bps": {
+          "10.5": -21.72542956172999,
+          "20.5": -41.72542956172999,
+          "25": -50.72542956172999,
+          "45.5": -91.72542956172998
+        },
+        "resolved": 20945,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 27
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 20973,
+        "gross_bps": {
+          "mean": -17.95256563361434,
+          "median": 50.955414012737734,
+          "n": 20945,
+          "q25": -282.82304099636946,
+          "q75": 355.82822085889364
+        },
+        "horizon": 60,
+        "instruments": 775,
+        "net_mean_bps": {
+          "10.5": -38.95256563361434,
+          "20.5": -58.95256563361434,
+          "25": -67.95256563361434,
+          "45.5": -108.95256563361434
+        },
+        "resolved": 20945,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 27
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 20973,
+        "gross_bps": {
+          "mean": 6.87643721425404,
+          "median": 158.59766277128705,
+          "n": 20871,
+          "q25": -414.49074301206036,
+          "q75": 661.6395631660615
+        },
+        "horizon": 240,
+        "instruments": 775,
+        "net_mean_bps": {
+          "10.5": -14.12356278574596,
+          "20.5": -34.12356278574596,
+          "25": -43.12356278574596,
+          "45.5": -84.12356278574596
+        },
+        "resolved": 20871,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 101
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 20973,
+        "gross_bps": {
+          "mean": -9.78592682110358,
+          "median": 132.3511050068671,
+          "n": 20871,
+          "q25": -430.7779768402287,
+          "q75": 640.4524757920921
+        },
+        "horizon": 240,
+        "instruments": 775,
+        "net_mean_bps": {
+          "10.5": -30.78592682110358,
+          "20.5": -50.78592682110358,
+          "25": -59.78592682110358,
+          "45.5": -100.78592682110357
+        },
+        "resolved": 20871,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 101
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 8906,
+        "gross_bps": {
+          "mean": 11.048183900059913,
+          "median": -46.45760743321681,
+          "n": 8905,
+          "q25": -293.219303604153,
+          "q75": 235.66029346376195
+        },
+        "horizon": 15,
+        "instruments": 506,
+        "net_mean_bps": {
+          "10.5": -9.951816099940087,
+          "20.5": -29.95181609994009,
+          "25": -38.95181609994009,
+          "45.5": -79.95181609994009
+        },
+        "resolved": 8905,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 1
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 8906,
+        "gross_bps": {
+          "mean": 37.311875915884954,
+          "median": -12.82070247587419,
+          "n": 8904,
+          "q25": -250.82703418407985,
+          "q75": 256.4102564102577
+        },
+        "horizon": 15,
+        "instruments": 506,
+        "net_mean_bps": {
+          "10.5": 16.311875915884954,
+          "20.5": -3.6881240841150458,
+          "25": -12.688124084115046,
+          "45.5": -53.688124084115046
+        },
+        "resolved": 8904,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 1
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 8906,
+        "gross_bps": {
+          "mean": 17.071740692264257,
+          "median": -107.06638115631773,
+          "n": 8899,
+          "q25": -509.2453254711055,
+          "q75": 374.9455310009775
+        },
+        "horizon": 60,
+        "instruments": 506,
+        "net_mean_bps": {
+          "10.5": -3.9282593077357433,
+          "20.5": -23.928259307735743,
+          "25": -32.92825930773574,
+          "45.5": -73.92825930773574
+        },
+        "resolved": 8899,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 6
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 8906,
+        "gross_bps": {
+          "mean": 38.26161931496227,
+          "median": -72.93946024799381,
+          "n": 8899,
+          "q25": -478.30156375840096,
+          "q75": 401.89011151883113
+        },
+        "horizon": 60,
+        "instruments": 506,
+        "net_mean_bps": {
+          "10.5": 17.261619314962267,
+          "20.5": -2.7383806850377326,
+          "25": -11.738380685037733,
+          "45.5": -52.73838068503773
+        },
+        "resolved": 8899,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 6
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 8906,
+        "gross_bps": {
+          "mean": -2.2010633852818655,
+          "median": -250.08931761343334,
+          "n": 8871,
+          "q25": -867.3365658581799,
+          "q75": 552.3771206211004
+        },
+        "horizon": 240,
+        "instruments": 506,
+        "net_mean_bps": {
+          "10.5": -23.201063385281866,
+          "20.5": -43.20106338528186,
+          "25": -52.20106338528186,
+          "45.5": -93.20106338528187
+        },
+        "resolved": 8871,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 34
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 8906,
+        "gross_bps": {
+          "mean": 17.388954279751964,
+          "median": -211.37026239067103,
+          "n": 8871,
+          "q25": -850.2674618450806,
+          "q75": 570.3479663465293
+        },
+        "horizon": 240,
+        "instruments": 506,
+        "net_mean_bps": {
+          "10.5": -3.611045720248036,
+          "20.5": -23.611045720248036,
+          "25": -32.611045720248036,
+          "45.5": -73.61104572024803
+        },
+        "resolved": 8871,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 34
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 8906,
+        "gross_bps": {
+          "mean": -11.048183900059913,
+          "median": 46.45760743321681,
+          "n": 8905,
+          "q25": -235.66029346376195,
+          "q75": 293.219303604153
+        },
+        "horizon": 15,
+        "instruments": 506,
+        "net_mean_bps": {
+          "10.5": -32.04818390005991,
+          "20.5": -52.04818390005991,
+          "25": -61.04818390005991,
+          "45.5": -102.04818390005991
+        },
+        "resolved": 8905,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 1
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 8906,
+        "gross_bps": {
+          "mean": -37.311875915884954,
+          "median": 12.82070247587419,
+          "n": 8904,
+          "q25": -256.4102564102577,
+          "q75": 250.82703418407985
+        },
+        "horizon": 15,
+        "instruments": 506,
+        "net_mean_bps": {
+          "10.5": -58.311875915884954,
+          "20.5": -78.31187591588495,
+          "25": -87.31187591588495,
+          "45.5": -128.31187591588497
+        },
+        "resolved": 8904,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 1
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 8906,
+        "gross_bps": {
+          "mean": -17.071740692264257,
+          "median": 107.06638115631773,
+          "n": 8899,
+          "q25": -374.9455310009775,
+          "q75": 509.2453254711055
+        },
+        "horizon": 60,
+        "instruments": 506,
+        "net_mean_bps": {
+          "10.5": -38.07174069226426,
+          "20.5": -58.07174069226426,
+          "25": -67.07174069226426,
+          "45.5": -108.07174069226426
+        },
+        "resolved": 8899,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 6
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 8906,
+        "gross_bps": {
+          "mean": -38.26161931496227,
+          "median": 72.93946024799381,
+          "n": 8899,
+          "q25": -401.89011151883113,
+          "q75": 478.30156375840096
+        },
+        "horizon": 60,
+        "instruments": 506,
+        "net_mean_bps": {
+          "10.5": -59.26161931496227,
+          "20.5": -79.26161931496227,
+          "25": -88.26161931496227,
+          "45.5": -129.26161931496227
+        },
+        "resolved": 8899,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 6
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 8906,
+        "gross_bps": {
+          "mean": 2.2010633852818655,
+          "median": 250.08931761343334,
+          "n": 8871,
+          "q25": -552.3771206211004,
+          "q75": 867.3365658581799
+        },
+        "horizon": 240,
+        "instruments": 506,
+        "net_mean_bps": {
+          "10.5": -18.798936614718134,
+          "20.5": -38.79893661471814,
+          "25": -47.79893661471814,
+          "45.5": -88.79893661471813
+        },
+        "resolved": 8871,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 34
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 8906,
+        "gross_bps": {
+          "mean": -17.388954279751964,
+          "median": 211.37026239067103,
+          "n": 8871,
+          "q25": -570.3479663465293,
+          "q75": 850.2674618450806
+        },
+        "horizon": 240,
+        "instruments": 506,
+        "net_mean_bps": {
+          "10.5": -38.388954279751964,
+          "20.5": -58.388954279751964,
+          "25": -67.38895427975197,
+          "45.5": -108.38895427975197
+        },
+        "resolved": 8871,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 1,
+          "exit_bar_missing": 34
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 1990,
+        "gross_bps": {
+          "mean": 4.261439344492515,
+          "median": -90.50136152490839,
+          "n": 1989,
+          "q25": -495.16220830961856,
+          "q75": 321.3507625272327
+        },
+        "horizon": 15,
+        "instruments": 238,
+        "net_mean_bps": {
+          "10.5": -16.738560655507484,
+          "20.5": -36.738560655507484,
+          "25": -45.738560655507484,
+          "45.5": -86.73856065550748
+        },
+        "resolved": 1989,
+        "side": "long",
+        "threshold": 0.1,
+        "unresolved": {
+          "exit_bar_missing": 1
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 1990,
+        "gross_bps": {
+          "mean": 36.479098985377185,
+          "median": -37.453183520600454,
+          "n": 1989,
+          "q25": -418.04635761589435,
+          "q75": 378.6191536748329
+        },
+        "horizon": 15,
+        "instruments": 238,
+        "net_mean_bps": {
+          "10.5": 15.479098985377185,
+          "20.5": -4.520901014622815,
+          "25": -13.520901014622815,
+          "45.5": -54.520901014622815
+        },
+        "resolved": 1989,
+        "side": "long",
+        "threshold": 0.1,
+        "unresolved": {
+          "exit_bar_missing": 1
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 1990,
+        "gross_bps": {
+          "mean": 15.67184303207582,
+          "median": -211.99054047934317,
+          "n": 1988,
+          "q25": -801.4094299619755,
+          "q75": 577.1715203944627
+        },
+        "horizon": 60,
+        "instruments": 238,
+        "net_mean_bps": {
+          "10.5": -5.32815696792418,
+          "20.5": -25.32815696792418,
+          "25": -34.32815696792418,
+          "45.5": -75.32815696792417
+        },
+        "resolved": 1988,
+        "side": "long",
+        "threshold": 0.1,
+        "unresolved": {
+          "exit_bar_missing": 2
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 1990,
+        "gross_bps": {
+          "mean": 43.956569665305096,
+          "median": -149.36938483072703,
+          "n": 1988,
+          "q25": -728.6707526031364,
+          "q75": 571.7156799377099
+        },
+        "horizon": 60,
+        "instruments": 238,
+        "net_mean_bps": {
+          "10.5": 22.956569665305096,
+          "20.5": 2.9565696653050964,
+          "25": -6.043430334694904,
+          "45.5": -47.043430334694904
+        },
+        "resolved": 1988,
+        "side": "long",
+        "threshold": 0.1,
+        "unresolved": {
+          "exit_bar_missing": 2
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 1990,
+        "gross_bps": {
+          "mean": -49.576431057239176,
+          "median": -415.10912971366383,
+          "n": 1980,
+          "q25": -1322.7148791317927,
+          "q75": 707.0093248175408
+        },
+        "horizon": 240,
+        "instruments": 238,
+        "net_mean_bps": {
+          "10.5": -70.57643105723918,
+          "20.5": -90.57643105723918,
+          "25": -99.57643105723918,
+          "45.5": -140.57643105723918
+        },
+        "resolved": 1980,
+        "side": "long",
+        "threshold": 0.1,
+        "unresolved": {
+          "exit_bar_missing": 10
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 1990,
+        "gross_bps": {
+          "mean": -28.51027062626656,
+          "median": -354.64582662078305,
+          "n": 1980,
+          "q25": -1241.74945868535,
+          "q75": 685.6569740536745
+        },
+        "horizon": 240,
+        "instruments": 238,
+        "net_mean_bps": {
+          "10.5": -49.51027062626656,
+          "20.5": -69.51027062626656,
+          "25": -78.51027062626656,
+          "45.5": -119.51027062626656
+        },
+        "resolved": 1980,
+        "side": "long",
+        "threshold": 0.1,
+        "unresolved": {
+          "exit_bar_missing": 10
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 1990,
+        "gross_bps": {
+          "mean": -4.261439344492515,
+          "median": 90.50136152490839,
+          "n": 1989,
+          "q25": -321.3507625272327,
+          "q75": 495.16220830961856
+        },
+        "horizon": 15,
+        "instruments": 238,
+        "net_mean_bps": {
+          "10.5": -25.261439344492516,
+          "20.5": -45.261439344492516,
+          "25": -54.261439344492516,
+          "45.5": -95.26143934449252
+        },
+        "resolved": 1989,
+        "side": "short",
+        "threshold": 0.1,
+        "unresolved": {
+          "exit_bar_missing": 1
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 1990,
+        "gross_bps": {
+          "mean": -36.479098985377185,
+          "median": 37.453183520600454,
+          "n": 1989,
+          "q25": -378.6191536748329,
+          "q75": 418.04635761589435
+        },
+        "horizon": 15,
+        "instruments": 238,
+        "net_mean_bps": {
+          "10.5": -57.479098985377185,
+          "20.5": -77.47909898537719,
+          "25": -86.47909898537719,
+          "45.5": -127.47909898537719
+        },
+        "resolved": 1989,
+        "side": "short",
+        "threshold": 0.1,
+        "unresolved": {
+          "exit_bar_missing": 1
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 1990,
+        "gross_bps": {
+          "mean": -15.67184303207582,
+          "median": 211.99054047934317,
+          "n": 1988,
+          "q25": -577.1715203944627,
+          "q75": 801.4094299619755
+        },
+        "horizon": 60,
+        "instruments": 238,
+        "net_mean_bps": {
+          "10.5": -36.67184303207582,
+          "20.5": -56.67184303207582,
+          "25": -65.67184303207583,
+          "45.5": -106.67184303207583
+        },
+        "resolved": 1988,
+        "side": "short",
+        "threshold": 0.1,
+        "unresolved": {
+          "exit_bar_missing": 2
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 1990,
+        "gross_bps": {
+          "mean": -43.956569665305096,
+          "median": 149.36938483072703,
+          "n": 1988,
+          "q25": -571.7156799377099,
+          "q75": 728.6707526031364
+        },
+        "horizon": 60,
+        "instruments": 238,
+        "net_mean_bps": {
+          "10.5": -64.9565696653051,
+          "20.5": -84.9565696653051,
+          "25": -93.9565696653051,
+          "45.5": -134.9565696653051
+        },
+        "resolved": 1988,
+        "side": "short",
+        "threshold": 0.1,
+        "unresolved": {
+          "exit_bar_missing": 2
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 1990,
+        "gross_bps": {
+          "mean": 49.576431057239176,
+          "median": 415.10912971366383,
+          "n": 1980,
+          "q25": -707.0093248175408,
+          "q75": 1322.7148791317927
+        },
+        "horizon": 240,
+        "instruments": 238,
+        "net_mean_bps": {
+          "10.5": 28.576431057239176,
+          "20.5": 8.576431057239176,
+          "25": -0.4235689427608236,
+          "45.5": -41.423568942760824
+        },
+        "resolved": 1980,
+        "side": "short",
+        "threshold": 0.1,
+        "unresolved": {
+          "exit_bar_missing": 10
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 1990,
+        "gross_bps": {
+          "mean": 28.51027062626656,
+          "median": 354.64582662078305,
+          "n": 1980,
+          "q25": -685.6569740536745,
+          "q75": 1241.74945868535
+        },
+        "horizon": 240,
+        "instruments": 238,
+        "net_mean_bps": {
+          "10.5": 7.510270626266561,
+          "20.5": -12.48972937373344,
+          "25": -21.48972937373344,
+          "45.5": -62.48972937373344
+        },
+        "resolved": 1980,
+        "side": "short",
+        "threshold": 0.1,
+        "unresolved": {
+          "exit_bar_missing": 10
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 9043,
+        "gross_bps": {
+          "mean": 1.449801655735256,
+          "median": -48.58791375645377,
+          "n": 9043,
+          "q25": -229.5429240067287,
+          "q75": 159.32317647262218
+        },
+        "horizon": 15,
+        "instruments": 681,
+        "net_mean_bps": {
+          "10.5": -19.550198344264743,
+          "20.5": -39.55019834426474,
+          "25": -48.55019834426474,
+          "45.5": -89.55019834426474
+        },
+        "resolved": 9043,
+        "side": "long",
+        "threshold": 0.02,
+        "unresolved": {},
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 9043,
+        "gross_bps": {
+          "mean": 18.038368854864178,
+          "median": -20.69580731489884,
+          "n": 9043,
+          "q25": -190.77734801318582,
+          "q75": 163.12524970054642
+        },
+        "horizon": 15,
+        "instruments": 681,
+        "net_mean_bps": {
+          "10.5": -2.961631145135822,
+          "20.5": -22.961631145135822,
+          "25": -31.961631145135822,
+          "45.5": -72.96163114513583
+        },
+        "resolved": 9043,
+        "side": "long",
+        "threshold": 0.02,
+        "unresolved": {},
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 9043,
+        "gross_bps": {
+          "mean": 14.822666709531498,
+          "median": -83.42845750357652,
+          "n": 9038,
+          "q25": -390.79073187194695,
+          "q75": 269.8303164615795
+        },
+        "horizon": 60,
+        "instruments": 681,
+        "net_mean_bps": {
+          "10.5": -6.177333290468502,
+          "20.5": -26.177333290468503,
+          "25": -35.1773332904685,
+          "45.5": -76.1773332904685
+        },
+        "resolved": 9038,
+        "side": "long",
+        "threshold": 0.02,
+        "unresolved": {
+          "exit_bar_missing": 5
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 9043,
+        "gross_bps": {
+          "mean": 27.9074629877676,
+          "median": -53.583977512298155,
+          "n": 9037,
+          "q25": -361.0906411201176,
+          "q75": 272.7199484369946
+        },
+        "horizon": 60,
+        "instruments": 681,
+        "net_mean_bps": {
+          "10.5": 6.907462987767602,
+          "20.5": -13.092537012232398,
+          "25": -22.0925370122324,
+          "45.5": -63.0925370122324
+        },
+        "resolved": 9037,
+        "side": "long",
+        "threshold": 0.02,
+        "unresolved": {
+          "exit_bar_missing": 6
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 9043,
+        "gross_bps": {
+          "mean": -24.47554167354605,
+          "median": -167.51977664029914,
+          "n": 9017,
+          "q25": -649.8633464925618,
+          "q75": 367.7758318739066
+        },
+        "horizon": 240,
+        "instruments": 681,
+        "net_mean_bps": {
+          "10.5": -45.47554167354605,
+          "20.5": -65.47554167354605,
+          "25": -74.47554167354605,
+          "45.5": -115.47554167354605
+        },
+        "resolved": 9017,
+        "side": "long",
+        "threshold": 0.02,
+        "unresolved": {
+          "exit_bar_missing": 26
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 9043,
+        "gross_bps": {
+          "mean": -10.674398058368347,
+          "median": -133.31266470314796,
+          "n": 9017,
+          "q25": -630.1289566236812,
+          "q75": 385.05096262740676
+        },
+        "horizon": 240,
+        "instruments": 681,
+        "net_mean_bps": {
+          "10.5": -31.674398058368347,
+          "20.5": -51.67439805836835,
+          "25": -60.67439805836835,
+          "45.5": -101.67439805836835
+        },
+        "resolved": 9017,
+        "side": "long",
+        "threshold": 0.02,
+        "unresolved": {
+          "exit_bar_missing": 26
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 9043,
+        "gross_bps": {
+          "mean": -1.449801655735256,
+          "median": 48.58791375645377,
+          "n": 9043,
+          "q25": -159.32317647262218,
+          "q75": 229.5429240067287
+        },
+        "horizon": 15,
+        "instruments": 681,
+        "net_mean_bps": {
+          "10.5": -22.449801655735257,
+          "20.5": -42.44980165573526,
+          "25": -51.44980165573526,
+          "45.5": -92.44980165573526
+        },
+        "resolved": 9043,
+        "side": "short",
+        "threshold": 0.02,
+        "unresolved": {},
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 9043,
+        "gross_bps": {
+          "mean": -18.038368854864178,
+          "median": 20.69580731489884,
+          "n": 9043,
+          "q25": -163.12524970054642,
+          "q75": 190.77734801318582
+        },
+        "horizon": 15,
+        "instruments": 681,
+        "net_mean_bps": {
+          "10.5": -39.038368854864174,
+          "20.5": -59.038368854864174,
+          "25": -68.03836885486417,
+          "45.5": -109.03836885486417
+        },
+        "resolved": 9043,
+        "side": "short",
+        "threshold": 0.02,
+        "unresolved": {},
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 9043,
+        "gross_bps": {
+          "mean": -14.822666709531498,
+          "median": 83.42845750357652,
+          "n": 9038,
+          "q25": -269.8303164615795,
+          "q75": 390.79073187194695
+        },
+        "horizon": 60,
+        "instruments": 681,
+        "net_mean_bps": {
+          "10.5": -35.8226667095315,
+          "20.5": -55.8226667095315,
+          "25": -64.8226667095315,
+          "45.5": -105.8226667095315
+        },
+        "resolved": 9038,
+        "side": "short",
+        "threshold": 0.02,
+        "unresolved": {
+          "exit_bar_missing": 5
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 9043,
+        "gross_bps": {
+          "mean": -27.9074629877676,
+          "median": 53.583977512298155,
+          "n": 9037,
+          "q25": -272.7199484369946,
+          "q75": 361.0906411201176
+        },
+        "horizon": 60,
+        "instruments": 681,
+        "net_mean_bps": {
+          "10.5": -48.9074629877676,
+          "20.5": -68.9074629877676,
+          "25": -77.9074629877676,
+          "45.5": -118.9074629877676
+        },
+        "resolved": 9037,
+        "side": "short",
+        "threshold": 0.02,
+        "unresolved": {
+          "exit_bar_missing": 6
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 9043,
+        "gross_bps": {
+          "mean": 24.47554167354605,
+          "median": 167.51977664029914,
+          "n": 9017,
+          "q25": -367.7758318739066,
+          "q75": 649.8633464925618
+        },
+        "horizon": 240,
+        "instruments": 681,
+        "net_mean_bps": {
+          "10.5": 3.4755416735460507,
+          "20.5": -16.52445832645395,
+          "25": -25.52445832645395,
+          "45.5": -66.52445832645395
+        },
+        "resolved": 9017,
+        "side": "short",
+        "threshold": 0.02,
+        "unresolved": {
+          "exit_bar_missing": 26
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 9043,
+        "gross_bps": {
+          "mean": 10.674398058368347,
+          "median": 133.31266470314796,
+          "n": 9017,
+          "q25": -385.05096262740676,
+          "q75": 630.1289566236812
+        },
+        "horizon": 240,
+        "instruments": 681,
+        "net_mean_bps": {
+          "10.5": -10.325601941631653,
+          "20.5": -30.325601941631653,
+          "25": -39.32560194163165,
+          "45.5": -80.32560194163165
+        },
+        "resolved": 9017,
+        "side": "short",
+        "threshold": 0.02,
+        "unresolved": {
+          "exit_bar_missing": 26
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 4936,
+        "gross_bps": {
+          "mean": 12.515417483737682,
+          "median": -62.642418679649815,
+          "n": 4936,
+          "q25": -294.170431991892,
+          "q75": 218.24226442862084
+        },
+        "horizon": 15,
+        "instruments": 504,
+        "net_mean_bps": {
+          "10.5": -8.484582516262318,
+          "20.5": -28.484582516262318,
+          "25": -37.48458251626232,
+          "45.5": -78.48458251626232
+        },
+        "resolved": 4936,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {},
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 4936,
+        "gross_bps": {
+          "mean": 35.215230975440384,
+          "median": -19.871236754976373,
+          "n": 4936,
+          "q25": -245.81321313576126,
+          "q75": 229.0966421888685
+        },
+        "horizon": 15,
+        "instruments": 504,
+        "net_mean_bps": {
+          "10.5": 14.215230975440384,
+          "20.5": -5.7847690245596155,
+          "25": -14.784769024559616,
+          "45.5": -55.784769024559616
+        },
+        "resolved": 4936,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {},
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 4936,
+        "gross_bps": {
+          "mean": 16.23054581581322,
+          "median": -125.00000000000067,
+          "n": 4933,
+          "q25": -498.05636540330323,
+          "q75": 337.6380893107189
+        },
+        "horizon": 60,
+        "instruments": 504,
+        "net_mean_bps": {
+          "10.5": -4.769454184186781,
+          "20.5": -24.76945418418678,
+          "25": -33.769454184186785,
+          "45.5": -74.76945418418678
+        },
+        "resolved": 4933,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "exit_bar_missing": 3
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 4936,
+        "gross_bps": {
+          "mean": 37.28587334826957,
+          "median": -72.16854848096754,
+          "n": 4933,
+          "q25": -448.5813614444323,
+          "q75": 347.0560076591656
+        },
+        "horizon": 60,
+        "instruments": 504,
+        "net_mean_bps": {
+          "10.5": 16.28587334826957,
+          "20.5": -3.7141266517304317,
+          "25": -12.714126651730432,
+          "45.5": -53.71412665173043
+        },
+        "resolved": 4933,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "exit_bar_missing": 3
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 4936,
+        "gross_bps": {
+          "mean": -38.479850364474736,
+          "median": -238.58269001443557,
+          "n": 4920,
+          "q25": -853.2078938958138,
+          "q75": 437.0781049619177
+        },
+        "horizon": 240,
+        "instruments": 504,
+        "net_mean_bps": {
+          "10.5": -59.479850364474736,
+          "20.5": -79.47985036447474,
+          "25": -88.47985036447474,
+          "45.5": -129.47985036447474
+        },
+        "resolved": 4920,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "exit_bar_missing": 16
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 4936,
+        "gross_bps": {
+          "mean": -20.789723078438634,
+          "median": -190.82606231144382,
+          "n": 4920,
+          "q25": -831.5302508491046,
+          "q75": 454.3457804399165
+        },
+        "horizon": 240,
+        "instruments": 504,
+        "net_mean_bps": {
+          "10.5": -41.789723078438634,
+          "20.5": -61.789723078438634,
+          "25": -70.78972307843864,
+          "45.5": -111.78972307843864
+        },
+        "resolved": 4920,
+        "side": "long",
+        "threshold": 0.03,
+        "unresolved": {
+          "exit_bar_missing": 16
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 4936,
+        "gross_bps": {
+          "mean": -12.515417483737682,
+          "median": 62.642418679649815,
+          "n": 4936,
+          "q25": -218.24226442862084,
+          "q75": 294.170431991892
+        },
+        "horizon": 15,
+        "instruments": 504,
+        "net_mean_bps": {
+          "10.5": -33.51541748373768,
+          "20.5": -53.51541748373768,
+          "25": -62.51541748373768,
+          "45.5": -103.51541748373768
+        },
+        "resolved": 4936,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {},
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 4936,
+        "gross_bps": {
+          "mean": -35.215230975440384,
+          "median": 19.871236754976373,
+          "n": 4936,
+          "q25": -229.0966421888685,
+          "q75": 245.81321313576126
+        },
+        "horizon": 15,
+        "instruments": 504,
+        "net_mean_bps": {
+          "10.5": -56.215230975440384,
+          "20.5": -76.21523097544039,
+          "25": -85.21523097544039,
+          "45.5": -126.21523097544039
+        },
+        "resolved": 4936,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {},
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 4936,
+        "gross_bps": {
+          "mean": -16.23054581581322,
+          "median": 125.00000000000067,
+          "n": 4933,
+          "q25": -337.6380893107189,
+          "q75": 498.05636540330323
+        },
+        "horizon": 60,
+        "instruments": 504,
+        "net_mean_bps": {
+          "10.5": -37.230545815813215,
+          "20.5": -57.230545815813215,
+          "25": -66.23054581581322,
+          "45.5": -107.23054581581322
+        },
+        "resolved": 4933,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "exit_bar_missing": 3
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 4936,
+        "gross_bps": {
+          "mean": -37.28587334826957,
+          "median": 72.16854848096754,
+          "n": 4933,
+          "q25": -347.0560076591656,
+          "q75": 448.5813614444323
+        },
+        "horizon": 60,
+        "instruments": 504,
+        "net_mean_bps": {
+          "10.5": -58.28587334826957,
+          "20.5": -78.28587334826958,
+          "25": -87.28587334826958,
+          "45.5": -128.28587334826958
+        },
+        "resolved": 4933,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "exit_bar_missing": 3
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 4936,
+        "gross_bps": {
+          "mean": 38.479850364474736,
+          "median": 238.58269001443557,
+          "n": 4920,
+          "q25": -437.0781049619177,
+          "q75": 853.2078938958138
+        },
+        "horizon": 240,
+        "instruments": 504,
+        "net_mean_bps": {
+          "10.5": 17.479850364474736,
+          "20.5": -2.5201496355252644,
+          "25": -11.520149635525264,
+          "45.5": -52.520149635525264
+        },
+        "resolved": 4920,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "exit_bar_missing": 16
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 4936,
+        "gross_bps": {
+          "mean": 20.789723078438634,
+          "median": 190.82606231144382,
+          "n": 4920,
+          "q25": -454.3457804399165,
+          "q75": 831.5302508491046
+        },
+        "horizon": 240,
+        "instruments": 504,
+        "net_mean_bps": {
+          "10.5": -0.21027692156136624,
+          "20.5": -20.210276921561366,
+          "25": -29.210276921561366,
+          "45.5": -70.21027692156136
+        },
+        "resolved": 4920,
+        "side": "short",
+        "threshold": 0.03,
+        "unresolved": {
+          "exit_bar_missing": 16
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 1994,
+        "gross_bps": {
+          "mean": 17.624482252276522,
+          "median": -87.48177842565542,
+          "n": 1994,
+          "q25": -410.78727563532925,
+          "q75": 276.59616362490925
+        },
+        "horizon": 15,
+        "instruments": 303,
+        "net_mean_bps": {
+          "10.5": -3.375517747723478,
+          "20.5": -23.375517747723478,
+          "25": -32.37551774772348,
+          "45.5": -73.37551774772348
+        },
+        "resolved": 1994,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {},
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 1994,
+        "gross_bps": {
+          "mean": 46.59718070540943,
+          "median": -24.073280107532177,
+          "n": 1994,
+          "q25": -339.9813648061054,
+          "q75": 298.6777458862655
+        },
+        "horizon": 15,
+        "instruments": 303,
+        "net_mean_bps": {
+          "10.5": 25.59718070540943,
+          "20.5": 5.5971807054094285,
+          "25": -3.4028192945905715,
+          "45.5": -44.40281929459057
+        },
+        "resolved": 1994,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {},
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 1994,
+        "gross_bps": {
+          "mean": 39.016141897366666,
+          "median": -179.93555697734476,
+          "n": 1992,
+          "q25": -630.0033125686625,
+          "q75": 474.2558571768546
+        },
+        "horizon": 60,
+        "instruments": 303,
+        "net_mean_bps": {
+          "10.5": 18.016141897366666,
+          "20.5": -1.9838581026333344,
+          "25": -10.983858102633334,
+          "45.5": -51.983858102633334
+        },
+        "resolved": 1992,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "exit_bar_missing": 2
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 1994,
+        "gross_bps": {
+          "mean": 62.45658597018217,
+          "median": -84.92607284529386,
+          "n": 1992,
+          "q25": -568.1018762447945,
+          "q75": 466.04739519608586
+        },
+        "horizon": 60,
+        "instruments": 303,
+        "net_mean_bps": {
+          "10.5": 41.45658597018217,
+          "20.5": 21.456585970182168,
+          "25": 12.456585970182168,
+          "45.5": -28.543414029817832
+        },
+        "resolved": 1992,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "exit_bar_missing": 2
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 1994,
+        "gross_bps": {
+          "mean": -3.3987759909481814,
+          "median": -323.70232291367927,
+          "n": 1987,
+          "q25": -1037.5107340653399,
+          "q75": 548.4544968040816
+        },
+        "horizon": 240,
+        "instruments": 303,
+        "net_mean_bps": {
+          "10.5": -24.39877599094818,
+          "20.5": -44.39877599094818,
+          "25": -53.39877599094818,
+          "45.5": -94.39877599094818
+        },
+        "resolved": 1987,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "exit_bar_missing": 7
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 1994,
+        "gross_bps": {
+          "mean": 16.671813422758156,
+          "median": -257.20164609053467,
+          "n": 1987,
+          "q25": -1000.342700479781,
+          "q75": 528.1634439169169
+        },
+        "horizon": 240,
+        "instruments": 303,
+        "net_mean_bps": {
+          "10.5": -4.328186577241844,
+          "20.5": -24.328186577241844,
+          "25": -33.328186577241844,
+          "45.5": -74.32818657724184
+        },
+        "resolved": 1987,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "exit_bar_missing": 7
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 1994,
+        "gross_bps": {
+          "mean": -17.624482252276522,
+          "median": 87.48177842565542,
+          "n": 1994,
+          "q25": -276.59616362490925,
+          "q75": 410.78727563532925
+        },
+        "horizon": 15,
+        "instruments": 303,
+        "net_mean_bps": {
+          "10.5": -38.62448225227652,
+          "20.5": -58.62448225227652,
+          "25": -67.62448225227652,
+          "45.5": -108.62448225227652
+        },
+        "resolved": 1994,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {},
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 1994,
+        "gross_bps": {
+          "mean": -46.59718070540943,
+          "median": 24.073280107532177,
+          "n": 1994,
+          "q25": -298.6777458862655,
+          "q75": 339.9813648061054
+        },
+        "horizon": 15,
+        "instruments": 303,
+        "net_mean_bps": {
+          "10.5": -67.59718070540943,
+          "20.5": -87.59718070540943,
+          "25": -96.59718070540943,
+          "45.5": -137.59718070540941
+        },
+        "resolved": 1994,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {},
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 1994,
+        "gross_bps": {
+          "mean": -39.016141897366666,
+          "median": 179.93555697734476,
+          "n": 1992,
+          "q25": -474.2558571768546,
+          "q75": 630.0033125686625
+        },
+        "horizon": 60,
+        "instruments": 303,
+        "net_mean_bps": {
+          "10.5": -60.016141897366666,
+          "20.5": -80.01614189736667,
+          "25": -89.01614189736667,
+          "45.5": -130.01614189736665
+        },
+        "resolved": 1992,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "exit_bar_missing": 2
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 1994,
+        "gross_bps": {
+          "mean": -62.45658597018217,
+          "median": 84.92607284529386,
+          "n": 1992,
+          "q25": -466.04739519608586,
+          "q75": 568.1018762447945
+        },
+        "horizon": 60,
+        "instruments": 303,
+        "net_mean_bps": {
+          "10.5": -83.45658597018218,
+          "20.5": -103.45658597018218,
+          "25": -112.45658597018218,
+          "45.5": -153.45658597018218
+        },
+        "resolved": 1992,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "exit_bar_missing": 2
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "bar_optimistic_next_open",
+        "family": "one_minute",
+        "firings": 1994,
+        "gross_bps": {
+          "mean": 3.3987759909481814,
+          "median": 323.70232291367927,
+          "n": 1987,
+          "q25": -548.4544968040816,
+          "q75": 1037.5107340653399
+        },
+        "horizon": 240,
+        "instruments": 303,
+        "net_mean_bps": {
+          "10.5": -17.60122400905182,
+          "20.5": -37.60122400905182,
+          "25": -46.60122400905182,
+          "45.5": -87.60122400905182
+        },
+        "resolved": 1987,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "exit_bar_missing": 7
+        },
+        "venue": "mexc"
+      },
+      {
+        "censored_by_window_end": 0,
+        "entry": "first_open_after_data_available",
+        "family": "one_minute",
+        "firings": 1994,
+        "gross_bps": {
+          "mean": -16.671813422758156,
+          "median": 257.20164609053467,
+          "n": 1987,
+          "q25": -528.1634439169169,
+          "q75": 1000.342700479781
+        },
+        "horizon": 240,
+        "instruments": 303,
+        "net_mean_bps": {
+          "10.5": -37.671813422758156,
+          "20.5": -57.671813422758156,
+          "25": -66.67181342275816,
+          "45.5": -107.67181342275816
+        },
+        "resolved": 1987,
+        "side": "short",
+        "threshold": 0.05,
+        "unresolved": {
+          "exit_bar_missing": 7
+        },
+        "venue": "mexc"
+      }
+    ],
+    "exclusions": {
+      "bars": {
+        "binance": {
+          "price_incomplete": 1722226,
+          "trade_incomplete": 0
+        },
+        "bybit": {
+          "price_incomplete": 277197,
+          "trade_incomplete": 76961
+        },
+        "mexc": {
+          "price_incomplete": 0,
+          "trade_incomplete": 0
+        }
+      },
+      "five_minute_candidates_lost_to_incomplete_window": {
+        "binance": 208,
+        "bybit": 156,
+        "mexc": 0
+      }
+    },
+    "primary": {
+      "bar_optimistic_next_open": {
+        "censored_by_window_end": 0,
+        "ci95_bps": {
+          "instrument": [
+            -79.91551709194364,
+            -2.9478161975462247
+          ],
+          "utc_day": [
+            -79.80389801226498,
+            -3.552122135137323
+          ]
+        },
+        "clusters": {
+          "instrument": 419,
+          "utc_day": 47
+        },
+        "entry": "bar_optimistic_next_open",
+        "family": "five_minute",
+        "firings": 2584,
+        "horizon": 60,
+        "mde_bps_80pct_power": 54.72539945567947,
+        "mean_net_bps": -40.45492052323834,
+        "se_bps": 19.53372803455168,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 3,
+          "exit_bar_missing": 8
+        },
+        "venue": "bybit",
+        "verdict": "negative_established"
+      },
+      "first_open_after_data_available": {
+        "censored_by_window_end": 0,
+        "ci95_bps": {
+          "instrument": [
+            -77.01900288885203,
+            -5.584554076621264
+          ],
+          "utc_day": [
+            -82.66456805133548,
+            -2.0954943294617094
+          ]
+        },
+        "clusters": {
+          "instrument": 419,
+          "utc_day": 47
+        },
+        "entry": "first_open_after_data_available",
+        "family": "five_minute",
+        "firings": 2582,
+        "horizon": 60,
+        "mde_bps_80pct_power": 58.20048473347167,
+        "mean_net_bps": -40.382532951818185,
+        "se_bps": 20.774127764630258,
+        "side": "long",
+        "threshold": 0.05,
+        "unresolved": {
+          "entry_bar_missing": 7,
+          "exit_bar_missing": 6
+        },
+        "venue": "bybit",
+        "verdict": "negative_established"
+      }
+    },
+    "primary_registered_estimand": "bar_optimistic_next_open"
+  },
+  "reader_code_revision": "f8c99fa7c62db2cf2bcbccae45acaaf58d135f48",
+  "scanner_entry_weights": {
+    "2": 0.5673267326732673,
+    "3": 0.4326732673267327
+  },
+  "study_version": "edge_loss_decomposition_v1_amendment2",
+  "venue_first_day": {
+    "binance": "2026-08-18",
+    "bybit": "2026-08-13",
+    "mexc": "2026-08-28"
+  }
+}

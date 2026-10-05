@@ -262,3 +262,21 @@ def test_an_interrupted_read_resumes_on_the_same_pinned_inputs(
     monkeypatch.setattr(s, "verify_mexc", lambda _: ([], "another-sha"))
     with pytest.raises(SystemExit, match="other inputs"):
         s.run_read(tmp_path, tmp_path, tmp_path, "rev", datetime(2026, 10, 6, tzinfo=UTC))
+
+
+def test_the_cli_reports_the_registered_estimand(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    cell = {"firings": 2584, "mde_bps_80pct_power": 54.7, "verdict": "negative_established"}
+    result = {
+        "part_b": {
+            "primary_registered_estimand": s.ENTRY_LABELS[1],
+            "primary": {s.ENTRY_LABELS[1]: cell, s.ENTRY_LABELS[2]: {**cell, "firings": 1}},
+        }
+    }
+    monkeypatch.setattr(s, "verified_revision", lambda _: "rev")
+    monkeypatch.setattr(s, "run_read", lambda *_: result)
+    s.main(["--phase", "read", "--stage-dir", str(tmp_path), "--bars-dir", "b", "--mexc-dir", "m"])
+    out = json.loads(capsys.readouterr().out)
+    assert out["registered"] == {"entry": s.ENTRY_LABELS[1], **cell}
+    assert out["also_reported"][s.ENTRY_LABELS[2]]["firings"] == 1
