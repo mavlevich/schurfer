@@ -1,0 +1,72 @@
+{
+ "version": "mexc_sealed_probe_v1",
+ "started_at": "2026-10-04T22:02:19.066786183Z",
+ "ended_at": "2026-10-04T22:32:19.074858941Z",
+ "compress": false,
+ "symbols": 1077,
+ "symbols_missing_contract_size": 0,
+ "connections": 22,
+ "symbols_per_connection": 50,
+ "subscription_acks": 1077,
+ "errors_by_code": {},
+ "messages_by_channel": {
+  "pong": 2618,
+  "push.deal": 323652,
+  "rs.sub.deal": 1077
+ },
+ "bytes_by_channel": {
+  "pong": 151844,
+  "push.deal": 54271394,
+  "rs.sub.deal": 65697
+ },
+ "trades": 323652,
+ "malformed_trades": 0,
+ "payload_shape": {
+  "list": 0,
+  "object": 323652
+ },
+ "fields_seen": {
+  "M": 323652,
+  "O": 323652,
+  "T": 323652,
+  "cts": 323652,
+  "i": 323652,
+  "p": 323652,
+  "t": 323652,
+  "v": 323652
+ },
+ "messages_per_second": {
+  "max": 1390,
+  "n": 1799,
+  "p50": 163,
+  "p90": 245,
+  "p99": 535
+ },
+ "lag_ms": {
+  "receive_minus_pong_time": {
+   "max": 225,
+   "n": 2618,
+   "p50": 112,
+   "p90": 126,
+   "p99": 138
+  },
+  "receive_minus_push_ts": {
+   "max": 2738,
+   "n": 200000,
+   "p50": 113,
+   "p90": 136,
+   "p99": 237
+  },
+  "receive_minus_trade_time": {
+   "max": 2964,
+   "n": 200000,
+   "p50": 121,
+   "p90": 145,
+   "p99": 243
+  }
+ },
+ "reconnects": 0,
+ "reconnect_gap_ms": {},
+ "bytes_per_day_estimate": 2615457149,
+ "trades_per_day_estimate": 15535226
+}
