@@ -9,8 +9,12 @@ docs/research/evidence/gate-collection-budget-v1/growth-inputs.json
 docs/research/evidence/gate-collection-budget-v1/growth-reading-2026-10-03.json
 docs/research/evidence/edge-loss-decomposition-v1/read-1-superseded/inputs.json
 docs/research/evidence/edge-loss-decomposition-v1/read-1-superseded/result.json
-docs/research/evidence/edge-loss-decomposition-v1/gate-result.json
-docs/research/evidence/edge-loss-decomposition-v1/gate-tapes.json
+docs/research/evidence/edge-loss-decomposition-v1/read-1-superseded/gate-result.json
+docs/research/evidence/edge-loss-decomposition-v1/read-1-superseded/gate-tapes.json
 docs/research/evidence/edge-loss-decomposition-v1/read-1-superseded/exploratory-burst-robustness.json
 docs/research/evidence/edge-loss-decomposition-v1/read-2/inputs.json
 docs/research/evidence/edge-loss-decomposition-v1/read-2/result.json
+docs/research/evidence/edge-loss-decomposition-v1/read-2/exploratory-burst-paired.json
+docs/research/evidence/edge-loss-decomposition-v1/read-2/gate-identity.json
+docs/research/evidence/edge-loss-decomposition-v1/read-2/gate-tapes.json
+docs/research/evidence/edge-loss-decomposition-v1/read-2/gate-result.json

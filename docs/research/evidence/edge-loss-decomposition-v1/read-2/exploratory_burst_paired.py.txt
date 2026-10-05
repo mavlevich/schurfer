@@ -1,0 +1,93 @@
+"""Exploratory, paired: how much of the 1m-burst return is lost by entering later.
+
+Read 2 bar rules (price-complete bars; trade-complete trigger bar and median). The same
+firings in every column: only firings with all entry opens (t+1, t+2, t+3, t+6) and the
+exit open present. The exit is FIXED at the open of t+61; only the entry moves. This is
+descriptive, on the window where the cell was found; it confirms nothing.
+"""
+
+import json
+import statistics as st
+import sys
+from collections import defaultdict
+from datetime import UTC, datetime
+from pathlib import Path
+
+import duckdb
+
+sys.path.insert(0, "/Users/mavlevich/Desktop/Projects/schurfer/.claude/worktrees/edge-loss/apps/analytics")
+from schurfer_analytics import edge_loss_study as s  # noqa: E402
+from schurfer_analytics.clustered_inference import ClusterObservation, cluster_bootstrap_mean  # noqa: E402
+
+R = Path("/Users/mavlevich/Desktop/Projects/schurfer/runtime/research/edge-loss")
+ENTRIES = (1, 2, 3, 6)
+EXIT = 61
+con = duckdb.connect()
+con.execute("SET TimeZone = 'UTC'")
+con.execute("SET memory_limit = '6GB'")
+s.load_bars(con, R / "bars", [])
+con.execute("CREATE TABLE g AS SELECT * FROM good WHERE exchange = 'bybit'"
+            " OR (exchange = 'binance' AND t >= TIMESTAMPTZ '2026-08-18 00:00:00+00')")
+con.execute("""
+CREATE TABLE b1 AS
+WITH w AS (
+  SELECT exchange, symbol, t, c, n, flow_ok,
+         lag(c) OVER sw AS pc, lag(t) OVER sw AS pt,
+         median(n) FILTER (WHERE flow_ok) OVER r AS med,
+         count(*) FILTER (WHERE flow_ok) OVER r AS cnt
+  FROM g
+  WINDOW sw AS (PARTITION BY exchange, symbol ORDER BY t),
+         r AS (PARTITION BY exchange, symbol ORDER BY t
+               RANGE BETWEEN INTERVAL 60 MINUTE PRECEDING AND INTERVAL 1 MINUTE PRECEDING))
+SELECT exchange, symbol, t, c / pc - 1 AS r, n FROM w
+WHERE pt = t - INTERVAL 1 MINUTE AND c / pc - 1 >= 0.03 AND flow_ok
+  AND cnt >= 30 AND med > 0 AND n >= 5 * med
+""")
+cols = ", ".join(f"e{k}.o" for k in ENTRIES)
+joins = " ".join(
+    f"LEFT JOIN g e{k} ON e{k}.exchange=f.exchange AND e{k}.symbol=f.symbol"
+    f" AND e{k}.t=f.t + INTERVAL {k} MINUTE"
+    for k in ENTRIES
+)
+rows = con.execute(f"""
+SELECT f.exchange, f.symbol, epoch(f.t)::BIGINT, f.r, f.n, {cols}, x.o
+FROM b1 f {joins}
+LEFT JOIN g x ON x.exchange=f.exchange AND x.symbol=f.symbol AND x.t=f.t + INTERVAL {EXIT} MINUTE
+ORDER BY f.exchange, f.symbol, f.t""").fetchall()
+
+out = {"entries": ENTRIES, "exit_offset_minutes": EXIT}
+end = int(s.BLIND_END.timestamp())
+for venue in ("bybit", "binance"):
+    for thr in (0.03, 0.05, 0.08):
+        fired = s.firings(rows, venue, thr, 0)
+        fired = [r for r in fired if r[2] + (EXIT + 1) * 60 <= end]
+        complete = [r for r in fired if all(v is not None for v in r[5:])]
+        cell = {"firings": len(fired), "paired_complete": len(complete)}
+        exit_idx = 5 + len(ENTRIES)
+        for i, k in enumerate(ENTRIES):
+            vals = [(r[exit_idx] / r[5 + i] - 1) * 1e4 for r in complete]
+            cell[f"entry_t+{k}"] = {
+                "mean": round(st.fmean(vals), 1),
+                "median": round(st.median(vals), 1),
+                "share_pos": round(sum(v > 0 for v in vals) / len(vals), 3),
+            }
+        # paired loss of entering one minute later, same firings, same exit
+        loss = [
+            ((r[exit_idx] / r[5] - 1) - (r[exit_idx] / r[6] - 1)) * 1e4 for r in complete
+        ]
+        boot = cluster_bootstrap_mean(
+            tuple(ClusterObservation(r[1], v) for r, v in zip(complete, loss, strict=True)),
+            iterations=2000, seed=1,
+        )
+        cell["paired_loss_t1_minus_t2_bps"] = {
+            "mean": round(st.fmean(loss), 1),
+            "ci95_by_instrument": [round(boot.estimate.lower_bound, 1), round(boot.estimate.upper_bound, 1)],
+        }
+        by_week = defaultdict(list)
+        for r in complete:
+            by_week[datetime.fromtimestamp(r[2], UTC).isocalendar().week].append(
+                (r[exit_idx] / r[5] - 1) * 1e4
+            )
+        cell["entry_t+1_by_iso_week"] = {w: [len(v), round(st.fmean(v), 1)] for w, v in sorted(by_week.items())}
+        out[f"{venue}_1m_{thr}"] = cell
+print(json.dumps(out, indent=1))

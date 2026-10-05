@@ -194,6 +194,19 @@ thresholds, horizons, costs and windows are unchanged.
 4. **Resumption.** An interrupted read reuses its pinned inputs only if they are
    identical to the ones verified again. A reduced bar file counts as done only with a
    matching manifest.
+5. **Gate tapes (read 1 of the Gate part is superseded too).**
+   - **Prices are point-in-time.** The price at a moment is the last trade at or before
+     it, with its age recorded. Read 1 took the last trade of the whole second, so it
+     could use a trade up to a second later. A moment price older than 60 s is missing,
+     and so is a 24h-ago reference older than 1 hour; both are counted. Lows and peaks
+     come from the trades in the exact windows.
+   - **Identity** comes from the scanner's stored `market_id` (no id, an identity
+     conflict, a type other than `swap`, or an unexpected form are counted apart),
+     never from the ticker's spelling.
+6. **Scanner identities in Part A.** For Bybit, Binance and MEXC the scanner's
+   `symbol` equals its stored `market_id` wherever one exists. 28 of the window's
+   sources have none (3 Bybit, 8 Binance, 17 MEXC); they affect Part A's description
+   only. Part B does not use scanner identities.
 
 The reduction step on the production host now also checks the 10 GiB reserve before and
 after reducing, and bounds DuckDB's memory and spill. Read 1's production run had
