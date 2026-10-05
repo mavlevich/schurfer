@@ -15,18 +15,26 @@ import (
 
 func TestUniverseKeepsEnabledUSDTPerpetuals(t *testing.T) {
 	body := `{"success":true,"data":[
-		{"symbol":"BTC_USDT","state":0,"quoteCoin":"USDT","settleCoin":"USDT","contractSize":0.0001},
-		{"symbol":"AAA_USDT","state":0,"quoteCoin":"USDT","settleCoin":"USDT"},
-		{"symbol":"OLD_USDT","state":3,"quoteCoin":"USDT","settleCoin":"USDT","contractSize":1},
-		{"symbol":"BTC_USD","state":0,"quoteCoin":"USD","settleCoin":"BTC","contractSize":1}]}`
-	symbols, missing, err := Universe([]byte(body))
+		{"symbol":"BTC_USDT","state":0,"quoteCoin":"USDT","settleCoin":"USDT","contractSize":0.0001,"futureType":1},
+		{"symbol":"AAA_USDT","state":0,"quoteCoin":"USDT","settleCoin":"USDT","futureType":1},
+		{"symbol":"BTC_USDT_241227","state":0,"quoteCoin":"USDT","settleCoin":"USDT","contractSize":1,"futureType":2},
+		{"symbol":"NOTYPE_USDT","state":0,"quoteCoin":"USDT","settleCoin":"USDT","contractSize":1},
+		{"symbol":"OLD_USDT","state":3,"quoteCoin":"USDT","settleCoin":"USDT","contractSize":1,"futureType":1},
+		{"symbol":"BTC_USD","state":0,"quoteCoin":"USD","settleCoin":"BTC","contractSize":1,"futureType":1}]}`
+	got, err := Universe([]byte(body))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(symbols, ",") != "AAA_USDT,BTC_USDT" || missing != 1 {
-		t.Fatalf("got %v missing=%d", symbols, missing)
+	if strings.Join(got.Symbols, ",") != "AAA_USDT,BTC_USDT" || got.MissingSize != 1 {
+		t.Fatalf("got %v missing=%d", got.Symbols, got.MissingSize)
 	}
-	if _, _, err := Universe([]byte(`{"success":false}`)); err == nil {
+	want := map[string]int{"not_perpetual": 1, "future_type_missing": 1, "not_enabled": 1, "not_usdt": 1}
+	for reason, n := range want {
+		if got.Excluded[reason] != n {
+			t.Fatalf("excluded %v", got.Excluded)
+		}
+	}
+	if _, err := Universe([]byte(`{"success":false}`)); err == nil {
 		t.Fatal("a failed response must be an error")
 	}
 }
@@ -61,7 +69,7 @@ func TestObserveCountsShapesFieldsAndLags(t *testing.T) {
 	for _, f := range frames(now) {
 		stats.Observe(f, now)
 	}
-	r := stats.Report(now.Add(-time.Minute), now, false, 2, 0, 1, 50)
+	r := stats.Report(now.Add(-time.Minute), now, false, UniverseSnapshot{Symbols: []string{"a", "b"}}, 1, 50)
 	if r.Trades != 3 || r.MalformedTrades != 1 {
 		t.Fatalf("trades %d malformed %d", r.Trades, r.MalformedTrades)
 	}
@@ -85,7 +93,7 @@ func TestReportCarriesNoMarketValues(t *testing.T) {
 	for _, f := range frames(now) {
 		stats.Observe(f, now)
 	}
-	body, err := json.Marshal(stats.Report(now.Add(-time.Minute), now, false, 2, 0, 1, 50))
+	body, err := json.Marshal(stats.Report(now.Add(-time.Minute), now, false, UniverseSnapshot{Symbols: []string{"a", "b"}}, 1, 50))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -131,9 +139,12 @@ func TestReconnectsAreCountedAndPingsSent(t *testing.T) {
 	defer cancel()
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
 	runConnection(ctx, url, []string{"BTC_USDT"}, false, stats)
-	r := stats.Report(time.Now().Add(-time.Minute), time.Now(), false, 1, 0, 1, 1)
+	r := stats.Report(time.Now().Add(-time.Minute), time.Now(), false, UniverseSnapshot{Symbols: []string{"a"}}, 1, 1)
 	if dials.Load() < 2 || r.Reconnects < 1 || r.Acks < 2 {
 		t.Fatalf("dials %d reconnects %d acks %d", dials.Load(), r.Reconnects, r.Acks)
+	}
+	if r.Sessions < 2 || r.SessionsFullyAcked != r.Sessions {
+		t.Fatalf("sessions %d fully acked %d", r.Sessions, r.SessionsFullyAcked)
 	}
 }
 
@@ -141,5 +152,78 @@ func TestChunkShardsSymbols(t *testing.T) {
 	got := chunk([]string{"a", "b", "c", "d", "e"}, 2)
 	if len(got) != 3 || len(got[2]) != 1 {
 		t.Fatalf("%v", got)
+	}
+}
+
+func TestAcknowledgementsAreCountedPerSessionNotPooled(t *testing.T) {
+	stats := NewStats()
+	stats.SessionEnded(2, 3) // one instrument acknowledged twice, another maybe never
+	stats.SessionEnded(2, 1)
+	r := stats.Report(time.Now(), time.Now(), false, UniverseSnapshot{}, 2, 2)
+	if r.Sessions != 2 || r.SessionsFullyAcked != 1 || r.ExcessAcks != 1 {
+		t.Fatalf("sessions %d fully %d excess %d", r.Sessions, r.SessionsFullyAcked, r.ExcessAcks)
+	}
+}
+
+func TestInstrumentsWithTradesAreCountedNotNamed(t *testing.T) {
+	stats := NewStats()
+	now := time.Now()
+	for _, f := range frames(now) {
+		stats.Observe(f, now)
+	}
+	r := stats.Report(now.Add(-time.Minute), now, false, UniverseSnapshot{}, 1, 1)
+	if r.InstrumentsTrading != 2 {
+		t.Fatalf("instruments %d", r.InstrumentsTrading)
+	}
+}
+
+func TestReservoirKeepsEarlyValuesAsLikelyAsLateOnes(t *testing.T) {
+	var r reservoir
+	total := int64(4 * maxSamples)
+	for i := range total {
+		r.add(i)
+	}
+	early := 0
+	for _, v := range r.values {
+		if v < total/2 {
+			early++
+		}
+	}
+	share := float64(early) / float64(len(r.values))
+	if r.seen != total || share < 0.47 || share > 0.53 {
+		t.Fatalf("seen %d early share %.3f", r.seen, share)
+	}
+}
+
+func TestPingRoundTripIsMeasuredFromThePingSent(t *testing.T) {
+	upgrader := websocket.Upgrader{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		for {
+			_, msg, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			if strings.Contains(string(msg), "ping") {
+				time.Sleep(20 * time.Millisecond)
+				_ = conn.WriteMessage(websocket.TextMessage, []byte(`{"channel":"pong","data":1}`))
+			}
+		}
+	}))
+	defer server.Close()
+	pingInterval = 100 * time.Millisecond
+	defer func() { pingInterval = 15 * time.Second }()
+	stats := NewStats()
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	url := "ws" + strings.TrimPrefix(server.URL, "http")
+	runConnection(ctx, url, []string{"BTC_USDT"}, false, stats)
+	rtt := stats.Report(time.Now(), time.Now(), false, UniverseSnapshot{}, 1, 1).LagMS["ping_round_trip"]
+	if rtt["n"] < 1 || rtt["p50"] < 20 {
+		t.Fatalf("rtt %v", rtt)
 	}
 }

@@ -29,13 +29,17 @@ import (
 	"slices"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
 
-const ReportVersion = "mexc_sealed_probe_v1"
+// v2 (design review 2): perpetual classification by futureType, per-connection
+// acknowledgement accounting and instruments seen trading, a measured ping round trip,
+// and uniform reservoir samples. v1 reports stay as they are.
+const ReportVersion = "mexc_sealed_probe_v2"
 
 type contract struct {
 	Symbol       string   `json:"symbol"`
@@ -43,52 +47,81 @@ type contract struct {
 	QuoteCoin    string   `json:"quoteCoin"`
 	SettleCoin   string   `json:"settleCoin"`
 	ContractSize *float64 `json:"contractSize"`
+	FutureType   *int     `json:"futureType"`
 }
 
-// Universe returns the enabled USDT-quoted, USDT-settled contracts, sorted. Contracts
-// without a contract size are counted apart: their volume could not be converted.
-func Universe(body []byte) (symbols []string, missingSize int, err error) {
+// pingInterval keeps a connection alive (MEXC drops it after a minute without a ping).
+var pingInterval = 15 * time.Second
+
+// perpetualFutureType is MEXC's futureType for perpetual contracts (2 is delivery).
+const perpetualFutureType = 1
+
+// UniverseSnapshot is the probe's universe with a reason for every exclusion.
+type UniverseSnapshot struct {
+	Symbols     []string
+	MissingSize int
+	Excluded    map[string]int
+}
+
+// Universe returns the enabled USDT-quoted, USDT-settled perpetuals, sorted, and counts
+// every other contract under a reason. Contracts without a contract size are counted
+// apart: their volume could not be converted.
+func Universe(body []byte) (UniverseSnapshot, error) {
+	snapshot := UniverseSnapshot{Excluded: map[string]int{}}
 	var resp struct {
 		Success bool       `json:"success"`
 		Data    []contract `json:"data"`
 	}
 	if err := json.Unmarshal(body, &resp); err != nil {
-		return nil, 0, fmt.Errorf("contract detail: %w", err)
+		return snapshot, fmt.Errorf("contract detail: %w", err)
 	}
 	if !resp.Success {
-		return nil, 0, errors.New("contract detail: success=false")
+		return snapshot, errors.New("contract detail: success=false")
 	}
 	for _, c := range resp.Data {
-		if c.State != 0 || c.QuoteCoin != "USDT" || c.SettleCoin != "USDT" {
-			continue
+		switch {
+		case c.State != 0:
+			snapshot.Excluded["not_enabled"]++
+		case c.QuoteCoin != "USDT" || c.SettleCoin != "USDT":
+			snapshot.Excluded["not_usdt"]++
+		case c.FutureType == nil:
+			snapshot.Excluded["future_type_missing"]++
+		case *c.FutureType != perpetualFutureType:
+			snapshot.Excluded["not_perpetual"]++
+		default:
+			if c.ContractSize == nil || *c.ContractSize <= 0 {
+				snapshot.MissingSize++
+			}
+			snapshot.Symbols = append(snapshot.Symbols, c.Symbol)
 		}
-		if c.ContractSize == nil || *c.ContractSize <= 0 {
-			missingSize++
-		}
-		symbols = append(symbols, c.Symbol)
 	}
-	sort.Strings(symbols)
-	return symbols, missingSize, nil
+	sort.Strings(snapshot.Symbols)
+	return snapshot, nil
 }
 
 // Stats are the probe's counters. Only counts and timings; never a market value.
 type Stats struct {
-	mu                sync.Mutex
-	messagesByChannel map[string]int64
-	bytesByChannel    map[string]int64
-	trades            int64
-	malformedTrades   int64
-	payloadObjects    int64
-	payloadLists      int64
-	fieldsSeen        map[string]int64
-	lagEventMS        []int64 // receive minus trade time, sampled
-	lagPushMS         []int64 // receive minus message ts, sampled
-	perSecond         map[int64]int64
-	reconnects        int64
-	gapMS             []int64
-	errorsByCode      map[string]int64
-	acks              int64
-	pongOffsetMS      []int64
+	mu                 sync.Mutex
+	messagesByChannel  map[string]int64
+	bytesByChannel     map[string]int64
+	trades             int64
+	malformedTrades    int64
+	payloadObjects     int64
+	payloadLists       int64
+	fieldsSeen         map[string]int64
+	lagEventMS         reservoir // receive minus trade time
+	lagPushMS          reservoir // receive minus message ts
+	perSecond          map[int64]int64
+	reconnects         int64
+	gapMS              []int64
+	errorsByCode       map[string]int64
+	acks               int64
+	pongOffsetMS       reservoir // receive minus the server time in the pong
+	pingRTTMS          reservoir // pong received minus the ping sent on that connection
+	sessions           int64
+	sessionsFullyAcked int64
+	excessAcks         int64
+	symbolsTrading     map[string]struct{} // only its size is reported
 }
 
 const maxSamples = 200_000
@@ -100,26 +133,38 @@ func NewStats() *Stats {
 		fieldsSeen:        map[string]int64{},
 		perSecond:         map[int64]int64{},
 		errorsByCode:      map[string]int64{},
+		symbolsTrading:    map[string]struct{}{},
 	}
 }
 
-func sample(dst []int64, v int64) []int64 {
-	if len(dst) < maxSamples {
-		return append(dst, v)
+// reservoir is a uniform sample of a whole run (Algorithm R): every value seen has the
+// same chance of being kept, not only the latest ones.
+type reservoir struct {
+	seen   int64
+	values []int64
+}
+
+func (r *reservoir) add(v int64) {
+	r.seen++
+	if len(r.values) < maxSamples {
+		r.values = append(r.values, v)
+		return
 	}
-	dst[rand.IntN(len(dst))] = v //nolint:gosec // sampling, not security; keeps the sample bounded
-	return dst
+	if j := rand.Int64N(r.seen); j < maxSamples { //nolint:gosec // sampling, not security
+		r.values[j] = v
+	}
 }
 
 var requiredTradeFields = []string{"p", "v", "T", "t"}
 
-// Observe records one frame received at `received`.
-func (s *Stats) Observe(frame []byte, received time.Time) {
+// Observe records one frame received at `received` and returns its channel.
+func (s *Stats) Observe(frame []byte, received time.Time) string {
 	var msg struct {
 		Channel string          `json:"channel"`
 		Data    json.RawMessage `json:"data"`
 		Ts      *int64          `json:"ts"`
 		Code    *int64          `json:"code"`
+		Symbol  string          `json:"symbol"`
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -127,7 +172,7 @@ func (s *Stats) Observe(frame []byte, received time.Time) {
 	if err := json.Unmarshal(frame, &msg); err != nil {
 		s.messagesByChannel["unparseable"]++
 		s.bytesByChannel["unparseable"] += int64(len(frame))
-		return
+		return "unparseable"
 	}
 	channel := msg.Channel
 	if channel == "" {
@@ -139,7 +184,10 @@ func (s *Stats) Observe(frame []byte, received time.Time) {
 	switch channel {
 	case "push.deal":
 		if msg.Ts != nil {
-			s.lagPushMS = sample(s.lagPushMS, nowMS-*msg.Ts)
+			s.lagPushMS.add(nowMS - *msg.Ts)
+		}
+		if msg.Symbol != "" {
+			s.symbolsTrading[msg.Symbol] = struct{}{}
 		}
 		s.observeTrades(msg.Data, nowMS)
 	case "rs.sub.deal":
@@ -147,7 +195,7 @@ func (s *Stats) Observe(frame []byte, received time.Time) {
 	case "pong":
 		var serverMS int64
 		if json.Unmarshal(msg.Data, &serverMS) == nil && serverMS > 0 {
-			s.pongOffsetMS = sample(s.pongOffsetMS, nowMS-serverMS)
+			s.pongOffsetMS.add(nowMS - serverMS)
 		}
 	case "rs.error":
 		code := "unknown"
@@ -156,6 +204,30 @@ func (s *Stats) Observe(frame []byte, received time.Time) {
 		}
 		s.errorsByCode[code]++
 	}
+	return channel
+}
+
+// SessionEnded records one connection's subscriptions against its acknowledgements.
+// MEXC's acknowledgement names no instrument, so a session counts as fully acknowledged
+// only when it got at least one acknowledgement per subscription; any surplus is
+// reported, never credited to another subscription.
+func (s *Stats) SessionEnded(subscribed, acked int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sessions++
+	if acked >= subscribed {
+		s.sessionsFullyAcked++
+	}
+	if acked > subscribed {
+		s.excessAcks += int64(acked - subscribed)
+	}
+}
+
+// PingRoundTrip records the time from a ping sent to its pong received.
+func (s *Stats) PingRoundTrip(rtt time.Duration) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.pingRTTMS.add(rtt.Milliseconds())
 }
 
 func (s *Stats) observeTrades(raw json.RawMessage, nowMS int64) {
@@ -186,7 +258,7 @@ func (s *Stats) observeTrades(raw json.RawMessage, nowMS int64) {
 		s.trades++
 		var tradeMS int64
 		if json.Unmarshal(item["t"], &tradeMS) == nil {
-			s.lagEventMS = sample(s.lagEventMS, nowMS-tradeMS)
+			s.lagEventMS.add(nowMS - tradeMS)
 		}
 	}
 }
@@ -239,9 +311,15 @@ type Report struct {
 	Compress             bool                        `json:"compress"`
 	Symbols              int                         `json:"symbols"`
 	SymbolsMissingSize   int                         `json:"symbols_missing_contract_size"`
+	UniverseExcluded     map[string]int              `json:"universe_excluded"`
 	Connections          int                         `json:"connections"`
 	SymbolsPerConnection int                         `json:"symbols_per_connection"`
 	Acks                 int64                       `json:"subscription_acks"`
+	Sessions             int64                       `json:"sessions"`
+	SessionsFullyAcked   int64                       `json:"sessions_fully_acknowledged"`
+	ExcessAcks           int64                       `json:"excess_acknowledgements"`
+	InstrumentsTrading   int                         `json:"instruments_with_trades"`
+	LagSampled           map[string]int64            `json:"lag_values_seen"`
 	ErrorsByCode         map[string]int64            `json:"errors_by_code"`
 	MessagesByChannel    map[string]int64            `json:"messages_by_channel"`
 	BytesByChannel       map[string]int64            `json:"bytes_by_channel"`
@@ -257,7 +335,7 @@ type Report struct {
 	TradesPerDayEstimate int64                       `json:"trades_per_day_estimate"`
 }
 
-func (s *Stats) Report(start, end time.Time, compress bool, symbols, missing, conns, perConn int) Report {
+func (s *Stats) Report(start, end time.Time, compress bool, universe UniverseSnapshot, conns, perConn int) Report {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var rates []int64
@@ -279,16 +357,25 @@ func (s *Stats) Report(start, end time.Time, compress bool, symbols, missing, co
 	}
 	return Report{
 		Version: ReportVersion, StartedAt: start.UTC(), EndedAt: end.UTC(), Compress: compress,
-		Symbols: symbols, SymbolsMissingSize: missing, Connections: conns,
-		SymbolsPerConnection: perConn, Acks: s.acks, ErrorsByCode: s.errorsByCode,
+		Symbols: len(universe.Symbols), SymbolsMissingSize: universe.MissingSize,
+		UniverseExcluded: universe.Excluded, Connections: conns,
+		SymbolsPerConnection: perConn, Acks: s.acks, Sessions: s.sessions,
+		SessionsFullyAcked: s.sessionsFullyAcked, ExcessAcks: s.excessAcks,
+		InstrumentsTrading: len(s.symbolsTrading),
+		LagSampled: map[string]int64{
+			"receive_minus_trade_time": s.lagEventMS.seen,
+			"receive_minus_push_ts":    s.lagPushMS.seen,
+		},
+		ErrorsByCode:      s.errorsByCode,
 		MessagesByChannel: s.messagesByChannel, BytesByChannel: s.bytesByChannel,
 		Trades: s.trades, MalformedTrades: s.malformedTrades,
 		PayloadShape: map[string]int64{"object": s.payloadObjects, "list": s.payloadLists},
 		FieldsSeen:   s.fieldsSeen, MessagesPerSecond: percentiles(rates),
 		LagMS: map[string]map[string]int64{
-			"receive_minus_trade_time": percentiles(s.lagEventMS),
-			"receive_minus_push_ts":    percentiles(s.lagPushMS),
-			"receive_minus_pong_time":  percentiles(s.pongOffsetMS),
+			"receive_minus_trade_time": percentiles(s.lagEventMS.values),
+			"receive_minus_push_ts":    percentiles(s.lagPushMS.values),
+			"receive_minus_pong_time":  percentiles(s.pongOffsetMS.values),
+			"ping_round_trip":          percentiles(s.pingRTTMS.values),
 		},
 		Reconnects: s.reconnects, ReconnectGapMS: percentiles(s.gapMS),
 		BytesPerDayEstimate: perDay(bytes), TradesPerDayEstimate: perDay(s.trades),
@@ -346,11 +433,14 @@ func session(
 		}
 	}
 	connected()
+	acked := 0
+	defer func() { stats.SessionEnded(len(symbols), acked) }()
 	done := make(chan struct{})
 	defer close(done)
 	var writeMu sync.Mutex
+	var pingSent atomic.Int64 // unix nanoseconds of the last ping on this connection
 	go func() {
-		ticker := time.NewTicker(15 * time.Second)
+		ticker := time.NewTicker(pingInterval)
 		defer ticker.Stop()
 		for {
 			select {
@@ -361,6 +451,7 @@ func session(
 				return
 			case <-ticker.C:
 				writeMu.Lock()
+				pingSent.Store(time.Now().UnixNano())
 				_ = conn.WriteJSON(map[string]string{"method": "ping"})
 				writeMu.Unlock()
 			}
@@ -374,26 +465,34 @@ func session(
 		if err != nil {
 			return fmt.Errorf("read: %w", err)
 		}
-		stats.Observe(frame, time.Now())
+		received := time.Now()
+		switch stats.Observe(frame, received) {
+		case "rs.sub.deal":
+			acked++
+		case "pong":
+			if sent := pingSent.Swap(0); sent > 0 {
+				stats.PingRoundTrip(received.Sub(time.Unix(0, sent)))
+			}
+		}
 	}
 }
 
-func fetchUniverse(ctx context.Context, restBase string) ([]string, int, error) {
+func fetchUniverse(ctx context.Context, restBase string) (UniverseSnapshot, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, restBase+"/api/v1/contract/detail", nil)
 	if err != nil {
-		return nil, 0, err
+		return UniverseSnapshot{}, err
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, 0, err
+		return UniverseSnapshot{}, err
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if resp.StatusCode != http.StatusOK {
-		return nil, 0, fmt.Errorf("contract detail: HTTP %d", resp.StatusCode)
+		return UniverseSnapshot{}, fmt.Errorf("contract detail: HTTP %d", resp.StatusCode)
 	}
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<20))
 	if err != nil {
-		return nil, 0, err
+		return UniverseSnapshot{}, err
 	}
 	return Universe(body)
 }
@@ -424,7 +523,7 @@ func run() int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	symbols, missing, err := fetchUniverse(ctx, *restBase)
+	universe, err := fetchUniverse(ctx, *restBase)
 	if err != nil {
 		slog.Error("mexcprobe.universe", "err", err)
 		return 1
@@ -432,7 +531,7 @@ func run() int {
 	stats := NewStats()
 	listen, cancel := context.WithTimeout(ctx, *duration)
 	defer cancel()
-	groups := chunk(symbols, *perConn)
+	groups := chunk(universe.Symbols, *perConn)
 	start := time.Now()
 	var wg sync.WaitGroup
 	for _, group := range groups {
@@ -443,7 +542,7 @@ func run() int {
 		}()
 	}
 	wg.Wait()
-	report := stats.Report(start, time.Now(), *compress, len(symbols), missing, len(groups), *perConn)
+	report := stats.Report(start, time.Now(), *compress, universe, len(groups), *perConn)
 	body, err := json.MarshalIndent(report, "", " ")
 	if err == nil {
 		err = os.MkdirAll(filepath.Dir(*out), 0o750)

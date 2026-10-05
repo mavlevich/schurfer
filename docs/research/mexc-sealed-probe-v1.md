@@ -26,20 +26,48 @@ printed or kept.
 | Receive minus push `ts`  | p50 113 ms, p90 136, p99 237                                                            |
 | Receive minus pong time  | p50 112 ms, p99 138                                                                     |
 
+## Limits of this report (design review 2)
+
+The v1 report stays unchanged; its sha256 is above. Four of its readings are weaker than
+v1 of this readout claimed:
+
+- **Universe.** The probe did not check `futureType`, so delivery contracts, if any were
+  enabled and USDT-settled, would have been counted as perpetuals.
+- **Subscriptions.** "1,077 of 1,077 acknowledged" was a pooled count. MEXC's
+  acknowledgement names no instrument, so two acknowledgements for one instrument would
+  look like two subscriptions.
+- **Lag samples.** The lag quantiles come from a sample that, once full, kept every new
+  value and evicted a random old one. That biases the sample towards the end of the
+  run; it is not a uniform sample of the 30 minutes.
+- **Pong.** `receive minus pong time` is receive time minus the server time inside the
+  pong. It mixes the one-way delay with the clock offset between the hosts; it is not a
+  round trip. Network, clock offset and MEXC's own delay cannot be separated from
+  these numbers.
+
+`i` and `cts` are documented in MEXC's deal channel documentation; their exact
+semantics are still checked before any use.
+
+Probe v2 (`mexc_sealed_probe_v2`) fixes all four:
+
+- perpetuals are selected by `futureType` (1), with every exclusion counted by reason;
+- acknowledgements are accounted per connection, and the instruments actually seen
+  trading are counted;
+- a uniform reservoir sample (Algorithm R) is used;
+- the ping round trip is measured from the ping sent to its pong received.
+
 ## What it means for the canary
 
-- **Load is small.** About 180 messages per second, with a peak of 1,390, is far below
-  what one Go process handles. CPU is not the constraint; disk is.
-- **The lag is mostly the path, not MEXC.** The pong round trip (server time in the
-  pong) shows the same 112 ms as the trade lag. So about 110 ms is network plus clock
-  offset, and MEXC adds about 10 ms of its own before the push. The p99 of 243 ms is
-  2-3 orders of magnitude below today's 45-110 s pipelines.
-- **Storage.** The full raw tape is 2.6 GB a day of JSON. Compressed canonical events
-  are expected near a tenth of that. The recorder's caps and the choice between pinned
-  windows and the full tape are sized from this, against the host's free disk and the
-  storage-budget PR.
-- **Two undocumented fields.** `i` and `cts` appear on every trade. Until their meaning
-  is confirmed from the documentation or a fixture, the codec records them verbatim and
-  uses neither (if `i` proves to be a trade id, it will serve deduplication).
+- **Load is small in messages.** About 180 messages per second, with a peak of 1,390.
+  Whether CPU or disk is the constraint is not measured yet: the canary's replay
+  benchmark measures CPU, RSS and the decode-to-signal-to-write path before any cap
+  is set.
+- **Latency.** The trade-to-receive lag is about 120 ms (p99 about 240 ms) by the
+  host's clock, chrony-disciplined. How much of that is network, clock offset and
+  MEXC's own delay is not known from v1; v2 measures the round trip. This number also
+  has different endpoints from today's 45-110 s path to a paper entry, so it is not a
+  measured speed-up of any signal.
+- **Storage.** The full raw tape is 2.6 GB a day of JSON. The compressed size is not
+  measured; the canary measures it before the recorder's caps and the choice between
+  pinned windows and the full tape are fixed.
 - **Sharding.** 50 symbols per connection over 22 connections held for 30 minutes
-  without errors. The canary starts with the same.
+  without errors or reconnects.
