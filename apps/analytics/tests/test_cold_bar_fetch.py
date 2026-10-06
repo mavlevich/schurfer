@@ -90,6 +90,13 @@ def test_a_day_is_fetched_only_when_sha_and_rows_match_its_receipt(tmp_path: Pat
     assert again.already_present
 
 
+def test_a_fetched_file_is_readable_by_the_deploy_user(tmp_path: Path) -> None:
+    # The fetch runs as root in the container; a 0600 temp file left the bars
+    # unreadable by the deploy user on the host.
+    got = _fetch(_setup(tmp_path))
+    assert stat.S_IMODE(got.path.stat().st_mode) == 0o644
+
+
 @pytest.mark.parametrize(
     ("override", "match"),
     [
@@ -140,6 +147,32 @@ def test_a_concurrent_winner_is_verified_and_kept(
     got = _fetch(s)
     assert got.already_present
     assert not list(s["out"].glob("*.partial"))
+
+
+def test_an_already_present_0600_file_is_made_readable(tmp_path: Path) -> None:
+    s = _setup(tmp_path)
+    dest = _fetch(s).path
+    dest.chmod(0o600)  # what runs before the fix left behind
+    again = _fetch(s)
+    assert again.already_present
+    assert stat.S_IMODE(dest.stat().st_mode) == 0o644
+
+
+def test_a_0600_concurrent_winner_is_made_readable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    s = _setup(tmp_path)
+    real_link = os.link
+
+    def racing_link(src: Any, dst: Any) -> None:
+        Path(dst).write_bytes(s["stored"].read_bytes())
+        Path(dst).chmod(0o600)
+        real_link(src, dst)
+
+    monkeypatch.setattr(os, "link", racing_link)
+    got = _fetch(s)
+    assert got.already_present
+    assert stat.S_IMODE(got.path.stat().st_mode) == 0o644
 
 
 def test_a_bad_concurrent_winner_is_refused_not_replaced(
