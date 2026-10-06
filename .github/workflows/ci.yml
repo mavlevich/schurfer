@@ -13,13 +13,13 @@ concurrency:
 jobs:
   lint:
     name: Lint
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.13'
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.26.6'
           # go.work + **/go.sum, not an enumerated list, an apps/*/go.sum
@@ -38,14 +38,14 @@ jobs:
           cache-dependency-path: |
             go.work
             **/go.sum
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '24'
           cache: pnpm
           cache-dependency-path: pnpm-lock.yaml
       - name: Restore pre-commit environments
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.cache/pre-commit
           key: pre-commit-${{ runner.os }}-py3.13-${{ hashFiles('.pre-commit-config.yaml') }}
@@ -60,7 +60,7 @@ jobs:
 
   test-python:
     name: Test Python
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: lint
     # A real Postgres, not just the _connect_or_skip-based tests silently
     # skipping: apps/analytics's own real-Postgres integration tests and
@@ -88,8 +88,8 @@ jobs:
           --health-timeout=5s
           --health-retries=5
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -132,14 +132,14 @@ jobs:
           REQUIRE_INTEGRATION_DB: '1'
       - name: Upload coverage
         if: steps.check.outputs.has_tests == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-python
           path: coverage.xml
 
   test-go:
     name: Test Go
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: lint
     # A real Postgres, not just the stub-based tests: apps/collector's own
     # *_integration_test.go files and apps/api-gateway's own
@@ -172,8 +172,8 @@ jobs:
           --health-timeout=5s
           --health-retries=5
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.26.6'
           # go.work + **/go.sum, not an enumerated list, an apps/*/go.sum
@@ -192,7 +192,7 @@ jobs:
           cache-dependency-path: |
             go.work
             **/go.sum
-      - uses: astral-sh/setup-uv@v6
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -232,23 +232,23 @@ jobs:
           fi
           while IFS= read -r dir; do
             echo "=== go test $dir ==="
-            (cd "$dir" && go test -race -covermode=atomic ./...)
+            (cd "$dir" && go test -race -covermode=atomic -coverprofile=coverage.out ./...)
           done <<< "$modules"
       - name: Upload coverage
         if: steps.check.outputs.has_modules == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: coverage-go
-          path: coverage.out
+          path: '**/coverage.out'
 
   test-ts:
     name: Test TypeScript
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: lint
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '24'
           cache: pnpm
@@ -279,15 +279,15 @@ jobs:
 
   security:
     name: Security scan
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: lint
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.26.6'
           # go.work + **/go.sum, not an enumerated list, an apps/*/go.sum
@@ -306,8 +306,8 @@ jobs:
           cache-dependency-path: |
             go.work
             **/go.sum
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v5
+      - uses: actions/setup-node@v5
         with:
           node-version: '24'
           cache: pnpm
@@ -359,15 +359,15 @@ jobs:
 
   deadcode:
     name: Dead code detection
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     needs: lint
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
-      - uses: actions/setup-go@v5
+      - uses: actions/setup-go@v6
         with:
           go-version: '1.26.6'
           # go.work + **/go.sum, not an enumerated list, an apps/*/go.sum
@@ -395,21 +395,14 @@ jobs:
             echo "No Python code found, skipping"
           fi
       - name: Go dead code
-        # infra/scripts/go_workspace_modules.sh, not `grep '^use '` -- see
-        # the Run tests step in the test-go job above for why.
+        # The same script as `make deadcode`: deadcode exits 0 on findings, so
+        # the script fails on any function not in infra/scripts/
+        # go_deadcode_allow.txt (and on stale entries there).
         run: |
           set -euo pipefail
           if find . -name 'go.mod' -not -path './vendor/*' 2>/dev/null | grep -q .; then
             go install golang.org/x/tools/cmd/deadcode@v0.48.0
-            modules="$(infra/scripts/go_workspace_modules.sh)"
-            if [[ -z "$modules" ]]; then
-              echo "::error::go_workspace_modules.sh returned no modules"
-              exit 1
-            fi
-            while IFS= read -r dir; do
-              echo "=== deadcode $dir ==="
-              (cd "$dir" && deadcode ./...)
-            done <<< "$modules"
+            bash infra/scripts/go_deadcode.sh
           else
             echo "No Go modules found, skipping"
           fi
