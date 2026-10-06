@@ -20,9 +20,9 @@
 //
 // The biggest structural difference from cmd/momentumcapture: Bybit's
 // ticker/OI feed arrives over NATS from a SEPARATE process (cmd/collector)
-// that this binary has no equivalent of. binance.Adapter deliberately does
-// not implement momentumsource.TickerSource (see docs/research/binance-
-// momentum-source-v1.md) -- this process instead feeds the engine from two
+// that this binary has no equivalent of. Binance has no ticker source here
+// (see docs/research/binance-momentum-source-v1.md) -- this process instead
+// feeds the engine from two
 // independent in-process producers: an OI REST poll through
 // AddTickerObservation and a bookTicker WS stream through
 // AddQuoteObservation. Keeping those entry points separate is essential:
@@ -409,7 +409,7 @@ func run() error {
 	}
 
 	app := &application{
-		// Explicit, not New()'s own implicit default: Binance has no
+		// Explicit: Binance has no
 		// ticker/price feed at all (see this file's own package doc
 		// comment), so its OHLC comes from aggTrade prices instead --
 		// see momentum.PriceSource's own doc comment for why this

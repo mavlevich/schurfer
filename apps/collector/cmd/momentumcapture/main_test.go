@@ -20,7 +20,7 @@ import (
 func newTestApplication(symbols []string) *application {
 	universe := momentumcapture.NewUniverse(symbols, time.Unix(0, 0))
 	return &application{
-		engine:                momentum.New(),
+		engine:                momentum.NewWithPriceSource(momentum.PriceSourceTickerLast),
 		writer:                momentumcapture.NewWriter(nil, "bybit", "linear", universe.Hash),
 		universe:              universe,
 		readiness:             momentumcapture.NewReadinessTracker(universe),

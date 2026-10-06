@@ -49,8 +49,8 @@ const (
 	maxTradeFutureSkew        = 5 * time.Second
 )
 
-// PublicTrade is one normalized Binance aggTrade. Side is DERIVED (see
-// momentumsource.ValueProvenance) from Binance's own buyer-maker flag: a
+// PublicTrade is one normalized Binance aggTrade. Side is DERIVED from
+// Binance's own buyer-maker flag, not reported natively: a
 // message where the buyer is the maker means the TAKER was the seller.
 // AggTradeID is Binance's own "a" field, stored verbatim -- documented as
 // monotonically increasing but not gap-free (100ms aggregation can skip

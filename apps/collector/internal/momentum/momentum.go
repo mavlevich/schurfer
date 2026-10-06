@@ -78,11 +78,6 @@ type Trade struct {
 	Seq          int64
 }
 
-// NotionalUSD is price times size. Bybit linear-USDT contracts are quoted
-// and sized such that this is already a USD notional; a non-USDT-margined
-// venue would need its own conversion before reaching this package.
-func (t Trade) NotionalUSD() float64 { return t.Price * t.Size }
-
 // TickerObservation is one reading from the ticker/OI feed (see the
 // bybit-ticker-oi-contract-v1 PR). Every field beyond Symbol/EventAt/
 // ObservedAt is optional (a nil pointer), matching that PR's contract: a
@@ -465,10 +460,9 @@ var (
 type PriceSource string
 
 const (
-	// PriceSourceTickerLast is the default: OHLC comes exclusively from
+	// PriceSourceTickerLast: OHLC comes exclusively from
 	// AddTickerObservation's own LastPrice field (Bybit's own push ticker
-	// feed). Matches every Engine ever built before PriceSource existed --
-	// see New's own doc comment.
+	// feed). Matches every Engine ever built before PriceSource existed.
 	PriceSourceTickerLast PriceSource = "ticker_last"
 	// PriceSourceAggregateTrade derives OHLC from AddTrade's own Price
 	// field instead, for a venue with no ticker/price feed at all (see
@@ -495,28 +489,14 @@ type Engine struct {
 	priceSource PriceSource
 }
 
-// New returns an empty Engine using PriceSourceTickerLast. Every Engine
-// built before PriceSource existed used ticker-derived OHLC exclusively,
-// so this keeps that behavior the implicit, unchanged default rather than
-// forcing every existing call site -- this package's own several dozen
-// unit tests among them -- to specify a parameter they do not care about.
-// Both production capture binaries call NewWithPriceSource explicitly
-// instead of relying on this default; see that constructor's own doc
-// comment for why a real venue wiring should never rely on New's implicit
-// choice.
-func New() *Engine {
-	return NewWithPriceSource(PriceSourceTickerLast)
-}
-
 // NewWithPriceSource returns an empty Engine whose own OHLC price comes
 // exclusively from source for its entire lifetime: fixed here, at
 // construction, never inferred per-call and never switched mid-stream
 // (see PriceSource's own doc comment on why). Both production capture
 // binaries call this explicitly -- cmd/momentumcapture:
 // PriceSourceTickerLast, cmd/momentumcapturebinance:
-// PriceSourceAggregateTrade -- so a future venue's own capture binary
-// cannot forget to make this choice by falling through to New's own
-// default.
+// PriceSourceAggregateTrade. There is no default constructor, so a future
+// venue's own capture binary cannot forget to make this choice.
 func NewWithPriceSource(source PriceSource) *Engine {
 	return &Engine{states: make(map[string]*symbolState), priceSource: source}
 }

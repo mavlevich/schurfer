@@ -142,3 +142,4 @@ coverage/
 # local net-buy accumulation window parquet (data, not source)
 cold-bars-window/
 cold-bars/
+coverage.out

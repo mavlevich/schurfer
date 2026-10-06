@@ -1,0 +1,27 @@
+# Go functions that deadcode reports as unreachable from any main package but
+# that stay on purpose. One "<module dir>/<file> <func>" per line; everything
+# else deadcode reports fails `make deadcode` and CI. Keep each group's reason.
+
+# Test helper: imported by tests of several packages, so it cannot live in a
+# _test.go file.
+apps/api-gateway/internal/testdburl/url.go URL
+apps/collector/internal/testdburl/url.go URL
+
+# Venue capability matrix (docs/research/momentum-venue-capability-matrix-v1.md):
+# a frozen policy table that its own tests validate; no binary reads it yet.
+apps/collector/internal/momentumvenue/capabilities.go V1
+apps/collector/internal/momentumvenue/capabilities.go unauditedVenue
+apps/collector/internal/momentumvenue/capabilities.go Matrix.Validate
+apps/collector/internal/momentumvenue/capabilities.go validateCapability
+apps/collector/internal/momentumvenue/capabilities.go Matrix.Venue
+apps/collector/internal/momentumvenue/capabilities.go Matrix.Keys
+
+# streamrt's MEXC codec (#497): parsing and subscriptions are tested; no binary
+# runs it until a MEXC capture is registered. Delete it if none is by 2026-11-30.
+apps/collector/internal/streamrt/mexc.go MexcCodec.Exchange
+apps/collector/internal/streamrt/mexc.go MexcCodec.URL
+apps/collector/internal/streamrt/mexc.go MexcCodec.MaxSymbolsPerConnection
+apps/collector/internal/streamrt/mexc.go MexcCodec.SubscribeFrames
+apps/collector/internal/streamrt/mexc.go MexcCodec.PingFrame
+apps/collector/internal/streamrt/mexc.go MexcCodec.PingInterval
+apps/collector/internal/streamrt/mexc.go MexcCodec.Parse

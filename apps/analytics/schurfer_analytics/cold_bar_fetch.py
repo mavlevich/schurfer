@@ -43,6 +43,7 @@ from .cold_bar_gated_deletion_job import RECEIPT_SUFFIX
 
 DEFAULT_MAX_DAYS = 3
 DEFAULT_RESERVE_BYTES = 10 * 1024**3  # the same floor the restore drill keeps
+READABLE_MODE = 0o644  # the fetch runs as root; the deploy user reads the bars
 
 
 class FetchError(RuntimeError):
@@ -175,6 +176,7 @@ def fetch_day(
     dest = out_dir / f"bars-{day}.parquet"
     if dest.exists():
         verify(dest, day, expected_sha, expected_rows)
+        dest.chmod(READABLE_MODE)  # an earlier run may have left it 0600
         return Fetched(day, dest, expected_rows, expected_sha, already_present=True)
     size = expected_bytes(cold_bars_dir, day, receipt)
     ensure_reserve(out_dir, size, reserve_bytes)
@@ -189,10 +191,12 @@ def fetch_day(
         rows = parquet_rows(partial)
         if rows != expected_rows:
             raise FetchError(f"{day}: {rows} rows != receipt {expected_rows}")
+        partial.chmod(READABLE_MODE)  # the temp file is 0600
         try:
             os.link(partial, dest)  # never replaces: a concurrent winner keeps its file
         except FileExistsError:
             verify(dest, day, expected_sha, expected_rows)
+            dest.chmod(READABLE_MODE)  # the winner may be an older 0600 run
             return Fetched(day, dest, expected_rows, expected_sha, already_present=True)
     finally:
         partial.unlink(missing_ok=True)

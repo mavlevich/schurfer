@@ -24,6 +24,12 @@ import (
 	"github.com/mavlevich/schurfer/collector/internal/momentumsource"
 )
 
+// MarketType matches momentumvenue's own Binance matrix entry
+// ("linear_usdt_perpetual").
+const MarketType = "linear_usdt_perpetual"
+
+const exchangeName = "binance"
+
 const defaultRESTURL = "https://fapi.binance.com"
 
 const (
