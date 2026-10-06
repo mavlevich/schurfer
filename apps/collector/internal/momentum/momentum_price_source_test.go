@@ -29,7 +29,7 @@ func at2(offsetSeconds int) when {
 }
 
 func TestNewDefaultsToTickerLastAndNewWithPriceSourceIsExplicit(t *testing.T) {
-	tickerEngine := New()
+	tickerEngine := newTestEngine()
 	if _, err := tickerEngine.AddTrade(tradeAt(100, at2(0), "id1")); err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +40,7 @@ func TestNewDefaultsToTickerLastAndNewWithPriceSourceIsExplicit(t *testing.T) {
 	if closed[0].PriceSource != PriceSourceTickerLast {
 		t.Fatalf("PriceSource = %q, want %q", closed[0].PriceSource, PriceSourceTickerLast)
 	}
-	// New()'s own default: a trade alone never moves price for a
+	// newTestEngine()'s own default: a trade alone never moves price for a
 	// ticker-sourced engine.
 	if closed[0].OpenPrice != nil || closed[0].ClosePrice != nil {
 		t.Fatalf("OpenPrice/ClosePrice = %v/%v, want nil (ticker-sourced engine, trade-only activity)",
@@ -183,7 +183,7 @@ func TestAggregateTradeDuplicateTradeIDDoesNotDoubleCountPrice(t *testing.T) {
 }
 
 func TestAddTickerObservationMirrorsCanonicalPriceFields(t *testing.T) {
-	e := New()
+	e := newTestEngine()
 	obs := tickerAt(at(0))
 	obs.LastPrice = f(42.5)
 	if _, err := e.AddTickerObservation(obs); err != nil {
@@ -226,7 +226,7 @@ func TestOpenInterestCompleteMirrorsTickerComplete(t *testing.T) {
 }
 
 func TestPriceCompleteMirrorsTheFeedThisEnginesPriceSourceActuallyUses(t *testing.T) {
-	tickerEngine := New()
+	tickerEngine := newTestEngine()
 	if _, err := tickerEngine.AddTickerObservation(tickerAt(at(0))); err != nil {
 		t.Fatal(err)
 	}

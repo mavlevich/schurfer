@@ -65,7 +65,7 @@ func TestAddTradeRejectsInvalidInput(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			e := New()
+			e := newTestEngine()
 			if _, err := e.AddTrade(tc); err != ErrInvalidTrade {
 				t.Fatalf("err = %v, want ErrInvalidTrade", err)
 			}
@@ -98,7 +98,7 @@ func TestAddTickerObservationRejectsInvalidInput(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			e := New()
+			e := newTestEngine()
 			if _, err := e.AddTickerObservation(tc); err != ErrInvalidTickerObservation {
 				t.Fatalf("err = %v, want ErrInvalidTickerObservation", err)
 			}
@@ -138,7 +138,7 @@ func TestAddQuoteObservationRejectsInvalidInput(t *testing.T) {
 	for name, observation := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			if _, err := New().AddQuoteObservation(observation); err != ErrInvalidQuoteObservation {
+			if _, err := newTestEngine().AddQuoteObservation(observation); err != ErrInvalidQuoteObservation {
 				t.Fatalf("err = %v, want ErrInvalidQuoteObservation", err)
 			}
 		})
@@ -163,7 +163,7 @@ func TestAddDerivativesObservationRejectsInvalidInput(t *testing.T) {
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			if _, err := New().AddDerivativesObservation(tc); err != ErrInvalidDerivativesObservation {
+			if _, err := newTestEngine().AddDerivativesObservation(tc); err != ErrInvalidDerivativesObservation {
 				t.Fatalf("err = %v, want ErrInvalidDerivativesObservation", err)
 			}
 		})
@@ -172,7 +172,7 @@ func TestAddDerivativesObservationRejectsInvalidInput(t *testing.T) {
 
 func TestDerivativesStateCarriesForwardWithIndependentCompleteness(t *testing.T) {
 	t.Parallel()
-	e := New()
+	e := newTestEngine()
 	mark, index, funding := 100.0, 99.5, -0.0002
 	nextFunding := at(3600)
 	firstAt := at(5)
@@ -210,7 +210,7 @@ func TestDerivativesStateCarriesForwardWithIndependentCompleteness(t *testing.T)
 
 func TestDerivativesDiscontinuityIsStickyForCurrentBarOnly(t *testing.T) {
 	t.Parallel()
-	e := New()
+	e := newTestEngine()
 	add := func(when time.Time) {
 		mark, index, funding := 1.0, 0.99, 0.0001
 		nextFunding := when.Add(8 * time.Hour)
@@ -241,7 +241,7 @@ func TestDerivativesDiscontinuityIsStickyForCurrentBarOnly(t *testing.T) {
 
 func TestDerivativesCompleteRequiresEveryVersionedValue(t *testing.T) {
 	t.Parallel()
-	e := New()
+	e := newTestEngine()
 	when := at(1)
 	mark := 1.0
 	if _, err := e.AddDerivativesObservation(DerivativesObservation{
@@ -260,7 +260,7 @@ func TestDerivativesCompleteRequiresEveryVersionedValue(t *testing.T) {
 
 func TestHistogramBucketsAreNonCumulativeAndBoundaryCorrect(t *testing.T) {
 	t.Parallel()
-	e := New()
+	e := newTestEngine()
 	amounts := []float64{999, 1_000, 3_000}
 	for i, amount := range amounts {
 		tr := trade(SideBuy, amount, at(i), "id"+string(rune('a'+i)))
@@ -286,7 +286,7 @@ func TestHistogramBucketsAreNonCumulativeAndBoundaryCorrect(t *testing.T) {
 
 func TestHistogramLastBucketIsOpenEndedAndJSONMarshalable(t *testing.T) {
 	t.Parallel()
-	e := New()
+	e := newTestEngine()
 	if _, err := e.AddTrade(trade(SideBuy, 10_000_000, at(0), "id1")); err != nil {
 		t.Fatalf("add trade: %v", err)
 	}
@@ -304,7 +304,7 @@ func TestHistogramLastBucketIsOpenEndedAndJSONMarshalable(t *testing.T) {
 
 func TestTopKKeepsLargestDescendingCappedAtFive(t *testing.T) {
 	t.Parallel()
-	e := New()
+	e := newTestEngine()
 	amounts := []float64{100, 500, 50, 900, 300, 700, 200}
 	for i, amount := range amounts {
 		tr := trade(SideBuy, amount, at(i), "id"+string(rune('a'+i)))
@@ -329,7 +329,7 @@ func TestTopKKeepsLargestDescendingCappedAtFive(t *testing.T) {
 
 func TestBurstWindowFindsDenseCluster(t *testing.T) {
 	t.Parallel()
-	e := New()
+	e := newTestEngine()
 	for i, offset := range []int{0, 3, 5} {
 		tr := trade(SideBuy, 100, at(offset), "cluster"+string(rune('a'+i)))
 		if _, err := e.AddTrade(tr); err != nil {
@@ -344,7 +344,7 @@ func TestBurstWindowFindsDenseCluster(t *testing.T) {
 
 func TestBurstWindowCrossesAMinuteBoundary(t *testing.T) {
 	t.Parallel()
-	e := New()
+	e := newTestEngine()
 	if _, err := e.AddTrade(trade(SideBuy, 60_000, at(52), "a")); err != nil {
 		t.Fatalf("add trade: %v", err)
 	}
@@ -365,7 +365,7 @@ func TestBurstWindowCrossesAMinuteBoundary(t *testing.T) {
 
 func TestBurstWindowIsNotCorruptedByOutOfOrderArrival(t *testing.T) {
 	t.Parallel()
-	e := New()
+	e := newTestEngine()
 	// A trade at t=50s arrives first; a trade at t=0s arrives after it
 	// (late relative to arrival order, but not late enough relative to the
 	// bar's own bucket start to be dropped). They are 50 seconds apart, so
@@ -442,7 +442,7 @@ func TestBurstTrackerMatchesExactReferenceAcrossOrderedAndOutOfOrderEvents(t *te
 func TestEngineHandlesBoundedDenseBurstWithoutLosingStatistics(t *testing.T) {
 	t.Parallel()
 	const tradeCount = 20_000
-	engine := New()
+	engine := newTestEngine()
 	start := at(0)
 	for index := range tradeCount {
 		eventAt := start.Add(time.Duration(index) * time.Millisecond)
@@ -480,7 +480,7 @@ func TestEngineHandlesBoundedDenseBurstWithoutLosingStatistics(t *testing.T) {
 
 func TestBlockAndRPITradesAreExcludedFromOrdinaryStats(t *testing.T) {
 	t.Parallel()
-	e := New()
+	e := newTestEngine()
 	normal := trade(SideBuy, 100, at(0), "normal")
 	block := trade(SideBuy, 1_000_000, at(1), "block")
 	block.IsBlockTrade = true
@@ -509,7 +509,7 @@ func TestBlockAndRPITradesAreExcludedFromOrdinaryStats(t *testing.T) {
 
 func TestBuyAndSellAreAggregatedIndependently(t *testing.T) {
 	t.Parallel()
-	e := New()
+	e := newTestEngine()
 	if _, err := e.AddTrade(trade(SideBuy, 100, at(0), "buy-1")); err != nil {
 		t.Fatalf("add trade: %v", err)
 	}
@@ -525,7 +525,7 @@ func TestBuyAndSellAreAggregatedIndependently(t *testing.T) {
 
 func TestDuplicateTradeIDIsDroppedAndCounted(t *testing.T) {
 	t.Parallel()
-	e := New()
+	e := newTestEngine()
 	tr := trade(SideBuy, 100, at(0), "dup-1")
 	if _, err := e.AddTrade(tr); err != nil {
 		t.Fatalf("add trade: %v", err)
@@ -541,7 +541,7 @@ func TestDuplicateTradeIDIsDroppedAndCounted(t *testing.T) {
 
 func TestLateTradeAfterBarCloseIsDroppedAndReportedOnNextBar(t *testing.T) {
 	t.Parallel()
-	e := New()
+	e := newTestEngine()
 	if _, err := e.AddTrade(trade(SideBuy, 100, at(0), "on-time")); err != nil {
 		t.Fatalf("add trade: %v", err)
 	}
@@ -561,7 +561,7 @@ func TestLateTradeAfterBarCloseIsDroppedAndReportedOnNextBar(t *testing.T) {
 
 func TestRecoveryMidBarDoesNotRepairTheAlreadyDamagedMinute(t *testing.T) {
 	t.Parallel()
-	e := New()
+	e := newTestEngine()
 	if closed := e.MarkTradesDiscontinuity("AKEUSDT", at(10)); len(closed) != 0 {
 		t.Fatal("marking mid-minute should not itself close a bar")
 	}
@@ -588,7 +588,7 @@ func TestRecoveryMidBarDoesNotRepairTheAlreadyDamagedMinute(t *testing.T) {
 
 func TestLateOrDuplicateTradeMustNotSignalRecovery(t *testing.T) {
 	t.Parallel()
-	e := New()
+	e := newTestEngine()
 	tr := trade(SideBuy, 100, at(0), "a")
 	if _, err := e.AddTrade(tr); err != nil {
 		t.Fatalf("add trade: %v", err)
@@ -619,7 +619,7 @@ func TestLateOrDuplicateTradeMustNotSignalRecovery(t *testing.T) {
 
 func TestHealthyButQuietMinuteIsComplete(t *testing.T) {
 	t.Parallel()
-	e := New()
+	e := newTestEngine()
 	if _, err := e.AddTrade(trade(SideBuy, 100, at(0), "a")); err != nil {
 		t.Fatalf("add trade: %v", err)
 	}
@@ -652,7 +652,7 @@ func TestHealthyButQuietMinuteIsComplete(t *testing.T) {
 
 func TestLastKnownValuesCarryForwardWithOriginalTimestamps(t *testing.T) {
 	t.Parallel()
-	e := New()
+	e := newTestEngine()
 	oiEventAt, oiObservedAt := at(0), at(0)
 	if _, err := e.AddTickerObservation(tickerAt(at(0),
 		func(o *TickerObservation) { o.BidPrice, o.AskPrice = f(10), f(11) },
@@ -690,7 +690,7 @@ func TestLastKnownValuesCarryForwardWithOriginalTimestamps(t *testing.T) {
 
 func TestGapProducesSyntheticIncompleteBarsForEverySkippedMinute(t *testing.T) {
 	t.Parallel()
-	e := New()
+	e := newTestEngine()
 	if _, err := e.AddTrade(trade(SideBuy, 100, at(0), "a")); err != nil {
 		t.Fatalf("add trade: %v", err)
 	}
@@ -710,7 +710,7 @@ func TestGapProducesSyntheticIncompleteBarsForEverySkippedMinute(t *testing.T) {
 
 func TestCappedBackfillRecordsAnExplicitUnbackfilledGap(t *testing.T) {
 	t.Parallel()
-	e := New()
+	e := newTestEngine()
 	if _, err := e.AddTrade(trade(SideBuy, 100, at(0), "a")); err != nil {
 		t.Fatalf("add trade: %v", err)
 	}
@@ -742,7 +742,7 @@ func TestCappedBackfillRecordsAnExplicitUnbackfilledGap(t *testing.T) {
 
 func TestTradeDiagnosticsTrackLagAndSequence(t *testing.T) {
 	t.Parallel()
-	e := New()
+	e := newTestEngine()
 	if _, err := e.AddTrade(Trade{
 		Symbol: "AKEUSDT", Side: SideBuy, Price: 1, Size: 100,
 		EventAt: at(0), ReceivedAt: at(0).Add(50 * time.Millisecond), TradeID: "a", Seq: 100,
@@ -776,7 +776,7 @@ func TestTradeDiagnosticsTrackLagAndSequence(t *testing.T) {
 
 func TestTickerDiagnosticsTrackLag(t *testing.T) {
 	t.Parallel()
-	e := New()
+	e := newTestEngine()
 	if _, err := e.AddTickerObservation(TickerObservation{
 		Symbol: "AKEUSDT", LastPrice: f(1),
 		EventAt: at(0), ObservedAt: at(0).Add(100 * time.Millisecond),
@@ -794,7 +794,7 @@ func TestTickerDiagnosticsTrackLag(t *testing.T) {
 
 func TestFlushForceClosesElapsedBarsWithoutANewEvent(t *testing.T) {
 	t.Parallel()
-	e := New()
+	e := newTestEngine()
 	if _, err := e.AddTrade(trade(SideBuy, 100, at(0), "a")); err != nil {
 		t.Fatalf("add trade: %v", err)
 	}
@@ -805,4 +805,10 @@ func TestFlushForceClosesElapsedBarsWithoutANewEvent(t *testing.T) {
 	if len(closed) != 1 || closed[0].Buy.TradeCount != 1 {
 		t.Fatalf("flush should close exactly the real bar, got %+v", closed)
 	}
+}
+
+// newTestEngine is the engine most tests here use: the Bybit ticker-last price
+// source, which every capture binary passes to NewWithPriceSource explicitly.
+func newTestEngine() *Engine {
+	return NewWithPriceSource(PriceSourceTickerLast)
 }

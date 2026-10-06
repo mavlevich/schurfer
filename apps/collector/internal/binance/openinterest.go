@@ -139,9 +139,7 @@ type OpenInterestFn func(context.Context, OpenInterestReading) error
 // connection itself is gone), so treating one transient failure as a
 // reason to stop OPEN INTEREST collection for every symbol on this venue
 // would be a strictly worse outcome than skipping that one reading and
-// trying again next turn -- the same fail-soft-on-a-single-reading
-// philosophy bybit.Adapter.StreamTicker already documents for Bybit's own
-// push path.
+// trying again next turn (fail soft on a single reading).
 //
 // A 429/418 response is different: it means THIS PROCESS'S OWN IP is over
 // budget or banned, a condition every worker shares, not a single-symbol

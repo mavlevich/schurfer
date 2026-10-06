@@ -16,7 +16,7 @@ func BenchmarkEngineAddTradeBurst(b *testing.B) {
 			b.ReportAllocs()
 			b.ReportMetric(float64(tradeCount), "trades/run")
 			for range b.N {
-				engine := New()
+				engine := newTestEngine()
 				start := time.Date(2026, 8, 13, 12, 0, 0, 0, time.UTC)
 				for index := range tradeCount {
 					eventAt := start.Add(time.Duration(index) * time.Millisecond)

@@ -172,12 +172,16 @@ def test_invalid_config_fails_before_any_module_is_linted(tmp_path: Path) -> Non
     assert _visited(root) == []
 
 
-def _fake_deadcode(root: Path, *, failing_module: str | None) -> dict[str, str]:
-    """A fake deadcode that records the modules it ran in and fails only in
-    the named one."""
+def _fake_deadcode(
+    root: Path, *, failing_module: str | None, reporting_module: str | None = None
+) -> dict[str, str]:
+    """A fake deadcode that records the modules it ran in, fails only in the
+    named one, and (like the real one) exits 0 while reporting a dead function
+    in `reporting_module`."""
     bin_dir = root / "fakebin" / "bin"
     bin_dir.mkdir(parents=True, exist_ok=True)
     fail = f'"apps/{failing_module}"' if failing_module else '"__none__"'
+    report = f'"apps/{reporting_module}"' if reporting_module else '"__none__"'
     (bin_dir / "deadcode").write_text(
         textwrap.dedent(f"""\
             #!/usr/bin/env bash
@@ -186,6 +190,9 @@ def _fake_deadcode(root: Path, *, failing_module: str | None) -> dict[str, str]:
             if [[ "$PWD" == *{fail} ]]; then
                 echo "fake dead code in $PWD"
                 exit 1
+            fi
+            if [[ "$PWD" == *{report} ]]; then
+                echo "main.go:3:6: unreachable func: Unused"
             fi
             exit 0
             """)
@@ -219,6 +226,31 @@ def test_deadcode_clean_workspace_passes(tmp_path: Path) -> None:
 
     assert result.returncode == 0, result.stderr
     assert sorted(Path(p).name for p in _visited(root)) == sorted(_MODULES)
+
+
+def test_unlisted_dead_code_fails_although_deadcode_exits_zero(tmp_path: Path) -> None:
+    """deadcode exits 0 when it finds dead code, so CI printed its findings and
+    stayed green."""
+    root = _fake_repo(tmp_path, go_work=_single_line_go_work())
+    env = _fake_deadcode(root, failing_module=None, reporting_module="middle")
+
+    result = _run(root, env, script="go_deadcode.sh")
+
+    assert result.returncode != 0, result.stdout
+    assert "apps/middle/main.go Unused" in result.stderr
+
+
+def test_listed_dead_code_passes_and_a_stale_entry_fails(tmp_path: Path) -> None:
+    root = _fake_repo(tmp_path, go_work=_single_line_go_work())
+    allow = root / "infra" / "scripts" / "go_deadcode_allow.txt"
+    allow.write_text("# reason\napps/middle/main.go Unused\n")
+    env = _fake_deadcode(root, failing_module=None, reporting_module="middle")
+    assert _run(root, env, script="go_deadcode.sh").returncode == 0
+
+    allow.write_text("apps/middle/main.go Unused\napps/last/main.go Gone\n")
+    result = _run(root, env, script="go_deadcode.sh")
+    assert result.returncode != 0
+    assert "apps/last/main.go Gone" in result.stderr
 
 
 def test_deadcode_workspace_without_modules_fails(tmp_path: Path) -> None:
