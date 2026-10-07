@@ -119,6 +119,13 @@ CHECKPOINTS = (
         24,
         60,
         1280,
+        # Closed 2026-10-07 (ROADMAP.md, "Open-ended margin boundary closed"). Its last
+        # report (2026-09-17) had 14-day survival 62% over 98 exact paths against the
+        # frozen 80% floor, which the contract calls monotone (it cannot recover at 28
+        # days); only the two-week diversity gate was missing. The pump-short line it
+        # bounds is closed, and the report, loading every decision since 2026-08-03,
+        # outgrew its container's memory (report_oom from 2026-10-06).
+        retired_verdict="no_go",
     ),
     CheckpointSpec(
         "exit_liquidity",

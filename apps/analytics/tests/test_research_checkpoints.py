@@ -236,6 +236,11 @@ def test_orderflow_checkpoint_is_registered_retired_no_go() -> None:
     assert orderflow_spec.retired_verdict == "no_go"
 
 
+def test_open_ended_margin_checkpoint_is_registered_retired_no_go() -> None:
+    spec = next(spec for spec in checkpoints.CHECKPOINTS if spec.key == "open_ended_margin")
+    assert spec.retired_verdict == "no_go"
+
+
 def test_validate_checkpoints_rejects_a_non_terminal_retired_verdict() -> None:
     bogus = replace(checkpoints.CHECKPOINTS[0], retired_verdict="collecting")
     with pytest.raises(ValueError, match="not a terminal state"):

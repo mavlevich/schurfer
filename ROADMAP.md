@@ -14,6 +14,17 @@ Next: finish PR 2 administrative-stop review, select one feasible pre-move data 
 User decision required: none for the active cohorts; confirm accessible futures venues only before designing a source-native execution route
 ```
 
+### Open-ended margin boundary closed (2026-10-07)
+
+The background open-ended margin study (`prospective_no_time_exit_margin_buffer_v1`,
+[contract](docs/research/open-ended-margin-v1.md)) is closed with verdict `no_go`, and
+its research checkpoint is retired. Its last report (2026-09-17) showed 14-day survival
+of 62% over 98 exact paths and 60 asset clusters against the frozen 80% floor; the
+contract treats that floor as monotone, so the 28-day row cannot recover it. Only the
+two-week diversity gate was still open. The pump-short line it bounds is already a
+losing baseline, and the report had outgrown its container memory (`report_oom` from
+2026-10-06). No exit challenger is calibrated from it.
+
 ### Priority queue and improvement gates — 2026-10-02
 
 This is the current next-work order. It supersedes older delivery lists for selecting
