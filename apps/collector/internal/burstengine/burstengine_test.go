@@ -296,3 +296,33 @@ func TestNoMinuteIsDecidedBeforeTheStreamIsConfirmedPastIt(t *testing.T) {
 		t.Fatalf("stats %+v", e.Stats)
 	}
 }
+
+func implausible(eventAt, receivedAt time.Time) streamrt.Event {
+	ids++
+	return streamrt.Event{Trade: &streamrt.Trade{
+		Exchange: "bybit", Symbol: "AAAUSDT", TradeID: fmt.Sprint(ids), Price: 1, Notional: 1,
+		EventAt: eventAt, ReceivedAt: receivedAt,
+	}}
+}
+
+// v1 was OOM-killed on 2026-10-07: a bar is created for every minute up to a trade's
+// minute, so one trade stamped far from its receipt allocated bars without bound.
+func TestATradeWithAnImplausibleTimeIsRefusedAndAllocatesNoBars(t *testing.T) {
+	e := New(HYP030())
+	quiet(e)
+	before := len(e.symbols["AAAUSDT"].open)
+	now := at(40, 0)
+	e.OnEvent(implausible(now.Add(365*24*time.Hour), now)) // a year ahead
+	e.OnEvent(implausible(time.UnixMilli(1), now))         // 1970
+	e.OnEvent(implausible(now.Add(-2*time.Hour), now))     // older than MaxTradeAge
+	if got := e.Stats.ImplausibleTime; got != 3 {
+		t.Fatalf("ImplausibleTime = %d, want 3", got)
+	}
+	if got := len(e.symbols["AAAUSDT"].open); got != before {
+		t.Fatalf("open bars %d -> %d: an implausible trade allocated bars", before, got)
+	}
+	e.OnEvent(implausible(now.Add(4*time.Second), now)) // within MaxFutureSkew
+	if e.Stats.ImplausibleTime != 3 || e.Stats.Trades != 84 {
+		t.Fatalf("a trade within the skew was refused: %+v", e.Stats)
+	}
+}

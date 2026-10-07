@@ -24,6 +24,11 @@
 //     that minute (or earlier) is counted late and never added.
 //   - A minute without trades becomes a bar with zero turnover and the previous bar's
 //     close, as the research bars have one.
+//   - A trade whose exchange time is implausible against its receive time (more than
+//     MaxFutureSkew ahead, or more than MaxTradeAge behind) is refused and counted. A
+//     bar is created for every minute up to a trade's minute, so one trade stamped a
+//     year ahead would allocate half a million bars per instrument (v1 was killed by
+//     its memory limit on 2026-10-07, six seconds after a reconnect).
 //   - A repeated trade id is dropped before it touches any price or turnover. Ids are
 //     kept per open minute and freed when it is finalized: a repeat of a finalized
 //     minute's trade is already refused as late, so memory stays bounded by the trades
@@ -58,7 +63,8 @@ import (
 )
 
 // ContractVersion names this engine's data contract.
-const ContractVersion = "burst_trade_bars_v1"
+// v2 (2026-10-07) refuses trades with an implausible exchange time; v1 did not.
+const ContractVersion = "burst_trade_bars_v2"
 
 // Config holds the rule and the bar mechanics.
 type Config struct {
@@ -69,6 +75,8 @@ type Config struct {
 	Cooldown         time.Duration
 	Grace            time.Duration
 	LagAllowance     time.Duration // receive-time gap starts move back by this much
+	MaxFutureSkew    time.Duration // a trade's exchange time may lead its receipt by this
+	MaxTradeAge      time.Duration // and may trail it by this
 }
 
 // HYP030 is the designed rule's thresholds on this engine's contract.
@@ -76,6 +84,7 @@ func HYP030() Config {
 	return Config{
 		ReturnThreshold: 0.05, TurnoverMultiple: 5, MedianWindow: 60, MinMedianBars: 30,
 		Cooldown: time.Hour, Grace: 250 * time.Millisecond, LagAllowance: 2 * time.Second,
+		MaxFutureSkew: 5 * time.Second, MaxTradeAge: time.Hour,
 	}
 }
 
@@ -135,6 +144,7 @@ type Stats struct {
 	IncompleteBars  int64
 	Signals         int64
 	SuppressedByGap int64
+	ImplausibleTime int64
 }
 
 type gap struct {
@@ -255,6 +265,11 @@ func (e *Engine) onTrade(t *streamrt.Trade) {
 	e.Stats.Trades++
 	if t.TradeID == "" {
 		e.Stats.MissingID++
+		return
+	}
+	if t.EventAt.After(t.ReceivedAt.Add(e.config.MaxFutureSkew)) ||
+		t.EventAt.Before(t.ReceivedAt.Add(-e.config.MaxTradeAge)) {
+		e.Stats.ImplausibleTime++
 		return
 	}
 	s := e.state(t.Symbol)
