@@ -853,6 +853,10 @@ services:
       MAX_SPREAD_BPS: ${MAX_SPREAD_BPS:-50}
       MAX_LIQUIDITY_IMPACT_BPS: ${MAX_LIQUIDITY_IMPACT_BPS:-50}
       LIQUIDITY_DEPTH_MULTIPLIER: ${LIQUIDITY_DEPTH_MULTIPLIER:-2}
+      # early_momentum_v4 failed its formal net-evidence read on 2026-09-09
+      # (docs/research/early-momentum-net-evidence-v1.md): it opens no new paper
+      # trade; open ones still run to their exits. .env.prod may override.
+      EARLY_MOMENTUM_MODE: ${EARLY_MOMENTUM_MODE:-disabled}
       EARLY_MOMENTUM_REARM_COOLDOWN_SECONDS: ${EARLY_MOMENTUM_REARM_COOLDOWN_SECONDS:-1800}
       IDENTITY_SNAPSHOT_MAX_AGE_HOURS: ${IDENTITY_SNAPSHOT_MAX_AGE_HOURS:-720}
       EARLY_MOMENTUM_HEALTH_ALERT_COOLDOWN_SECONDS: ${EARLY_MOMENTUM_HEALTH_ALERT_COOLDOWN_SECONDS:-1800}

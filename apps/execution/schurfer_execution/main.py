@@ -61,6 +61,15 @@ log = structlog.get_logger()
 _HOT_PATH_SOCKET_TIMEOUT_SECONDS = 5.0
 
 
+def early_momentum_trigger_enabled(cfg: Any) -> bool:
+    """The trigger also maintains positions already open: it reaps overdue episodes,
+    repairs their WATCH cache and restores a lost Redis key of an open paper trade
+    (paper.reconcile_missing_positions), without which the paper monitor never sees that
+    trade again. So it runs whatever EARLY_MOMENTUM_MODE says; in DISABLED mode the
+    broker refuses every new entry (_check_breakout), so nothing new is opened."""
+    return bool(cfg.dry_run and cfg.db_url)
+
+
 async def _preload_markets(exchanges: dict[str, Any]) -> set[str]:
     """Load venue metadata without making optional venues a global dependency."""
     names = list(exchanges)
@@ -302,7 +311,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             is_critical=False,
             restart_budget=3,
             stale_timeout_seconds=120.0,
-            enabled=cfg.dry_run and bool(cfg.db_url) and early_momentum_enabled,
+            enabled=early_momentum_trigger_enabled(cfg),
         ),
         WorkerSpec(
             name="early_momentum_health_monitor",
