@@ -40,6 +40,8 @@ TOC = """\
 404; 1259 16800 TABLE app trade_decisions schurfer
 405; 1259 16900 TABLE timeseries bybit_momentum_bars_1m schurfer
 406; 2604 16610 DEFAULT app trades id schurfer
+407; 1255 16620 FUNCTION app trades_guard() schurfer
+408; 1255 16621 FUNCTION app unrelated_fn() schurfer
 900; 0 16600 TABLE DATA app trades schurfer
 901; 0 16700 TABLE DATA app strategies schurfer
 902; 0 16800 TABLE DATA app trade_decisions schurfer
@@ -58,6 +60,7 @@ RECEIPT: dict[str, Any] = {
     "tables": ["app.strategies", "app.trades"],
     "owned_sequences": ["app.trades_id_seq"],
     "indexes": ["app.ix_trades_symbol", "app.trades_pkey"],
+    "trigger_functions": ["app.trades_guard"],
 }
 
 
@@ -75,14 +78,17 @@ def test_the_restore_list_is_the_critical_set_closed_and_nothing_else() -> None:
     kept = rc.restore_list(TOC.splitlines(), RECEIPT)
     ids = [line.split(";")[0] for line in kept]
     # schema app, extension, the app type, both tables with data, the owned
-    # sequence (all three entries), the default, the pkey, the mapped index,
-    # the FK and the trigger of the set
+    # sequence (all three entries), the default, the function the set's trigger
+    # calls, the pkey, the mapped index, the FK and the trigger of the set
     assert ids == [
-        "7", "2", "301", "400", "401", "402", "403", "406",
+        "7", "2", "301", "400", "401", "402", "403", "406", "407",
         "900", "901", "904", "1000", "1001", "1003", "1005",
     ]  # fmt: skip
     joined = "\n".join(kept)
-    for excluded in ("timeseries", "trade_decisions", "COMMENT", "ACL", "ix_trade_decisions_at"):
+    excluded_names = (
+        "timeseries", "trade_decisions", "COMMENT", "ACL", "ix_trade_decisions_at", "unrelated_fn",
+    )  # fmt: skip
+    for excluded in excluded_names:
         assert excluded not in joined
 
 
