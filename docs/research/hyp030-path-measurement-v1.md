@@ -24,7 +24,8 @@ actually cost to enter and exit at those moments?
    - Bybit linear USDT perpetuals in `Trading` status at the run start, from the
      existing `bybit.Adapter.FetchUniverse` with its exclusion counts.
    - Frozen for the run with its sha256; new listings wait for the next run.
-3. **Rule, on its own data contract `burst_trade_bars_v1`.**
+3. **Rule, on its own data contract `burst_trade_bars_v1`** (`burst_trade_bars_v2` from
+   2026-10-07, see the amendment below).
    - `burstengine` with `HYP030()`: the design's thresholds, cooldown and median window.
    - The data contract differs from the research. The research bars took OHLC from the
      ticker's last price; these take it from trades:
@@ -148,3 +149,19 @@ The latency part can be read at any time, because it holds no market value.
   costs. It is not evidence of execution or profitability.
 - **Universe:** a run-frozen universe is acceptable.
 - **Duration:** 28 days is reasonable for latency and collection quality.
+
+## Amendment 1 (2026-10-07): implausible trade times, contract v2
+
+- **What happened.** The first run (`20261005T134203Z-813fcda0`, contract v1) was killed
+  by its 256 MB memory limit at 2026-10-07 02:01:25 UTC, six seconds after a shard
+  reconnect. Peak RSS had been 71 MB through 2026-10-06, three reconnects included.
+- **Most likely cause.** The engine creates a bar for every minute up to a trade's
+  minute. A single trade stamped far from its receipt (a year ahead, or 1970) allocates
+  hundreds of thousands of bars per instrument within seconds. The logs cannot confirm
+  the trade, so v2 counts such trades instead of guessing.
+- **Change.** `burst_trade_bars_v2` refuses a trade whose exchange time leads its
+  receipt by more than 5 s or trails it by more than 1 h, and counts it
+  (`implausible_time` in the health counters). Nothing else changes.
+- **The runs.** The v1 run's last segment stays unterminated (closed as such on the
+  next start, unread). A new run starts under v2 once deployed; its 28 days count from
+  its own start. Any readout treats the two contracts as separate runs.

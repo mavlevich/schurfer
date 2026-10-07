@@ -220,6 +220,7 @@ func health(rt *streamrt.Runtime, engine *burstengine.Engine, probe *burstprobe.
 	out["empty_bars"] = s.EmptyBars
 	out["incomplete_bars"] = s.IncompleteBars
 	out["suppressed_by_gap"] = s.SuppressedByGap
+	out["implausible_time"] = s.ImplausibleTime
 	out["engine_signals"] = s.Signals
 	out["peak_rss_bytes"] = peakRSS()
 	return out
