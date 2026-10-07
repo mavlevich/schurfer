@@ -25,7 +25,8 @@ offsite-backup.sh.
        own volume, no published port);
     2. stream the dump once to read its table of contents, and select the
        entries of the critical set only (schema, types, the tables, their
-       data, constraints, owned sequences and indexes);
+       data, constraints, owned sequences, indexes, and the functions their
+       triggers call);
     3. stream it again into pg_restore with that list and --exit-on-error;
     4. recompute the same counts and row hashes and the schema revision, and
        compare them with the receipt.
@@ -214,6 +215,18 @@ def schema_objects(psql: Psql, tables: list[str]) -> dict[str, Any]:
         WHERE schemaname || '.' || tablename = ANY({arr}) ORDER BY 1
         """
     )
+    # A trigger restored without its function fails pg_restore (migration 0057's
+    # terminal guard on app.formal_read_claims broke the 2026-10-04 drill).
+    trigger_functions = psql.query(
+        f"""
+        SELECT DISTINCT pn.nspname || '.' || p.proname FROM pg_trigger t
+        JOIN pg_proc p ON p.oid = t.tgfoid
+        JOIN pg_namespace pn ON pn.oid = p.pronamespace
+        WHERE NOT t.tgisinternal
+          AND t.tgrelid IN (SELECT to_regclass(x)::oid FROM unnest({arr}) x)
+        ORDER BY 1
+        """
+    )
     [size] = psql.query(
         f"SELECT coalesce(sum(pg_total_relation_size(to_regclass(x))), 0) FROM unnest({arr}) x"
     )
@@ -221,6 +234,7 @@ def schema_objects(psql: Psql, tables: list[str]) -> dict[str, Any]:
     return {
         "owned_sequences": sequences,
         "indexes": indexes,
+        "trigger_functions": trigger_functions,
         "total_relation_bytes": int(size),
         "schema_revision": revision,
     }
@@ -267,6 +281,8 @@ def restore_list(toc: list[str], receipt: dict[str, Any]) -> list[str]:
     schemas = {t.split(".", 1)[0] for t in tables}
     sequences = set(receipt["owned_sequences"])
     indexes = set(receipt["indexes"])
+    # receipts written before trigger functions were recorded have none
+    functions = set(receipt.get("trigger_functions", []))
     keep = []
     for line in toc:
         parsed = parse_toc_line(line)
@@ -286,6 +302,11 @@ def restore_list(toc: list[str], receipt: dict[str, Any]) -> list[str]:
                 kind in ("SEQUENCE", "SEQUENCE OWNED BY", "SEQUENCE SET") and qualified in sequences
             )
             or (kind == "INDEX" and qualified in indexes)
+            or (
+                kind == "FUNCTION"
+                and len(args) >= 2
+                and f"{args[0]}.{args[1].split('(', 1)[0]}" in functions
+            )
         )
         if wanted:
             keep.append(line)
