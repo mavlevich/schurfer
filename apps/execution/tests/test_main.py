@@ -54,3 +54,17 @@ async def test_disabled_strategy_workers_do_not_crash_startup() -> None:
             assert workers["paper_monitor"].state == WorkerState.STOPPED_INTENTIONALLY
             assert workers["liquidation_cascade_scanner"].state == WorkerState.STOPPED_INTENTIONALLY
             assert workers["early_momentum_scanner"].state == WorkerState.STOPPED_INTENTIONALLY
+
+
+def test_the_early_momentum_trigger_runs_whatever_the_strategy_mode() -> None:
+    """The trigger also maintains open trades, so EARLY_MOMENTUM_MODE=disabled must not
+    stop it; only paper mode off or no database does (colleague review of #505, P1)."""
+    from schurfer_execution.main import early_momentum_trigger_enabled
+
+    def cfg(**fields: object) -> SimpleNamespace:
+        base = {"dry_run": True, "db_url": "postgresql://x", "early_momentum_mode": "disabled"}
+        return SimpleNamespace(**{**base, **fields})
+
+    assert early_momentum_trigger_enabled(cfg())
+    assert not early_momentum_trigger_enabled(cfg(dry_run=False))
+    assert not early_momentum_trigger_enabled(cfg(db_url=None))

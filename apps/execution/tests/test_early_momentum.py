@@ -1423,3 +1423,70 @@ def _instrument() -> ExecutionInstrument:
         settle="USDT",
         market_type="swap",
     )
+
+
+async def test_disabled_trigger_restores_an_open_trade_and_opens_nothing() -> None:
+    """EARLY_MOMENTUM_MODE=disabled stops new entries, not the maintenance of trades
+    already open: a paper trade open in Postgres whose Redis keys were lost gets them
+    back (so the paper monitor can close it), and an armed episode is never claimed
+    (colleague review of #505, P1)."""
+    import json as _json
+    from datetime import UTC as _UTC
+
+    from schurfer_execution import journal
+    from schurfer_performance import PAPER_ACCOUNTING_VERSION
+
+    trade = journal.OpenEpisodeTrade(
+        trade_id=42,
+        symbol="BEAT/USDT:USDT",
+        exchange="bybit",
+        side="long",
+        entry_price=1.0,
+        size_usd=100.0,
+        leverage=5,
+        entry_at=datetime(2026, 10, 7, tzinfo=_UTC),
+        entry_slippage_bps=0.0,
+        exit_slippage_bps=None,
+        accounting_version=PAPER_ACCOUNTING_VERSION,
+        setup_context={"strategy": "early_momentum_v4", "exit_params": {"initial_sl_pct": 10.0}},
+        episode_id="e1",
+    )
+    cached = {
+        "episode_id": "e2",
+        "ceiling": 100.0,
+        "native_market_id": "BEATUSDT",
+        "source_exchange": "binance",
+        "source_native_id": "BEATUSDT",
+    }
+
+    async def one_watch_key(_pattern: str) -> Any:
+        yield "market:early_momentum:v4:watch:e2"
+
+    rdb = MagicMock()
+    rdb.exists = AsyncMock(return_value=False)  # every position and trade-id key is gone
+    rdb.set = AsyncMock(return_value=True)
+    rdb.get = AsyncMock(return_value=_json.dumps(cached))
+    rdb.scan_iter = one_watch_key
+    ex = _exchange()
+    ex.fetch_tickers = AsyncMock(return_value={"BEAT/USDT:USDT": {"last": 101.0}})
+
+    with (
+        patch("schurfer_execution.early_momentum.episodes.reap_overdue", new_callable=AsyncMock),
+        patch(
+            "schurfer_execution.early_momentum.episodes.list_actionable",
+            AsyncMock(return_value=[]),
+        ),
+        patch(
+            "schurfer_execution.paper.journal.find_open_episode_trades",
+            AsyncMock(return_value=[trade]),
+        ),
+        patch(
+            "schurfer_execution.early_momentum.episodes.claim_episode", new_callable=AsyncMock
+        ) as claim,
+    ):
+        await early_momentum._trigger_tick({"bybit": ex}, rdb, _cfg(), DisabledBroker())
+
+    restored = [c.args[0] for c in rdb.set.call_args_list]
+    assert "position:paper:bybit:BEAT" in restored
+    assert "trade:id:paper:bybit:BEAT" in restored
+    claim.assert_not_awaited()
