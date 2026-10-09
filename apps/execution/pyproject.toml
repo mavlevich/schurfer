@@ -21,6 +21,7 @@ dependencies = [
 [project.scripts]
 execution-service = "schurfer_execution.main:main"
 bybit-preflight = "schurfer_execution.bybit_preflight:main"
+carry-preflight = "schurfer_execution.carry_preflight:main"
 
 [tool.setuptools.packages.find]
 where = ["."]

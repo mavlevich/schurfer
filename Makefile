@@ -1587,6 +1587,28 @@ prod-bybit-preflight:
 	@$(_PROD) run --rm --no-deps --entrypoint bybit-preflight execution \
 		--purpose $(or $(PURPOSE),diagnostic) --symbols $(SYMBOLS) $(ARGS)
 
+# Bybit carry stage A (docs/research/bybit-spot-perp-carry-preflight-v1.md): read-only
+# account and margin preflight with the design's capital rule. GET-only allow-listed client,
+# no order path. It refuses before 2026-10-31 and takes its pairs only from the #476 canary
+# artifact, verified by CANARY_SHA256. TRADING and ADD_MARGIN are the dates the owner
+# confirmed trading access and adding margin to an isolated position; ADD_MARGIN_LIMIT is the
+# largest margin (USD) the owner can add. Writes the record once under
+# runtime/research/carry-stage-a. Exit 2 means blocked.
+prod-carry-preflight:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@test -n "$(CANARY_SHA256)" || (echo "ERROR: CANARY_SHA256=<the canary's published sha256> is required" && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: dirty working tree; the record names the revision" && exit 1)
+	@mkdir -p /opt/schurfer/runtime/research/carry-stage-a
+	@$(_PROD) run --rm --no-deps \
+		-v /opt/schurfer/runtime/research/carry-stage-a:/carry-stage-a \
+		-v /opt/schurfer/runtime/research/bybit-spot-perp-feasibility-v1:/canary:ro \
+		--entrypoint carry-preflight execution \
+		--canary /canary/result.json --canary-sha256 $(CANARY_SHA256) \
+		--code-revision "$$(git rev-parse HEAD)" --no-working-tree-dirty --out-dir /carry-stage-a \
+		$(if $(TRADING),--owner-confirmed-trading $(TRADING),) \
+		$(if $(ADD_MARGIN),--owner-confirmed-add-margin $(ADD_MARGIN),) \
+		$(if $(ADD_MARGIN_LIMIT),--add-margin-limit-usd $(ADD_MARGIN_LIMIT),) $(ARGS)
+
 prod-source-lead-identity-report:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	@$(_PROD) run --rm --no-deps --entrypoint source-lead-identity-report analytics \
