@@ -73,6 +73,20 @@ Pass: 1 and 2 hold, and the capital rule above fits USD 300 for at least the can
 passing pairs at their measured books. Otherwise the line stops here and nothing is
 collected.
 
+**Tooling.** `make prod-carry-preflight CANARY_SHA256=<the canary's published sha256>
+TRADING=2026-10-07 ADD_MARGIN=<date> ADD_MARGIN_LIMIT=<USD>`
+(`schurfer_execution.carry_preflight`). Before any exchange request it refuses a run
+before 2026-10-31 and any canary artifact whose SHA-256, version, clean revision, run date
+or decision does not hold; the pairs come only from that artifact. It then reads items 2
+to 5 with the read-only key through a GET-only allow-listed client and applies the capital
+rule per pair. Two things a read-only key cannot establish are owner confirmations with
+their dates: item 1 (the owner opened a Bybit perpetual position on 2026-10-07), and that
+margin can be added to an isolated position, with the largest amount; a pair whose margin
+above the 1x initial margin exceeds it is blocked. The record keeps every request, the safe
+part of every response with its SHA-256 (the key only as derived facts), the canary's
+SHA-256 and the code revision, written once with its own SHA-256 under
+`runtime/research/carry-stage-a`.
+
 ## Stage B: prospective funding and basis capture (registered separately)
 
 Funding and basis outcomes are read only under their own registration, written after

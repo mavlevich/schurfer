@@ -120,7 +120,9 @@ class BybitReadOnlyClient:
         *,
         base_url: str = MAINNET_URL,
         clock: Callable[[], float] = time.time,
+        allowed_paths: frozenset[str] = ALLOWED_GET_PATHS,
     ) -> None:
+        self._allowed = allowed_paths
         self._key = api_key
         self._secret = api_secret
         self._http = http
@@ -128,7 +130,7 @@ class BybitReadOnlyClient:
         self._clock = clock
 
     async def get(self, path: str, params: dict[str, str]) -> dict[str, Any]:
-        if path not in ALLOWED_GET_PATHS:
+        if path not in self._allowed:
             raise ForbiddenPathError(path)
         query = urlencode(params)
         timestamp = int(self._clock() * 1000)
