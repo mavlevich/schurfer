@@ -1,0 +1,22 @@
+[Unit]
+Description=Capture Bybit linear order rules for the HYP-015 executable portfolio
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+User=deploy
+Group=deploy
+WorkingDirectory=/opt/schurfer
+ExecStart=/usr/bin/make prod-bybit-order-rules-capture
+
+# One pass is a few public instruments-info pages; a wedged venue call fails and
+# alerts instead of hanging into the next hour.
+TimeoutStartSec=10min
+Nice=10
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
