@@ -1,0 +1,12 @@
+[Unit]
+Description=Hourly capture of Bybit linear order rules
+
+[Timer]
+# Hourly: a decision is sized only from a complete pass at most two hours old
+# (bybit_order_rules.MAX_RULE_AGE), so one missed run is tolerated and two are not.
+OnCalendar=*-*-* *:07:00
+Persistent=true
+RandomizedDelaySec=120
+
+[Install]
+WantedBy=timers.target
