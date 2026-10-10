@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import os
+import shutil
+import subprocess
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -114,3 +118,58 @@ def test_a_cursor_that_never_ends_fails_the_pass() -> None:
     pages = [_page([_item(f"S{i}")], f"c{i}") for i in range(rules.MAX_PAGES + 1)]
     with pytest.raises(rules.CaptureError, match="did not end"):
         asyncio.run(rules.fetch_linear(_Pages(pages)))
+
+
+@pytest.mark.parametrize("maximum", [None, "n/a", "0", "NaN"])
+def test_an_unknown_market_maximum_is_refused(maximum: str | None) -> None:
+    item = _item()
+    if maximum is None:
+        del item["lotSizeFilter"]["maxMktOrderQty"]
+    else:
+        item["lotSizeFilter"]["maxMktOrderQty"] = maximum
+    sized = rules.size_order(rules.parse_rule(item), price=Decimal("1"))
+    assert (sized.feasible, sized.reason) == (False, "rules_incomplete")
+
+
+ROOT = Path(__file__).resolve().parents[3]
+
+
+def _health(tmp_path: Path, *, timer: str, result: str) -> subprocess.CompletedProcess[str]:
+    """`make prod-bybit-order-rules-health` with systemd stubbed; a run that gets past the
+    systemd checks would reach docker, which the stub PATH makes fail loudly."""
+    (tmp_path / "systemctl").write_text(
+        f'#!/bin/sh\ncase "$*" in *is-active*) echo {timer};; *Result*) echo {result};; esac\n'
+    )
+    (tmp_path / "docker").write_text("#!/bin/sh\necho DOCKER-REACHED; exit 7\n")
+    (tmp_path / "journalctl").write_text("#!/bin/sh\nexit 0\n")
+    for stub in tmp_path.iterdir():
+        stub.chmod(0o755)
+    env = {**os.environ, "PATH": f"{tmp_path}:{os.environ['PATH']}"}
+    command = [shutil.which("make") or "make", "-s", "prod-bybit-order-rules-health"]
+    return subprocess.run(  # noqa: S603 -- the repository's own Makefile target
+        command,
+        cwd=ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_health_fails_when_the_timer_is_not_active(tmp_path: Path) -> None:
+    done = _health(tmp_path, timer="inactive", result="success")
+    assert done.returncode != 0
+    assert "timer is not active" in done.stdout + done.stderr
+
+
+def test_health_fails_when_the_last_run_failed(tmp_path: Path) -> None:
+    done = _health(tmp_path, timer="active", result="exit-code")
+    assert done.returncode != 0
+    assert "ended 'exit-code'" in done.stdout + done.stderr
+    assert "DOCKER-REACHED" not in done.stdout
+
+
+def test_health_then_checks_capture_freshness(tmp_path: Path) -> None:
+    done = _health(tmp_path, timer="active", result="success")
+    assert "DOCKER-REACHED" in done.stdout  # the freshness check runs, and its failure fails
+    assert done.returncode != 0

@@ -40,6 +40,7 @@ MAX_PAGES = 20
 # The capture runs hourly; a decision is sized only from a pass at most this old.
 MAX_RULE_AGE = timedelta(hours=2)
 ORDER_NOTIONAL_USD = Decimal(50)
+REQUEST_TIMEOUT_SECONDS = 30.0
 TRADING = "Trading"
 
 
@@ -106,7 +107,12 @@ def size_order(
         return OrderSizing(False, "rules_missing")
     if rule.status != TRADING:
         return OrderSizing(False, "not_trading")
-    if rule.qty_step is None or rule.min_order_qty is None or rule.min_notional_usd is None:
+    if (
+        rule.qty_step is None
+        or rule.min_order_qty is None
+        or rule.min_notional_usd is None
+        or rule.max_mkt_order_qty is None
+    ):
         return OrderSizing(False, "rules_incomplete")
     if not price.is_finite() or price <= 0:
         return OrderSizing(False, "price_invalid")
@@ -114,7 +120,7 @@ def size_order(
     qty = steps * rule.qty_step
     if qty < rule.min_order_qty:
         return OrderSizing(False, "below_min_qty", qty, qty * price)
-    if rule.max_mkt_order_qty is not None and qty > rule.max_mkt_order_qty:
+    if qty > rule.max_mkt_order_qty:
         return OrderSizing(False, "above_max_market_qty", qty, qty * price)
     if qty * price < rule.min_notional_usd:
         return OrderSizing(False, "below_min_notional", qty, qty * price)
@@ -130,7 +136,9 @@ async def fetch_linear(client: Any) -> tuple[list[dict[str, Any]], int]:
         params: dict[str, Any] = {"category": CATEGORY, "limit": PAGE_LIMIT}
         if cursor:
             params["cursor"] = cursor
-        page = await client.public_get_v5_market_instruments_info(params)
+        page = await asyncio.wait_for(
+            client.public_get_v5_market_instruments_info(params), timeout=REQUEST_TIMEOUT_SECONDS
+        )
         if not isinstance(page, dict) or str(page.get("retCode")) != "0":
             message = page.get("retMsg") if isinstance(page, dict) else None
             raise CaptureError(f"instruments-info error: {message!r}")
@@ -159,7 +167,8 @@ async def fetch_linear(client: Any) -> tuple[list[dict[str, Any]], int]:
 
 async def capture(db_url: str, client: Any, *, now: datetime | None = None) -> dict[str, Any]:
     """One pass: fetch, store new rule definitions, then record the pass. A failed fetch
-    is recorded as `failed` and maps no symbol."""
+    is recorded as `failed` and maps no symbol, whatever failed: an incomplete answer, the
+    client's own errors (rate limit, network) or a timeout."""
     from sqlalchemy import text
     from sqlalchemy.ext.asyncio import create_async_engine
 
@@ -168,8 +177,8 @@ async def capture(db_url: str, client: Any, *, now: datetime | None = None) -> d
     try:
         rows, requests = await fetch_linear(client)
         error = None
-    except CaptureError as exc:
-        rows, requests, error = [], 0, str(exc)[:1000]
+    except Exception as exc:  # any failure is recorded as a failed pass
+        rows, requests, error = [], 0, f"{type(exc).__name__}: {exc}"[:1000]
     # Stamped when the answer is in hand, so no decision is sized from rules fetched later.
     captured = (now or datetime.now(UTC)).astimezone(UTC)
     members = {str(item["symbol"]): rule_sha256(item) for item in rows}
@@ -270,13 +279,64 @@ async def rule_at(
     return parse_rule(raw)
 
 
+async def check_fresh(db_url: str, *, now: datetime | None = None) -> dict[str, Any]:
+    """Health: the newest complete capture must be no older than `MAX_RULE_AGE`, the limit
+    a decision is sized under. Otherwise new decisions would all be refused."""
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from .outcome_repository import async_database_url
+
+    at = (now or datetime.now(UTC)).astimezone(UTC)
+    engine = create_async_engine(async_database_url(db_url), pool_pre_ping=True, pool_size=1)
+    try:
+        async with engine.connect() as conn:
+            row = (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT
+                            max(captured_at) FILTER (WHERE status = 'complete'),
+                            (array_agg(status ORDER BY captured_at DESC))[1]
+                        FROM app.bybit_order_rule_captures
+                        WHERE source_version = :version AND captured_at <= :at
+                        """
+                    ),
+                    {"version": SOURCE_VERSION, "at": at},
+                )
+            ).one()
+    finally:
+        await engine.dispose()
+    last_complete, last_status = row[0], row[1]
+    problems = []
+    if last_complete is None:
+        problems.append("no complete capture")
+    elif at - last_complete > MAX_RULE_AGE:
+        problems.append(
+            f"newest complete capture {last_complete.isoformat()} is older than {MAX_RULE_AGE}"
+        )
+    return {
+        "healthy": not problems,
+        "problems": problems,
+        "last_complete_at": None if last_complete is None else last_complete.isoformat(),
+        "last_status": last_status,
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.parse_args(argv)
+    parser.add_argument(
+        "--check", action="store_true", help="check the newest complete capture instead"
+    )
+    args = parser.parse_args(argv)
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
         sys.stderr.write("DATABASE_URL is required for the order-rule capture\n")
         return 1
+    if args.check:
+        health = asyncio.run(check_fresh(db_url))
+        sys.stdout.write(json.dumps(health, sort_keys=True) + "\n")
+        return 0 if health["healthy"] else 1
 
     async def run() -> dict[str, Any]:
         from .exchange_registry import EXCHANGE_FACTORIES

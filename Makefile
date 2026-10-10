@@ -2878,11 +2878,15 @@ prod-bybit-order-rules-install:
 	sudo systemctl start schurfer-bybit-order-rules.service
 	@$(MAKE) prod-bybit-order-rules-health
 
+# Fails unless the timer is active, the last run succeeded (a successful oneshot is
+# inactive, so its Result is checked) and the newest complete capture is within the two
+# hours a decision is sized under (bybit_order_rules.MAX_RULE_AGE).
 prod-bybit-order-rules-health:
-	@systemctl --no-pager --full status schurfer-bybit-order-rules.timer
-	@systemctl --no-pager --full status schurfer-bybit-order-rules.service || true
+	@test "$$(systemctl is-active schurfer-bybit-order-rules.timer)" = active || (echo "ERROR: the order-rules timer is not active" && exit 1)
+	@result=$$(systemctl show schurfer-bybit-order-rules.service -p Result --value); test "$$result" = success || (echo "ERROR: the last order-rules run ended '$$result'" && exit 1)
 	@echo "=== last capture summary ==="
 	@journalctl -u schurfer-bybit-order-rules.service --no-pager -n 40 -o cat | grep -E '^\{.*\}$$' | tail -1 || echo "(no capture summary in the journal yet)"
+	@$(_PROD) run --rm --no-deps -T --entrypoint bybit-order-rules-capture analytics --check
 
 verify-docker: verify
 	@echo "=== Docker: analytics build + import check ==="
