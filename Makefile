@@ -8,7 +8,7 @@
 .PHONY: cex-activity-path-coverage-audit-report prod-cex-activity-path-coverage-audit-report
 .PHONY: cex-activity-discovery-report radar-outcome-discovery-report prod-radar-outcome-discovery-report
 .PHONY: prod-disk-growth-install prod-disk-growth-run prod-disk-growth-health
-.PHONY: prod-hyp015-watch-export prod-hyp015-archive prod-hyp015-verify prod-hyp015-snapshot-set prod-hyp015-verify-set prod-hyp015-restore-check
+.PHONY: prod-hyp015-watch-export prod-hyp015-archive prod-hyp015-verify prod-hyp015-snapshot-set prod-hyp015-verify-set prod-hyp015-restore-check prod-hyp015-formal-read prod-hyp015-formal-republish
 .PHONY: prod-history-lsr-export prod-history-lsr-archive prod-history-lsr-verify prod-history-lsr-fetch prod-history-lsr-deletion-dry-run
 .PHONY: liquidation-capture-bybit-start liquidation-capture-bybit-stop liquidation-capture-bybit-health liquidation-capture-binance-start liquidation-capture-binance-stop liquidation-capture-binance-health
 .PHONY: prod-liquidation-capture-bybit-start prod-liquidation-capture-bybit-stop prod-liquidation-capture-bybit-health prod-liquidation-capture-binance-start prod-liquidation-capture-binance-stop prod-liquidation-capture-binance-health
@@ -1944,6 +1944,43 @@ prod-hyp015-restore-check:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	@test -n "$(SET)" || (echo "ERROR: SET=<set id> is required" && exit 1)
 	@bash infra/scripts/hyp015-restore-check.sh $(SET)
+
+# The single registered HYP-015 formal read (docs/runbooks/hyp015-formal-read-v1.md).
+# Nothing is written unless every check passes first: on main, a clean tree, the
+# analytics image holding exactly this checkout's sources (source_digest), and the
+# reader's own preflight saying the read is registered and open now (the date comes
+# from the frozen contract; there is no override). The reader then refuses again before
+# its claim if the cohort is incomplete. ACCEPT_INCOMPLETE=yes reads it as it is, which
+# the claim records; that is an owner decision, never a default.
+HYP015_VERDICT_DIR = /opt/schurfer/runtime/research/hyp015-verdict
+HYP015_PREFIX_END = 2026-11-02T00:00:00+00:00
+prod-hyp015-formal-read:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: not on main; the read names this revision" && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: dirty working tree; the read names this revision" && exit 1)
+	@want=$$(python3 apps/analytics/schurfer_analytics/source_digest.py apps/analytics/schurfer_analytics) \
+		&& have=$$($(_PROD) run --rm --no-deps -T --entrypoint python analytics -m schurfer_analytics.source_digest) \
+		&& test -n "$$want" && test "$$want" = "$$have" \
+		|| (echo "ERROR: the analytics image is not built from $$(git rev-parse --short HEAD); rebuild it (make prod-deploy-svc SERVICE=analytics) and retry" && exit 1)
+	@$(_PROD) run --rm --no-deps -T --entrypoint hold12h-verdict-reader analytics \
+		--preflight --decision-prefix-end $(HYP015_PREFIX_END)
+	@mkdir -p $(HYP015_VERDICT_DIR)
+	@$(_PROD) run --rm --no-deps -T -v $(HYP015_VERDICT_DIR):/verdict \
+		--entrypoint hold12h-verdict-reader analytics \
+		--formal-run --decision-prefix-end $(HYP015_PREFIX_END) --output-dir /verdict \
+		--code-revision "$$(git rev-parse HEAD)" --no-working-tree-dirty \
+		$(if $(filter yes,$(ACCEPT_INCOMPLETE)),--accept-incomplete-coverage,)
+
+# Recovery only (runbook): the read completed its claim but stopped before publishing
+# hold12h_verdict.json or its .sha256. Publishes the attempt file the completed claim
+# names, checked against the claim's sha256; nothing is recomputed, no cohort row is
+# read and the claim is not written.
+prod-hyp015-formal-republish:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@test -d $(HYP015_VERDICT_DIR) || (echo "ERROR: $(HYP015_VERDICT_DIR) does not exist; there is nothing to republish" && exit 1)
+	@$(_PROD) run --rm --no-deps -T -v $(HYP015_VERDICT_DIR):/verdict \
+		--entrypoint hold12h-verdict-reader analytics \
+		--republish --decision-prefix-end $(HYP015_PREFIX_END) --output-dir /verdict
 
 prod-paper-replay-reconciliation:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)

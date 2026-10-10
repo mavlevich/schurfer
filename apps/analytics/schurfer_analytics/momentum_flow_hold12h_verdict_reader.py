@@ -4,15 +4,24 @@ Maps real Postgres rows into the pure reader dataclasses
 (``momentum_flow_hold12h_verdict_report``) and runs the pure pipeline. This module is
 the ONLY place that touches the database; all methodology lives in the pure layer.
 
-DRAFT / NOT FROZEN. Two physically separate paths:
+REGISTERED 2026-09-27 (#442): the cohort bounds and the actual-funding version
+(``hold12h_actual_funding_v2``, captured prospectively into
+``app.hold12h_funding_settlements``) are frozen in the contract. Separate paths:
 
 * READINESS (the default): ``load_readiness`` selects COUNTS ONLY -- decision times,
-  statuses, identity -- and NEVER a single return/fee/PnL column, so the pre-freeze
-  sizing accrual cannot see outcomes. This is what runs before registration.
-* FORMAL (``--formal-run``): ``load_cohort`` reads returns and runs the verdict, but is
-  a fail-closed PREREQUISITE gate -- it refuses unless the contract carries a literal
-  ``cohort_start_iso`` AND a registered actual-funding source exists (none does yet: the
-  prospective per-instrument capture is a separate PR), so it does not run today.
+  statuses, identity -- and NEVER a single return/fee/PnL column.
+* HEALTH (``--health-since``): the outcome-blind operational checkpoint.
+* PREFLIGHT (``--preflight``): no database at all. Checks that the read is registered
+  and open now, and prints the frozen window and the digest of this installation's
+  sources (``source_digest``), so the production command can refuse a stale image before
+  anything is written.
+* REPUBLISH (``--republish``): finishes a read that stopped after its claim was
+  completed but before ``hold12h_verdict.json`` was published, from the attempt file the
+  claim names (``republish_formal_result``).
+* FORMAL (``--formal-run``): the single read. Every refusal (not registered, another
+  prefix, too early, cohort incomplete) happens before the durable claim; the claim is
+  committed before any return is read; the verdict is computed from the snapshot pinned
+  in the claim and published once (see ``publish_formal_result``).
 
 Mapping choices (matched to the real schema, per review):
   * a resolved outcome is ``status = 'complete'``; a filled entry is
@@ -953,7 +962,8 @@ async def open_formal_claim(
         if existing.status == "completed":
             raise SystemExit(
                 "formal-run refused: this cohort's single formal read was already claimed "
-                "and completed"
+                "and completed (if hold12h_verdict.json or its .sha256 is missing, the run "
+                "stopped after completing the claim: finish it with --republish)"
             )
         if not existing.same_sha:
             raise SystemExit("formal-run refused: the open claim pins another contract sha")
@@ -1138,12 +1148,97 @@ async def publish_formal_result(
     return final
 
 
+async def republish_formal_result(
+    db_url: str,
+    contract: Hold12hVerdictContract,
+    output_dir: Path,
+    *,
+    cohort_start: datetime,
+    decision_prefix_end: datetime,
+    schemas: Schemas = _DEFAULT_SCHEMAS,
+) -> bytes:
+    """Finish a read that stopped after its claim was completed but before the result was
+    published under its stable name. It reads only the claim row and the attempt file the
+    claim names, checks that file against the claim's SHA-256 and its own sidecar, and
+    publishes those exact bytes. Nothing is recomputed, no cohort row is read and the
+    claim is not written; an existing published file with other bytes is an incident."""
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from .outcome_repository import async_database_url
+
+    engine = create_async_engine(async_database_url(db_url), pool_pre_ping=True, pool_size=1)
+    try:
+        async with engine.connect() as conn:
+            row = (
+                await conn.execute(
+                    text(
+                        f"""
+                        SELECT status, output_dir, artifact_name, artifact_sha256
+                        FROM {schemas.app}.hold12h_formal_read_claims
+                        WHERE contract_version = :cv AND cohort_start = :start
+                          AND decision_prefix_end = :end
+                        """
+                    ),
+                    {
+                        "cv": contract.contract_version,
+                        "start": cohort_start,
+                        "end": decision_prefix_end,
+                    },
+                )
+            ).first()
+    finally:
+        await engine.dispose()
+    if row is None:
+        raise SystemExit("republish refused: this cohort has no formal-read claim")
+    status, claimed_dir, artifact_name, artifact_sha256 = row
+    if status != "completed":
+        raise SystemExit(
+            "republish refused: the claim is not completed; rerun --formal-run after its lease"
+        )
+    if str(output_dir) != claimed_dir:
+        raise SystemExit(f"republish refused: the claim's output directory is {claimed_dir}")
+    attempt = output_dir / str(artifact_name)
+    sidecar = attempt.with_name(attempt.name + ".sha256")
+    if not attempt.is_file() or not sidecar.is_file():
+        raise SystemExit(f"republish refused: {attempt.name} or its .sha256 is missing")
+    body = attempt.read_bytes()
+    sha = hashlib.sha256(body).hexdigest()
+    if sha != artifact_sha256 or sidecar.read_text() != f"sha256:{sha}\n":
+        raise SystemExit(
+            f"republish refused: {attempt.name} does not match the claim's sha256; "
+            "this is an integrity incident"
+        )
+    try:
+        publish_once_or_same(output_dir / "hold12h_verdict.json", body)
+        publish_once_or_same(output_dir / "hold12h_verdict.sha256", f"sha256:{sha}\n".encode())
+    except FileExistsError as exc:
+        raise SystemExit(
+            f"republish refused: {exc.filename} exists with other bytes than the claimed "
+            "artifact; this is an integrity incident"
+        ) from exc
+    return body
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="HYP-015 hold12h verdict reader (DRAFT)")
+    parser = argparse.ArgumentParser(description="HYP-015 hold12h verdict reader")
     parser.add_argument(
         "--formal-run",
         action="store_true",
-        help="run the verdict; a fail-closed prerequisite gate (see below)",
+        help="the single registered read; refuses before the claim unless it is open now",
+    )
+    parser.add_argument(
+        "--preflight",
+        action="store_true",
+        help="no database: refuse unless the read is open now, print the window and digest",
+    )
+    parser.add_argument(
+        "--republish",
+        action="store_true",
+        help=(
+            "finish a read stopped after its claim completed: publish the attempt file the "
+            "claim names, checked by sha256; nothing is recomputed"
+        ),
     )
     parser.add_argument(
         "--decision-prefix-end",
@@ -1174,12 +1269,66 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _now() -> datetime:
+    """The clock the read window is checked against. A module function only so the
+    rehearsal test can stand at the registered read time; no flag or setting moves it."""
+    return datetime.now(UTC)
+
+
+def _preflight(contract: Hold12hVerdictContract, decision_prefix_end: datetime) -> str:
+    from .source_digest import source_digest
+
+    cohort_start, prefix_end = formal_read_window(
+        contract,
+        registered=verdict_module.REGISTERED,
+        requested_prefix_end=decision_prefix_end,
+        now=_now(),
+    )
+    return json.dumps(
+        {
+            "mode": "preflight",
+            "contract_sha256": contract.sha256_hex(),
+            "cohort_start": cohort_start.isoformat(),
+            "decision_prefix_end": prefix_end.isoformat(),
+            "read_opens_at": (
+                prefix_end + timedelta(hours=contract.min_read_delay_hours)
+            ).isoformat(),
+            "source_digest": source_digest(Path(__file__).resolve().parent),
+        },
+        indent=2,
+        sort_keys=True,
+    )
+
+
 async def _run(args: argparse.Namespace) -> str:
     contract = HOLD12H_VERDICT_CONTRACT
+    decision_prefix_end = datetime.fromisoformat(args.decision_prefix_end).astimezone(UTC)
+    if args.preflight:
+        if args.formal_run or args.republish or args.health_since is not None:
+            raise SystemExit("--preflight runs alone")
+        return _preflight(contract, decision_prefix_end)
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
         raise ValueError("DATABASE_URL is required for the hold12h verdict reader")
-    decision_prefix_end = datetime.fromisoformat(args.decision_prefix_end).astimezone(UTC)
+    if args.republish:
+        if args.formal_run or args.health_since is not None:
+            raise SystemExit("--republish runs alone")
+        if args.output_dir is None:
+            raise SystemExit("republish refused: --output-dir is required")
+        cohort_start, prefix_end = formal_read_window(
+            contract,
+            registered=verdict_module.REGISTERED,
+            requested_prefix_end=decision_prefix_end,
+            now=_now(),
+        )
+        body = await republish_formal_result(
+            db_url,
+            contract,
+            args.output_dir,
+            cohort_start=cohort_start,
+            decision_prefix_end=prefix_end,
+        )
+        return body.decode().rstrip("\n")
 
     if args.health_since is not None:
         if args.formal_run:
@@ -1224,7 +1373,7 @@ async def _run(args: argparse.Namespace) -> str:
         contract,
         registered=verdict_module.REGISTERED,
         requested_prefix_end=decision_prefix_end,
-        now=datetime.now(UTC),
+        now=_now(),
     )
     output_dir: Path = args.output_dir
     # Outcome-blind, before the claim: the pinned denominator and the coverage it is read on.
@@ -1306,8 +1455,9 @@ async def run_formal_for_test(
     code_revision: str = "test",
     working_tree_dirty: bool = False,
 ) -> tuple[dict[str, Any], CohortEvaluation]:
-    """Test-only helper: run the FULL formal pipeline with an injected funding source
-    (the CLI itself fail-closes because no funding source is registered)."""
+    """Test-only helper: the formal pipeline with an injected funding source and no
+    claim, for unit tests of the mapping. The CLI path (``--formal-run``) is rehearsed
+    end to end in ``test_hyp015_formal_read_rehearsal_integration``."""
     watches, probes = await load_cohort(
         db_url, cohort_start=cohort_start, decision_prefix_end=decision_prefix_end, schemas=schemas
     )
