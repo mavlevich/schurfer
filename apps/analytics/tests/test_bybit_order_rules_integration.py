@@ -12,6 +12,7 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
+import ccxt
 import psycopg
 import pytest
 from schurfer_analytics import bybit_order_rules as rules
@@ -54,7 +55,12 @@ def _item(symbol: str, step: str = "0.1") -> dict[str, Any]:
     return {
         "symbol": symbol,
         "status": "Trading",
-        "lotSizeFilter": {"qtyStep": step, "minOrderQty": step, "minNotionalValue": "5"},
+        "lotSizeFilter": {
+            "qtyStep": step,
+            "minOrderQty": step,
+            "minNotionalValue": "5",
+            "maxMktOrderQty": "100000",
+        },
         "priceFilter": {"tickSize": "0.001"},
     }
 
@@ -124,3 +130,57 @@ def test_no_fresh_complete_capture_means_no_rule(db: Any) -> None:
     assert db.execute(
         "SELECT members FROM app.bybit_order_rule_captures WHERE status = 'failed'"
     ).fetchone() == ({},)
+
+
+class _Broken:
+    def __init__(self, error: BaseException | None = None, *, delay: float = 0.0) -> None:
+        self.error, self.delay = error, delay
+
+    async def public_get_v5_market_instruments_info(self, _params: dict[str, Any]) -> Any:
+        if self.delay:
+            await asyncio.sleep(self.delay)
+        if self.error is not None:
+            raise self.error
+        return {"retCode": 0, "result": {"list": [], "nextPageCursor": ""}}
+
+
+@pytest.mark.parametrize(
+    ("venue", "kind"),
+    [
+        (_Broken(ccxt.RateLimitExceeded("bybit 10006 Too many visits")), "RateLimitExceeded"),
+        (_Broken(ccxt.NetworkError("connection reset")), "NetworkError"),
+        (_Broken(OSError("unreachable")), "OSError"),
+        (_Broken(delay=1.0), "TimeoutError"),
+    ],
+)
+def test_a_client_failure_is_recorded_as_a_failed_pass(
+    db: Any, monkeypatch: pytest.MonkeyPatch, venue: _Broken, kind: str
+) -> None:
+    monkeypatch.setattr(rules, "REQUEST_TIMEOUT_SECONDS", 0.05)
+    summary = asyncio.run(rules.capture(DSN, venue, now=T0))
+    assert summary["status"] == "failed"
+    assert summary["error"].startswith(kind)
+    assert db.execute(
+        "SELECT status, members, error LIKE %s FROM app.bybit_order_rule_captures",
+        (f"{kind}%",),
+    ).fetchall() == [("failed", {}, True)]
+
+
+def _fresh(at: datetime) -> dict[str, Any]:
+    return asyncio.run(rules.check_fresh(DSN, now=at))
+
+
+def test_health_needs_a_complete_capture_within_two_hours(db: Any) -> None:
+    assert _fresh(T0) == {
+        "healthy": False,
+        "problems": ["no complete capture"],
+        "last_complete_at": None,
+        "last_status": None,
+    }
+    _capture([_item("RLXA")], T0)
+    assert _fresh(T0 + timedelta(hours=1))["healthy"] is True
+    _capture(None, T0 + timedelta(hours=1))  # a failed pass after a fresh one
+    later = _fresh(T0 + timedelta(hours=1, minutes=30))
+    assert (later["healthy"], later["last_status"]) == (True, "failed")
+    stale = _fresh(T0 + rules.MAX_RULE_AGE + timedelta(seconds=1))
+    assert stale["healthy"] is False and "older than" in stale["problems"][0]
