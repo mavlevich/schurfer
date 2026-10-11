@@ -89,10 +89,13 @@ def snapshot_bytes(
     funding: StoredFundingSource,
     *,
     window: tuple[datetime, datetime] | None,
+    executable: dict[str, dict[str, Any]] | None = None,
 ) -> bytes:
     """Canonical bytes of every verdict input. Funding keeps only what overlaps
-    ``window``; every interval the verdict evaluates lies inside it."""
-    payload = {
+    ``window``; every interval the verdict evaluates lies inside it. ``executable`` (only
+    for an executable read) holds, per filled entry, the entry price and the venue's raw
+    order rule valid at entry; without it the bytes are exactly the paper snapshot's."""
+    payload: dict[str, Any] = {
         "version": SNAPSHOT_VERSION,
         "watches": [
             [w.watch_id, w.canonical_asset, _iso(w.decision_at)]
@@ -101,7 +104,16 @@ def snapshot_bytes(
         "probes": [_probe(probes[k]) for k in sorted(probes)],
         "funding": funding.to_payload(window),
     }
+    if executable is not None:
+        payload["executable"] = {k: executable[k] for k in sorted(executable)}
     return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
+
+
+def executable_from_snapshot(body: bytes) -> dict[str, dict[str, Any]] | None:
+    """The executable inputs of a snapshot, or None for a paper snapshot."""
+    payload = json.loads(body)
+    executable = payload.get("executable")
+    return None if executable is None else dict(executable)
 
 
 def snapshot_digest(body: bytes) -> str:

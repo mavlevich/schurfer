@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 from dataclasses import dataclass
@@ -51,6 +52,7 @@ from typing import TYPE_CHECKING, Any
 
 from . import momentum_flow_hold12h_verdict as verdict_module
 from .momentum_flow_hold12h_snapshot import (
+    executable_from_snapshot,
     holdings_window,
     inputs_from_snapshot,
     publish_once,
@@ -109,6 +111,25 @@ class Schemas:
 
 
 _DEFAULT_SCHEMAS = Schemas()
+
+
+@dataclass(frozen=True)
+class FormalReadSpec:
+    """One registered formal read: its contract, whether it is registered, whether it is
+    evaluated on the executable view (venue order rules in the snapshot), and the
+    contract version whose completed read must be `candidate` before this one may run."""
+
+    contract: Hold12hVerdictContract
+    registered: bool
+    executable: bool = False
+    candidate_of: str | None = None
+
+
+def formal_read_specs() -> dict[str, FormalReadSpec]:
+    """Every formal read this build knows, by contract version. Read at call time, so the
+    registration flag is the module's current value."""
+    first = FormalReadSpec(HOLD12H_VERDICT_CONTRACT, registered=verdict_module.REGISTERED)
+    return {first.contract.contract_version: first}
 
 
 def _utc(value: datetime | None) -> datetime | None:
@@ -1054,6 +1075,77 @@ async def complete_formal_claim(
         raise SystemExit("formal-run refused: this run no longer owns the claim's lease")
 
 
+def _entry_price(watch_id: str, price: Any) -> float:
+    """A filled paper entry's price. It must be finite and positive: the schema's
+    `entry_vwap > 0` admits NaN and Infinity, and a broken price is an integrity failure
+    that stops the formal read, never a venue refusal that would drop the entry."""
+    value = None if price is None else float(price)
+    if value is None or not math.isfinite(value) or value <= 0:
+        raise SystemExit(
+            f"formal-run refused: integrity failure, filled entry {watch_id} has entry "
+            f"price {price!r}; the claim stays open and nothing is published"
+        )
+    return value
+
+
+async def load_executable_inputs(
+    db_url: str, probes: dict[str, ProbeRecord], *, schemas: Schemas = _DEFAULT_SCHEMAS
+) -> dict[str, dict[str, Any]]:
+    """Per filled entry: its paper entry price and the venue's raw order rule valid at its
+    entry (`bybit_order_rules.raw_rule_at`, None when unproven). Outcome-blind. A missing
+    or broken entry price stops the read before any snapshot is written."""
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from .bybit_order_rules import raw_rule_at
+    from .outcome_repository import async_database_url
+
+    filled = {wid: p for wid, p in probes.items() if p.entry_ok}
+    out: dict[str, dict[str, Any]] = {}
+    engine = create_async_engine(async_database_url(db_url), pool_pre_ping=True, pool_size=1)
+    try:
+        async with engine.connect() as conn:
+            prices = {
+                str(r[0]): r[1]
+                for r in await conn.execute(
+                    text(
+                        "SELECT p.watch_id, p.entry_vwap"
+                        f" FROM {schemas.app}.momentum_flow_paper_probes p"
+                        " WHERE p.paper_version = :pv AND p.watch_id::text = ANY(:ids)"
+                    ),
+                    {"pv": HOLD12H_PAPER_CONTRACT.paper_version, "ids": sorted(filled)},
+                )
+            }
+            for wid, probe in sorted(filled.items()):
+                rule = await raw_rule_at(conn, probe.route.market_id, probe.entry_at)
+                out[wid] = {"entry_vwap": _entry_price(wid, prices.get(wid)), "rule": rule}
+    finally:
+        await engine.dispose()
+    return out
+
+
+def sizings_from_snapshot(
+    executable: dict[str, dict[str, Any]], contract: Hold12hVerdictContract
+) -> dict[str, Any]:
+    """The order each filled entry would have been, from the snapshot alone. A broken
+    entry price in the snapshot stops the read as in `load_executable_inputs`."""
+    from decimal import Decimal
+
+    from .bybit_order_rules import parse_rule, size_order
+
+    notional = Decimal(str(contract.position_usd))
+    out: dict[str, Any] = {}
+    for wid, row in executable.items():
+        price = _entry_price(wid, row.get("entry_vwap"))
+        rule = row.get("rule")
+        out[wid] = size_order(
+            None if rule is None else parse_rule(rule),
+            price=Decimal(str(price)),
+            notional_usd=notional,
+        )
+    return out
+
+
 async def load_snapshot_from_db(
     db_url: str,
     contract: Hold12hVerdictContract,
@@ -1061,6 +1153,7 @@ async def load_snapshot_from_db(
     *,
     cohort_start: datetime,
     decision_prefix_end: datetime,
+    executable: bool = False,
 ) -> bytes:
     """Load the cohort and its funding and serialize them into the input snapshot. The
     funding part keeps only settlements and runs overlapping the cohort's holdings, so
@@ -1081,7 +1174,10 @@ async def load_snapshot_from_db(
     funding = await load_stored_funding(
         db_url, routes, source_version=contract.actual_funding_version
     )
-    return snapshot_bytes(watches, probes, funding, window=holdings_window(probes))
+    executable_inputs = await load_executable_inputs(db_url, probes) if executable else None
+    return snapshot_bytes(
+        watches, probes, funding, window=holdings_window(probes), executable=executable_inputs
+    )
 
 
 async def pinned_inputs(
@@ -1093,6 +1189,7 @@ async def pinned_inputs(
     cohort_start: datetime,
     decision_prefix_end: datetime,
     schemas: Schemas = _DEFAULT_SCHEMAS,
+    executable: bool = False,
 ) -> bytes:
     """The snapshot the verdict is computed from, pinned in the claim BEFORE any verdict.
     A resumed attempt reads the pinned snapshot file; only if that file is gone does it
@@ -1110,6 +1207,7 @@ async def pinned_inputs(
         claim,
         cohort_start=cohort_start,
         decision_prefix_end=decision_prefix_end,
+        executable=executable,
     )
     digest = snapshot_digest(body)
     if claim.inputs_digest is not None and digest != claim.inputs_digest:
@@ -1220,12 +1318,86 @@ async def republish_formal_result(
     return body
 
 
+async def verify_candidate_chain(
+    db_url: str, required: Hold12hVerdictContract, read_dir: Path
+) -> None:
+    """A conditional read may run only after `required`'s single read completed with
+    `candidate`. Checked as a chain, never from a file alone: the completed claim row of
+    `required`'s frozen cohort, the artifact file it names in `read_dir` matching the
+    claim's sha256 and its sidecar, and, inside that artifact, `required`'s contract sha,
+    the frozen bounds and `verdict = candidate`. Anything else refuses."""
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from .outcome_repository import async_database_url
+
+    start, end = formal_cohort_start(required), formal_decision_prefix_end(required)
+    if start is None or end is None:
+        raise SystemExit("conditional read refused: the required read has no frozen bounds")
+    engine = create_async_engine(async_database_url(db_url), pool_pre_ping=True, pool_size=1)
+    try:
+        async with engine.connect() as conn:
+            row = (
+                await conn.execute(
+                    text(
+                        """
+                        SELECT status, contract_sha256, artifact_name, artifact_sha256
+                        FROM app.hold12h_formal_read_claims
+                        WHERE contract_version = :cv AND cohort_start = :start
+                          AND decision_prefix_end = :end
+                        """
+                    ),
+                    {"cv": required.contract_version, "start": start, "end": end},
+                )
+            ).first()
+    finally:
+        await engine.dispose()
+    name = required.contract_version
+    if row is None or row[0] != "completed":
+        raise SystemExit(f"conditional read refused: the {name} read is not completed")
+    if row[1] != required.sha256_hex():
+        raise SystemExit(f"conditional read refused: the {name} claim pins another contract")
+    artifact = read_dir / str(row[2])
+    sidecar = artifact.with_name(artifact.name + ".sha256")
+    if not artifact.is_file() or not sidecar.is_file():
+        raise SystemExit(f"conditional read refused: {artifact.name} or its .sha256 is missing")
+    body = artifact.read_bytes()
+    sha = hashlib.sha256(body).hexdigest()
+    if sha != row[3] or sidecar.read_text() != f"sha256:{sha}\n":
+        raise SystemExit(
+            f"conditional read refused: {artifact.name} does not match the {name} claim"
+        )
+    result = json.loads(body)
+    if (
+        result.get("contract_sha256") != required.sha256_hex()
+        or result.get("cohort_start") != start.isoformat()
+        or result.get("decision_prefix_end") != end.isoformat()
+    ):
+        raise SystemExit(f"conditional read refused: {artifact.name} is not the {name} result")
+    if result.get("verdict") != "candidate":
+        raise SystemExit(
+            f"conditional read refused: the {name} verdict is {result.get('verdict')!r}, "
+            "not 'candidate'; this cohort stays closed unread"
+        )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="HYP-015 hold12h verdict reader")
     parser.add_argument(
         "--formal-run",
         action="store_true",
         help="the single registered read; refuses before the claim unless it is open now",
+    )
+    parser.add_argument(
+        "--contract",
+        default=HOLD12H_VERDICT_CONTRACT.contract_version,
+        help="the registered read to run, by contract version (default: the first cohort)",
+    )
+    parser.add_argument(
+        "--candidate-read-dir",
+        type=Path,
+        default=None,
+        help="conditional reads only: the directory of the required read's artifact",
     )
     parser.add_argument(
         "--preflight",
@@ -1275,12 +1447,14 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-def _preflight(contract: Hold12hVerdictContract, decision_prefix_end: datetime) -> str:
+def _preflight(
+    contract: Hold12hVerdictContract, decision_prefix_end: datetime, *, registered: bool
+) -> str:
     from .source_digest import source_digest
 
     cohort_start, prefix_end = formal_read_window(
         contract,
-        registered=verdict_module.REGISTERED,
+        registered=registered,
         requested_prefix_end=decision_prefix_end,
         now=_now(),
     )
@@ -1301,12 +1475,16 @@ def _preflight(contract: Hold12hVerdictContract, decision_prefix_end: datetime) 
 
 
 async def _run(args: argparse.Namespace) -> str:
-    contract = HOLD12H_VERDICT_CONTRACT
+    specs = formal_read_specs()
+    spec = specs.get(args.contract)
+    if spec is None:
+        raise SystemExit(f"unknown contract {args.contract!r}; known: {sorted(specs)}")
+    contract = spec.contract
     decision_prefix_end = datetime.fromisoformat(args.decision_prefix_end).astimezone(UTC)
     if args.preflight:
         if args.formal_run or args.republish or args.health_since is not None:
             raise SystemExit("--preflight runs alone")
-        return _preflight(contract, decision_prefix_end)
+        return _preflight(contract, decision_prefix_end, registered=spec.registered)
     db_url = os.getenv("DATABASE_URL")
     if not db_url:
         raise ValueError("DATABASE_URL is required for the hold12h verdict reader")
@@ -1317,7 +1495,7 @@ async def _run(args: argparse.Namespace) -> str:
             raise SystemExit("republish refused: --output-dir is required")
         cohort_start, prefix_end = formal_read_window(
             contract,
-            registered=verdict_module.REGISTERED,
+            registered=spec.registered,
             requested_prefix_end=decision_prefix_end,
             now=_now(),
         )
@@ -1371,11 +1549,17 @@ async def _run(args: argparse.Namespace) -> str:
         raise SystemExit("formal-run refused: --output-dir is required")
     cohort_start, prefix_end = formal_read_window(
         contract,
-        registered=verdict_module.REGISTERED,
+        registered=spec.registered,
         requested_prefix_end=decision_prefix_end,
         now=_now(),
     )
     output_dir: Path = args.output_dir
+    if spec.candidate_of is not None:
+        if args.candidate_read_dir is None:
+            raise SystemExit("formal-run refused: --candidate-read-dir is required")
+        await verify_candidate_chain(
+            db_url, specs[spec.candidate_of].contract, args.candidate_read_dir
+        )
     # Outcome-blind, before the claim: the pinned denominator and the coverage it is read on.
     watch_ids = await load_cohort_watch_ids(
         db_url, cohort_start=cohort_start, decision_prefix_end=prefix_end
@@ -1413,11 +1597,32 @@ async def _run(args: argparse.Namespace) -> str:
         output_dir,
         cohort_start=cohort_start,
         decision_prefix_end=prefix_end,
+        executable=spec.executable,
     )
     # From here on the verdict sees only the pinned snapshot, never live rows.
     watches, probes, funding = inputs_from_snapshot(body)
     watches = filter_to_cohort(watches, cohort_start=cohort_start, decision_prefix_end=prefix_end)
-    evaluation = evaluate_cohort(contract, watches, probes, funding)
+    data_versions = {"paper_contract": contract.paper_contract_sha256}
+    executable_summary: dict[str, Any] | None = None
+    if spec.executable:
+        from .momentum_flow_hold12h_executable import evaluate_executable_cohort
+
+        executable_inputs = executable_from_snapshot(body)
+        if executable_inputs is None:
+            raise SystemExit("formal-run refused: the pinned snapshot has no executable inputs")
+        evaluation, view = evaluate_executable_cohort(
+            contract,
+            watches,
+            probes,
+            funding,
+            sizings_from_snapshot(executable_inputs, contract),
+        )
+        data_versions["executable_inputs"] = hashlib.sha256(
+            json.dumps(executable_inputs, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        executable_summary = {"accepted": view.accepted, "refused": view.refused}
+    else:
+        evaluation = evaluate_cohort(contract, watches, probes, funding)
     fingerprint = verdict_fingerprint(
         contract_sha256=contract.sha256_hex(),
         cohort_start=cohort_start,
@@ -1425,7 +1630,7 @@ async def _run(args: argparse.Namespace) -> str:
         code_revision=args.code_revision,
         working_tree_dirty=args.working_tree_dirty,
         funding_source_id=f"StoredFundingSource:{contract.actual_funding_version}",
-        data_versions={"paper_contract": contract.paper_contract_sha256},
+        data_versions=data_versions,
         rows_digest=cohort_rows_digest(watches, probes, funding),
         funnel=evaluation.funnel,
         inputs=evaluation.inputs,
@@ -1439,6 +1644,8 @@ async def _run(args: argparse.Namespace) -> str:
         code_revision=args.code_revision,
         working_tree_dirty=args.working_tree_dirty,
     )
+    if executable_summary is not None:
+        artifact["executable"] = executable_summary
     text = json.dumps(artifact, indent=2, sort_keys=True, allow_nan=False) + "\n"
     await publish_formal_result(db_url, claim, output_dir, text.encode(), fingerprint)
     return text

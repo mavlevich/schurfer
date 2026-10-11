@@ -244,11 +244,12 @@ async def capture(db_url: str, client: Any, *, now: datetime | None = None) -> d
     }
 
 
-async def rule_at(
+async def raw_rule_at(
     conn: Any, symbol: str, at: datetime, *, max_age: timedelta = MAX_RULE_AGE
-) -> OrderRule | None:
-    """The rules of `symbol` at `at`: from the newest complete capture at or before `at`,
-    if it is no older than `max_age` and lists the symbol. Otherwise None."""
+) -> dict[str, Any] | None:
+    """The venue's raw instruments-info row for `symbol` at `at`: from the newest complete
+    capture at or before `at`, if it is no older than `max_age` and lists the symbol.
+    Otherwise None."""
     from sqlalchemy import text
 
     row = (
@@ -275,8 +276,16 @@ async def rule_at(
     ).first()
     if row is None:
         return None
-    raw = row[0] if isinstance(row[0], dict) else json.loads(row[0])
-    return parse_rule(raw)
+    raw: dict[str, Any] = row[0] if isinstance(row[0], dict) else json.loads(row[0])
+    return raw
+
+
+async def rule_at(
+    conn: Any, symbol: str, at: datetime, *, max_age: timedelta = MAX_RULE_AGE
+) -> OrderRule | None:
+    """The parsed rules of `symbol` at `at` (see `raw_rule_at`), or None."""
+    raw = await raw_rule_at(conn, symbol, at, max_age=max_age)
+    return None if raw is None else parse_rule(raw)
 
 
 async def check_fresh(db_url: str, *, now: datetime | None = None) -> dict[str, Any]:

@@ -23,6 +23,7 @@ rules of the live cohort.
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import hashlib
 import json
 import os
@@ -34,6 +35,7 @@ from typing import Any
 
 import psycopg
 import pytest
+from schurfer_analytics import bybit_order_rules as order_rules
 from schurfer_analytics import exchange_registry
 from schurfer_analytics import momentum_flow_hold12h_verdict_reader as reader
 from schurfer_analytics.momentum_flow_hold12h_funding_resolver import run_capture
@@ -42,7 +44,10 @@ from schurfer_analytics.momentum_flow_hold12h_snapshot import (
     publish_once_or_same,
     snapshot_digest,
 )
-from schurfer_analytics.momentum_flow_hold12h_verdict import HOLD12H_VERDICT_CONTRACT
+from schurfer_analytics.momentum_flow_hold12h_verdict import (
+    HOLD12H_VERDICT_CONTRACT,
+    decide_verdict,
+)
 from schurfer_analytics.momentum_flow_hold12h_verdict_report import (
     cohort_rows_digest,
     evaluate_cohort,
@@ -131,10 +136,15 @@ def _connect() -> psycopg.Connection[Any]:
 
 def _clean(conn: psycopg.Connection[Any]) -> None:
     conn.execute(
-        "DELETE FROM app.hold12h_formal_read_claims WHERE contract_version = %s "
-        "AND cohort_start = %s AND decision_prefix_end = %s",
-        (CONTRACT.contract_version, START, PREFIX_END),
+        "DELETE FROM app.hold12h_formal_read_claims WHERE cohort_start = %s "
+        "AND decision_prefix_end = %s",
+        (START, PREFIX_END),
     )
+    conn.execute(
+        "DELETE FROM app.bybit_order_rule_captures WHERE source_version = %s",
+        (order_rules.SOURCE_VERSION,),
+    )
+    conn.execute("DELETE FROM app.bybit_order_rule_defs WHERE symbol LIKE 'RHX%'")
     conn.execute("DELETE FROM app.momentum_flow_paper_probes WHERE symbol LIKE 'RHX%'")
     conn.execute(
         "DELETE FROM timeseries.momentum_flow_watch_evaluations_1m WHERE symbol LIKE 'RHX%'"
@@ -458,6 +468,7 @@ def _assert_published(out: Path, claim: dict[str, Any], watch_ids: list[str]) ->
     snapshot = (out / f"inputs.{claim['inputs_digest']}.json").read_bytes()
     assert snapshot_digest(snapshot) == claim["inputs_digest"]
     payload = json.loads(snapshot)
+    assert "executable" not in payload  # the paper read's snapshot is unchanged
     assert sorted(w[0] for w in payload["watches"]) == sorted(watch_ids)
     settlements = 0
     for route in payload["funding"]["routes"]:
@@ -711,3 +722,212 @@ def test_republishing_refuses_an_attempt_file_that_does_not_match_the_claim(
         _republish(scoped, capsys, out)
     assert not (out / "hold12h_verdict.json").exists()
     assert _claims(db) == [claim]
+
+
+# --- the executable and the conditional reads ------------------------------------------
+
+CONFIRM = "hold12h_confirm_rehearsal"
+CONFIRM_CONTRACT = dataclasses.replace(CONTRACT, contract_version=CONFIRM)
+_REGISTERED_SPECS = reader.formal_read_specs
+REFUSED_ASSET, UNLISTED_ASSET = 0, 1
+
+
+def _specs(*, executable: bool, candidate_of: str | None) -> dict[str, reader.FormalReadSpec]:
+    """A test-only second registered read over the same synthetic window: the first
+    read's spec unchanged, plus one with its own contract version."""
+    confirm = reader.FormalReadSpec(
+        CONFIRM_CONTRACT,
+        registered=True,
+        executable=executable,
+        candidate_of=candidate_of,
+    )
+    return {CONTRACT.contract_version: _REGISTERED_SPECS()[CONTRACT.contract_version],
+            CONFIRM: confirm}  # fmt: skip
+
+
+def _rule_item(asset: int) -> dict[str, Any]:
+    minimum = "100" if asset == REFUSED_ASSET else "5"
+    return {
+        "symbol": _market_id(asset),
+        "status": "Trading",
+        "lotSizeFilter": {"qtyStep": "0.001", "minOrderQty": "0.001", "maxMktOrderQty": "1000000",
+                          "minNotionalValue": minimum},
+    }  # fmt: skip
+
+
+def _seed_order_rules(conn: psycopg.Connection[Any]) -> None:
+    """Hourly complete captures over the whole cohort; one asset's minimum order value is
+    above USD 50, and one asset is never listed."""
+    items = [_rule_item(a) for a in range(ASSETS)]
+    with conn.cursor() as cur:
+        cur.executemany(
+            "INSERT INTO app.bybit_order_rule_defs (rule_sha256, symbol, status, qty_step, "
+            "min_order_qty, max_mkt_order_qty, min_notional_usd, raw) "
+            "VALUES (%s, %s, 'Trading', 0.001, 0.001, 1000000, %s, %s)",
+            [
+                (order_rules.rule_sha256(i), i["symbol"], i["lotSizeFilter"]["minNotionalValue"],
+                 json.dumps(i))
+                for i in items
+            ],
+        )  # fmt: skip
+        members = json.dumps(
+            {i["symbol"]: order_rules.rule_sha256(i) for a, i in enumerate(items)
+             if a != UNLISTED_ASSET}
+        )  # fmt: skip
+        hours = int((PREFIX_END - START).total_seconds() // 3600) + 2
+        cur.executemany(
+            "INSERT INTO app.bybit_order_rule_captures (captured_at, status, request_count, "
+            "instrument_count, members, source_version) VALUES (%s, 'complete', 1, %s, %s, %s)",
+            [
+                (START + timedelta(hours=h - 1), ASSETS - 1, members, order_rules.SOURCE_VERSION)
+                for h in range(hours)
+            ],
+        )
+
+
+def _claim(conn: psycopg.Connection[Any], version: str) -> dict[str, Any]:
+    with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
+        cur.execute(
+            "SELECT * FROM app.hold12h_formal_read_claims WHERE contract_version = %s",
+            (version,),
+        )
+        (row,) = cur.fetchall()
+        return dict(row)
+
+
+def test_an_executable_read_sizes_every_entry_from_the_pinned_rules(
+    db: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from schurfer_analytics.momentum_flow_hold12h_executable import evaluate_executable_cohort
+
+    _seed(db)
+    _capture(monkeypatch)
+    _seed_order_rules(db)
+    monkeypatch.setattr(
+        reader, "formal_read_specs", lambda: _specs(executable=True, candidate_of=None)
+    )
+    out = tmp_path / "confirm"
+    printed = _read(monkeypatch, capsys, out, "--contract", CONFIRM)
+    claim = _claim(db, CONFIRM)
+    assert claim["status"] == "completed"
+    assert (
+        claim["contract_sha256"]
+        == dataclasses.replace(CONTRACT, contract_version=CONFIRM).sha256_hex()
+    )
+    snapshot = (out / f"inputs.{claim['inputs_digest']}.json").read_bytes()
+    executable = json.loads(snapshot)["executable"]
+    filled = [i for i in range(WATCHES) if i not in STALE]
+    assert len(executable) == len(filled)
+    per_asset = {
+        a: sum(1 for i in filled if i % ASSETS == a) for a in (REFUSED_ASSET, UNLISTED_ASSET)
+    }
+    assert printed["executable"] == {
+        "accepted": len(filled) - per_asset[REFUSED_ASSET] - per_asset[UNLISTED_ASSET],
+        "refused": {"below_min_notional": per_asset[REFUSED_ASSET],
+                    "rules_missing": per_asset[UNLISTED_ASSET]},
+    }  # fmt: skip
+
+    # The published result is exactly the executable verdict of the pinned snapshot.
+    confirm = CONFIRM_CONTRACT
+    watches, probes, funding = inputs_from_snapshot(snapshot)
+    watches = filter_to_cohort(watches, cohort_start=START, decision_prefix_end=PREFIX_END)
+    evaluation, view = evaluate_executable_cohort(
+        confirm, watches, probes, funding, reader.sizings_from_snapshot(executable, confirm)
+    )
+    assert printed["funnel"] == {c.value: evaluation.funnel[c] for c in evaluation.funnel}
+    assert printed["analyzable_pairs"] == evaluation.inputs.analyzable_pairs
+    assert printed["verdict"] == decide_verdict(confirm, evaluation.inputs).outcome.value
+    assert view.accepted == printed["executable"]["accepted"]
+    # Every accepted order is the rounded-down USD 50 at the paper entry price (1.0).
+    assert set(view.notional_by_watch.values()) == {50.0}
+
+
+def test_a_conditional_read_needs_the_completed_candidate_chain(
+    db: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _seed(db)
+    _capture(monkeypatch)
+    first_dir, confirm_dir = tmp_path / "first", tmp_path / "confirm"
+    specs = _specs(executable=False, candidate_of=CONTRACT.contract_version)
+    monkeypatch.setattr(reader, "formal_read_specs", lambda: specs)
+    chain = ("--contract", CONFIRM, "--candidate-read-dir", str(first_dir))
+
+    with pytest.raises(SystemExit, match="candidate-read-dir is required"):
+        _read(monkeypatch, capsys, confirm_dir, "--contract", CONFIRM)
+    with pytest.raises(SystemExit, match="read is not completed"):
+        _read(monkeypatch, capsys, confirm_dir, *chain)
+
+    first = _read(monkeypatch, capsys, first_dir)  # the real first read
+    assert first["verdict"] != "candidate"
+    with pytest.raises(SystemExit, match="not 'candidate'; this cohort stays closed unread"):
+        _read(monkeypatch, capsys, confirm_dir, *chain)
+    assert [c["contract_version"] for c in _claims_all(db)] == [CONTRACT.contract_version]
+    assert not confirm_dir.exists()
+
+    # A candidate artifact that is not the one the claim names proves nothing.
+    claim = _claim(db, CONTRACT.contract_version)
+    named = first_dir / claim["artifact_name"]
+    forged = json.loads(named.read_bytes()) | {"verdict": "candidate"}
+    named.chmod(0o644)
+    named.write_text(json.dumps(forged, indent=2, sort_keys=True) + "\n")
+    with pytest.raises(SystemExit, match="does not match"):
+        _read(monkeypatch, capsys, confirm_dir, *chain)
+
+    # A chain that holds: the claim row, the named file and its sidecar agree on a
+    # candidate (test-only rewrite of the disposable claim row to the forged file's hash).
+    body = named.read_bytes()
+    sha = hashlib.sha256(body).hexdigest()
+    sidecar = named.with_name(named.name + ".sha256")
+    sidecar.chmod(0o644)
+    sidecar.write_text(f"sha256:{sha}\n")
+    db.execute(
+        "UPDATE app.hold12h_formal_read_claims SET artifact_sha256 = %s WHERE id = %s",
+        (sha, claim["id"]),
+    )
+    confirmed = _read(monkeypatch, capsys, confirm_dir, *chain)
+    assert confirmed["mode"] == "formal"
+    assert _claim(db, CONFIRM)["status"] == "completed"
+
+
+def _claims_all(conn: psycopg.Connection[Any]) -> list[dict[str, Any]]:
+    with conn.cursor(row_factory=psycopg.rows.dict_row) as cur:
+        cur.execute(
+            "SELECT contract_version FROM app.hold12h_formal_read_claims "
+            "WHERE cohort_start = %s AND decision_prefix_end = %s ORDER BY id",
+            (START, PREFIX_END),
+        )
+        return list(cur.fetchall())
+
+
+@pytest.mark.parametrize("price", [float("nan"), float("inf")])
+def test_a_broken_entry_price_stops_an_executable_read_as_an_integrity_failure(
+    price: float,
+    db: Any,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    watch_ids = _seed(db)
+    _capture(monkeypatch)
+    _seed_order_rules(db)
+    broken = watch_ids[2]  # a filled entry (index 2 is not stale)
+    db.execute(
+        "UPDATE app.momentum_flow_paper_probes SET entry_vwap = %s WHERE watch_id = %s",
+        (price, broken),
+    )  # the schema's entry_vwap > 0 admits both
+    specs = _specs(executable=True, candidate_of=None)
+    monkeypatch.setattr(reader, "formal_read_specs", lambda: specs)
+    out = tmp_path / "confirm"
+    with pytest.raises(SystemExit, match=f"integrity failure, filled entry {broken}"):
+        _read(monkeypatch, capsys, out, "--contract", CONFIRM)
+    claim = _claim(db, CONFIRM)
+    assert claim["status"] == "claimed" and claim["inputs_digest"] is None
+    assert not list(out.glob("inputs.*.json"))
+    assert not (out / "hold12h_verdict.json").exists()
+
+
+def test_a_broken_price_in_the_snapshot_also_stops_the_evaluation() -> None:
+    with pytest.raises(SystemExit, match="integrity failure, filled entry w1"):
+        reader.sizings_from_snapshot({"w1": {"entry_vwap": float("nan"), "rule": None}}, CONTRACT)
+    with pytest.raises(SystemExit, match="integrity failure, filled entry w2"):
+        reader.sizings_from_snapshot({"w2": {"entry_vwap": None, "rule": None}}, CONTRACT)
