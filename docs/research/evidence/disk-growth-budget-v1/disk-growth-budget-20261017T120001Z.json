@@ -1,0 +1,1006 @@
+{
+ "bars_release": {
+  "chunks": 15,
+  "chunks_due": 0,
+  "cutoff_days": 14,
+  "due_gib": 0.0
+ },
+ "code_revision": "e2fcd87357aa70c199d3e797c9363a55ba075ca6",
+ "free_gib": 27.312423706054688,
+ "gaps": [],
+ "growth": {
+  "bars_slope_mib_per_day": -755.4844270672138,
+  "central_mib_per_day": 30.93491334489726,
+  "conservative_mib_per_day": 101.66785793573973,
+  "parts_mib_per_day": {
+   "database_outside_bars": 101.61779065183617,
+   "rest": -70.73294459084246,
+   "runtime_readable": 0.050067283903553236
+  },
+  "reserve_parts_gib": {
+   "docker_build_cache": {
+    "max": 3.1907111406326294,
+    "min": 0.374671071767807
+   },
+   "docker_containers": {
+    "max": 0.20060688257217407,
+    "min": 0.20004808902740479
+   },
+   "docker_images": {
+    "max": 3.828667104244232,
+    "min": 3.053806722164154
+   }
+  },
+  "steps": [
+   {
+    "after": "reading-20261005T120001Z.json",
+    "before": "reading-20261004T201705Z.json",
+    "mib": 1446.12997341156,
+    "part": "runtime_readable"
+   }
+  ],
+  "used_outside_bars_slope_mib_per_day": -45.97543758734861
+ },
+ "headroom": {
+  "after_release_central": {
+   "registry_44": {
+    "days_until_reserve": 399.62960788715304,
+    "fits": true,
+    "horizon_months": 6,
+    "max_other_growth_mib_per_day": 83.16247871438055,
+    "need_gib": 7.9971477889820015,
+    "status": "measured",
+    "usable_gib": 17.312423706054688
+   },
+   "universe_592": {
+    "days_until_reserve": 106.67324056773657,
+    "fits": false,
+    "horizon_months": 6,
+    "max_other_growth_mib_per_day": 0.0,
+    "need_gib": 29.8416320242066,
+    "status": "measured",
+    "usable_gib": 17.312423706054688
+   },
+   "universe_without_top10": {
+    "days_until_reserve": 147.98867430469312,
+    "fits": false,
+    "horizon_months": 6,
+    "max_other_growth_mib_per_day": 8.017914636640308,
+    "need_gib": 21.399885272535204,
+    "status": "measured",
+    "usable_gib": 17.312423706054688
+   }
+  },
+  "after_release_conservative": {
+   "registry_44": {
+    "days_until_reserve": 154.0301717453265,
+    "fits": false,
+    "horizon_months": 6,
+    "max_other_growth_mib_per_day": 83.16247871438055,
+    "need_gib": 20.6130315781143,
+    "status": "measured",
+    "usable_gib": 17.312423706054688
+   },
+   "universe_592": {
+    "days_until_reserve": 74.82599390655837,
+    "fits": false,
+    "horizon_months": 6,
+    "max_other_growth_mib_per_day": 0.0,
+    "need_gib": 42.4575158133389,
+    "status": "measured",
+    "usable_gib": 17.312423706054688
+   },
+   "universe_without_top10": {
+    "days_until_reserve": 93.04756682522824,
+    "fits": false,
+    "horizon_months": 6,
+    "max_other_growth_mib_per_day": 8.017914636640308,
+    "need_gib": 34.0157690616675,
+    "status": "measured",
+    "usable_gib": 17.312423706054688
+   }
+  },
+  "now_central": {
+   "registry_44": {
+    "days_until_reserve": 399.62960788715304,
+    "fits": true,
+    "horizon_months": 6,
+    "max_other_growth_mib_per_day": 83.16247871438055,
+    "need_gib": 7.9971477889820015,
+    "status": "measured",
+    "usable_gib": 17.312423706054688
+   },
+   "universe_592": {
+    "days_until_reserve": 106.67324056773657,
+    "fits": false,
+    "horizon_months": 6,
+    "max_other_growth_mib_per_day": 0.0,
+    "need_gib": 29.8416320242066,
+    "status": "measured",
+    "usable_gib": 17.312423706054688
+   },
+   "universe_without_top10": {
+    "days_until_reserve": 147.98867430469312,
+    "fits": false,
+    "horizon_months": 6,
+    "max_other_growth_mib_per_day": 8.017914636640308,
+    "need_gib": 21.399885272535204,
+    "status": "measured",
+    "usable_gib": 17.312423706054688
+   }
+  },
+  "now_conservative": {
+   "registry_44": {
+    "days_until_reserve": 154.0301717453265,
+    "fits": false,
+    "horizon_months": 6,
+    "max_other_growth_mib_per_day": 83.16247871438055,
+    "need_gib": 20.6130315781143,
+    "status": "measured",
+    "usable_gib": 17.312423706054688
+   },
+   "universe_592": {
+    "days_until_reserve": 74.82599390655837,
+    "fits": false,
+    "horizon_months": 6,
+    "max_other_growth_mib_per_day": 0.0,
+    "need_gib": 42.4575158133389,
+    "status": "measured",
+    "usable_gib": 17.312423706054688
+   },
+   "universe_without_top10": {
+    "days_until_reserve": 93.04756682522824,
+    "fits": false,
+    "horizon_months": 6,
+    "max_other_growth_mib_per_day": 8.017914636640308,
+    "need_gib": 34.0157690616675,
+    "status": "measured",
+    "usable_gib": 17.312423706054688
+   }
+  }
+ },
+ "inputs": {
+  "gate_budget_sha256": "4b204640e293048b50afc9aeb2123be3c00e2551b48be3054f3dfb4aa343d3d5",
+  "readings": [
+   {
+    "name": "reading-20261004T164046Z.json",
+    "sha256": "32cd3e10d8d980b0fed1c867a0affd80dd37cf3d7dc7a31c13808f69361b7e85"
+   },
+   {
+    "name": "reading-20261004T201705Z.json",
+    "sha256": "8b0f89a9694fe10e8cebb45c1da0d257c0372aee0322b5fe1c3bad20a858499b"
+   },
+   {
+    "name": "reading-20261005T120001Z.json",
+    "sha256": "9d45c4bca2e6b170279f8dfcddaf406e50c7ee0a68791c076f8dd0f460ced14d"
+   },
+   {
+    "name": "reading-20261006T120001Z.json",
+    "sha256": "bd0bddf7d16325f717eb75bcdad20c91456e47a180ef9cf534fc2b531f3c4ba6"
+   },
+   {
+    "name": "reading-20261007T120001Z.json",
+    "sha256": "d7a7a6fdaeb70a0b16958ac216eece584370acc4c74aecc22ff528ca05e40c25"
+   },
+   {
+    "name": "reading-20261008T120000Z.json",
+    "sha256": "56a4f8bb8228a4a0655881607d7d59409fe05a2a2d0919686ec4ec0857581cdd"
+   },
+   {
+    "name": "reading-20261009T120001Z.json",
+    "sha256": "7e82a9a34b69c562a6c73aa75041b8ecae7e20531e23068c30c07c7fc79d6f1b"
+   },
+   {
+    "name": "reading-20261010T120001Z.json",
+    "sha256": "92f55fe14a2f30b389381c5087e2807a73771523714d8f3bc7740f2a11874e3e"
+   },
+   {
+    "name": "reading-20261011T120001Z.json",
+    "sha256": "280faa4f7e9fa2db7210506427b97dd8b23c07377e57fac4fad311985c137772"
+   },
+   {
+    "name": "reading-20261012T120001Z.json",
+    "sha256": "d162f595ab2e677df51b05f9afcf7c7e68fc4b15ec3acb1cd8f58c115d4926ab"
+   },
+   {
+    "name": "reading-20261013T120001Z.json",
+    "sha256": "44245ec7efb8503a31385d898057820461ecc0c11f0107809a51064af8b03c96"
+   },
+   {
+    "name": "reading-20261014T120001Z.json",
+    "sha256": "350b5a8bad2ba2e9aa1e32e6b474d730012917849feb8ed42a98bb2ee43a4c53"
+   },
+   {
+    "name": "reading-20261015T120001Z.json",
+    "sha256": "a39afbf787008927c28112a1cb1c226267f9af8312746cf7db7cee72593c1423"
+   },
+   {
+    "name": "reading-20261016T120001Z.json",
+    "sha256": "4563a1b7d3bcb302747c3d083a0e50608aa7bc872208b9c60ff9a56df218b53a"
+   },
+   {
+    "name": "reading-20261017T120001Z.json",
+    "sha256": "45e2c5057a1277b2669cb8b587cf9eb9ce1ab2a6ee412f30f1bd60bf26759f2f"
+   }
+  ]
+ },
+ "latest_reading_at": "2026-10-17T12:00:01.184911+00:00",
+ "no_collection_days_to_reserve_conservative": 174.37095887478148,
+ "params": {
+  "bars_cutoff_days": 14,
+  "days_per_month": 30.44,
+  "horizon_months": 6,
+  "min_series_days": 7.0,
+  "reserve_gib": 10.0
+ },
+ "readings": 15,
+ "relations": [
+  {
+   "last_gib": 3.0769577026367188,
+   "mib_per_day": 32.775850096908165,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 9924.769274953376,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "app.trade_decisions"
+  },
+  {
+   "last_gib": 0.956085205078125,
+   "mib_per_day": 13.671220216450573,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 94078.08490849503,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "app.funding_rate_snapshots"
+  },
+  {
+   "last_gib": 1.7332916259765625,
+   "mib_per_day": 10.456375936306761,
+   "n_dead_tup": 553417,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 33478.24199548154,
+   "n_tup_upd_per_day": 67579.6764403413,
+   "readings": 15,
+   "relation": "app.trade_decision_outcomes"
+  },
+  {
+   "last_gib": 1.1367416381835938,
+   "mib_per_day": 9.769058051653055,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.0,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 30,
+   "relation": "app.live_long_short_ratio"
+  },
+  {
+   "last_gib": 0.6676483154296875,
+   "mib_per_day": 9.572189298345878,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 56723.32035728859,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "app.oi_snapshots"
+  },
+  {
+   "last_gib": 0.5795211791992188,
+   "mib_per_day": 6.40369628142658,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.0,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 30,
+   "relation": "timeseries.liquidation_events"
+  },
+  {
+   "last_gib": 3.597076416015625,
+   "mib_per_day": 1.770647034275055,
+   "n_dead_tup": 254231,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 16365.127433821946,
+   "n_tup_upd_per_day": 502576.44028985384,
+   "readings": 15,
+   "relation": "app.pump_derivatives_context_samples"
+  },
+  {
+   "last_gib": 0.00981903076171875,
+   "mib_per_day": 1.5253906709027494,
+   "readings": 7,
+   "relation": "app.bybit_order_rule_captures"
+  },
+  {
+   "last_gib": 0.6407241821289062,
+   "mib_per_day": 0.5788332106664227,
+   "n_dead_tup": 439,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 145.09919435397305,
+   "n_tup_upd_per_day": 25968.460603306565,
+   "readings": 15,
+   "relation": "app.pump_events"
+  },
+  {
+   "last_gib": 0.06629180908203125,
+   "mib_per_day": 0.532574248467238,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 452.40023298846387,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "app.pump_event_snapshots"
+  },
+  {
+   "last_gib": 0.0283203125,
+   "mib_per_day": 0.5292040947145117,
+   "n_dead_tup": 2922,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 1811.6313835433082,
+   "n_tup_upd_per_day": 1817.6446440197647,
+   "readings": 15,
+   "relation": "app.momentum_flow_paper_outcomes"
+  },
+  {
+   "last_gib": 0.01990509033203125,
+   "mib_per_day": 0.3376178811630128,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 721.1226914233515,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "app.hold12h_funding_settlements"
+  },
+  {
+   "last_gib": 0.10057830810546875,
+   "mib_per_day": 0.21901617961690856,
+   "n_dead_tup": 12047,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 349.39386196968536,
+   "n_tup_upd_per_day": 16217.685410710912,
+   "readings": 15,
+   "relation": "app.pump_derivatives_context_runs"
+  },
+  {
+   "last_gib": 0.01117706298828125,
+   "mib_per_day": 0.12120587956107354,
+   "n_dead_tup": 2947,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 272.54907873808713,
+   "n_tup_upd_per_day": 544.9419688923703,
+   "readings": 15,
+   "relation": "app.notification_deliveries"
+  },
+  {
+   "last_gib": 0.001373291015625,
+   "mib_per_day": 0.02626844838029593,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 114.40813763647498,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "app.hold12h_funding_coverage_runs"
+  },
+  {
+   "last_gib": 0.00527191162109375,
+   "mib_per_day": 0.021997281228541637,
+   "n_dead_tup": 14,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 8.9027492768315,
+   "n_tup_upd_per_day": 9.215126444439623,
+   "readings": 15,
+   "relation": "app.trades"
+  },
+  {
+   "last_gib": 0.00142669677734375,
+   "mib_per_day": 0.02064732133946704,
+   "readings": 7,
+   "relation": "app.bybit_order_rule_defs"
+  },
+  {
+   "last_gib": 0.00330352783203125,
+   "mib_per_day": 0.02015187676725237,
+   "n_dead_tup": 582,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 33.033885474558986,
+   "n_tup_upd_per_day": 19.523572975507676,
+   "readings": 15,
+   "relation": "app.source_lead_captures"
+  },
+  {
+   "last_gib": 0.00164031982421875,
+   "mib_per_day": 0.011198585939758502,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 39.04714595101535,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "app.source_lead_target_observations"
+  },
+  {
+   "last_gib": 0.00102996826171875,
+   "mib_per_day": 0.009959511149194236,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 19.523572975507676,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "app.source_lead_qualifications"
+  },
+  {
+   "last_gib": 0.0001068115234375,
+   "mib_per_day": 0.004038265199152686,
+   "n_dead_tup": 22,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.8590372109223378,
+   "n_tup_upd_per_day": 1.7180744218446755,
+   "readings": 15,
+   "relation": "app.history_archive_datasets"
+  },
+  {
+   "last_gib": 0.00061798095703125,
+   "mib_per_day": 0.0033023441498478737,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 9.215126444439623,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "app.trade_exit_liquidity_observations"
+  },
+  {
+   "last_gib": 0.0001220703125,
+   "mib_per_day": 0.0028764807555153715,
+   "n_dead_tup": 15,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.6247543352162457,
+   "n_tup_upd_per_day": 0.6247543352162457,
+   "readings": 15,
+   "relation": "app.source_lead_exit_observations"
+  },
+  {
+   "last_gib": 0.0003204345703125,
+   "mib_per_day": 0.001938404854874708,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 7.028486271182763,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "app.pump_alert_deliveries"
+  },
+  {
+   "last_gib": 0.585723876953125,
+   "mib_per_day": 0.0008150431105205611,
+   "n_dead_tup": 4652,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 410.3074096532693,
+   "n_tup_upd_per_day": 44514.68351566033,
+   "readings": 15,
+   "relation": "app.pump_event_sources"
+  },
+  {
+   "last_gib": 0.00861358642578125,
+   "mib_per_day": 0.0007189193452669279,
+   "n_dead_tup": 397,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 25.927304911474195,
+   "n_tup_upd_per_day": 26.473964954788407,
+   "readings": 15,
+   "relation": "app.early_momentum_episodes"
+  },
+  {
+   "last_gib": 5.340576171875e-05,
+   "mib_per_day": 0.0,
+   "n_dead_tup": 10,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.0,
+   "n_tup_upd_per_day": 0.07809429190203071,
+   "readings": 15,
+   "relation": "app.alembic_version"
+  },
+  {
+   "last_gib": 3.814697265625e-05,
+   "mib_per_day": 0.0,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.0,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "app.alerts"
+  },
+  {
+   "last_gib": 3.0517578125e-05,
+   "mib_per_day": 0.0,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.0,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "app.fill_resolution_incidents"
+  },
+  {
+   "last_gib": 2.288818359375e-05,
+   "mib_per_day": 0.0,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.0,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "app.formal_read_claims"
+  },
+  {
+   "last_gib": 3.0517578125e-05,
+   "mib_per_day": 0.0,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.0,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "app.history_archive_fences"
+  },
+  {
+   "last_gib": 1.52587890625e-05,
+   "mib_per_day": 0.0,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.0,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "app.history_archive_snapshot_sets"
+  },
+  {
+   "last_gib": 2.288818359375e-05,
+   "mib_per_day": 0.0,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.0,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "app.hold12h_formal_read_claims"
+  },
+  {
+   "last_gib": 3.814697265625e-05,
+   "mib_per_day": 0.0,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.0,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "app.live_order_attempts"
+  },
+  {
+   "last_gib": 3.0517578125e-05,
+   "mib_per_day": 0.0,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.0,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "app.live_reconciliation_incidents"
+  },
+  {
+   "last_gib": 2.0825576782226562,
+   "mib_per_day": 0.0,
+   "n_dead_tup": 337,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 258.8044833633298,
+   "n_tup_upd_per_day": 328892.47036527237,
+   "readings": 15,
+   "relation": "app.momentum_flow_paper_probes"
+  },
+  {
+   "last_gib": 3.0517578125e-05,
+   "mib_per_day": 0.0,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.0,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "app.momentum_flow_paper_runs"
+  },
+  {
+   "last_gib": 0.0024261474609375,
+   "mib_per_day": 0.0,
+   "n_dead_tup": 32,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.0,
+   "n_tup_upd_per_day": 1111.281773765897,
+   "readings": 15,
+   "relation": "app.momentum_flow_watch_states"
+  },
+  {
+   "last_gib": 0.0001220703125,
+   "mib_per_day": 0.0,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.0,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "app.momentum_universe_asset_clusters"
+  },
+  {
+   "last_gib": 0.00035858154296875,
+   "mib_per_day": 0.0,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.0,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "app.momentum_universe_cluster_members"
+  },
+  {
+   "last_gib": 0.00238800048828125,
+   "mib_per_day": 0.0,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.0,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "app.momentum_universe_instruments"
+  },
+  {
+   "last_gib": 4.57763671875e-05,
+   "mib_per_day": 0.0,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.0,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "app.momentum_universe_snapshots"
+  },
+  {
+   "last_gib": 3.0517578125e-05,
+   "mib_per_day": 0.0,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.0,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "app.research_cohort_registrations"
+  },
+  {
+   "last_gib": 4.57763671875e-05,
+   "mib_per_day": 0.0,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.0,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "app.research_report_runs"
+  },
+  {
+   "last_gib": 4.57763671875e-05,
+   "mib_per_day": 0.0,
+   "n_dead_tup": 1,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.6247543352162457,
+   "n_tup_upd_per_day": 1.2495086704324914,
+   "readings": 15,
+   "relation": "app.source_lead_shadow_attempts"
+  },
+  {
+   "last_gib": 0.001617431640625,
+   "mib_per_day": 0.0,
+   "n_dead_tup": 21,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.0,
+   "n_tup_upd_per_day": 219.36686595280426,
+   "readings": 15,
+   "relation": "app.strategies"
+  },
+  {
+   "last_gib": 2.288818359375e-05,
+   "mib_per_day": 0.0,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.0,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "app.trade_close_fills"
+  },
+  {
+   "last_gib": 2.288818359375e-05,
+   "mib_per_day": 0.0,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.0,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 15,
+   "relation": "timeseries.bybit_momentum_bars_1m"
+  },
+  {
+   "last_gib": 0.0128021240234375,
+   "mib_per_day": -0.04568412358346664,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.0,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 30,
+   "relation": "timeseries.liquidation_capture_heartbeats_1m"
+  },
+  {
+   "last_gib": 0.00397491455078125,
+   "mib_per_day": -0.13369970705791812,
+   "n_dead_tup": 5,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.0,
+   "n_tup_upd_per_day": 1440.0587426734462,
+   "readings": 15,
+   "relation": "app.momentum_flow_watch_runs"
+  },
+  {
+   "last_gib": 4.50701904296875,
+   "mib_per_day": -1.07494152057914,
+   "n_dead_tup": 0,
+   "n_tup_del_per_day": 0.0,
+   "n_tup_ins_per_day": 0.0,
+   "n_tup_upd_per_day": 0.0,
+   "readings": 30,
+   "relation": "timeseries.momentum_flow_watch_evaluations_1m"
+  }
+ ],
+ "series": [
+  {
+   "bars": 18550087680,
+   "database_outside_bars": 20312651443,
+   "docker_build_cache": 3127000000,
+   "docker_containers": 214800000,
+   "docker_images": 4111000000,
+   "filesystem_free": 20396228608,
+   "filesystem_used": 56593035264,
+   "name": "reading-20261004T164046Z.json",
+   "rest": 9096154318,
+   "runtime_readable": 1181341823,
+   "taken_at": "2026-10-04T16:40:46.317024+00:00",
+   "used_outside_bars": 38042947584
+  },
+  {
+   "bars": 18844000256,
+   "database_outside_bars": 20399175347,
+   "docker_build_cache": 3127000000,
+   "docker_containers": 214800000,
+   "docker_images": 4111000000,
+   "filesystem_free": 20686532608,
+   "filesystem_used": 56302731264,
+   "name": "reading-20261004T201705Z.json",
+   "rest": 8425367025,
+   "runtime_readable": 1181388636,
+   "taken_at": "2026-10-04T20:17:05.956851+00:00",
+   "used_outside_bars": 37458731008
+  },
+  {
+   "bars": 17207386112,
+   "database_outside_bars": 20393907891,
+   "docker_build_cache": 3127000000,
+   "docker_containers": 215400000,
+   "docker_images": 3466000000,
+   "filesystem_free": 20753182720,
+   "filesystem_used": 56236081152,
+   "name": "reading-20261005T120001Z.json",
+   "rest": 9128621330,
+   "runtime_readable": 2697765819,
+   "taken_at": "2026-10-05T12:00:01.088254+00:00",
+   "used_outside_bars": 39028695040
+  },
+  {
+   "bars": 16256696320,
+   "database_outside_bars": 20530968243,
+   "docker_build_cache": 3426000000,
+   "docker_containers": 215400000,
+   "docker_images": 3477000000,
+   "filesystem_free": 21206597632,
+   "filesystem_used": 55782666240,
+   "name": "reading-20261006T120001Z.json",
+   "rest": 9178779322,
+   "runtime_readable": 2697822355,
+   "taken_at": "2026-10-06T12:00:01.085460+00:00",
+   "used_outside_bars": 39525969920
+  },
+  {
+   "bars": 15233589248,
+   "database_outside_bars": 20590401203,
+   "docker_build_cache": 1663000000,
+   "docker_containers": 214800000,
+   "docker_images": 3806000000,
+   "filesystem_free": 24412082176,
+   "filesystem_used": 52577181696,
+   "name": "reading-20261007T120001Z.json",
+   "rest": 8371508911,
+   "runtime_readable": 2697882334,
+   "taken_at": "2026-10-07T12:00:01.086438+00:00",
+   "used_outside_bars": 37343592448
+  },
+  {
+   "bars": 14337794048,
+   "database_outside_bars": 20684699315,
+   "docker_build_cache": 1663000000,
+   "docker_containers": 214800000,
+   "docker_images": 3806000000,
+   "filesystem_free": 24689627136,
+   "filesystem_used": 52299636736,
+   "name": "reading-20261008T120000Z.json",
+   "rest": 8895408540,
+   "runtime_readable": 2697934833,
+   "taken_at": "2026-10-08T12:00:00.506668+00:00",
+   "used_outside_bars": 37961842688
+  },
+  {
+   "bars": 13427482624,
+   "database_outside_bars": 20818810547,
+   "docker_build_cache": 402300000,
+   "docker_containers": 214800000,
+   "docker_images": 3806000000,
+   "filesystem_free": 27371294720,
+   "filesystem_used": 49617969152,
+   "name": "reading-20261009T120001Z.json",
+   "rest": 8250588887,
+   "runtime_readable": 2697987094,
+   "taken_at": "2026-10-09T12:00:01.071863+00:00",
+   "used_outside_bars": 36190486528
+  },
+  {
+   "bars": 12435021824,
+   "database_outside_bars": 20892784307,
+   "docker_build_cache": 1837000000,
+   "docker_containers": 214800000,
+   "docker_images": 3901000000,
+   "filesystem_free": 26321068032,
+   "filesystem_used": 50668195840,
+   "name": "reading-20261010T120001Z.json",
+   "rest": 8689550556,
+   "runtime_readable": 2698039153,
+   "taken_at": "2026-10-10T12:00:01.076211+00:00",
+   "used_outside_bars": 38233174016
+  },
+  {
+   "bars": 11368931328,
+   "database_outside_bars": 20965267123,
+   "docker_build_cache": 1883000000,
+   "docker_containers": 214800000,
+   "docker_images": 3901000000,
+   "filesystem_free": 27814662144,
+   "filesystem_used": 49174601728,
+   "name": "reading-20261011T120001Z.json",
+   "rest": 8143511823,
+   "runtime_readable": 2698091454,
+   "taken_at": "2026-10-11T12:00:01.249614+00:00",
+   "used_outside_bars": 37805670400
+  },
+  {
+   "bars": 10335469568,
+   "database_outside_bars": 21064677043,
+   "docker_build_cache": 1883000000,
+   "docker_containers": 215400000,
+   "docker_images": 3279000000,
+   "filesystem_free": 29945528320,
+   "filesystem_used": 47043735552,
+   "name": "reading-20261012T120001Z.json",
+   "rest": 7568039049,
+   "runtime_readable": 2698149892,
+   "taken_at": "2026-10-12T12:00:01.086014+00:00",
+   "used_outside_bars": 36708265984
+  },
+  {
+   "bars": 9404948480,
+   "database_outside_bars": 21229827763,
+   "docker_build_cache": 1883000000,
+   "docker_containers": 215400000,
+   "docker_images": 3279000000,
+   "filesystem_free": 29909106688,
+   "filesystem_used": 47080157184,
+   "name": "reading-20261013T120001Z.json",
+   "rest": 8369778897,
+   "runtime_readable": 2698202044,
+   "taken_at": "2026-10-13T12:00:01.100768+00:00",
+   "used_outside_bars": 37675208704
+  },
+  {
+   "bars": 9377120256,
+   "database_outside_bars": 21340845747,
+   "docker_build_cache": 1883000000,
+   "docker_containers": 215400000,
+   "docker_images": 3279000000,
+   "filesystem_free": 30560935936,
+   "filesystem_used": 46428327936,
+   "name": "reading-20261014T120001Z.json",
+   "rest": 7634707934,
+   "runtime_readable": 2698253999,
+   "taken_at": "2026-10-14T12:00:01.179562+00:00",
+   "used_outside_bars": 37051207680
+  },
+  {
+   "bars": 9409626112,
+   "database_outside_bars": 21476824755,
+   "docker_build_cache": 1883000000,
+   "docker_containers": 215400000,
+   "docker_images": 3279000000,
+   "filesystem_free": 30376210432,
+   "filesystem_used": 46613053440,
+   "name": "reading-20261015T120001Z.json",
+   "rest": 7650896420,
+   "runtime_readable": 2698306153,
+   "taken_at": "2026-10-15T12:00:01.082824+00:00",
+   "used_outside_bars": 37203427328
+  },
+  {
+   "bars": 9412575232,
+   "database_outside_bars": 21623002803,
+   "docker_build_cache": 1883000000,
+   "docker_containers": 215400000,
+   "docker_images": 3279000000,
+   "filesystem_free": 29403553792,
+   "filesystem_used": 47585710080,
+   "name": "reading-20261016T120001Z.json",
+   "rest": 8474373138,
+   "runtime_readable": 2698358907,
+   "taken_at": "2026-10-16T12:00:01.155912+00:00",
+   "used_outside_bars": 38173134848
+  },
+  {
+   "bars": 9351979008,
+   "database_outside_bars": 21722396339,
+   "docker_build_cache": 1883000000,
+   "docker_containers": 215400000,
+   "docker_images": 3279000000,
+   "filesystem_free": 29326491648,
+   "filesystem_used": 47662772224,
+   "name": "reading-20261017T120001Z.json",
+   "rest": 8512585011,
+   "runtime_readable": 2698411866,
+   "taken_at": "2026-10-17T12:00:01.184911+00:00",
+   "used_outside_bars": 38310793216
+  }
+ ],
+ "series_days": 12.805033193136575,
+ "stop_condition_now": false,
+ "verdicts": {
+  "registry_44": {
+   "max_other_growth_mib_per_day": 83.16247871438055,
+   "need_gib_conservative": 20.6130315781143,
+   "usable_gib": 17.312423706054688,
+   "verdict": "fits_central_only"
+  },
+  "universe_592": {
+   "max_other_growth_mib_per_day": 0.0,
+   "need_gib_conservative": 42.4575158133389,
+   "usable_gib": 17.312423706054688,
+   "verdict": "does_not_fit"
+  },
+  "universe_without_top10": {
+   "max_other_growth_mib_per_day": 8.017914636640308,
+   "need_gib_conservative": 34.0157690616675,
+   "usable_gib": 17.312423706054688,
+   "verdict": "does_not_fit"
+  }
+ },
+ "version": "disk_growth_budget_v1",
+ "what_if_without_pump_short": {
+  "central_mib_per_day": -12.297312688317668,
+  "conservative_mib_per_day": 58.435631902524804,
+  "relations": [
+   "app.trade_decisions",
+   "app.trade_decision_outcomes"
+  ],
+  "removed_mib_per_day": 43.23222603321493,
+  "verdicts": {
+   "registry_44": {
+    "max_other_growth_mib_per_day": 83.16247871438055,
+    "need_gib_conservative": 12.902158762971354,
+    "usable_gib": 17.312423706054688,
+    "verdict": "fits"
+   },
+   "universe_592": {
+    "max_other_growth_mib_per_day": 0.0,
+    "need_gib_conservative": 34.74664299819595,
+    "usable_gib": 17.312423706054688,
+    "verdict": "does_not_fit"
+   },
+   "universe_without_top10": {
+    "max_other_growth_mib_per_day": 8.017914636640308,
+    "need_gib_conservative": 26.304896246524557,
+    "usable_gib": 17.312423706054688,
+    "verdict": "fits_central_only"
+   }
+  }
+ },
+ "working_tree_dirty": false
+}

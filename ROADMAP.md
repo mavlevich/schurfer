@@ -8,10 +8,10 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: preserve the HYP-012 v2 cohort from 2026-09-29 with shadow execution and the HYP-015 cohort 2026-10-05..11-02 (formal read from 2026-11-04 12:00Z); HYP-012c and HYP-029 each had one formal read on 2026-09-29 and failed their registered gates
-State: DRY_RUN, AUTO_TRADE off, no trading credentials; Bybit is the only confirmed execution venue; no after-cost edge established; HYP-012c's holdout mean net was negative and HYP-029's positive mean had a wide interval crossing zero
-Next: finish PR 2 administrative-stop review, select one feasible pre-move data source, and establish collection/storage/recovery budgets; enabling optimizations require a measured blocker
-User decision required: none for the active cohorts; confirm accessible futures venues only before designing a source-native execution route
+Current primary: preserve the HYP-012 v2 cohort (administrative-stop checkpoint 2026-10-31) and the HYP-015 cohort 2026-10-05..11-02 (single formal read from 2026-11-04 12:00Z, runbook + rehearsal #509); the HYP-015 confirmation is designed (#510, executable reader #513, order-rule capture #511/#512) and freezes only after v2 is terminal
+State: DRY_RUN, AUTO_TRADE off, no trading credentials; Bybit is the only confirmed execution venue; no after-cost edge established; disk growth measured (docs/research/disk-growth-budget-v1.md): registry-44 Gate collection fits only at the central rate, and fits conservatively without the pump-short decision stream
+Next: the 2026-10-31 direction decision (brief #506: v2 checkpoint, fresh disk reading, Bybit spot-perp carry canary from 2026-10-31), then the HYP-015 read on 2026-11-04
+User decision required: whether to stop the closed pump-short decision writer (about 43 MiB/day), with the colleague; confirm accessible futures venues before designing a source-native execution route
 ```
 
 ### Open-ended margin boundary closed (2026-10-07)

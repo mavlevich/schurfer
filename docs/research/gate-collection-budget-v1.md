@@ -11,6 +11,10 @@ budgeted, because PR 3 deferred it (no enforceable request bound).
 
 ## Correction (2026-10-04)
 
+**Resolved by [disk-growth-budget-v1.md](disk-growth-budget-v1.md) (2026-10-17):** 12.8
+days of daily readings give 31 MiB/day central and 102 MiB/day conservative growth outside
+the bars; registry 44 is `fits_central_only`, the full universe `does_not_fit`.
+
 The decision below rested on an estimate of the database's other growth that a first
 direct measurement does not support. The original text and evidence are kept
 unchanged under it.
