@@ -81,6 +81,16 @@ Rules:
 - The payload hash stored in Postgres is SHA-256 over the normalized v1 payload. It is
   an audit value, not the idempotency key.
 
+Scanner-stale and source-lead-stale notifications use one persistent incident
+identity per unhealthy/recovered pair, with a distinct dedup key for each edge.
+Repeated polls do not publish another edge. New incidents use new identities even
+within the same second; immutable source-lead capture failures use the capture's
+identity instead. Enqueue and marker changes run in one Redis script so a process
+restart cannot leave a claimed transition without its queued envelope. The same
+Redis durability limits stated above still apply. Existing numeric markers can
+recover during rollout; this does not replay previously lost alerts or repair
+consumer pending-message recovery.
+
 ## Delivery audit
 
 `app.notification_deliveries` is the durable audit and idempotency record. Its unique
