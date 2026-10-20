@@ -60,6 +60,13 @@ from .momentum_flow_hold12h_snapshot import (
     snapshot_bytes,
     snapshot_digest,
 )
+from .momentum_flow_hold12h_v2_terminal import (
+    V2TerminalPin,
+    check_v2_closed_windows,
+    load_v2_stop,
+    verify_v2_stop_recorded,
+    watch_dependency,
+)
 from .momentum_flow_hold12h_verdict import (
     HOLD12H_VERDICT_CONTRACT,
     Hold12hVerdictContract,
@@ -116,13 +123,17 @@ _DEFAULT_SCHEMAS = Schemas()
 @dataclass(frozen=True)
 class FormalReadSpec:
     """One registered formal read: its contract, whether it is registered, whether it is
-    evaluated on the executable view (venue order rules in the snapshot), and the
-    contract version whose completed read must be `candidate` before this one may run."""
+    evaluated on the executable view (venue order rules in the snapshot), the contract
+    version whose completed read must be `candidate` before this one may run, and the
+    HYP-012 v2 terminal artifact whose closed windows it must not touch."""
 
     contract: Hold12hVerdictContract
     registered: bool
     executable: bool = False
     candidate_of: str | None = None
+    # A confirmation registered after HYP-012 v2's terminal state pins that artifact;
+    # its closed windows must all end before this cohort reads any data.
+    v2_terminal: V2TerminalPin | None = None
 
 
 def formal_read_specs() -> dict[str, FormalReadSpec]:
@@ -761,6 +772,33 @@ class FormalCoverage:
         return missing
 
 
+async def earliest_cohort_bucket(
+    db_url: str,
+    *,
+    cohort_start: datetime,
+    decision_prefix_end: datetime,
+    schemas: Schemas = _DEFAULT_SCHEMAS,
+) -> datetime | None:
+    """The cohort's earliest WATCH decision bucket, outcome-blind."""
+    from sqlalchemy import text
+    from sqlalchemy.ext.asyncio import create_async_engine
+
+    from .outcome_repository import async_database_url
+
+    engine = create_async_engine(async_database_url(db_url), pool_pre_ping=True, pool_size=1)
+    try:
+        async with engine.connect() as conn:
+            value = (
+                await conn.execute(
+                    text("SELECT min(w.bucket_start)" + _watch_filter_sql(schemas.timeseries)),
+                    _watch_params(cohort_start, decision_prefix_end),
+                )
+            ).scalar()
+    finally:
+        await engine.dispose()
+    return None if value is None else _utc(value)
+
+
 async def load_cohort_watch_ids(
     db_url: str,
     *,
@@ -1394,6 +1432,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="the registered read to run, by contract version (default: the first cohort)",
     )
     parser.add_argument(
+        "--v2-terminal-dir",
+        type=Path,
+        default=None,
+        help="reads registered after HYP-012 v2's terminal state: that artifact's directory",
+    )
+    parser.add_argument(
         "--candidate-read-dir",
         type=Path,
         default=None,
@@ -1560,6 +1604,22 @@ async def _run(args: argparse.Namespace) -> str:
         await verify_candidate_chain(
             db_url, specs[spec.candidate_of].contract, args.candidate_read_dir
         )
+    v2_summary: dict[str, Any] | None = None
+    if spec.v2_terminal is not None:
+        if args.v2_terminal_dir is None:
+            raise SystemExit("formal-run refused: --v2-terminal-dir is required")
+        from .momentum_flow_watch_contract import FROZEN_WATCH_CONTRACT
+
+        windows = load_v2_stop(args.v2_terminal_dir, spec.v2_terminal)
+        await verify_v2_stop_recorded(db_url, spec.v2_terminal)
+        first_bucket = await earliest_cohort_bucket(
+            db_url, cohort_start=cohort_start, decision_prefix_end=prefix_end
+        )
+        v2_summary = check_v2_closed_windows(
+            windows,
+            earliest_use=(first_bucket or cohort_start) - watch_dependency(FROZEN_WATCH_CONTRACT),
+            pin=spec.v2_terminal,
+        )
     # Outcome-blind, before the claim: the pinned denominator and the coverage it is read on.
     watch_ids = await load_cohort_watch_ids(
         db_url, cohort_start=cohort_start, decision_prefix_end=prefix_end
@@ -1646,6 +1706,8 @@ async def _run(args: argparse.Namespace) -> str:
     )
     if executable_summary is not None:
         artifact["executable"] = executable_summary
+    if v2_summary is not None:
+        artifact["v2_closed_windows"] = v2_summary
     text = json.dumps(artifact, indent=2, sort_keys=True, allow_nan=False) + "\n"
     await publish_formal_result(db_url, claim, output_dir, text.encode(), fingerprint)
     return text
