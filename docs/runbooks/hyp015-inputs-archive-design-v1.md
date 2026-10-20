@@ -140,6 +140,9 @@ only. Fingerprints are hashes over whole rows and reveal no value.
 
 - Snapshots are catalogued per table under one snapshot set, from one snapshot, and
   restored only as a complete set; they do not pretend to a time range (0059).
+  New set IDs combine the UTC timestamp with a UUID suffix so repeated exports in
+  the same second have distinct catalog keys and files. `snapshot_at` remains the
+  database snapshot time; existing timestamp-only IDs remain readable.
 - The restore proof is fingerprints, the composition summary bound to the snapshot,
   and readiness on the restored data; not a comparison with the changing live
   database.

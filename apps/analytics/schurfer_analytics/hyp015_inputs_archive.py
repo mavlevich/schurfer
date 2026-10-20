@@ -33,6 +33,7 @@ import os
 import re
 import sys
 import tempfile
+import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -585,7 +586,9 @@ def take_snapshot_set(
         with archiver_session(dsn, WATCH_CONTRACT, out_dir) as writer:
             with _snapshot(dsn) as conn:
                 snapshot_at = conn.execute("SELECT now()").fetchone()[0].astimezone(UTC)
-                set_id = f"hyp015-{snapshot_at:%Y%m%dT%H%M%S}Z"
+                # Snapshot time is provenance, not a unique identity: separate
+                # runs can share it and must never overwrite each other's files.
+                set_id = f"hyp015-{snapshot_at:%Y%m%dT%H%M%S}Z-{uuid.uuid4().hex}"
                 pinned, coverage_end = pin_watch_chunks(conn, final=final)
                 reference = composition(conn, Schemas(), decision_window_end(coverage_end))
                 manifests = []
