@@ -5,7 +5,7 @@
   "cutoff_days": 14,
   "due_gib": 0.0
  },
- "code_revision": "e2fcd87357aa70c199d3e797c9363a55ba075ca6",
+ "code_revision": "4ed6cf3035db59250f02f7824afba04eaa90eb7b",
  "free_gib": 27.312423706054688,
  "gaps": [],
  "growth": {
@@ -231,6 +231,8 @@
   "days_per_month": 30.44,
   "horizon_months": 6,
   "min_series_days": 7.0,
+  "readings_from": "2026-10-04T00:00:00+00:00",
+  "readings_until": "2026-10-17T23:59:59+00:00",
   "reserve_gib": 10.0
  },
  "readings": 15,
@@ -246,6 +248,12 @@
    "relation": "app.trade_decisions"
   },
   {
+   "last_gib": 1.1367416381835938,
+   "mib_per_day": 19.53811610330611,
+   "readings": 15,
+   "relation": "app.live_long_short_ratio"
+  },
+  {
    "last_gib": 0.956085205078125,
    "mib_per_day": 13.671220216450573,
    "n_dead_tup": 0,
@@ -254,6 +262,12 @@
    "n_tup_upd_per_day": 0.0,
    "readings": 15,
    "relation": "app.funding_rate_snapshots"
+  },
+  {
+   "last_gib": 0.5795211791992188,
+   "mib_per_day": 12.80739256285316,
+   "readings": 15,
+   "relation": "timeseries.liquidation_events"
   },
   {
    "last_gib": 1.7332916259765625,
@@ -266,16 +280,6 @@
    "relation": "app.trade_decision_outcomes"
   },
   {
-   "last_gib": 1.1367416381835938,
-   "mib_per_day": 9.769058051653055,
-   "n_dead_tup": 0,
-   "n_tup_del_per_day": 0.0,
-   "n_tup_ins_per_day": 0.0,
-   "n_tup_upd_per_day": 0.0,
-   "readings": 30,
-   "relation": "app.live_long_short_ratio"
-  },
-  {
    "last_gib": 0.6676483154296875,
    "mib_per_day": 9.572189298345878,
    "n_dead_tup": 0,
@@ -284,16 +288,6 @@
    "n_tup_upd_per_day": 0.0,
    "readings": 15,
    "relation": "app.oi_snapshots"
-  },
-  {
-   "last_gib": 0.5795211791992188,
-   "mib_per_day": 6.40369628142658,
-   "n_dead_tup": 0,
-   "n_tup_del_per_day": 0.0,
-   "n_tup_ins_per_day": 0.0,
-   "n_tup_upd_per_day": 0.0,
-   "readings": 30,
-   "relation": "timeseries.liquidation_events"
   },
   {
    "last_gib": 3.597076416015625,
@@ -698,23 +692,9 @@
    "relation": "app.trade_close_fills"
   },
   {
-   "last_gib": 2.288818359375e-05,
-   "mib_per_day": 0.0,
-   "n_dead_tup": 0,
-   "n_tup_del_per_day": 0.0,
-   "n_tup_ins_per_day": 0.0,
-   "n_tup_upd_per_day": 0.0,
-   "readings": 15,
-   "relation": "timeseries.bybit_momentum_bars_1m"
-  },
-  {
    "last_gib": 0.0128021240234375,
-   "mib_per_day": -0.04568412358346664,
-   "n_dead_tup": 0,
-   "n_tup_del_per_day": 0.0,
-   "n_tup_ins_per_day": 0.0,
-   "n_tup_upd_per_day": 0.0,
-   "readings": 30,
+   "mib_per_day": -0.0913682471669333,
+   "readings": 15,
    "relation": "timeseries.liquidation_capture_heartbeats_1m"
   },
   {
@@ -729,12 +709,8 @@
   },
   {
    "last_gib": 4.50701904296875,
-   "mib_per_day": -1.07494152057914,
-   "n_dead_tup": 0,
-   "n_tup_del_per_day": 0.0,
-   "n_tup_ins_per_day": 0.0,
-   "n_tup_upd_per_day": 0.0,
-   "readings": 30,
+   "mib_per_day": -2.1498830411582825,
+   "readings": 15,
    "relation": "timeseries.momentum_flow_watch_evaluations_1m"
   }
  ],
@@ -974,13 +950,14 @@
  },
  "version": "disk_growth_budget_v1",
  "what_if_without_pump_short": {
-  "central_mib_per_day": -12.297312688317668,
-  "conservative_mib_per_day": 58.435631902524804,
+  "available": true,
+  "central_mib_per_day": -12.297312688317652,
+  "conservative_mib_per_day": 58.43563190252481,
   "relations": [
    "app.trade_decisions",
    "app.trade_decision_outcomes"
   ],
-  "removed_mib_per_day": 43.23222603321493,
+  "removed_mib_per_day": 43.232226033214914,
   "verdicts": {
    "registry_44": {
     "max_other_growth_mib_per_day": 83.16247871438055,
