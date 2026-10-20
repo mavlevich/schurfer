@@ -18,6 +18,7 @@ import shutil
 import stat
 import sys
 import uuid
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -27,6 +28,7 @@ import psycopg
 import pytest
 from schurfer_analytics import history_archive as engine
 from schurfer_analytics import hyp015_inputs_archive as h
+from schurfer_analytics.cold_bar_fetch import sha256_of
 from schurfer_analytics.momentum_flow_hold12h_verdict import ACTUAL_FUNDING_VERSION
 from schurfer_analytics.momentum_flow_paper_contract import (
     FROZEN_PAPER_CONTRACT,
@@ -405,6 +407,41 @@ def test_an_incomplete_set_is_never_verified_and_a_newer_one_replaces_the_old(
     with pytest.raises(psycopg.errors.RaiseException, match="belongs to verified set"):
         member = engine.snapshot_rows(db, h.PLAIN_CONTRACTS[0])[-1]
         engine.supersede(db, member.id, "no")
+
+
+def test_snapshot_sets_at_the_same_instant_keep_distinct_catalog_rows_and_files(
+    db: Any, tmp_path: Path, borg: tuple[str, dict[str, str]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    repo, env = borg
+    _seed(db)
+    out = tmp_path / "out"
+    _export_watch(out)
+    _archive_all(repo, env, out)
+    # Reuse a real PostgreSQL transaction so SELECT now() is identical for both
+    # exports, regardless of how long the machine takes to write their files.
+    with engine._snapshot(DSN) as snapshot:
+
+        @contextmanager
+        def same_snapshot(_dsn: str) -> Any:
+            yield snapshot
+
+        monkeypatch.setattr(h, "_snapshot", same_snapshot)
+        first = h.take_snapshot_set(DSN, out, code_revision="first", reserve_bytes=0)
+        first_files = {path: sha256_of(path) for path in out.iterdir() if first.set_id in path.name}
+        assert len(first_files) == 2 * len(h.PLAIN_CONTRACTS) + 1
+        second = h.take_snapshot_set(DSN, out, code_revision="second", reserve_bytes=0)
+    assert first.snapshot_at == second.snapshot_at
+    assert first.set_id != second.set_id
+    assert {path: sha256_of(path) for path in first_files} == first_files
+    assert db.execute("SELECT count(*) FROM app.history_archive_snapshot_sets").fetchone() == (2,)
+    for contract in h.PLAIN_CONTRACTS:
+        assert {row.snapshot_set for row in engine.snapshot_rows(db, contract)} == {
+            first.set_id,
+            second.set_id,
+        }
+    _archive_all(repo, env, out)
+    for made in (first, second):
+        assert h.verify_set(DSN, made.set_id, now=NOW, repo=repo, env=env, work_dir=out) == []
 
 
 def test_a_corrupted_archived_input_fails_the_restore_check(
