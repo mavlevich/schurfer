@@ -1,6 +1,6 @@
 # Roadmap
 
-> Living document. Updated as we progress. Last refreshed 2026-10-02.
+> Living document. Updated as we progress. Last refreshed 2026-10-20.
 
 ## Current focus
 
@@ -25,14 +25,17 @@ two-week diversity gate was still open. The pump-short line it bounds is already
 losing baseline, and the report had outgrown its container memory (`report_oom` from
 2026-10-06). No exit challenger is calibrated from it.
 
-### Priority queue and improvement gates — 2026-10-02
+<a id="priority-queue-and-improvement-gates--2026-10-02"></a>
+
+### Priority queue and improvement gates: 2026-10-19
 
 This is the current next-work order. It supersedes older delivery lists for selecting
 the next PR, while preserving their historical decisions and all frozen contracts.
-This update records planning and local code inspection, not a new production check,
-research read, or benchmark result. PR 1 cost/power planning is merged in `#483`; its
-[report](docs/research/cost-power-planning-v1.md) is an input to future registrations,
-not a change to the existing v2 evidence floor.
+This update records planning and local verification, not production health or a cohort
+read. Cost/power planning (#483), the v2 administrative-stop code (#484), Gate source
+selection (#485), its budget and erratum (#486/#487), and the HYP-015 read rehearsal
+and executable reader (#509/#513) are merged. Merged code does not certify deployment;
+none of these items should be reimplemented because an older queue still names it.
 
 **Select work in this order:** contain any active safety/data-loss incident; finish
 the current evidence PR; remove a proven blocker to the next evidence decision;
@@ -40,12 +43,12 @@ then take one bounded support item. Due registered readings take precedence over
 optional optimization. Passive cohorts do not occupy an implementation slot. Keep
 the existing limit of one primary and one support implementation PR.
 
-| Order | Primary result                                                               | Start / finish condition                                                                                                                                                                                                                                                                                                                                                                         |
-| ----- | ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 1     | Finish HYP-012 v2 administrative-stop registration and review (PR 2)         | Review the latest revision, including due checkpoints before a first read, transaction/settlement boundaries for snapshots, and exclusion of overlapping feature/outcome windows after a stop. The initial `c63c724` review is not approval of subsequent fixes. Finish with accepted registration, regression evidence and a merge; deploy/migration remains a separately authorized operation. |
-| 2     | Select one feasible source of pre-move data (PR 3)                           | Extend the [MEXC feasibility audit](docs/research/mexc-pre-move-data-feasibility-v1.md): decision-time availability, quiet-period denominator, instrument identity and an accessible execution route. Produce one source choice or a documented no-go; do not reopen HYP-029 or infer order-book spread from OHLCV.                                                                              |
-| 3     | Establish the budget for collection and recovery (PR 5)                      | Measure free space, bytes/day, gaps, retention headroom, operating cost and a narrow isolated restore using ENG-025. Finish with explicit duration, disk/load limits and a recovery result. Extra app-table archiving is conditional on measured remaining headroom.                                                                                                                             |
-| 4     | Start at most one bounded prospective collector, conditionally (PR 6 onward) | Only after the 2026-10-31 direction decision and the source/budget gates above. Register its universe and activation before collection. First assess completeness and timing, then executable costs/capacity, then register one signal and an untouched forward test using PR 1. A failed feasibility gate parks this sequence and leads to a separate spot/perp carry feasibility decision.     |
+| Order | Primary result                                                 | Start / finish condition                                                                                                                                                                                                                                                                   |
+| ----- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 1     | Finish remaining HYP-015 read-readiness obligations            | Reuse the merged reader, rehearsal, input archive and executable evaluation. Identify an actual missing gate before adding code. Preserve the frozen cohort and the 2026-11-04 12:00Z opening.                                                                                             |
+| 2     | Close disk-growth analysis and prepare the direction decision  | Review the PR 2b evidence and recovery coverage. On 2026-10-31 use a fresh reading and the exact proposed universe's recomputed budget, as in `direction-decision-2026-10-31-brief.md`; a previous reading is not enough.                                                                  |
+| 3     | Follow the decision's conditional branch                       | At most one bounded Gate collector or the separately gated carry feasibility path. No automatic start on 2026-10-31, no new pump-short iteration, and no expansion solely to increase signal count.                                                                                        |
+| 4     | If HYP-015 is a candidate, register its untouched confirmation | Follow `hyp015-confirmation-stage-v1.md`: v2 terminal artifact, full feature/outcome exclusions, approved economics, and a freeze before a future Monday. 2026-11-09 is the earliest possible start, not a commitment. LIVE_PROBE implementation follows the candidate's registered gates. |
 
 **Calendar obligation (PR 4):** HYP-015's registered formal reading is no earlier
 than 2026-11-04 12:00Z and must use its existing reader/claim and cohort rules. Prepare
@@ -53,14 +56,27 @@ any proven missing reader or durability requirement before that date. Waiting fo
 the date consumes no implementation slot; this queue grants no interim read. The
 2026-10-31 direction decision also does not itself stop v2 or deploy PR 2.
 
-**Support selection:** prioritize verified recovery/capture risks (ENG-025) and
-confirmed user-facing correctness defects (ENG-005/ENG-027) when they block current
-work. Once those are contained, the first optional performance experiment is one
-ENG-014 analytics benchmark **if** a canonical, permitted report is actually slowing
-the next evidence task. The next optional maintainability candidate is the ENG-032
-API-contract pilot. Table virtualization (ENG-033), persistent chart caching
-(ENG-034), and parser replacement (ENG-007) stay parked until their own triggers are
-observed. Installing `uv`/`ruff` again is rejected intake (ENG-035).
+**Support selection and correctness preemption:** first repair ENG-004's incident
+publication: separate scanner/source incidents and capture failures, and atomically
+queue each transition with its Redis marker. Consumer pending-message recovery,
+network waits inside a database transaction, and pump cooldown-before-enqueue are
+separate follow-ups, not fixed by new keys. Next assess the confirmed minute-boundary
+trade drop (ENG-037) and missing-contract-metadata OI fallback (ENG-036). A proven
+ongoing loss of non-recoverable inputs preempts the nominal order. Prepare reproducing
+tests now; before changing an active data path, name affected cohorts and whether the
+fix changes selection, accounting, or diagnostics. Preserve original data/versions;
+if a verdict input is invalid, resolve that explicitly rather than silently changing
+or retaining it until a calendar date.
+
+Once capture/evidence risks are contained, take the separate API paper-contract and
+leverage correction, then closed-position MFE/MAE and pump-snapshot provenance fixes,
+in bounded PRs with their own regressions. Reassess liquidation-writer queue semantics
+against actual loss and restart evidence; rarity alone does not determine priority.
+The SL-failure close/journal and reconciliation slot defects remain mandatory before
+any live entry, with fault/restart tests in the LIVE_PROBE path. These are not claims
+that every external audit scenario has been reproduced. Preserve the one-primary /
+one-support limit. CI flakes that block these changes take precedence over optional
+SQL/API refactoring; ENG-014/032/033/034/007 retain their measured activation gates.
 
 The [engineering register](docs/engineering/findings-register.md#october-tooling-intake--2026-10-02)
 owns the idea cards, measurements and rejection reasons. `IDEAS.md` remains the
