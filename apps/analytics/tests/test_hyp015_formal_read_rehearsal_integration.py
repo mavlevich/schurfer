@@ -931,3 +931,114 @@ def test_a_broken_price_in_the_snapshot_also_stops_the_evaluation() -> None:
         reader.sizings_from_snapshot({"w1": {"entry_vwap": float("nan"), "rule": None}}, CONTRACT)
     with pytest.raises(SystemExit, match="integrity failure, filled entry w2"):
         reader.sizings_from_snapshot({"w2": {"entry_vwap": None, "rule": None}}, CONTRACT)
+
+
+def test_a_read_registered_after_v2_checks_its_terminal_state_before_the_claim(
+    db: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from schurfer_analytics.formal_read_claims import record_administrative_stop
+    from schurfer_analytics.momentum_flow_hold12h_v2_terminal import V2TerminalPin
+    from schurfer_analytics.source_lead_forward_cohort import (
+        CONTRACT_VERSION as V2_CONTRACT,
+    )
+    from schurfer_analytics.source_lead_forward_cohort import (
+        SOURCE_LEAD_FORWARD_COHORT_START as V2_START,
+    )
+
+    _seed(db)
+    _capture(monkeypatch)
+    v2_dir, out = tmp_path / "v2", tmp_path / "confirm"
+    v2_dir.mkdir()
+    # The cohort's first WATCH bucket is START + 60 min; a decision depends on data
+    # up to 450 minutes before its bucket (cooldown 360, lookback 60, OI staleness 30).
+    earliest = START + timedelta(minutes=60) - timedelta(minutes=450)
+
+    def stop(end: datetime) -> V2TerminalPin:
+        payload = {"study_id": "HYP-012", "contract_version": V2_CONTRACT,
+                   "cohort_start": V2_START.isoformat(), "decision": "stop",
+                   "closed_windows": [{"capture_id": 1, "canonical_asset_id": "asset:1",
+                                       "start": (end - timedelta(hours=1)).isoformat(),
+                                       "end": end.isoformat()}]}  # fmt: skip
+        body = json.dumps(payload).encode()
+        name = f"checkpoint-{end:%Y%m%dT%H%M}.json"
+        (v2_dir / name).write_bytes(body)
+        return V2TerminalPin(name, hashlib.sha256(body).hexdigest())
+
+    def use(pin: V2TerminalPin) -> None:
+        confirm = reader.FormalReadSpec(CONFIRM_CONTRACT, registered=True, v2_terminal=pin)
+        specs = {CONTRACT.contract_version: _REGISTERED_SPECS()[CONTRACT.contract_version],
+                 CONFIRM: confirm}  # fmt: skip
+        monkeypatch.setattr(reader, "formal_read_specs", lambda: specs)
+
+    def record(pin: V2TerminalPin) -> None:
+        asyncio.run(
+            record_administrative_stop(
+                DSN,
+                study_id="HYP-012",
+                contract_version=V2_CONTRACT,
+                cohort_start=V2_START,
+                database_now=START - timedelta(days=9),
+                closed_ids=[1],
+                terminal_reason="rehearsal",
+                result_fingerprint=pin.sha256,
+                code_revision=REVISION,
+                working_tree_dirty=False,
+            )
+        )
+
+    db.execute("DELETE FROM app.formal_read_claims WHERE study_id = 'HYP-012'")
+    try:
+        chain = ("--contract", CONFIRM, "--v2-terminal-dir", str(v2_dir))
+        valid = stop(earliest)
+        use(valid)
+        with pytest.raises(SystemExit, match="v2-terminal-dir is required"):
+            _read(monkeypatch, capsys, out, "--contract", CONFIRM)
+        # A valid file is not enough: the database must record v2's stop with it.
+        with pytest.raises(SystemExit, match="no recorded administrative stop"):
+            _read(monkeypatch, capsys, out, *chain)
+        record(valid)
+        late = stop(earliest + timedelta(minutes=1))  # 389 minutes before the first bucket
+        use(late)
+        with pytest.raises(SystemExit, match="names another artifact"):
+            _read(monkeypatch, capsys, out, *chain)
+        assert [c["contract_version"] for c in _claims_all(db)] == []
+        assert not out.exists()
+
+        use(valid)
+        printed = _read(monkeypatch, capsys, out, *chain)
+        assert printed["v2_closed_windows"] == {
+            "v2_terminal_artifact": valid.file_name,
+            "v2_terminal_sha256": valid.sha256,
+            "closed_windows": 1,
+            "latest_closed_window_end": earliest.isoformat(),
+            "earliest_data_used": earliest.isoformat(),
+        }
+        assert _claim(db, CONFIRM)["status"] == "completed"
+    finally:
+        db.execute("DELETE FROM app.formal_read_claims WHERE study_id = 'HYP-012'")
+
+
+def test_a_closed_window_inside_the_watch_dependency_refuses(
+    db: Any, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Ending before the cohort start minus the 60-minute lookback is not enough: the
+    first decision still depends on its 360-minute cooldown state and OI staleness."""
+    from schurfer_analytics.momentum_flow_hold12h_v2_terminal import (
+        V2TerminalPin,
+        check_v2_closed_windows,
+        watch_dependency,
+    )
+    from schurfer_analytics.momentum_flow_watch_contract import FROZEN_WATCH_CONTRACT
+
+    _seed(db)
+    first_bucket = asyncio.run(
+        reader.earliest_cohort_bucket(DSN, cohort_start=START, decision_prefix_end=PREFIX_END)
+    )
+    assert first_bucket == START + timedelta(minutes=60)
+    window = [{"end": (START - timedelta(minutes=90)).isoformat()}]
+    with pytest.raises(SystemExit, match="1 v2 closed windows end after"):
+        check_v2_closed_windows(
+            window,
+            earliest_use=first_bucket - watch_dependency(FROZEN_WATCH_CONTRACT),
+            pin=V2TerminalPin("x.json", "0" * 64),
+        )

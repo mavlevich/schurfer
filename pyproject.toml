@@ -27,7 +27,9 @@ constraint-dependencies = ["msgpack>=1.2.1", "aiohttp>=3.14.4"]
 # requests are currently the only consumers. Revisit this when ccxt upgrades.
 # ccxt (4.5.77, and still 4.5.85) also pins multidict==6.7.1, which carries
 # CVE-2026-104874, fixed in 6.9.1; aiohttp and yarl are the other consumers.
-override-dependencies = ["urllib3==2.8.0", "multidict==6.9.1"]
+# ccxt 4.5.77 also pins certifi==2026.6.17, which carries GHSA-6q48-6c7w-9gw2, fixed
+# in 2026.10.19; requests and httpx are the other consumers.
+override-dependencies = ["urllib3==2.8.0", "multidict==6.9.1", "certifi==2026.10.19"]
 
 [tool.uv.workspace]
 members = [
