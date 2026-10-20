@@ -210,7 +210,16 @@ def test_run_window_is_enforced_before_exchange_client_is_created(
     monkeypatch.setitem(EXCHANGE_FACTORIES, "bybit", no_exchange_client)
     monkeypatch.setattr(module, "datetime", BeforeGate)
     monkeypatch.setattr(
-        sys, "argv", ["bybit-carry-feasibility", "--output", str(tmp_path / "x.json")]
+        sys,
+        "argv",
+        [
+            "bybit-carry-feasibility",
+            "--output",
+            str(tmp_path / "x.json"),
+            "--code-revision",
+            "abc123",
+            "--no-working-tree-dirty",
+        ],
     )
     with pytest.raises(SystemExit, match="cannot run before"):
         main()
@@ -340,3 +349,45 @@ def test_output_is_write_once(tmp_path: Path) -> None:
     with pytest.raises(FileExistsError):
         publish_once(output, {"a": 2})
     assert json.loads(output.read_text()) == {"a": 1}
+
+
+def test_the_result_names_the_revision_given_by_the_host(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The analytics image has no git: the revision comes from the command line, and a
+    run without it is refused before any exchange client exists."""
+    import json as _json
+
+    from schurfer_analytics import bybit_carry_feasibility as module
+
+    class AfterGate:
+        @staticmethod
+        def now(_tz: object) -> datetime:
+            return RUN_AFTER + timedelta(minutes=1)
+
+    class Client:
+        async def close(self) -> None:
+            return None
+
+    async def fake_canary(_client: object) -> dict[str, object]:
+        return {"coverage": {"pairs": 0}}
+
+    out = tmp_path / "result.json"
+    monkeypatch.setattr(module, "datetime", AfterGate)
+    monkeypatch.setitem(EXCHANGE_FACTORIES, "bybit", Client)
+    monkeypatch.setattr(module, "run_canary", fake_canary)
+    monkeypatch.setattr(sys, "argv", ["bybit-carry-feasibility", "--output", str(out)])
+    with pytest.raises(SystemExit):
+        main()  # no --code-revision: argparse refuses
+    assert not out.exists()
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["bybit-carry-feasibility", "--output", str(out), "--code-revision", " abc123 ",
+         "--no-working-tree-dirty"],
+    )  # fmt: skip
+    main()
+    assert _json.loads(out.read_text())["run"] == {
+        "code_revision": "abc123",
+        "working_tree_dirty": False,
+    }
