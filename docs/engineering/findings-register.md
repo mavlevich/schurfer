@@ -129,6 +129,19 @@ smallest fix at the owning boundary and add a regression test for the exact fail
 - **Related authority:**
   [`docs/contracts/notification-delivery-v1.md`](../contracts/notification-delivery-v1.md).
 
+- **2026-10-19 incident-publication follow-up:** regression tests against `f6a449c`
+  reproduce reused `scanner_stale` / `source_unhealthy` keys across distinct incidents
+  and capture IDs. Same-second recoveries also collide. The producer fix is prepared
+  on `codex/notifier-incident-alerts`, not merged or deployed: incident-scoped keys,
+  capture-scoped immutable identity, and one Redis script for stream enqueue plus
+  marker transition. Tests cover repeated/concurrent polls, failed enqueue, failed
+  recovery/restart, legacy markers, and real consumer SQL on PostgreSQL with a local
+  Telegram stub. Existing legacy markers are retained; the fix does not replay
+  historical dropped alerts. Pending recovery (`XREADGROUP` currently reads only
+  `>`), database transactions spanning rate/network waits, and the pump cooldown set
+  before enqueue remain separate confirmed code paths requiring regression fixes.
+  No current production outage or successful rollout is claimed.
+
 ### ENG-005 — Centralize expired-session handling in the web client
 
 - **Status / priority:** `confirmed`, `P2`.
@@ -1038,6 +1051,48 @@ Measure cold conversion separately from repeated queries and report the number o
 reuses needed to repay conversion cost. Cache benchmark reads must preserve their
 existing integrity checks. A faster warm query with unacceptable first-run cost,
 storage use or different evidence is not a successful improvement.
+
+## Data-correctness intake — 2026-10-19
+
+These are code/local-reproduction findings on `f6a449c`, not a production rate or
+retrospective permission to inspect frozen outcomes. ROADMAP owns their ordering.
+
+### ENG-036 — Refuse OI normalization without verified contract units
+
+- **Status / priority:** `confirmed`, `P2` research-data correctness; elevate on
+  demonstrated impact to an active evidence input.
+- **Evidence:** `oi.py:_fetch_exchange_oi` continues after `load_markets` fails and
+  normalizes `openInterestAmount` with `contractSize` defaulted to 1. The existing
+  `test_fetch_oi_falls_back_to_contract_size_1_when_markets_unavailable` passes and
+  explicitly asserts USD 5,000 from 100 contracts at price 50 with absent metadata.
+  A true multiplier of 0.01 would instead give USD 50. This is a units example,
+  not a measured historical error count. Symbols are also reconstructed from base.
+- **Next bounded change:** verify the canonical route and endpoint units; keep
+  verified native USD OI distinct from a contract conversion. Refuse or record
+  missing converted OI without a verified multiplier; do not invent one. Audit
+  consumers and cohort impact before rollout; preserve original observations.
+- **Regression gate:** failed market load, missing/invalid/non-unit multipliers,
+  canonical ticker collisions, native-value versus amount-only responses, and
+  persistence/consumer handling of explicit missingness.
+
+### ENG-037 — Define event-time lateness at the momentum minute boundary
+
+- **Status / priority:** `confirmed` engine behavior, `P2`; production frequency and
+  downstream impact unmeasured. Ongoing non-recoverable loss would preempt the queue.
+- **Evidence:** a local copy of `momentum.go` at `f6a449c` was exercised with a trade
+  at 12:00:10, a quote at 12:01:00.001, then a buffered trade timestamped
+  12:00:59.900 received at 12:01:00.002. The quote finalizes the old bar with one
+  trade; the second trade is discarded and increments the next bar's
+  `LateTradesDropped`. This proves the cross-feed sequence can lose a trade,
+  not its frequency on Binance or Bybit. Reproducer:
+  `/private/tmp/schurfer-minute-boundary-a154c4/boundary_test.go` (temporary local
+  diagnostic; the event sequence above is the durable evidence).
+- **Next bounded change:** measure late-event counts and arrival skew without
+  outcome reads; choose an explicit bounded lateness/finalization contract and
+  version any changed aggregation. Do not change active WATCH inputs in place.
+- **Regression gate:** quote/ticker/trade interleaving at both sides of a minute,
+  bounded reordering, duplicates, gaps, shutdown/restart, and the real collector to
+  writer path. The local reproduction does not yet implement a repair.
 
 ## Promotion summary
 

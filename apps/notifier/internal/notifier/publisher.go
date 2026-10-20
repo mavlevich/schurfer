@@ -22,20 +22,7 @@ func (n *Notifier) publishEnvelope(
 	text string,
 	metadata map[string]any,
 ) error {
-	env := Envelope{
-		SchemaVersion:  1,
-		NotificationID: uuid.NewString(),
-		DedupKey:       dedupKey,
-		Producer:       producer,
-		Kind:           kind,
-		Severity:       severity,
-		CreatedAt:      time.Now().UTC(),
-		Payload: Payload{
-			Text:     text,
-			Metadata: metadata,
-		},
-	}
-
+	env := newEnvelope(producer, kind, severity, dedupKey, text, metadata)
 	b, err := json.Marshal(env)
 	if err != nil {
 		return fmt.Errorf("marshal envelope: %w", err)
@@ -50,6 +37,21 @@ func (n *Notifier) publishEnvelope(
 	if err != nil {
 		return fmt.Errorf("xadd envelope: %w", err)
 	}
-
 	return nil
+}
+
+func newEnvelope(producer, kind, severity, dedupKey, text string, metadata map[string]any) Envelope {
+	return Envelope{
+		SchemaVersion:  1,
+		NotificationID: uuid.NewString(),
+		DedupKey:       dedupKey,
+		Producer:       producer,
+		Kind:           kind,
+		Severity:       severity,
+		CreatedAt:      time.Now().UTC(),
+		Payload: Payload{
+			Text:     text,
+			Metadata: metadata,
+		},
+	}
 }
