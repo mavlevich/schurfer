@@ -249,6 +249,10 @@ def test_main_writes_the_analysis_once(tmp_path: Path) -> None:
     argv = [
         "--readings",
         str(tmp_path / "readings"),
+        "--readings-from",
+        "2026-10-01T00:00:00+00:00",
+        "--readings-until",
+        "2026-12-01T00:00:00+00:00",
         "--gate-budget",
         str(GATE_BUDGET),
         "--bars-cutoff-days",
@@ -270,6 +274,8 @@ def test_main_writes_the_analysis_once(tmp_path: Path) -> None:
     assert record["working_tree_dirty"] is False
     assert record["inputs"]["gate_budget_sha256"] == dgb.GATE_BUDGET_SHA256
     assert len(record["inputs"]["readings"]) == 8
+    assert record["params"]["readings_from"] == "2026-10-01T00:00:00+00:00"
+    assert record["params"]["readings_until"] == "2026-12-01T00:00:00+00:00"
     with pytest.raises(FileExistsError):
         dgb.main(argv)
 
@@ -279,6 +285,10 @@ def test_main_refuses_a_bad_series_before_writing(tmp_path: Path) -> None:
     argv = [
         "--readings",
         str(tmp_path / "readings"),
+        "--readings-from",
+        "2026-10-01T00:00:00+00:00",
+        "--readings-until",
+        "2026-12-01T00:00:00+00:00",
         "--gate-budget",
         str(GATE_BUDGET),
         "--bars-cutoff-days",
@@ -311,3 +321,83 @@ def test_the_what_if_removes_only_the_pump_short_tables(tmp_path: Path) -> None:
     assert what_if["conservative_mib_per_day"] == pytest.approx(50, abs=0.01)
     assert result["growth"]["conservative_mib_per_day"] == pytest.approx(100, abs=0.01)
     assert set(what_if["verdicts"]) == set(result["verdicts"])
+
+
+def _hypertable(name: str, sizes: list[int]) -> dict[str, Any]:
+    return {
+        "hypertable": name,
+        "chunks": [
+            {"chunk": f"{name}-{i}", "range_start": "", "range_end": "", "compressed": False,
+             "bytes": size}
+            for i, size in enumerate(sizes)
+        ],
+    }  # fmt: skip
+
+
+def _parent(name: str) -> dict[str, Any]:
+    return {"table": name, "total_bytes": 24576, "n_tup_ins": 0, "n_tup_upd": 0,
+            "n_tup_del": 0, "n_dead_tup": 0}  # fmt: skip
+
+
+def test_a_hypertable_is_counted_once_by_its_chunks(tmp_path: Path) -> None:
+    for day in range(8):
+        reading = _reading(day, db_other=20 * GIB, tables=[_parent("timeseries.events")])
+        reading["database"]["hypertables"].append(
+            _hypertable("timeseries.events", [GIB, day * 10 * MIB])
+        )
+        reading["database"]["tables"].append(_parent(BARS_HYPERTABLE))
+        _write(tmp_path, reading)
+    rows = {row["relation"]: row for row in dgb.relations(dgb.load_series(tmp_path))}
+    assert rows["timeseries.events"]["readings"] == 8
+    assert rows["timeseries.events"]["mib_per_day"] == pytest.approx(10, abs=0.01)
+    assert BARS_HYPERTABLE not in rows
+    assert "n_tup_ins_per_day" not in rows["timeseries.events"]
+
+
+def test_the_what_if_goes_through_the_same_per_part_estimators(tmp_path: Path) -> None:
+    def table(name: str, size: int) -> dict[str, Any]:
+        return {"table": name, "total_bytes": size, "n_tup_ins": 0, "n_tup_upd": 0,
+                "n_tup_del": 0, "n_dead_tup": 0}  # fmt: skip
+
+    # The database grows 100 MiB/day while one removed table shrinks 10 MiB/day:
+    # without it the database part grows 110, which subtracting a clamped table
+    # rate from the conservative total would have missed.
+    for day in range(8):
+        tables = [
+            table("app.trade_decisions", 2 * GIB - day * 10 * MIB),
+            table("app.trade_decision_outcomes", GIB),
+        ]
+        _write(tmp_path, _reading(day, db_other=20 * GIB + day * 100 * MIB, tables=tables))
+    what_if = dgb.analyse(dgb.load_series(tmp_path), _gate(), cutoff_days=14)[
+        "what_if_without_pump_short"
+    ]
+    assert what_if["removed_mib_per_day"] == pytest.approx(-10, abs=0.01)
+    assert what_if["conservative_mib_per_day"] == pytest.approx(110, abs=0.01)
+    assert what_if["central_mib_per_day"] == pytest.approx(110, abs=0.01)
+
+
+def test_a_removed_relation_missing_from_a_reading_is_refused(tmp_path: Path) -> None:
+    for day in range(8):
+        _write(tmp_path, _reading(day, db_other=20 * GIB))
+    with pytest.raises(dgb.SeriesError, match=r"app\.trade_decisions missing"):
+        dgb.rates(dgb.load_series(tmp_path), without=("app.trade_decisions",))
+
+
+def test_the_readings_window_is_explicit(tmp_path: Path) -> None:
+    series = _series(tmp_path, 10, mib_per_day=50)
+    start, end = START + timedelta(days=2), START + timedelta(days=5)
+    chosen = dgb.select_window(series, start=start, end=end)
+    assert [datetime.fromisoformat(i["reading"]["taken_at"]) for i in chosen] == [
+        START + timedelta(days=d) for d in range(2, 6)
+    ]
+    with pytest.raises(dgb.SeriesError, match="no reading taken"):
+        dgb.select_window(series, start=START - timedelta(days=9), end=START - timedelta(days=1))
+    with pytest.raises(dgb.SeriesError, match="start before end"):
+        dgb.select_window(series, start=end, end=start)
+
+
+def test_without_the_pump_short_tables_the_what_if_is_unavailable(tmp_path: Path) -> None:
+    result = dgb.analyse(_series(tmp_path, 7, mib_per_day=10), _gate(), cutoff_days=14)
+    what_if = result["what_if_without_pump_short"]
+    assert what_if["available"] is False and "missing" in what_if["reason"]
+    assert result["verdicts"]["registry_44"]["verdict"] == "fits"

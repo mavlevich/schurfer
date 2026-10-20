@@ -1291,19 +1291,23 @@ prod-disk-growth-health:
 	@result=$$(systemctl show schurfer-disk-growth-reading.service -p Result --value); test "$$result" = success || (echo "ERROR: the last disk-growth run ended '$$result'" && exit 1)
 	@python3 infra/scripts/disk_growth_reading.py --check --out-dir $(DISK_GROWTH_DIR)
 
-# Disk growth over every reading so far and the Gate budget recomputed (PR 2b), written
-# once to runtime/research/disk-growth-budget. The readings and PR 5's committed budget
-# artifact are mounted read-only; the bars cutoff is the live one (runtime file).
+# Disk growth over the readings taken in [FROM, UNTIL] and the Gate budget recomputed
+# (PR 2b), written once to runtime/research/disk-growth-budget. For the 2026-10-31
+# decision: FROM=2026-10-04T00:00:00+00:00 UNTIL=2026-10-31T23:59:59+00:00, after that
+# day's reading (make prod-disk-growth-run takes one now). The readings and PR 5's
+# committed budget artifact are mounted read-only; the bars cutoff is the live one.
 prod-disk-growth-budget:
 	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
 	@test -z "$$(git status --porcelain)" || (echo "ERROR: dirty working tree; the record names the revision" && exit 1)
+	@test -n "$(FROM)" -a -n "$(UNTIL)" || (echo "ERROR: FROM=<UTC ISO> UNTIL=<UTC ISO> are required: the readings window is fixed per run" && exit 1)
 	@mkdir -p /opt/schurfer/runtime/research/disk-growth-budget
 	@$(_PROD) run --rm --no-deps \
 		-v /opt/schurfer/runtime/research/disk-growth:/readings:ro \
 		-v /opt/schurfer/docs/research/evidence/gate-collection-budget-v1:/gate-budget:ro \
 		-v /opt/schurfer/runtime/research/disk-growth-budget:/out \
 		--entrypoint disk-growth-budget analytics \
-		--readings /readings --gate-budget /gate-budget/gate-collection-budget.json \
+		--readings /readings --readings-from "$(FROM)" --readings-until "$(UNTIL)" \
+		--gate-budget /gate-budget/gate-collection-budget.json \
 		--bars-cutoff-days $(COLD_BAR_CUTOFF_DAYS) \
 		--code-revision "$$(git rev-parse HEAD)" --no-working-tree-dirty --out-dir /out
 

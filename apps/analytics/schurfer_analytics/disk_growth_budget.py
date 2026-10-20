@@ -185,9 +185,32 @@ def _median(values: Sequence[float]) -> float:
     return ordered[mid] if len(ordered) % 2 else (ordered[mid - 1] + ordered[mid]) / 2
 
 
-def rates(series: list[dict[str, Any]]) -> dict[str, Any]:
+def _hypertable_names(reading: dict[str, Any]) -> set[str]:
+    return {h["hypertable"] for h in reading["database"]["hypertables"]}
+
+
+def relation_bytes(reading: dict[str, Any], name: str) -> int:
+    """One relation's bytes in a reading: a hypertable is the sum of its chunks (its
+    parent table holds no rows), a plain table its total relation size."""
+    for hypertable in reading["database"]["hypertables"]:
+        if hypertable["hypertable"] == name:
+            return int(sum(chunk["bytes"] for chunk in hypertable["chunks"]))
+    for table in reading["database"]["tables"]:
+        if table["table"] == name:
+            return int(table["total_bytes"])
+    raise SeriesError(f"{name} missing from the reading taken at {reading['taken_at']}")
+
+
+def rates(series: list[dict[str, Any]], *, without: Sequence[str] = ()) -> dict[str, Any]:
+    """Each part's rate. `without` removes those relations' bytes from the database part
+    (and from the filesystem total) in every reading before any rate is estimated, so a
+    what-if goes through exactly the same per-part estimators as the verdict."""
     days = _days(series)
     rows = [parts(item["reading"]) for item in series]
+    for row, item in zip(rows, series, strict=True):
+        removed = sum(relation_bytes(item["reading"], name) for name in without)
+        row["database_outside_bars"] -= removed
+        row["used_outside_bars"] -= removed
     per_part: dict[str, float] = {}
     for name in STEADY_PARTS:
         per_part[name] = slope(days, [row[name] for row in rows]) / MIB
@@ -240,7 +263,10 @@ def relations(series: list[dict[str, Any]]) -> list[dict[str, Any]]:
     sizes: dict[str, list[tuple[float, int]]] = {}
     for day, item in zip(days, series, strict=True):
         database = item["reading"]["database"]
+        hypertables = _hypertable_names(item["reading"])
         for table in database["tables"]:
+            if table["table"] in hypertables:
+                continue  # a hypertable's parent row; its chunks are counted below
             sizes.setdefault(table["table"], []).append((day, table["total_bytes"]))
         for hypertable in database["hypertables"]:
             if hypertable["hypertable"] != BARS_HYPERTABLE:
@@ -248,6 +274,9 @@ def relations(series: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 sizes.setdefault(hypertable["hypertable"], []).append((day, total))
     first = {t["table"]: t for t in series[0]["reading"]["database"]["tables"]}
     last = {t["table"]: t for t in series[-1]["reading"]["database"]["tables"]}
+    for name in _hypertable_names(series[-1]["reading"]):
+        first.pop(name, None)  # parent counters say nothing about the chunks
+        last.pop(name, None)
     out = []
     for name, points in sizes.items():
         row: dict[str, Any] = {
@@ -293,6 +322,24 @@ def gaps(series: list[dict[str, Any]]) -> list[dict[str, str]]:
         if end - start > MAX_READING_GAP:
             out.append({"after": before["name"], "before": after["name"]})
     return out
+
+
+def select_window(
+    series: list[dict[str, Any]], *, start: datetime, end: datetime
+) -> list[dict[str, Any]]:
+    """The readings taken in `[start, end]`. The window is an explicit input of every
+    analysis, so a recompute (for example on the 2026-10-31 decision) is defined in
+    advance rather than by whatever readings happen to exist."""
+    if start.tzinfo is None or end.tzinfo is None or start >= end:
+        raise SeriesError("the readings window needs two UTC instants, start before end")
+    chosen = [
+        item
+        for item in series
+        if start <= datetime.fromisoformat(item["reading"]["taken_at"]) <= end
+    ]
+    if not chosen:
+        raise SeriesError(f"no reading taken in [{start.isoformat()}, {end.isoformat()}]")
+    return chosen
 
 
 def load_gate_budget(path: Path) -> tuple[dict[str, Any], str]:
@@ -356,23 +403,34 @@ def analyse(
         for state in ("now", "after_release")
         for rate in ("central", "conservative")
     }
-    by_relation = {row["relation"]: row["mib_per_day"] or 0.0 for row in relations(series)}
-    removed = sum(by_relation.get(name, 0.0) for name in WHAT_IF_WITHOUT)
-    what_if_rates = {
-        "central": growth["central_mib_per_day"] - removed,
-        "conservative": growth["conservative_mib_per_day"] - max(0.0, removed),
-    }
-    what_if_scenarios = {
-        f"after_release_{rate}": headroom(
-            gate_budget["budget"],
-            free_gib=free_gib,
-            reserve_gib=reserve_gib,
-            other_growth_gib_per_day=max(0.0, value) * MIB / GIB,
-            release_gib=release["due_gib"],
-            horizon_months=horizon_months,
-        )
-        for rate, value in what_if_rates.items()
-    }
+    what_if: dict[str, Any] = {"relations": list(WHAT_IF_WITHOUT)}
+    try:
+        what_if_growth = rates(series, without=WHAT_IF_WITHOUT)
+    except SeriesError as exc:
+        # Not every database has these tables in every reading; the verdict stands alone.
+        what_if |= {"available": False, "reason": str(exc)}
+    else:
+        what_if_scenarios = {
+            f"after_release_{rate}": headroom(
+                gate_budget["budget"],
+                free_gib=free_gib,
+                reserve_gib=reserve_gib,
+                other_growth_gib_per_day=max(0.0, what_if_growth[f"{rate}_mib_per_day"])
+                * MIB
+                / GIB,
+                release_gib=release["due_gib"],
+                horizon_months=horizon_months,
+            )
+            for rate in ("central", "conservative")
+        }
+        what_if |= {
+            "available": True,
+            "removed_mib_per_day": growth["parts_mib_per_day"]["database_outside_bars"]
+            - what_if_growth["parts_mib_per_day"]["database_outside_bars"],
+            "central_mib_per_day": what_if_growth["central_mib_per_day"],
+            "conservative_mib_per_day": what_if_growth["conservative_mib_per_day"],
+            "verdicts": verdicts(what_if_scenarios, series_days=series_days),
+        }
     usable_now = free_gib - reserve_gib
     conservative_gib_per_day = growth["conservative_mib_per_day"] * MIB / GIB
     days_to_reserve = (
@@ -390,13 +448,7 @@ def analyse(
         or (days_to_reserve is not None and days_to_reserve < STOP_PROJECTION_DAYS),
         "headroom": scenarios,
         "verdicts": verdicts(scenarios, series_days=series_days),
-        "what_if_without_pump_short": {
-            "relations": list(WHAT_IF_WITHOUT),
-            "removed_mib_per_day": removed,
-            "central_mib_per_day": what_if_rates["central"],
-            "conservative_mib_per_day": what_if_rates["conservative"],
-            "verdicts": verdicts(what_if_scenarios, series_days=series_days),
-        },
+        "what_if_without_pump_short": what_if,
         "relations": relations(series),
         "series": [
             {
@@ -426,6 +478,8 @@ def write_once(out_dir: Path, record: dict[str, Any]) -> Path:
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--readings", type=Path, required=True)
+    parser.add_argument("--readings-from", type=datetime.fromisoformat, required=True)
+    parser.add_argument("--readings-until", type=datetime.fromisoformat, required=True)
     parser.add_argument("--gate-budget", type=Path, required=True)
     parser.add_argument("--bars-cutoff-days", type=int, required=True)
     parser.add_argument("--code-revision", required=True)
@@ -435,7 +489,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--out-dir", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
-        series = load_series(args.readings)
+        series = select_window(
+            load_series(args.readings), start=args.readings_from, end=args.readings_until
+        )
         gate_budget, gate_sha = load_gate_budget(args.gate_budget)
         result = analyse(series, gate_budget, cutoff_days=args.bars_cutoff_days)
     except SeriesError as exc:
@@ -451,6 +507,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "days_per_month": DAYS_PER_MONTH,
             "min_series_days": MIN_SERIES_DAYS,
             "bars_cutoff_days": args.bars_cutoff_days,
+            "readings_from": args.readings_from.isoformat(),
+            "readings_until": args.readings_until.isoformat(),
         },
         "inputs": {
             "readings": [{"name": item["name"], "sha256": item["sha256"]} for item in series],
