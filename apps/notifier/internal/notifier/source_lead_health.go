@@ -153,67 +153,15 @@ func (n *Notifier) latestScan(ctx context.Context) (payload, bool) {
 }
 
 func (n *Notifier) reportSourceLeadStaleHealth(ctx context.Context, staleCollecting int) {
-	if staleCollecting > 0 {
-		claimed, claimErr := n.rdb.SetNX(
-			ctx,
-			redisKeySourceLeadHealthAlerted,
-			time.Now().Unix(),
-			0,
-		).Result()
-		if claimErr != nil {
-			slog.Warn("notifier.source_lead.claim_failed", "err", claimErr)
-			return
-		}
-		if !claimed {
-			return
-		}
-		message := fmt.Sprintf(
-			"🔴 Schurfer source-lead capture unhealthy: stale_collecting=%d",
-			staleCollecting,
-		)
-		if sendErr := n.publishEnvelope(ctx, "scanner", "source.unhealthy", "critical", "source_unhealthy", message, nil); sendErr != nil {
-			slog.Warn("notifier.source_lead.alert_failed", "err", sendErr)
-			if delErr := n.rdb.Del(ctx, redisKeySourceLeadHealthAlerted).Err(); delErr != nil {
-				slog.Warn("notifier.source_lead.claim_release_failed", "err", delErr)
-			}
-			return
-		}
-		slog.Warn(
-			"notifier.source_lead.unhealthy",
-			"stale", staleCollecting,
-		)
-		return
+	unhealthy := staleCollecting > 0
+	kind, severity, prefix, message := "source.recovered", "info", "source_recovered", "🟢 Schurfer source-lead capture recovered"
+	if unhealthy {
+		kind, severity, prefix = "source.unhealthy", "critical", "source_unhealthy"
+		message = fmt.Sprintf("🔴 Schurfer source-lead capture unhealthy: stale_collecting=%d", staleCollecting)
 	}
-
-	removed, err := n.rdb.Del(ctx, redisKeySourceLeadHealthAlerted).Result()
-	if err != nil {
-		slog.Warn("notifier.source_lead.clear_failed", "err", err)
-		return
+	if err := n.publishIncident(ctx, redisKeySourceLeadHealthAlerted, unhealthy, 0, kind, severity, prefix, message); err != nil {
+		slog.Warn("notifier.source_lead.transition_failed", "err", err)
 	}
-	if removed == 0 {
-		return
-	}
-	if err := n.publishEnvelope(
-		ctx,
-		"scanner",
-		"source.recovered",
-		"info",
-		"source_recovered_"+fmt.Sprintf("%d", time.Now().Unix()),
-		"🟢 Schurfer source-lead capture recovered",
-		nil,
-	); err != nil {
-		slog.Warn("notifier.source_lead.recovery_failed", "err", err)
-		if setErr := n.rdb.Set(
-			ctx,
-			redisKeySourceLeadHealthAlerted,
-			time.Now().Unix(),
-			0,
-		).Err(); setErr != nil {
-			slog.Warn("notifier.source_lead.flag_restore_failed", "err", setErr)
-		}
-		return
-	}
-	slog.Info("notifier.source_lead.recovered")
 }
 
 func (n *Notifier) reportSourceLeadCriticalFailure(ctx context.Context, captureID int64) {
@@ -221,24 +169,9 @@ func (n *Notifier) reportSourceLeadCriticalFailure(ctx context.Context, captureI
 		return
 	}
 	key := fmt.Sprintf("%s%d", redisKeySourceLeadFailureSeen, captureID)
-	claimed, err := n.rdb.SetNX(ctx, key, time.Now().Unix(), seenTTL).Result()
-	if err != nil {
-		slog.Warn("notifier.source_lead.failure_claim_failed", "err", err)
-		return
-	}
-	if !claimed {
-		return
-	}
-	message := fmt.Sprintf(
-		"🔴 Schurfer source-lead capture failed: capture_id=%d",
-		captureID,
-	)
-	if err := n.publishEnvelope(ctx, "scanner", "source.unhealthy", "critical", "source_unhealthy", message, nil); err != nil {
+	message := fmt.Sprintf("🔴 Schurfer source-lead capture failed: capture_id=%d", captureID)
+	if err := n.publishIncident(ctx, key, true, seenTTL,
+		"source.unhealthy", "critical", "source_capture_failed", message); err != nil {
 		slog.Warn("notifier.source_lead.failure_alert_failed", "err", err)
-		if delErr := n.rdb.Del(ctx, key).Err(); delErr != nil {
-			slog.Warn("notifier.source_lead.failure_claim_release_failed", "err", delErr)
-		}
-		return
 	}
-	slog.Warn("notifier.source_lead.capture_failed", "capture_id", captureID)
 }

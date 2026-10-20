@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"strconv"
 	"sync"
 	"time"
 
@@ -162,50 +161,16 @@ func (n *Notifier) reportMissing(ctx context.Context) {
 	}
 }
 
-// reportStaleness sends an edge-triggered Telegram alert when the scanner is
-// unhealthy, and a recovery notice when it is fine again. The flag lives in
-// Redis so it survives a notifier restart. It claims the flag before sending and
-// releases it if the send fails, so a Redis or Telegram error does not turn into
-// a stream of repeated alerts (nor a permanently swallowed one).
+// reportStaleness queues one alert/recovery pair per scanner incident. Both
+// transitions and their persistent Redis marker are published atomically.
 func (n *Notifier) reportStaleness(ctx context.Context, stale bool, reason string) {
+	kind, severity, prefix, message := "scanner.recovered", "info", "scanner_recovered", "🟢 Schurfer scanner recovered"
 	if stale {
-		claimed, err := n.rdb.SetNX(ctx, redisKeyStaleAlerted, time.Now().Unix(), 0).Result()
-		if err != nil {
-			slog.Warn("notifier.stale.claim.failed", "err", err)
-			return
-		}
-		if !claimed {
-			return // already alerted
-		}
-		if err := n.publishEnvelope(ctx, "scanner", "scanner.stale", "critical", "scanner_stale", "🔴 Schurfer scanner stale: "+reason, nil); err != nil {
-			slog.Warn("notifier.stale.alert.failed", "err", err)
-			if derr := n.rdb.Del(ctx, redisKeyStaleAlerted).Err(); derr != nil {
-				slog.Warn("notifier.stale.claim.release.failed", "err", derr)
-			}
-			return
-		}
-		slog.Warn("notifier.stale.detected", "reason", reason)
-		return
+		kind, severity, prefix, message = "scanner.stale", "critical", "scanner_stale", "🔴 Schurfer scanner stale: "+reason
 	}
-
-	// Fresh again: release the flag first, then send recovery. If the send fails,
-	// restore the flag so recovery is retried on the next tick.
-	removed, err := n.rdb.Del(ctx, redisKeyStaleAlerted).Result()
-	if err != nil {
-		slog.Warn("notifier.stale.clear.failed", "err", err)
-		return
+	if err := n.publishIncident(ctx, redisKeyStaleAlerted, stale, 0, kind, severity, prefix, message); err != nil {
+		slog.Warn("notifier.stale.transition_failed", "err", err)
 	}
-	if removed == 0 {
-		return // was not in an alerted state
-	}
-	if err := n.publishEnvelope(ctx, "scanner", "scanner.recovered", "info", "scanner_recovered_"+strconv.FormatInt(time.Now().Unix(), 10), "🟢 Schurfer scanner recovered", nil); err != nil {
-		slog.Warn("notifier.stale.recovery.failed", "err", err)
-		if serr := n.rdb.Set(ctx, redisKeyStaleAlerted, time.Now().Unix(), 0).Err(); serr != nil {
-			slog.Warn("notifier.stale.flag.restore.failed", "err", serr)
-		}
-		return
-	}
-	slog.Info("notifier.stale.recovered")
 }
 
 func (n *Notifier) tick(ctx context.Context) error {
