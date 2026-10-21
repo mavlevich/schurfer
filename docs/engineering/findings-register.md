@@ -1074,6 +1074,14 @@ retrospective permission to inspect frozen outcomes. ROADMAP owns their ordering
 - **Regression gate:** failed market load, missing/invalid/non-unit multipliers,
   canonical ticker collisions, native-value versus amount-only responses, and
   persistence/consumer handling of explicit missingness.
+- **Scope measured 2026-10-21 (`1955853`):** the only caller of `oi.py` is the
+  pump pipeline (`main.py`, `fetch_oi_for_pumps`). Momentum WATCH, and so HYP-015,
+  takes OI from the capture bars (`open_interest`, `open_interest_value`), not from
+  this path. The fallback does run in production: `oi.load_markets_failed` for
+  `htx` twice in the first three hours of analytics logs after the deploy (logs
+  restart with the container, so this is a presence check, not a rate). Affected
+  stored pump OI rows are not yet counted. Priority stays `P2`; no active verdict
+  input is affected.
 
 ### ENG-037 — Define event-time lateness at the momentum minute boundary
 
@@ -1093,6 +1101,25 @@ retrospective permission to inspect frozen outcomes. ROADMAP owns their ordering
 - **Regression gate:** quote/ticker/trade interleaving at both sides of a minute,
   bounded reordering, duplicates, gaps, shutdown/restart, and the real collector to
   writer path. The local reproduction does not yet implement a repair.
+- **Frequency measured 2026-10-21:** one aggregate read of
+  `timeseries.bybit_momentum_bars_1m` (capture `v1`, 2026-10-07 to 2026-10-21
+  19:00Z; per venue, day and minute counts only, no symbols, prices or outcomes).
+  - Binance: 507,584 of 741.2M trades dropped (685 ppm), in 4.24% of bars, every
+    day between 568 and 865 ppm. A steady cross-feed skew, as the reproduction
+    predicts. No Binance WATCH runs in production.
+  - Bybit (the HYP-015 venue): 22,454 of 526.2M (43 ppm), in 0.01% of bars. 98.5%
+    falls in seven minutes where 11 to 173 symbols drop at once: 10-07 17:41 and
+    18:29, 10-12 08:19, 10-13 00:07, 10-19 07:03 (13,264 trades, 10,730 in one bar,
+    trade lag up to 43.6 s) and 14:46, 10-21 16:16. Neither capture container
+    restarted since 2026-09-19, so these are feed stalls, not restarts. The rest of
+    the 15 days lost 342 trades.
+  - The bar that lost trades cannot know it: the counter lands on the next bar,
+    and 476,593 of 476,902 bars carrying a late count are marked `complete`.
+  - Reading: not an ongoing material loss for HYP-015, so it does not preempt the
+    queue. After the 2026-11-04 read, list whether any cohort entry's lookback
+    touches the seven Bybit minutes, as a diagnostic, without changing the
+    registered reader. The versioned repair (bounded lateness, completeness that
+    reflects the loss) waits until the HYP-015 cohort ends on 2026-11-02.
 
 ## Promotion summary
 
