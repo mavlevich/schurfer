@@ -80,8 +80,14 @@ open forward cohorts are HYP-012 v2 (weak prior) and HYP-015 (read 2026-11-04).
    2026-10-30 would pass. Then confirm that the newest
    `runtime/research/disk-growth/reading-<UTC>.json` is dated 2026-10-31 UTC and matches
    its `.sha256` sidecar, and record that file name and hash in the decision.
-3. Recompute the Gate budget from that exact file, as in rule 1.
+3. Recompute the Gate budget from that exact file, as in rule 1, with the window fixed
+   in `disk-growth-budget-v1.md`:
+   `make prod-disk-growth-budget FROM=2026-10-04T00:00:00+00:00 UNTIL=2026-10-31T23:59:59+00:00`.
+   Its artifact lists every reading it used; the day's file must be the newest one.
 4. Apply the rule above and record the choice and its reason in the ROADMAP.
-5. If B: run the canary from a clean `main` and publish its artifact; then stage A.
+5. If B: run the canary from a clean `main` with `make prod-carry-canary` (it refuses
+   before 2026-10-31 00:00 UTC, names the host's clean revision and prints the result's
+   sha256). Then stage A: `make prod-carry-preflight CANARY_SHA256=<that sha256>` with
+   the owner's read-only key and confirmations (`bybit-spot-perp-carry-preflight-v1.md`).
 6. Keep the 2026-11-04 HYP-015 read and the 2026-11-04 burst-probe end check as
    scheduled.

@@ -1607,6 +1607,25 @@ prod-bybit-preflight:
 	@$(_PROD) run --rm --no-deps --entrypoint bybit-preflight execution \
 		--purpose $(or $(PURPOSE),diagnostic) --symbols $(SYMBOLS) $(ARGS)
 
+# Bybit spot/perp carry execution canary (#476), the first input of the 2026-10-31 carry
+# branch (direction-decision-2026-10-31-brief.md). Public, read-only Bybit data; three
+# rounds a minute apart. It refuses before 2026-10-31 00:00 UTC itself and writes its
+# result once, where stage A reads it (runtime/research/bybit-spot-perp-feasibility-v1).
+# The image has no git, so the clean revision is named from the host, and the image's
+# sources must be exactly this checkout's (source_digest), or the run is refused.
+prod-carry-canary:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found. Copy .env.prod.example and fill in." && exit 1)
+	@test "$$(git branch --show-current)" = "main" || (echo "ERROR: not on main; the result names this revision" && exit 1)
+	@test -z "$$(git status --porcelain)" || (echo "ERROR: dirty working tree; the result names this revision" && exit 1)
+	@want=$$(python3 apps/analytics/schurfer_analytics/source_digest.py apps/analytics/schurfer_analytics) \
+		&& have=$$($(_PROD) run --rm --no-deps -T --entrypoint python analytics -m schurfer_analytics.source_digest) \
+		&& test -n "$$want" && test "$$want" = "$$have" \
+		|| (echo "ERROR: the analytics image is not built from $$(git rev-parse --short HEAD); rebuild it (make prod-deploy-svc SERVICE=analytics) and retry" && exit 1)
+	@mkdir -p /opt/schurfer/runtime/research/bybit-spot-perp-feasibility-v1
+	@$(_PROD) run --rm --no-deps -T --entrypoint bybit-carry-feasibility analytics \
+		--code-revision "$$(git rev-parse HEAD)" --no-working-tree-dirty
+	@sha256sum /opt/schurfer/runtime/research/bybit-spot-perp-feasibility-v1/result.json
+
 # Bybit carry stage A (docs/research/bybit-spot-perp-carry-preflight-v1.md): read-only
 # account and margin preflight with the design's capital rule. GET-only allow-listed client,
 # no order path. It refuses before 2026-10-31 and takes its pairs only from the #476 canary

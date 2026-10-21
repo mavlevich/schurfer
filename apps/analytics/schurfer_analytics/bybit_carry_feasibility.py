@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any, Final, cast
 
 from .exchange_registry import EXCHANGE_FACTORIES
-from .research_code_state import run_code_state
+from .reporting import normalize_code_revision
 
 VERSION: Final = "bybit_spot_perp_feasibility_v1"
 RUN_AFTER: Final = datetime(2026, 10, 31, tzinfo=UTC)
@@ -464,7 +464,17 @@ def require_run_window(now: datetime) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", default=DEFAULT_OUTPUT, type=Path)
+    # The image has no git: the host names the revision it runs (make prod-carry-canary
+    # refuses a dirty tree), and stage A refuses a result without a clean revision.
+    parser.add_argument("--code-revision", required=True)
+    dirty = parser.add_mutually_exclusive_group(required=True)
+    dirty.add_argument("--working-tree-dirty", action="store_true")
+    dirty.add_argument("--no-working-tree-dirty", action="store_false", dest="working_tree_dirty")
     args = parser.parse_args()
+    run = {
+        "code_revision": normalize_code_revision(args.code_revision),
+        "working_tree_dirty": args.working_tree_dirty,
+    }
     require_run_window(datetime.now(UTC))
     if args.output.exists():
         raise SystemExit("output already exists")
@@ -477,7 +487,7 @@ def main() -> None:
             await client.close()
 
     report = asyncio.run(collect())
-    report["run"] = run_code_state()
+    report["run"] = run
     try:
         digest = publish_once(args.output, report)
     except FileExistsError as exc:
