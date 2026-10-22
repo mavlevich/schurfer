@@ -2,7 +2,7 @@ import math
 import os
 from dataclasses import dataclass, field
 
-from .exchange_registry import DEFAULT_EXCHANGES
+from .exchange_registry import DEFAULT_SCANNER_EXCHANGES
 
 
 def _list(env: str, default: str) -> list[str]:
@@ -33,7 +33,7 @@ class Config:
     exchanges: list[str] = field(
         default_factory=lambda: _list(
             "PUMP_EXCHANGES",
-            ",".join(DEFAULT_EXCHANGES),
+            ",".join(DEFAULT_SCANNER_EXCHANGES),
         )
     )
     measurement_min_pct: float = field(
