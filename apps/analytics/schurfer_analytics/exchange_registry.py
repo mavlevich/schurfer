@@ -44,3 +44,10 @@ EXCHANGE_FACTORIES: dict[str, ExchangeFactory] = {
 }
 
 DEFAULT_EXCHANGES: tuple[str, ...] = tuple(EXCHANGE_FACTORIES)
+
+# CoinEx's public API returns HTTP 503 (ENG-038). An unavailable default venue
+# blocks every episode close. Keep its adapter and the all-venue report defaults
+# for historical attribution and explicit opt-in; exclude only new scanner polls.
+DEFAULT_SCANNER_EXCHANGES: tuple[str, ...] = tuple(
+    name for name in DEFAULT_EXCHANGES if name != "coinex"
+)

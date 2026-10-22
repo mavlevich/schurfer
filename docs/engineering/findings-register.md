@@ -1121,6 +1121,44 @@ retrospective permission to inspect frozen outcomes. ROADMAP owns their ordering
     registered reader. The versioned repair (bounded lateness, completeness that
     reflects the loss) waits until the HYP-015 cohort ends on 2026-11-02.
 
+### ENG-038: An unavailable default venue blocks every scanner episode close
+
+- **Status / priority:** `confirmed`, `P2`, active operations incident on 2026-10-22.
+- **Evidence:** production revision `1955853`, checked at approximately 16:05-16:07
+  UTC: CoinEx failed in all 310 scans in the preceding eight hours; 309 completed
+  iterations logged `scanner.retrace_skip` (the newest iteration was still running).
+  `main._run` skips `close_retrace` whenever any configured exchange fails. The last
+  persisted episode close was 2026-10-12 08:43:53 UTC. Of 262 open episodes, 236 had
+  not been observed above the measurement threshold for over six hours. This does
+  not establish the exact start of continuous CoinEx failure.
+- **Capture boundary:** the last capture and new Gate source were at 09:52:41 UTC
+  on 2026-10-22. All five new Gate sources since the analytics process started had
+  captures; no stale `collecting` rows or capture failures were found. Episode
+  reuse can suppress new source/capture identities, but the entire six-hour quiet
+  interval has not been causally attributed to this incident.
+- **API check:** the documented CoinEx v2 futures catalog and ticker endpoints
+  returned HTTP 503 from production. The catalog and common timestamp endpoint
+  also returned 503 locally. Disabling CCXT currency loading still failed on the
+  spot catalog; that workaround is not a remediation.
+- **Observed contribution:** 1,046 historical CoinEx sources; last new source and
+  last source update both 2026-09-23 03:06:27 UTC. The preceding 30 days still contain
+  five CoinEx-only events, so claiming it never contributed would be incorrect.
+- **Bounded remediation:** omit CoinEx only from scanner defaults, retaining its
+  factory, historical rows, all-venue report/outcome-resolver defaults and explicit
+  `PUMP_EXCHANGES` opt-in. Preserve the all-configured-venues success gate and miss
+  threshold.
+  This changes prospective scanner coverage; it does not restore CoinEx coverage.
+- **Regression gate:** real scanner and real PostgreSQL episode lifecycle with
+  an unavailable CoinEx: default configuration closes after three healthy misses;
+  explicit CoinEx configuration still blocks closing. The default case fails on
+  the original code. Missing and empty configuration plus historical adapter
+  preservation are covered separately.
+- **Delivery and research boundary:** see the
+  [incident rollout plan](incidents/2026-10-22-scanner-episode-closure.md). No production
+  restart or historical repair has been authorized or performed by this fix.
+  Add a dedicated closure-progress alert separately; fresh scanner output alone
+  must not be treated as proof of episode lifecycle progress.
+
 ## Promotion summary
 
 The [current roadmap sequence](../../ROADMAP.md#current-delivery-sequence--2026-09-07)

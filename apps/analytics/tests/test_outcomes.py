@@ -6,6 +6,7 @@ import pytest
 from schurfer_analytics.derivatives_context_resolver import (
     DerivativesContextResolverConfig,
 )
+from schurfer_analytics.exchange_registry import DEFAULT_EXCHANGES
 from schurfer_analytics.ohlcv import Candle
 from schurfer_analytics.outcome_models import Decision
 from schurfer_analytics.outcome_worker import run_outcome_resolver
@@ -214,6 +215,20 @@ def test_outcome_config_rejects_non_positive_values(
 ) -> None:
     with pytest.raises(ValueError, match=env_name):
         OutcomeConfig("postgresql://test", ("binance",), **override)
+
+
+@pytest.mark.parametrize("configured", [None, "", "gate,coinex", "gate"])
+def test_outcome_defaults_preserve_historical_venues(
+    monkeypatch: pytest.MonkeyPatch, configured: str | None
+) -> None:
+    monkeypatch.setenv("DATABASE_URL", "postgresql://test")
+    if configured is None:
+        monkeypatch.delenv("PUMP_EXCHANGES", raising=False)
+    else:
+        monkeypatch.setenv("PUMP_EXCHANGES", configured)
+
+    expected = tuple(configured.split(",")) if configured else DEFAULT_EXCHANGES
+    assert OutcomeConfig.from_env().exchanges == expected
 
 
 async def test_resolve_once_records_unsupported_exchange_without_fetch() -> None:
