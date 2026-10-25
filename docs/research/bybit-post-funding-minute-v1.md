@@ -1,6 +1,6 @@
 # HYP-031: Bybit post-funding reaction, minute variant (protocol v1, draft)
 
-Status: **protocol v1 with Amendment 1, 2026-10-26.** Nothing is fetched, no price
+Status: **protocol v1 with Amendments 1 and 2, 2026-10-26.** Nothing is fetched, no price
 after any settlement has been read, and this changes no registered rule, cohort or
 roadmap order. It binds as committed before the first fetch; any later change needs
 its own amendment before any return is read. The roadmap parks "funding-only short baskets"; this is a different object
@@ -87,11 +87,14 @@ the main unmeasured risk; a pass earns a live quote measurement, not belief.
   statistic weights clusters equally.
 - **Uncertainty: block bootstrap by UTC ISO week.** Symbol-days are not independent:
   many tokens move together on one day, and one token's days follow each other. Each
-  resample draws whole weeks with replacement, with every cluster inside them;
-  10,000 resamples, seed 31.
+  resample draws whole weeks with replacement, with every cluster inside them, and
+  its mean is the pooled mean over all clusters drawn (sum of cluster values over
+  number of clusters), not a mean of weekly means; 10,000 resamples, seed 31.
 - **Matched control.** For each event, the control is the mean short return, same
-  entry, exit and costs, of the other instruments settling at the **same t** that pass
-  the same liquidity filter and whose trigger rate is within +-0.01%. The event's
+  entry, exit and costs, of **at most 5** other instruments settling at the **same t**
+  that pass the same liquidity filter and whose r_t is within +-0.01%: the 5 closest
+  to the event's instrument in 24-hour turnover (smallest absolute log ratio, ties by
+  symbol), all of them if fewer. The event's
   **excess** is its gross minus that control; an event with no control at its t has no
   excess and is counted. Excess is averaged per cluster and weighted like the main
   result, so both use the same weights and the market move at t cancels.
@@ -130,6 +133,8 @@ terminal. The verdict is reported beside the dollars at one position (diagnostic
 - Triggers at -0.10% and -0.50% (dose response); the r_prev trigger at -0.30%; the
   positive side (r_t at least +0.30%, long).
 - By settlement interval (1, 2, 4, 8 h) and by month.
+- Excess over the control split by settlement hour: 4-hour boundaries (00, 04, 08, 12,
+  16, 20 UTC) and other hours, where calm controls are 1-hour contracts.
 - **Pre-settlement drift** from t - 30 min to t: the round-trip mechanism predicts a
   rise before settlement; its absence weakens the mechanism even if the main result
   passes.
@@ -180,3 +185,19 @@ after seeing a price.
 
 Unchanged: costs (30 bps, 50 bps sensitivity), the +20 bps net bar, the floor, the
 split, the discovery-then-test sequence.
+
+## Amendment 2 (2026-10-26, before any fetch or return)
+
+From a colleague review of Amendment 1 (`f16598e`), checked on settled rates only
+(287-pair snapshot, no prices): 93% of r_t <= -0.30% events have a calm settlement at
+the same t before the liquidity filter (100% on 4-hour boundaries, 82% at other hours),
+so the 80% control condition is not mechanically out of reach; but the median event
+has 142 such instruments, which would multiply the fetch.
+
+- **Control capped at 5 instruments** per event, nearest in 24-hour turnover.
+- **Bootstrap mean stated:** the pooled mean over the clusters of the drawn weeks.
+- **Diagnostic added:** excess by settlement hour type, since controls at non-4-hour
+  hours are 1-hour contracts.
+
+Unchanged: the trigger, costs, the +20 bps bar, the 80% control condition, the floor,
+the split and the sequence.
