@@ -17,7 +17,7 @@ import json
 import statistics
 import sys
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
@@ -29,7 +29,7 @@ from .reporting import markdown_table, normalize_code_revision, profit_factor
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
-VERSION: Final = "bybit_carry_economics_screen_v1"
+VERSION: Final = "bybit_carry_economics_screen_v1_1"
 HOUR_MS: Final = 3_600_000
 BAR_MS: Final = 4 * HOUR_MS
 DAY_MS: Final = 24 * HOUR_MS
@@ -50,6 +50,13 @@ CONCURRENCY: Final = 4
 MIN_BREAK_EVEN_CROSSING_BPS: Final = 20.0
 MIN_POSITIVE_MONTH_SHARE: Final = 0.6
 MAX_TOP5_SHARE: Final = 0.5
+# v1.1 hurdle, fixed 2026-10-25 before the v1 result was read (docs, "Reading v1.1").
+CROSSING_BPS: Final = 20.0  # round trip, the four book sides together, per trade
+BENCHMARK_ANNUAL: Final = 0.05  # owner's alternative for idle USDT
+MIN_ANNUAL_ON_ALLOCATED: Final = 2 * BENCHMARK_ANNUAL
+LIQUIDATION_HIGH_RATIO: Final = 4.0  # the +300% the isolated collateral covers
+SECOND_HALF_FROM_MS: Final = int(datetime(2025, 10, 1, tzinfo=UTC).timestamp() * 1000)
+CROSS_COLLATERAL_CAPITAL_USD: Final = 100.0  # diagnostic only, never decides
 
 
 def require_boundary(until_ms: int) -> None:
@@ -176,6 +183,7 @@ class Series:
     funding: list[tuple[int, float]]
     spot: dict[int, float]
     perp: dict[int, float]
+    perp_high: dict[int, float] = field(default_factory=dict)
 
     @property
     def funding_ts(self) -> list[int]:
@@ -183,7 +191,7 @@ class Series:
 
 
 def load_snapshot(path: Path) -> tuple[dict[str, Series], list[str]]:
-    """Per symbol: settlements (ts ms, rate) and 4 h closes keyed by bar start.
+    """Per symbol: settlements (ts ms, rate), 4 h closes and perp highs keyed by bar start.
 
     The second value lists symbols whose fetch failed or returned another symbol's
     rows; the report drops them whole."""
@@ -209,9 +217,12 @@ def load_snapshot(path: Path) -> tuple[dict[str, Series], list[str]]:
                         (int(item["fundingRateTimestamp"]), float(item["fundingRate"]))
                     )
             else:
-                target = series.spot if line["kind"] == "kline_spot" else series.perp
+                is_spot = line["kind"] == "kline_spot"
+                target = series.spot if is_spot else series.perp
                 for item in items:
                     target[int(item[0])] = float(item[4])
+                    if not is_spot:
+                        series.perp_high[int(item[0])] = float(item[2])
     for series in data.values():
         series.funding = sorted(set(series.funding))
     return data, sorted(failed)
@@ -260,10 +271,21 @@ class Trade:
     basis_bps: float
     fee_bps: float
     closed_at_end: bool
+    exit_delayed: bool = False
+    max_perp_high_ratio: float | None = None
 
     @property
     def net_bps(self) -> float:
         return self.funding_bps + self.basis_bps - self.fee_bps
+
+    @property
+    def net_after_crossing_bps(self) -> float:
+        return self.net_bps - CROSSING_BPS
+
+    @property
+    def liquidation_breach(self) -> bool:
+        ratio = self.max_perp_high_ratio
+        return ratio is not None and ratio >= LIQUIDATION_HIGH_RATIO
 
     @property
     def hold_days(self) -> float:
@@ -280,12 +302,22 @@ def money(
     at_end: bool,
     funding_ts: list[int] | None = None,
 ) -> Trade | str:
-    """One pair held from fill ``entry`` to fill ``exit_``, or the reason it is not formed."""
+    """One pair held from fill ``entry`` to fill ``exit_``, or the reason it is not formed.
+
+    A missing entry price forms no trade. A missing exit price does not drop the trade
+    (a halt or delisting is when it goes missing): the position is closed at the first
+    later fill with both closes and flagged, or reported ``exit_unresolved``."""
     s0, p0 = price_at(series.spot, entry), price_at(series.perp, entry)
-    s1, p1 = price_at(series.spot, exit_), price_at(series.perp, exit_)
-    if None in (s0, p0, s1, p1):
+    if s0 is None or p0 is None:
         return "fill_price_missing"
-    assert s0 is not None and p0 is not None and s1 is not None and p1 is not None
+    delayed = False
+    if price_at(series.spot, exit_) is None or price_at(series.perp, exit_) is None:
+        resolved = resolve_exit(series, exit_)
+        if resolved is None:
+            return "exit_unresolved"
+        exit_, delayed = resolved, True
+    s1, p1 = price_at(series.spot, exit_), price_at(series.perp, exit_)
+    assert s1 is not None and p1 is not None
     quantity = NOTIONAL_USD / max(s0, p0)
     funding_usd = 0.0
     ts_list = funding_ts if funding_ts is not None else series.funding_ts
@@ -294,10 +326,13 @@ def money(
     for ts, rate in series.funding[lo:hi]:
         if entry < ts < exit_:
             boundary = -(-ts // BAR_MS) * BAR_MS
-            mark = price_at(series.perp, boundary)
-            if mark is None:
-                return "funding_price_missing"
+            mark = _first_close(series.perp, boundary, exit_)
             funding_usd += quantity * mark * rate
+    highs = [
+        high
+        for start in range(entry, exit_, BAR_MS)
+        if (high := series.perp_high.get(start)) is not None
+    ]
     basis_usd = quantity * ((s1 - s0) - (p1 - p0))
     fee_usd = FEE_BPS_PER_FILL / 10_000 * quantity * (s0 + p0 + s1 + p1)
     scale = 10_000 / NOTIONAL_USD
@@ -310,7 +345,27 @@ def money(
         basis_usd * scale,
         fee_usd * scale,
         at_end,
+        delayed,
+        max(highs) / p0 if highs else None,
     )
+
+
+def _first_close(closes: dict[int, float], t: int, limit: int) -> float:
+    """The close at the first 4 h boundary from ``t`` up to ``limit``, which has one."""
+    while (value := price_at(closes, t)) is None and t < limit:
+        t += BAR_MS
+    return value if value is not None else closes[limit - BAR_MS]
+
+
+def resolve_exit(series: Series, intended: int) -> int | None:
+    """The first fill at or after ``intended`` with both closes, or None."""
+    end = last_common_fill(series)
+    t = intended
+    while end is not None and t <= end:
+        if price_at(series.spot, t) is not None and price_at(series.perp, t) is not None:
+            return t
+        t += BAR_MS
+    return None
 
 
 def decision_grid() -> range:
@@ -382,6 +437,7 @@ def simulate_one_slot(
     """One position at a time: the eligible pair with the highest F24 (ties by symbol)."""
     trades: list[Trade] = []
     held: tuple[str, int] | None = None
+    free_from = 0  # a delayed exit keeps the slot's capital until its fill
     symbols = sorted(data)
     for index, t in enumerate(decision_grid()):
         if held is not None:
@@ -390,7 +446,11 @@ def simulate_one_slot(
             if value is None or value < threshold / 2:
                 result = money(data[symbol], symbol, threshold, entry, t + BAR_MS, at_end=False)
                 _keep(result, trades, missing)
+                if isinstance(result, Trade):
+                    free_from = result.exit_fill_ms
                 held = None
+            continue
+        if t + BAR_MS < free_from:
             continue
         best: tuple[float, str] | None = None
         for symbol in symbols:
@@ -468,7 +528,58 @@ def summarize(trades: Sequence[Trade]) -> dict[str, Any]:
         "break_even_crossing_bps": statistics.fmean(nets),
         "top5_pair_share_of_net": top5_share(trades),
         "max_concurrent": max_concurrent(trades),
+        "exit_delayed": sum(trade.exit_delayed for trade in trades),
+        "liquidation_breaches": sum(trade.liquidation_breach for trade in trades),
+        "max_perp_high_ratio": max(
+            (t.max_perp_high_ratio for t in trades if t.max_perp_high_ratio is not None),
+            default=None,
+        ),
     }
+
+
+def _usd_after_crossing(trades: Iterable[Trade]) -> float:
+    return sum(trade.net_after_crossing_bps for trade in trades) * NOTIONAL_USD / 10_000
+
+
+def after_crossing(trades: Sequence[Trade], months: list[str]) -> dict[str, Any]:
+    """The v1.1 hurdle inputs: every figure after CROSSING_BPS per trade, by exit month."""
+    years = len(months) / 12
+    by_month = dict.fromkeys(months, 0.0)
+    for trade in trades:
+        month = _month(trade.exit_fill_ms)
+        by_month[month] = by_month.get(month, 0.0) + _usd_after_crossing([trade])
+    total = sum(by_month.values())
+    halves: dict[str, float] = {}
+    for name, second in (("first_half", False), ("second_half", True)):
+        half_months = [m for m in months if (_month_start_ms(m) >= SECOND_HALF_FROM_MS) == second]
+        usd = _usd_after_crossing(
+            t for t in trades if (t.exit_fill_ms >= SECOND_HALF_FROM_MS) == second
+        )
+        halves[name] = usd / (len(half_months) / 12) / ALLOCATED_CAPITAL_USD
+    by_pair: dict[str, float] = defaultdict(float)
+    for trade in trades:
+        by_pair[trade.symbol] += _usd_after_crossing([trade])
+    best = max(sorted(by_pair), key=lambda symbol: by_pair[symbol]) if by_pair else None
+    return {
+        "crossing_bps": CROSSING_BPS,
+        "net_usd": total,
+        "usd_per_month": total / len(months),
+        "positive_month_share": sum(value > 0 for value in by_month.values()) / len(months),
+        "annual_on_allocated": total / years / ALLOCATED_CAPITAL_USD,
+        "annual_on_bank": total / years / BANK_USD,
+        "annual_on_cross_collateral_diagnostic": total / years / CROSS_COLLATERAL_CAPITAL_USD,
+        "annual_on_allocated_by_half": halves,
+        "best_pair": best,
+        "annual_on_allocated_without_best_pair": (
+            (total - by_pair[best]) / years / ALLOCATED_CAPITAL_USD if best else None
+        ),
+        "by_month_usd": by_month,
+    }
+
+
+def _month_start_ms(month: str) -> int:
+    year, number = (int(part) for part in month.split("-"))
+    return int(datetime(year, number, 1, tzinfo=UTC).timestamp() * 1000)
 
 
 def portfolio(trades: Sequence[Trade], months: list[str]) -> dict[str, Any]:
@@ -487,6 +598,7 @@ def portfolio(trades: Sequence[Trade], months: list[str]) -> dict[str, Any]:
         "annual_return_on_allocated": total / years / ALLOCATED_CAPITAL_USD,
         "annual_return_on_bank": total / years / BANK_USD,
         "by_month_usd": by_month,
+        "after_crossing": after_crossing(trades, months),
     }
 
 
@@ -538,7 +650,8 @@ def landscape(data: dict[str, Series], paths: dict[str, list[float | None]]) -> 
     }
 
 
-def reading(by_threshold: dict[str, dict[str, Any]]) -> dict[str, Any]:
+def reading_v1(by_threshold: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """The v1 rule exactly as fixed before the fetch, kept for reference."""
     passing = []
     for key, view in by_threshold.items():
         slot, every = view["one_slot"], view["all_pairs"]
@@ -554,6 +667,50 @@ def reading(by_threshold: dict[str, dict[str, Any]]) -> dict[str, Any]:
     return {
         "passing_thresholds": passing,
         "decision": "stage_b_worth_designing" if passing else "carry_not_worth_stage_b_at_usd_50",
+    }
+
+
+def hurdle_conditions(by_threshold: dict[str, dict[str, Any]], key: str) -> dict[str, bool]:
+    """The v1.1 conditions for one H, each after CROSSING_BPS on the one-slot view."""
+    slot, every = by_threshold[key]["one_slot"], by_threshold[key]["all_pairs"]
+    after = slot.get("after_crossing", {})
+    halves = after.get("annual_on_allocated_by_half", {})
+    without_best = after.get("annual_on_allocated_without_best_pair")
+    keys = list(by_threshold)
+    index = keys.index(key)
+    neighbours = [keys[i] for i in (index - 1, index + 1) if 0 <= i < len(keys)]
+    top5 = every.get("top5_pair_share_of_net")
+    return {
+        "has_trades": slot.get("trades", 0) > 0,
+        "annual_on_allocated_at_least_2x_benchmark": after.get("annual_on_allocated", -1.0)
+        >= MIN_ANNUAL_ON_ALLOCATED,
+        "each_half_at_least_benchmark": bool(halves)
+        and all(value >= BENCHMARK_ANNUAL for value in halves.values()),
+        "without_best_pair_at_least_benchmark": without_best is not None
+        and without_best >= BENCHMARK_ANNUAL,
+        "positive_month_share": after.get("positive_month_share", 0.0) >= MIN_POSITIVE_MONTH_SHARE,
+        "top5_below_half": top5 is not None and top5 < MAX_TOP5_SHARE,
+        "no_liquidation_breach": slot.get("liquidation_breaches", 0) == 0,
+        "no_unresolved_exit": slot.get("exit_unresolved", 0) == 0,
+        "a_neighbour_h_at_least_benchmark": any(
+            by_threshold[other]["one_slot"]
+            .get("after_crossing", {})
+            .get("annual_on_allocated", -1.0)
+            >= BENCHMARK_ANNUAL
+            for other in neighbours
+        ),
+    }
+
+
+def reading(by_threshold: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Reading v1.1: an H passes only if every hurdle condition holds."""
+    conditions = {key: hurdle_conditions(by_threshold, key) for key in by_threshold}
+    passing = [key for key, checks in conditions.items() if all(checks.values())]
+    return {
+        "passing_thresholds": passing,
+        "conditions": conditions,
+        "decision": "stage_b_worth_designing" if passing else "carry_not_worth_stage_b_at_usd_50",
+        "v1_rule_for_reference": reading_v1(by_threshold),
     }
 
 
@@ -581,7 +738,8 @@ def build_report(
         slot = simulate_one_slot(data, paths, threshold, slot_missing)
         by_threshold[str(threshold)] = {
             "all_pairs": summarize(every),
-            "one_slot": portfolio(slot, months),
+            "one_slot": portfolio(slot, months)
+            | {"exit_unresolved": slot_missing["exit_unresolved"]},
         }
         missing[str(threshold)] = {
             **{f"all_pairs_{k}": v for k, v in pair_missing.items()},
@@ -608,6 +766,11 @@ def build_report(
             "notional_usd": NOTIONAL_USD,
             "allocated_capital_usd": ALLOCATED_CAPITAL_USD,
             "bank_usd": BANK_USD,
+            "crossing_bps": CROSSING_BPS,
+            "benchmark_annual": BENCHMARK_ANNUAL,
+            "min_annual_on_allocated": MIN_ANNUAL_ON_ALLOCATED,
+            "liquidation_high_ratio": LIQUIDATION_HIGH_RATIO,
+            "second_half_from_ms": SECOND_HALF_FROM_MS,
         },
         "coverage": {
             "pairs": len(data),
@@ -714,11 +877,69 @@ def render_markdown(report: dict[str, Any]) -> str:
     )
     lines += [
         "",
-        f"Reading: `{report['reading']['decision']}` "
-        f"(passing H: {report['reading']['passing_thresholds'] or 'none'}).",
+        f"## One slot after {CROSSING_BPS:.0f} bps crossing per trade (reading v1.1)",
+        "",
+    ]
+    rows = []
+    for key, view in report["by_threshold"].items():
+        s = view["one_slot"]
+        after = s.get("after_crossing", {})
+        halves = after.get("annual_on_allocated_by_half", {})
+        rows.append(
+            (
+                key,
+                _fmt(after.get("net_usd"), 2),
+                _fmt(after.get("usd_per_month"), 2),
+                _pct(after.get("annual_on_allocated")),
+                _pct(halves.get("first_half")),
+                _pct(halves.get("second_half")),
+                _pct(after.get("annual_on_allocated_without_best_pair")),
+                after.get("best_pair"),
+                _fmt(after.get("positive_month_share"), 2),
+                s.get("liquidation_breaches"),
+                _fmt(s.get("max_perp_high_ratio"), 2),
+                s.get("exit_delayed"),
+                s.get("exit_unresolved"),
+                _pct(after.get("annual_on_cross_collateral_diagnostic")),
+            )
+        )
+    lines += markdown_table(
+        (
+            "H bps/day",
+            "net USD",
+            "USD/month",
+            "% a year on 210",
+            "first half",
+            "second half",
+            "without best pair",
+            "best pair",
+            "months positive",
+            "liquidation breaches",
+            "max high/entry",
+            "exits delayed",
+            "exits unresolved",
+            "% on 100 (diagnostic)",
+        ),
+        rows,
+    )
+    failed = {
+        key: [name for name, ok in checks.items() if not ok]
+        for key, checks in report["reading"]["conditions"].items()
+    }
+    lines += ["", "Conditions failed per H:", ""]
+    lines += [f"- H {key}: {', '.join(names) or 'none'}" for key, names in failed.items()]
+    lines += [
+        "",
+        f"Reading v1.1: `{report['reading']['decision']}` "
+        f"(passing H: {report['reading']['passing_thresholds'] or 'none'}). "
+        f"The v1 rule alone: `{report['reading']['v1_rule_for_reference']['decision']}`.",
         "",
     ]
     return "\n".join(lines)
+
+
+def _pct(value: float | None) -> str:
+    return "n/a" if value is None else f"{100 * value:.1f}%"
 
 
 def _json_bytes(report: dict[str, Any]) -> bytes:

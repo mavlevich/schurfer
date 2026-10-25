@@ -1,6 +1,7 @@
 # Bybit spot and perpetual carry: economics screen v1 (planning, discovery)
 
-Status: **rules fixed before the first fetch.** A planning report on public history,
+Status: **rules fixed before the first fetch; reading v1.1 fixed 2026-10-25, before the
+v1 result was read** (see the last section). A planning report on public history,
 like the [cost and power planning report](cost-power-planning-v1.md). It is discovery
 for the carry line: it can say whether stage B of the
 [carry preflight design](bybit-spot-perp-carry-preflight-v1.md) is worth designing,
@@ -74,3 +75,57 @@ net after fees, a break-even crossing cost of at least 20 bps, positive net in a
 positive net. Otherwise `carry_not_worth_stage_b_at_usd_50`. Four values of H are
 four looks at one history: a pass permits a stage B design with its own prospective
 registration, never orders, and the H that passed is not thereby chosen.
+
+## Reading v1.1 (fixed 2026-10-25, before the v1 result was read)
+
+**Provenance.** The v1 fetch and report ran on 2026-10-22 (snapshot sha256
+`24a7f03b...`, 287 pairs, no fetch errors). Neither the owner nor the reviewer read
+that result before this section and its code were committed. The v1 rule did not
+decide whether the dollars justify more work, and a review found three defects that bear
+on a money decision. Version `bybit_carry_economics_screen_v1_1` fixes both and is
+computed from the same snapshot; the v1 rule is still reported, for reference only.
+
+**Fixes.**
+
+- **Crossing cost.** Every decision figure is after 20 bps round-trip crossing per trade
+  (`net_bps - 20`), not at zero crossing. The zero-crossing v1 figures stay in the report.
+- **Missing exit price.** A missing price at the exit fill no longer drops the trade,
+  since halts and delistings are when prices go missing and when losses happen. The
+  position closes at the first later fill with both closes and is flagged
+  `exit_delayed`; with no later prices it is `exit_unresolved`. In the one-slot view
+  the slot stays busy until the delayed fill. A missing funding-time price uses the
+  next 4 h close within the hold; a missing entry price still forms no trade.
+- **Liquidation.** The perp's 4 h highs from the snapshot are kept. A trade whose
+  highest perp price between the entry and exit fills reaches 4x the entry fill (the
+  +300% the isolated collateral covers) is a `liquidation_breach`. Last-trade highs,
+  not the mark price: an approximation, labelled.
+
+**Rule.** Benchmark B = 5% a year, the owner's alternative for idle USDT. An H passes
+only if, on the one-slot view at USD 210 allocated and after 20 bps crossing:
+
+1. annual return on USD 210 is at least 10% (2B);
+2. each half of the window (trades exiting before 2025-10-01, and from it), annualized
+   over its 12 months, is at least 5% (B);
+3. without the pair with the largest after-crossing net, the rest is at least 5% a year
+   (its trades removed, the slot not refilled);
+4. at least 60% of months are positive after crossing, by exit month;
+5. the all-pairs top-5 pairs hold less than 50% of positive net (v1 condition);
+6. no liquidation breach and no unresolved exit;
+7. a neighbouring H in (5, 10, 20, 40) is at least 5% a year on the same view, so a
+   single lucky threshold cannot pass alone.
+
+`stage_b_worth_designing` if any H passes; otherwise `carry_not_worth_stage_b_at_usd_50`.
+A pass permits a stage B design with its own prospective registration, never orders,
+and does not choose that H. The annual return on USD 100 (spot plus 1x collateral, as
+cross-collateral would allow) is printed as a diagnostic and decides nothing: stage A
+must first show the owner's account supports it safely.
+
+**What 10% on USD 210 means.** USD 21 a year per USD 50 notional, about 42% a year net
+on the notional: isolated +300% collateral cuts the return on capital about fourfold.
+At the USD 300 bank a pass is about USD 2 a month: a permission to design and scale,
+not income.
+
+**Known limits, unchanged.** Today's catalog (survivorship, likely flattering the
+one-slot view, which picks the highest funding); exit-month attribution for months and
+halves; 4 h closes, not bid and ask; the close, not the mark price, for funding; four
+looks at H.

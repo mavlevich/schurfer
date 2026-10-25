@@ -17,8 +17,10 @@ from schurfer_analytics.bybit_carry_economics_screen import (
     Series,
     Signal,
     Trade,
+    after_crossing,
     money,
     reading,
+    reading_v1,
     simulate_one_slot,
     simulate_pair,
 )
@@ -126,12 +128,126 @@ def test_reading_requires_every_condition() -> None:
         },
         "all_pairs": {"top5_pair_share_of_net": 0.4},
     }
-    assert reading({"10": good})["decision"] == "stage_b_worth_designing"
+    assert reading_v1({"10": good})["decision"] == "stage_b_worth_designing"
     concentrated = {**good, "all_pairs": {"top5_pair_share_of_net": 0.6}}
     thin = {**good, "one_slot": {**good["one_slot"], "break_even_crossing_bps": 19.0}}
-    assert reading({"10": concentrated, "20": thin})["decision"] == (
+    assert reading_v1({"10": concentrated, "20": thin})["decision"] == (
         "carry_not_worth_stage_b_at_usd_50"
     )
+
+
+def test_a_missing_exit_price_closes_at_the_next_bar_instead_of_dropping_the_trade() -> None:
+    spot, perp = flat_prices(100.0), flat_prices(100.0)
+    entry, exit_ = T0 + BAR_MS, T0 + 4 * BAR_MS
+    del perp[exit_ - BAR_MS]  # halted at the intended exit
+    perp[exit_] = 150.0  # resumes 50% higher one bar later
+    trade = money(Series([], spot, perp), "XUSDT", 5, entry, exit_, at_end=False)
+    assert isinstance(trade, Trade)
+    assert trade.exit_delayed and trade.exit_fill_ms == exit_ + BAR_MS
+    assert trade.basis_bps == pytest.approx(-5000.0)  # the short's loss is kept, not dropped
+
+
+def test_an_exit_with_no_later_prices_is_unresolved() -> None:
+    spot, perp = flat_prices(), flat_prices()
+    entry, exit_ = T0 + BAR_MS, T0 + 4 * BAR_MS
+    for start in [t for t in perp if t >= exit_ - BAR_MS]:
+        del perp[start]
+    result = money(Series([], spot, perp), "XUSDT", 5, entry, exit_, at_end=False)
+    assert result == "exit_unresolved"
+
+
+def test_a_perp_high_at_four_times_entry_is_a_liquidation_breach() -> None:
+    spot, perp = flat_prices(), flat_prices()
+    entry, exit_ = T0 + BAR_MS, T0 + 4 * BAR_MS
+    highs = {start: 100.0 for start in perp}
+    highs[entry + BAR_MS] = 400.0  # wick inside the hold, closes unchanged
+    trade = money(Series([], spot, perp, highs), "XUSDT", 5, entry, exit_, at_end=False)
+    assert isinstance(trade, Trade)
+    assert trade.max_perp_high_ratio == pytest.approx(4.0) and trade.liquidation_breach
+    highs[entry + BAR_MS] = 399.0
+    trade = money(Series([], spot, perp, highs), "XUSDT", 5, entry, exit_, at_end=False)
+    assert isinstance(trade, Trade) and not trade.liquidation_breach
+    highs[entry - BAR_MS] = 1000.0  # before the entry fill: not held then
+    highs[exit_] = 1000.0  # after the exit fill
+    trade = money(Series([], spot, perp, highs), "XUSDT", 5, entry, exit_, at_end=False)
+    assert isinstance(trade, Trade) and not trade.liquidation_breach
+
+
+def _trade(symbol: str, exit_ms: int, net_bps: float) -> Trade:
+    return Trade(symbol, 10, exit_ms - DAY_MS, exit_ms, net_bps, 0.0, 0.0, False)
+
+
+def test_after_crossing_charges_every_trade_and_annualizes_on_allocated_capital() -> None:
+    months = screen.months_in_window()
+    assert len(months) == 24
+    second = screen.SECOND_HALF_FROM_MS
+    trades = [
+        _trade("AUSDT", T0 + 10 * DAY_MS, 120.0),  # 100 bps after crossing = USD 0.50
+        _trade("BUSDT", second + 10 * DAY_MS, 70.0),  # 50 bps after crossing = USD 0.25
+        _trade("BUSDT", second + 40 * DAY_MS, 10.0),  # -10 bps after crossing = -USD 0.05
+    ]
+    view = after_crossing(trades, months)
+    assert view["net_usd"] == pytest.approx(0.70)
+    assert view["annual_on_allocated"] == pytest.approx(0.70 / 2 / 210)
+    assert view["annual_on_allocated_by_half"]["first_half"] == pytest.approx(0.50 / 210)
+    assert view["annual_on_allocated_by_half"]["second_half"] == pytest.approx(0.20 / 210)
+    assert view["best_pair"] == "AUSDT"
+    assert view["annual_on_allocated_without_best_pair"] == pytest.approx(0.20 / 2 / 210)
+    assert view["positive_month_share"] == pytest.approx(2 / 24)
+
+
+def _view(annual: float, **overrides: Any) -> dict[str, Any]:
+    after = {
+        "annual_on_allocated": annual,
+        "annual_on_allocated_by_half": {"first_half": annual, "second_half": annual},
+        "annual_on_allocated_without_best_pair": annual,
+        "positive_month_share": 0.7,
+    }
+    slot = {
+        "trades": 9,
+        "net_usd": 5.0,  # the v1 fields, read only by the v1 reference rule
+        "break_even_crossing_bps": 40.0,
+        "positive_month_share": 0.8,
+        "liquidation_breaches": 0,
+        "exit_unresolved": 0,
+        "after_crossing": after,
+    }
+    for key, value in overrides.items():
+        (after if key in after else slot)[key] = value
+    return {"one_slot": slot, "all_pairs": {"top5_pair_share_of_net": 0.4}}
+
+
+def test_reading_v1_1_requires_every_hurdle_condition() -> None:
+    assert reading({"5": _view(0.12), "10": _view(0.06)})["passing_thresholds"] == ["5"]
+    lone = reading({"5": _view(0.12), "10": _view(0.01)})  # no neighbour clears 5%
+    assert lone["decision"] == "carry_not_worth_stage_b_at_usd_50"
+    for override in (
+        {"annual_on_allocated": 0.099},
+        {"annual_on_allocated_by_half": {"first_half": 0.3, "second_half": 0.04}},
+        {"annual_on_allocated_without_best_pair": 0.04},
+        {"positive_month_share": 0.5},
+        {"liquidation_breaches": 1},
+        {"exit_unresolved": 1},
+    ):
+        result = reading({"5": _view(0.12, **override), "10": _view(0.06)})
+        assert "5" not in result["passing_thresholds"], override
+
+
+def test_one_slot_waits_for_a_delayed_exit_before_the_next_entry() -> None:
+    high_until = T0 + 3 * DAY_MS
+
+    def rate(t: int) -> float:
+        return 0.0005 if t < high_until or t > high_until + 2 * DAY_MS else 0.00001
+
+    series = Series(funding_every(8, rate), flat_prices(), flat_prices())
+    path = screen.f24_path(series)
+    first_low = next(i for i, v in enumerate(path) if v is not None and v < 5)
+    intended = T0 + first_low * BAR_MS + BAR_MS
+    for start in range(intended - BAR_MS, intended + 4 * DAY_MS, BAR_MS):
+        series.perp.pop(start, None)  # halted for four days from the exit
+    trades = simulate_one_slot({"XUSDT": series}, {"XUSDT": path}, 10, Counter())
+    assert trades[0].exit_delayed
+    assert trades[1].entry_fill_ms >= trades[0].exit_fill_ms
 
 
 def test_no_request_may_end_after_the_research_boundary() -> None:
