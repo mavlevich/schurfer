@@ -144,3 +144,40 @@ positive; both make the figures honest.
 The reported third gap, a same-pair re-entry before a delayed exit in the all-pairs
 view, cannot occur: a re-entry needs a bar with both closes after the exit signal, and
 the delayed exit takes the first such bar. No change there.
+
+## Result (read 2026-10-25)
+
+Snapshot `24a7f03bc934dd73...` (287 pairs, 24 months, no fetch errors; 133 pairs listed
+after the window start). Reports from that one snapshot, clean trees:
+
+| Version | Code      | Result sha256 prefix | Reading                             |
+| ------- | --------- | -------------------- | ----------------------------------- |
+| v1.1    | `e5f7dc6` | `32c4d5c8`           | `carry_not_worth_stage_b_at_usd_50` |
+| v1.2    | `cea3a14` | `98132e29`           | `carry_not_worth_stage_b_at_usd_50` |
+
+The v1 report of 2026-10-22 (code `a266ce2`) was never read; the v1 rule, recomputed
+inside both reports, also gives `carry_not_worth_stage_b_at_usd_50`.
+
+One slot, after 20 bps crossing per trade, a year on USD 210:
+
+| H bps/day | v1.1 (breach flagged only) | v1.2 (liquidation priced) | Liquidations |
+| --------- | -------------------------- | ------------------------- | ------------ |
+| 5         | +0.3%                      | -15.3%                    | 1 (4.05x)    |
+| 10        | -9.7%                      | -36.1%                    | 1 (7.26x)    |
+| 20        | -7.1%                      | -7.1%                     | 0            |
+| 40        | -4.9%                      | -4.9%                     | 0            |
+
+No H passes any hurdle condition. Why:
+
+- **Base funding cannot carry this collateral.** The median F24 is 2.55 bps a day (the
+  default 0.01% every 8 hours, about 9% a year on notional); 78% of settlements are
+  positive. With isolated +300% collateral a pair ties up about 4.2x its notional, so
+  base funding is 2 to 3% a year on capital before any cost, below the 5% benchmark.
+  Cross-collateral (the USD 100 diagnostic) does not rescue it: -10% to -76%.
+- **Chasing high funding churns fees.** At H >= 10 the one-slot holds last 1 to 2 days;
+  funding earns 6 to 20 bps against 40 bps of fees.
+- **The +300% stress is real.** The slot's highest-funding picks include squeezes to
+  4x and 7x; in the all-pairs view at H = 5 there are 10 breaches, up to 9.8x.
+
+**Decision this supports:** do not design stage B for USD 50 isolated carry. This closes
+the configuration screened (size, collateral, rules), not every carry strategy.
