@@ -129,3 +129,18 @@ not income.
 one-slot view, which picks the highest funding); exit-month attribution for months and
 halves; 4 h closes, not bid and ask; the close, not the mark price, for funding; four
 looks at H.
+
+## v1.2 fixes (2026-10-25, after the v1.1 read; the reading rule is unchanged)
+
+A colleague review of v1.1 found two accounting gaps. Neither can turn the verdict
+positive; both make the figures honest.
+
+- **Liquidation is now priced, not only flagged.** When the perp high reaches 4x the
+  entry fill, the short is bought back at 4x (the collateral is lost) and the spot leg
+  sells at the next 4 h close; funding stops there.
+- **An unresolved exit keeps the one-slot capital to the end of the window.** It was
+  freed at the next bar. An unresolved exit already fails the reading.
+
+The reported third gap, a same-pair re-entry before a delayed exit in the all-pairs
+view, cannot occur: a re-entry needs a bar with both closes after the exit signal, and
+the delayed exit takes the first such bar. No change there.

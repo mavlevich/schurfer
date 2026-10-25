@@ -173,6 +173,42 @@ def test_a_perp_high_at_four_times_entry_is_a_liquidation_breach() -> None:
     assert isinstance(trade, Trade) and not trade.liquidation_breach
 
 
+def test_a_liquidated_short_closes_at_four_times_entry_and_loses_the_collateral() -> None:
+    spot, perp = flat_prices(100.0), flat_prices(100.0)
+    entry, exit_ = T0 + BAR_MS, T0 + 6 * BAR_MS
+    highs = {start: 100.0 for start in perp}
+    highs[entry + BAR_MS] = 500.0  # wick to 5x; closes stay flat
+    trade = money(Series([], spot, perp, highs), "XUSDT", 5, entry, exit_, at_end=False)
+    assert isinstance(trade, Trade) and trade.liquidated
+    assert trade.exit_fill_ms == entry + 2 * BAR_MS  # the close of the breaching bar
+    # q = 0.5: the short is bought back at 400, a USD 150 loss = 30,000 bps of USD 50
+    assert trade.basis_bps == pytest.approx(-30_000.0)
+
+
+def _toggling_funding(low_from: int, low_until: int) -> list[tuple[int, float]]:
+    return funding_every(8, lambda t: 0.00001 if low_from <= t < low_until else 0.0005)
+
+
+def test_an_unresolved_exit_never_frees_the_slot() -> None:
+    a = Series(_toggling_funding(T0 + 3 * DAY_MS, T0 + 400 * DAY_MS), flat_prices(), flat_prices())
+    path_a = screen.f24_path(a)
+    first_low = next(i for i, v in enumerate(path_a) if v is not None and v < 5)
+    intended = T0 + first_low * BAR_MS + BAR_MS
+    for start in [t for t in a.perp if t >= intended - BAR_MS]:
+        del a.perp[start]  # delisted at the exit: no later prices at all
+    b = Series(
+        funding_every(8, lambda t: 0.0005 if t >= T0 + 20 * DAY_MS else 0.00001),
+        flat_prices(),
+        flat_prices(),
+    )
+    missing: Counter[str] = Counter()
+    trades = simulate_one_slot(
+        {"AUSDT": a, "BUSDT": b}, {"AUSDT": path_a, "BUSDT": screen.f24_path(b)}, 10, missing
+    )
+    assert missing["exit_unresolved"] == 1
+    assert trades == []  # BUSDT is never entered: the capital is stuck in AUSDT
+
+
 def _trade(symbol: str, exit_ms: int, net_bps: float) -> Trade:
     return Trade(symbol, 10, exit_ms - DAY_MS, exit_ms, net_bps, 0.0, 0.0, False)
 

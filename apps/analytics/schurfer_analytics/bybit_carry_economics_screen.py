@@ -29,7 +29,7 @@ from .reporting import markdown_table, normalize_code_revision, profit_factor
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
-VERSION: Final = "bybit_carry_economics_screen_v1_1"
+VERSION: Final = "bybit_carry_economics_screen_v1_2"
 HOUR_MS: Final = 3_600_000
 BAR_MS: Final = 4 * HOUR_MS
 DAY_MS: Final = 24 * HOUR_MS
@@ -273,6 +273,7 @@ class Trade:
     closed_at_end: bool
     exit_delayed: bool = False
     max_perp_high_ratio: float | None = None
+    liquidated: bool = False
 
     @property
     def net_bps(self) -> float:
@@ -284,8 +285,7 @@ class Trade:
 
     @property
     def liquidation_breach(self) -> bool:
-        ratio = self.max_perp_high_ratio
-        return ratio is not None and ratio >= LIQUIDATION_HIGH_RATIO
+        return self.liquidated
 
     @property
     def hold_days(self) -> float:
@@ -306,7 +306,9 @@ def money(
 
     A missing entry price forms no trade. A missing exit price does not drop the trade
     (a halt or delisting is when it goes missing): the position is closed at the first
-    later fill with both closes and flagged, or reported ``exit_unresolved``."""
+    later fill with both closes and flagged, or reported ``exit_unresolved``. If the perp
+    high reaches LIQUIDATION_HIGH_RATIO x entry, the short is closed there at that price
+    (the collateral is lost) and the spot leg at the next 4 h close."""
     s0, p0 = price_at(series.spot, entry), price_at(series.perp, entry)
     if s0 is None or p0 is None:
         return "fill_price_missing"
@@ -318,6 +320,19 @@ def money(
         exit_, delayed = resolved, True
     s1, p1 = price_at(series.spot, exit_), price_at(series.perp, exit_)
     assert s1 is not None and p1 is not None
+    highs: list[float] = []
+    liquidated = False
+    for start in range(entry, exit_, BAR_MS):
+        high = series.perp_high.get(start)
+        if high is None:
+            continue
+        highs.append(high)
+        if high >= LIQUIDATION_HIGH_RATIO * p0:
+            liquidated = True
+            signal_exit, exit_ = exit_, start + BAR_MS
+            p1 = LIQUIDATION_HIGH_RATIO * p0
+            s1 = _first_close(series.spot, exit_, signal_exit)
+            break
     quantity = NOTIONAL_USD / max(s0, p0)
     funding_usd = 0.0
     ts_list = funding_ts if funding_ts is not None else series.funding_ts
@@ -328,11 +343,6 @@ def money(
             boundary = -(-ts // BAR_MS) * BAR_MS
             mark = _first_close(series.perp, boundary, exit_)
             funding_usd += quantity * mark * rate
-    highs = [
-        high
-        for start in range(entry, exit_, BAR_MS)
-        if (high := series.perp_high.get(start)) is not None
-    ]
     basis_usd = quantity * ((s1 - s0) - (p1 - p0))
     fee_usd = FEE_BPS_PER_FILL / 10_000 * quantity * (s0 + p0 + s1 + p1)
     scale = 10_000 / NOTIONAL_USD
@@ -347,6 +357,7 @@ def money(
         at_end,
         delayed,
         max(highs) / p0 if highs else None,
+        liquidated,
     )
 
 
@@ -388,6 +399,8 @@ def simulate_pair(
     entry: int | None = None
     funding_ts = series.funding_ts
     for t, value in zip(decision_grid(), path, strict=True):
+        # No re-entry can precede a delayed exit: both need a bar with both closes, and
+        # the delayed exit takes the first such bar after the signal.
         if entry is None:
             if value is not None and value >= threshold:
                 fill = t + BAR_MS
@@ -404,6 +417,15 @@ def simulate_pair(
     if entry is not None:
         _close_at_end(series, symbol, threshold, entry, trades, missing)
     return trades
+
+
+def _busy_until(result: Trade | str, signal_exit: int) -> int:
+    """When the capital of a closed position is free again: never, if its exit is unresolved."""
+    if isinstance(result, Trade):
+        return max(result.exit_fill_ms, signal_exit)
+    if result == "exit_unresolved":
+        return LAST_FILL_MS + BAR_MS
+    return signal_exit
 
 
 def _close_at_end(
@@ -437,7 +459,7 @@ def simulate_one_slot(
     """One position at a time: the eligible pair with the highest F24 (ties by symbol)."""
     trades: list[Trade] = []
     held: tuple[str, int] | None = None
-    free_from = 0  # a delayed exit keeps the slot's capital until its fill
+    free_from = 0  # a delayed or unresolved exit keeps the slot's capital
     symbols = sorted(data)
     for index, t in enumerate(decision_grid()):
         if held is not None:
@@ -446,8 +468,7 @@ def simulate_one_slot(
             if value is None or value < threshold / 2:
                 result = money(data[symbol], symbol, threshold, entry, t + BAR_MS, at_end=False)
                 _keep(result, trades, missing)
-                if isinstance(result, Trade):
-                    free_from = result.exit_fill_ms
+                free_from = _busy_until(result, t + BAR_MS)
                 held = None
             continue
         if t + BAR_MS < free_from:
