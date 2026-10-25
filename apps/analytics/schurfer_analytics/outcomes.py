@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any
 import structlog
 
 from .config import Config
+from .exchange_registry import DEFAULT_EXCHANGES
 from .ohlcv import (
     TIMEFRAME_MINUTES,
     Candle,
@@ -87,7 +88,9 @@ class OutcomeConfig:
             raise ValueError("DATABASE_URL is required for outcome-resolver")
         return cls(
             db_url=base.db_url,
-            exchanges=tuple(base.exchanges),
+            # The scanner can exclude an unavailable default venue; historical
+            # decisions still need their original exchange's resolver adapter.
+            exchanges=tuple(base.exchanges) if os.getenv("PUMP_EXCHANGES") else DEFAULT_EXCHANGES,
             poll_interval_seconds=int(os.getenv("OUTCOME_POLL_INTERVAL", "300")),
             retry_after_seconds=int(os.getenv("OUTCOME_RETRY_AFTER", "900")),
             batch_size=int(os.getenv("OUTCOME_BATCH_SIZE", "50")),

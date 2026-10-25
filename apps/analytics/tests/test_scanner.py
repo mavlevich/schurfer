@@ -66,8 +66,26 @@ def _ticker(
 def test_default_exchanges_match_registered_factories(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("PUMP_EXCHANGES", raising=False)
 
-    assert Config().exchanges == list(DEFAULT_EXCHANGES)
+    assert Config().exchanges == [name for name in DEFAULT_EXCHANGES if name != "coinex"]
     assert tuple(EXCHANGE_FACTORIES) == DEFAULT_EXCHANGES
+
+
+def test_coinex_remains_available_for_explicit_scanner_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PUMP_EXCHANGES", "gate,coinex")
+
+    assert Config().exchanges == ["gate", "coinex"]
+    assert "coinex" in EXCHANGE_FACTORIES
+
+
+def test_empty_scanner_configuration_uses_default_without_coinex(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PUMP_EXCHANGES", "")
+
+    assert "gate" in Config().exchanges
+    assert "coinex" not in Config().exchanges
 
 
 def test_scanner_thresholds_default_to_measurement_below_entry(
