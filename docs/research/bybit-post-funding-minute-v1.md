@@ -1,9 +1,9 @@
 # HYP-031: Bybit post-funding reaction, minute variant (protocol v1, draft)
 
-Status: **draft for the owner's review, 2026-10-25.** Nothing is fetched, no price
+Status: **protocol v1 with Amendment 1, 2026-10-26.** Nothing is fetched, no price
 after any settlement has been read, and this changes no registered rule, cohort or
-roadmap order. It becomes binding only when committed unchanged before the first
-fetch. The roadmap parks "funding-only short baskets"; this is a different object
+roadmap order. It binds as committed before the first fetch; any later change needs
+its own amendment before any return is read. The roadmap parks "funding-only short baskets"; this is a different object
 (an intraday timing effect around one settlement, flat before the next one), and
 opening it is the owner's decision after the 2026-10-31 review, not this document's.
 
@@ -15,13 +15,14 @@ closed 30 minutes later earn enough to clear costs, on public history, out of sa
 
 ## Mechanism, stated before any outcome
 
-A large per-settlement payment rewards closing the paying side just before the
-snapshot and reopening it just after. When funding is extremely negative the shorts
-pay: they buy to close before settlement and sell to reopen after it, so the price
-should drift down shortly after settlement. A data check of 2026-10-25 (no returns
-read) found that 96% of settlements with |rate| >= 0.10% are negative, so the
-negative side is the primary population. The positive side (longs pay, buy after) is
-a diagnostic only.
+When funding is extremely negative, shorts pay and longs receive at the snapshot. Two
+behaviours predict selling just after it: longs that held through the snapshot to
+receive the payment close, and shorts that closed before it to avoid paying reopen.
+Either needs the payment to be worth a round trip (two taker fees plus two spreads,
+roughly 25 to 30 bps for a taker), which is why the primary trigger sits at that
+level. A data check of 2026-10-25 (no returns read) found that 96% of settlements with
+|rate| >= 0.10% are negative, so the negative side is the primary population. The
+positive side (longs pay, buy after) is a diagnostic only.
 
 Competing explanation: extreme negative funding marks a crowded short being squeezed,
 and the squeeze continues. The test does not assume either; the control and the
@@ -41,7 +42,8 @@ pre-settlement diagnostic below exist to tell them apart.
   empty first page).
 - **Per instrument:** every settlement from `/v5/market/funding/history`; 60-minute
   klines for the liquidity filter; 1-minute perp klines for each event window
-  [t - 60 min, t + 40 min). BTCUSDT 1-minute klines for the market diagnostic.
+  [t - 60 min, t + 65 min), and for the control settlements at the same t.
+  BTCUSDT 1-minute klines for the market diagnostic.
 - Every native response is stored once in a gzip JSON-lines snapshot whose SHA-256
   the report records; `report` reads only that verified snapshot.
 
@@ -51,9 +53,12 @@ For a settlement of instrument i at time t (the actual `fundingRateTimestamp`; t
 catalog's current `fundingInterval` is never used, since 147 of 287 checked pairs
 changed interval at least once):
 
-- **Trigger:** the rate settled at i's previous settlement, r_prev, is at most
-  **-0.10%** per settlement. r_prev was public well before t, so no publication-time
-  assumption is needed; the rate settled at t itself is not used for the decision.
+- **Trigger:** the rate settled at t itself, r_t, is at most **-0.30%** per
+  settlement. A live check at the 2026-10-25 23:00 UTC settlement (see Amendment 1)
+  saw r_t in `/v5/market/funding/history` 0.4 to 3.6 s after t on all 7 instruments
+  settling then, well before the decision at t + 1 min. The previous settled rate,
+  r_prev, is a diagnostic only: at -0.30% about 44% of r_prev triggers fall on a
+  settlement whose own rate has already normalized.
 - **Liquidity:** perp turnover over the 24 hourly bars ending at t is at least
   **USD 2,000,000**.
 - **Entry:** short at the **open of the 1-minute bar starting t + 1 min**.
@@ -61,9 +66,11 @@ changed interval at least once):
   shortest observed interval is 1 hour, so no settlement falls inside the hold and no
   funding is paid or received.
 - **Return (gross, bps):** -(exit / entry - 1) x 10,000.
-- **Missing data:** a missing entry bar forms no trade, counted by reason. A missing
-  exit bar closes at the first later bar up to t + 40 min, flagged; otherwise the
-  event is `unresolved`, counted, and never dropped silently.
+- **Eligible events and completeness:** every settlement passing the trigger and the
+  liquidity filter is eligible and stays in the denominator. An eligible event is
+  complete when its entry bar exists and its exit bar exists (or, if missing, the first
+  later bar up to t + 40 min, flagged). Every incomplete event is counted by where it
+  failed (entry, exit); none is dropped silently.
 
 ## Costs
 
@@ -76,46 +83,59 @@ the main unmeasured risk; a pass earns a live quote measurement, not belief.
 ## Independence and control
 
 - **Cluster = symbol-day.** Extreme funding often moves to 1-hour settlements, so one
-  symbol gives many events a day. Each cluster's events are averaged first; the
-  statistics are over clusters. Uncertainty: cluster bootstrap, 10,000 resamples,
-  seed 31.
-- **Control:** settlements in the same window and universe, passing the same
-  liquidity filter, with |r_prev| <= 0.01%, the same entry, exit and costs. It
-  measures what shorting any settlement earns.
+  symbol gives many events a day. Each cluster's events are averaged first; every
+  statistic weights clusters equally.
+- **Uncertainty: block bootstrap by UTC ISO week.** Symbol-days are not independent:
+  many tokens move together on one day, and one token's days follow each other. Each
+  resample draws whole weeks with replacement, with every cluster inside them;
+  10,000 resamples, seed 31.
+- **Matched control.** For each event, the control is the mean short return, same
+  entry, exit and costs, of the other instruments settling at the **same t** that pass
+  the same liquidity filter and whose trigger rate is within +-0.01%. The event's
+  **excess** is its gross minus that control; an event with no control at its t has no
+  excess and is counted. Excess is averaged per cluster and weighted like the main
+  result, so both use the same weights and the market move at t cancels.
 
 ## Reading (fixed now, applied to discovery, then unchanged to test)
 
 A stage passes only if all hold:
 
-1. **Floor:** at least 300 resolved clusters, 40 distinct symbols and 26 distinct UTC
-   weeks; unresolved events at most 5% of events. Otherwise `insufficient_data`.
+1. **Floor:** at least 300 clusters, 40 distinct symbols and 26 distinct UTC weeks,
+   and at least **95% of eligible events complete**. Otherwise `insufficient_data`.
 2. **Size:** cluster mean net at 30 bps cost is at least **+20 bps** (mean gross at
    least 50 bps, which is also the 50 bps sensitivity at break-even).
-3. **Uncertainty:** the 90% cluster-bootstrap lower bound of the mean net at 30 bps is
-   above 0.
+3. **Uncertainty:** the 90% week-block bootstrap lower bound of the mean net at 30 bps
+   is above 0.
 4. **Not one corner:** without the 5 symbols with the largest total net, the mean net
    at 30 bps stays above 0; each half of the stage (6 months each) has mean net
    above 0.
-5. **Not a general short:** event mean gross exceeds control mean gross by at least
-   30 bps.
+5. **Not a general short:** the cluster mean excess over the matched control is at
+   least 30 bps, and at least 80% of complete events have a control.
 
 A mature negative mean net at 30 bps is `fail` regardless of the other conditions.
 Sequence: read **discovery** first. If it does not pass, the line stops and the test
 year stays unread. If it passes, read **test** with the same code revision and
 parameters; nothing is tuned in between. A test pass permits only the next stage (live
-measurement of settlement-time spreads and rate publication, then paper), never orders.
+measurement of settlement-time spreads, then paper), never orders. That stage reads
+data after 2026-09-29, inside the HYP-012 v2 blind window, so it waits until v2 is
+terminal. The verdict is reported beside the dollars at one position (diagnostics).
 
 ## Diagnostics (reported, decide nothing)
 
-- Holds of 10 and 60 minutes (60 only where no settlement falls inside the hold).
-- Triggers at -0.05% and -0.25%; the positive side (r_prev >= +0.10%, long).
+- **The first minute** [t, t + 1 min): short from the open to the close of the bar
+  starting at t. Not tradable on minute data; it shows whether a reaction happens
+  before the entry.
+- Holds of 5 (t + 1 to t + 6 min), 10 and 60 minutes (60 only where no settlement
+  falls inside the hold).
+- Triggers at -0.10% and -0.50% (dose response); the r_prev trigger at -0.30%; the
+  positive side (r_t at least +0.30%, long).
 - By settlement interval (1, 2, 4, 8 h) and by month.
 - **Pre-settlement drift** from t - 30 min to t: the round-trip mechanism predicts a
   rise before settlement; its absence weakens the mechanism even if the main result
   passes.
 - BTC-adjusted returns; maximum adverse excursion within the hold (99th percentile).
 - **Dollars at USD 50 notional, one position at a time** (the event with the most
-  negative r_prev at each settlement time): trades per month, net USD per month.
+  negative r_t at each settlement time): trades per month, net USD per month.
 
 ## Effort and stop
 
@@ -123,5 +143,40 @@ Fetch: about one request per event window plus funding and hourly pages; the 287
 check suggests tens of thousands of windows over the full universe, within public rate
 limits, likely in under an hour. Code mirrors the carry screen (fetch once, report from a
 verified snapshot). Stop if the discovery read fails, the floor is not met, or the
-fetch cannot cover delisted instruments; the seconds-level (t + 10 s) variant is not
-opened unless this one passes test.
+fetch cannot cover delisted instruments.
+
+**Seconds-level variant.** If this variant passes, or if discovery fails while the
+first-minute cluster mean short return is at least 30 bps gross, a separate
+seconds-level protocol (entry a few seconds after t, from the public trade archive,
+trades only, no quotes) may be registered. It designs on the discovery year only; the
+test year stays unread until that protocol is committed.
+
+## Amendment 1 (2026-10-26, before any fetch or return)
+
+Colleague reviews of v1 (`40489d8`) were taken point by point; nothing here was chosen
+after seeing a price.
+
+- **Trigger r_t at -0.30%,** was r_prev at -0.10%. The mechanism needs a payment worth a
+  taker round trip; r_prev partly tests a different question (about 44% of its events have
+  a normal current rate). The switch was conditional, fixed before the check: r_t
+  becomes primary if the settled rate is public within 30 s of t. Check (script and
+  output sha256 prefixes `380bf385`, `f2e3f027`): at 2026-10-25 23:00 UTC the 7
+  instruments settling (all 1-hour intervals) showed their row in funding history
+  0.4 to 3.6 s after t, polled about every 1 to 2 s. The last ticker `fundingRate`
+  before t differed from the settled rate by up to about 0.006 percentage points, so the
+  ticker is not used. One settlement only; the live stage re-measures it, including 4
+  and 8-hour intervals.
+- **Completeness over eligible events**, was unresolved exits only: missing entries can
+  no longer leave the denominator.
+- **Week-block bootstrap**, was a symbol-day bootstrap: tokens move together on a day.
+- **Matched control at the same t** with the same weights, was an event-weighted
+  control over the whole window.
+- **Event window to t + 65 min**, was t + 40: the 60-minute diagnostic needs it.
+- **Mechanism names both sellers** (paid longs closing, shorts reopening).
+- **First-minute and 5-minute diagnostics added; the seconds-level variant is no longer
+  blocked** by a minute-variant failure when the first minute shows at least 30 bps.
+- **Live stage waits for HYP-012 v2 to be terminal** (its blind window starts
+  2026-09-29).
+
+Unchanged: costs (30 bps, 50 bps sensitivity), the +20 bps net bar, the floor, the
+split, the discovery-then-test sequence.
