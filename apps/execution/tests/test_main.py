@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -68,3 +69,10 @@ def test_the_early_momentum_trigger_runs_whatever_the_strategy_mode() -> None:
     assert early_momentum_trigger_enabled(cfg())
     assert not early_momentum_trigger_enabled(cfg(dry_run=False))
     assert not early_momentum_trigger_enabled(cfg(db_url=None))
+
+
+def test_prod_compose_keeps_the_closed_pump_short_trader_disabled_by_default() -> None:
+    """pump-short is closed; its dry-run decisions were ~43 MiB/day of database
+    growth (disk-growth-budget-v1). The prod default must stay disabled."""
+    compose = Path(__file__).resolve().parents[3] / "infra/docker/docker-compose.prod.yml"
+    assert "PUMP_SHORT_MODE: ${PUMP_SHORT_MODE:-disabled}" in compose.read_text()

@@ -113,6 +113,10 @@ async def _tick(
     # harmless no-op check.
     if broker.mode is execution_intent.TradingMode.DISABLED:
         log.info("trader.disabled")
+        # A deliberate switch-off is a state, not an outage: keep the readiness
+        # telemetry the health check reads Execution's liveness from, marked
+        # disabled, and write no decision row.
+        await _publish_signal_readiness(rdb, pump_count=0, evaluated=0, ready=0, mode="disabled")
         return
 
     raw = await rdb.get(_MEASUREMENT_PUMPS_KEY)
@@ -882,12 +886,14 @@ async def _publish_signal_readiness(
     evaluated: int,
     ready: int,
     deferral_reasons: Counter[str] | None = None,
+    mode: str = "enabled",
 ) -> None:
     """Publish ephemeral operational telemetry without adding decision rows."""
     reasons = deferral_reasons or Counter()
     await rdb.hset(
         _SIGNAL_READINESS_KEY,
         mapping={
+            "mode": mode,
             "updated_at_ms": time.time_ns() // 1_000_000,
             "pump_count": pump_count,
             "evaluated": evaluated,

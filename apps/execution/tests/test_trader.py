@@ -1128,6 +1128,30 @@ async def test_tick_disabled_pump_short_does_not_write_opened_dry_run() -> None:
     assert "opened_dry_run" not in actions
 
 
+async def test_tick_disabled_pump_short_writes_no_decision_but_stays_visible() -> None:
+    """PUMP_SHORT_MODE=disabled (the prod default since the line closed) writes no
+    decision row at all, yet keeps publishing readiness marked disabled: the health
+    check infers Execution's liveness from that key, and a deliberate switch-off must
+    not read as an outage."""
+    cfg = _cfg(score_threshold=6)
+    cfg.dry_run = True
+    cfg.auto_trade = False
+    cfg.pump_short_mode = "disabled"
+    rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=7)
+
+    with patch(
+        "schurfer_execution.trader.decisions.write_decision", new_callable=AsyncMock
+    ) as mock_write:
+        await _tick({"bybit": MagicMock()}, rdb, cfg)
+
+    mock_write.assert_not_awaited()
+    readiness = [c for c in rdb.hset.call_args_list if c.args[0] == "execution:signal_readiness"]
+    assert len(readiness) == 1
+    mapping = readiness[0].kwargs["mapping"]
+    assert mapping["mode"] == "disabled"
+    assert (mapping["pump_count"], mapping["evaluated"], mapping["ready"]) == (0, 0, 0)
+
+
 async def test_tick_sets_long_ttl_after_successful_trade() -> None:
     rdb = _rdb(pumps_raw=_pumps("BEAT"), signal_score=7)
     with patch(
