@@ -46,12 +46,17 @@ func randomTestBase(t *testing.T) string {
 	return "T" + strings.ToUpper(hex.EncodeToString(b))
 }
 
+// insertOtherStrategyPaperRun stores a contract shaped like the worker's own
+// PaperContract.canonical_json() (leverage and side since #203). An empty contract
+// made the trades package's concurrent CombinedTradesCTE test read a NULL leverage
+// and fail with 500 when both packages shared the CI database.
 func insertOtherStrategyPaperRun(t *testing.T, pool *pgxpool.Pool, paperVersion string) {
 	t.Helper()
 	_, err := pool.Exec(context.Background(), `
 		INSERT INTO app.momentum_flow_paper_runs
 			(paper_version, contract_sha256, contract_json, cohort_started_at)
-		VALUES ($1, repeat('c', 64), '{}'::jsonb, now())
+		VALUES ($1::text, repeat('c', 64),
+			jsonb_build_object('paper_version', $1::text, 'side', 'long', 'leverage', 1), now())
 		ON CONFLICT (paper_version) DO NOTHING`,
 		paperVersion,
 	)
