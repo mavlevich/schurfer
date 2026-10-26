@@ -21,7 +21,9 @@ dev = [
 
 [tool.uv]
 # Keep the aiohttp security floor when resolving CCXT's permitted transitive range.
-constraint-dependencies = ["msgpack>=1.2.1", "aiohttp>=3.14.4"]
+# filelock (via pip-audit's cachecontrol[filecache]) 3.29.0 carries CVE-2026-112907,
+# CVE-2026-112913 and CVE-2026-112940, fixed in 4.2.1.
+constraint-dependencies = ["msgpack>=1.2.1", "aiohttp>=3.14.4", "filelock>=4.2.1"]
 # ccxt 4.5.77 pins urllib3==2.7.0, which carries three advisories fixed in
 # 2.8.0. The installed uv version supports only a global override; ccxt and
 # requests are currently the only consumers. Revisit this when ccxt upgrades.
