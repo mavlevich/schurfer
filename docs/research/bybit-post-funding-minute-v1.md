@@ -1,6 +1,6 @@
 # HYP-031: Bybit post-funding reaction, minute variant (protocol v1, draft)
 
-Status: **protocol v1 with Amendments 1 and 2, 2026-10-26.** Nothing is fetched, no price
+Status: **protocol v1 with Amendments 1 to 3, 2026-10-26.** Nothing is fetched, no price
 after any settlement has been read, and this changes no registered rule, cohort or
 roadmap order. It binds as committed before the first fetch; any later change needs
 its own amendment before any return is read. The roadmap parks "funding-only short baskets"; this is a different object
@@ -201,3 +201,29 @@ has 142 such instruments, which would multiply the fetch.
 
 Unchanged: the trigger, costs, the +20 bps bar, the 80% control condition, the floor,
 the split and the sequence.
+
+## Amendment 3 (2026-10-26, before any fetch or return)
+
+From a colleague review of the implementation (#526). None changes a threshold, cost or
+the split; each closes a way the reading could pass on something other than the effect.
+
+- **A failed fetch blocks the read.** An instrument whose fetch failed or returned
+  another symbol's rows is dropped whole, often a delisted one, so its events are
+  unknown. The floor now also requires that no instrument failed; otherwise the stage is
+  `insufficient_data`.
+- **The control exits on the event's own exit bar.** When the event's exit uses the
+  fallback bar, its controls are priced at that same bar, with no fallback of their own;
+  a control without that bar has no value. Before, an event exiting one bar late against
+  controls exiting on time could show excess that was only the later market move.
+- **Every window stops at its stage's end,** including a symbol missing from the index
+  (BTCUSDT after a failed fetch), so discovery never stores test-year prices.
+- **The test year needs a verified discovery pass.** `fetch-index --stage test` refuses
+  to run without the discovery `result.json` of this version and its SHA-256, with
+  verdict `pass`.
+- **The seconds-level variant opens from a pass, or from a discovery failure with a
+  strong first minute;** a test-year first minute never opens it.
+- **The one-position diagnostic chooses before the outcome:** the most negative r_t among
+  eligible events at each time; a chosen event without a complete path counts as
+  unresolved and is never replaced by another.
+- **The uncertainty bound is the 5th percentile,** the lower end of the two-sided 90%
+  week-block interval (stricter than a one-sided 90% bound).
