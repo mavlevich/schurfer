@@ -858,9 +858,10 @@ services:
       # trade; open ones still run to their exits. .env.prod may override.
       EARLY_MOMENTUM_MODE: ${EARLY_MOMENTUM_MODE:-disabled}
       # pump-short is closed (decision register); its trader wrote ~43 MiB/day of
-      # decisions in dry run (disk-growth-budget-v1). Disabled by default; under
-      # AUTO_TRADE=true Config refuses any PUMP_SHORT_MODE, so set it empty there.
-      PUMP_SHORT_MODE: ${PUMP_SHORT_MODE:-disabled}
+      # decisions in dry run (disk-growth-budget-v1). Disabled when unset; under
+      # AUTO_TRADE=true Config refuses any PUMP_SHORT_MODE, so set it explicitly empty
+      # there (PUMP_SHORT_MODE=). `-`, not `:-`: an empty value must stay empty.
+      PUMP_SHORT_MODE: ${PUMP_SHORT_MODE-disabled}
       EARLY_MOMENTUM_REARM_COOLDOWN_SECONDS: ${EARLY_MOMENTUM_REARM_COOLDOWN_SECONDS:-1800}
       IDENTITY_SNAPSHOT_MAX_AGE_HOURS: ${IDENTITY_SNAPSHOT_MAX_AGE_HOURS:-720}
       EARLY_MOMENTUM_HEALTH_ALERT_COOLDOWN_SECONDS: ${EARLY_MOMENTUM_HEALTH_ALERT_COOLDOWN_SECONDS:-1800}

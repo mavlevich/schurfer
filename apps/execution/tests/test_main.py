@@ -1,7 +1,13 @@
+import json
+import os
+import re
+import shutil
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from fastapi import FastAPI
 from schurfer_execution.main import _preload_markets, lifespan
 from schurfer_execution.supervisor import WorkerState
@@ -71,8 +77,39 @@ def test_the_early_momentum_trigger_runs_whatever_the_strategy_mode() -> None:
     assert not early_momentum_trigger_enabled(cfg(db_url=None))
 
 
-def test_prod_compose_keeps_the_closed_pump_short_trader_disabled_by_default() -> None:
-    """pump-short is closed; its dry-run decisions were ~43 MiB/day of database
-    growth (disk-growth-budget-v1). The prod default must stay disabled."""
-    compose = Path(__file__).resolve().parents[3] / "infra/docker/docker-compose.prod.yml"
-    assert "PUMP_SHORT_MODE: ${PUMP_SHORT_MODE:-disabled}" in compose.read_text()
+_PROD_COMPOSE = Path(__file__).resolve().parents[3] / "infra/docker/docker-compose.prod.yml"
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [(None, "disabled"), ("", ""), ("paper", "paper")],
+    ids=["unset", "explicitly_empty", "set"],
+)
+def test_prod_compose_pump_short_mode_substitution(
+    value: str | None, expected: str, tmp_path: Path
+) -> None:
+    """pump-short is closed, so an unset PUMP_SHORT_MODE disables it; an explicitly
+    empty one must reach Config as empty (None), because Config refuses any value under
+    AUTO_TRADE=true. Checked with Docker Compose's own substitution, not a string."""
+    docker = shutil.which("docker")
+    if docker is None:
+        pytest.skip("docker compose is required to check variable substitution")
+    match = re.search(r"PUMP_SHORT_MODE: (\$\{PUMP_SHORT_MODE[^}]*\})", _PROD_COMPOSE.read_text())
+    assert match is not None
+    compose = tmp_path / "compose.yml"
+    compose.write_text(
+        "services:\n  execution:\n    image: busybox\n"
+        f"    environment:\n      PUMP_SHORT_MODE: {match.group(1)}\n"
+    )
+    env = {k: v for k, v in os.environ.items() if k != "PUMP_SHORT_MODE"}
+    if value is not None:
+        env["PUMP_SHORT_MODE"] = value
+    rendered = subprocess.run(  # noqa: S603 fixed argv, docker resolved via PATH
+        [docker, "compose", "-f", str(compose), "config", "--format", "json"],
+        capture_output=True,
+        check=True,
+        env=env,
+        text=True,
+    )
+    environment = json.loads(rendered.stdout)["services"]["execution"]["environment"]
+    assert environment["PUMP_SHORT_MODE"] == expected
