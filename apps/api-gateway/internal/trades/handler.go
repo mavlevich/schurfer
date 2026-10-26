@@ -94,6 +94,15 @@ const (
 // strategy_name="unknown". A LEFT JOIN (not INNER) so one hypothetically
 // missing app.strategies row degrades a single trade's identity to
 // "unknown" rather than dropping that trade from the page entirely.
+//
+// A paper probe's identity and sizing come from its run (2026-10-17 audit):
+// strategy_key/strategy_version are the probe's own paper_version, and
+// leverage/side are read from the run's frozen contract_json, which has
+// carried both since the first paper contract (#203). They were hardcoded
+// to "momentum_flow_v1" and 1x, which showed the 3x variant
+// (momentum_flow_paper_v1_lev3) at a third of its ROE and merged every paper
+// version in the by-strategy view. The JOIN cannot drop a probe: probes
+// reference their run with ON DELETE RESTRICT.
 const CombinedTradesCTE = `
 	WITH combined AS (
 		SELECT
@@ -126,13 +135,14 @@ const CombinedTradesCTE = `
 		SELECT
 			'momentum_flow_paper:' || p.paper_id::text AS id,
 			'momentum_flow_paper'::text AS origin,
-			'momentum_flow_v1' AS strategy_key,
+			p.paper_version AS strategy_key,
 			'momentum_flow' AS strategy_name,
-			'1' AS strategy_version,
+			p.paper_version AS strategy_version,
 			'paper' AS mode,
 			p.exit_reason AS exit_reason,
-			p.symbol, p.exchange, p.market_type, 'long'::varchar AS side,
-			p.entry_filled_notional_usd::float8 AS size_usd, 1::float8 AS leverage,
+			p.symbol, p.exchange, p.market_type, (r.contract_json->>'side')::varchar AS side,
+			p.entry_filled_notional_usd::float8 AS size_usd,
+			(r.contract_json->>'leverage')::float8 AS leverage,
 			p.entry_vwap::float8 AS entry_price, p.entry_at,
 			p.exit_vwap::float8 AS exit_price, p.exit_at,
 			NULL::float8 AS entry_slippage_bps,
@@ -150,6 +160,7 @@ const CombinedTradesCTE = `
 			'{}'::jsonb AS setup_context, NULL::text AS notes, p.created_at,
 			split_part(p.unified_symbol, '/', 1) AS normalized_base
 		FROM app.momentum_flow_paper_probes p
+		JOIN app.momentum_flow_paper_runs r ON r.paper_version = p.paper_version
 		WHERE p.entry_status = 'opened'
 	)
 `

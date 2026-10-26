@@ -159,7 +159,8 @@ func TestTokenFindsMomentumFlowActivityAgainstRealPostgres(t *testing.T) {
 	if resp.HasPumpEpisode {
 		t.Errorf("has_pump_episode = true, want false (%s has no app.pump_events row)", base)
 	}
-	if resp.OtherStrategyKey != "momentum_flow_v1" {
-		t.Errorf("other_strategy_key = %q, want momentum_flow_v1", resp.OtherStrategyKey)
+	// A paper probe's strategy_key is its own paper_version (trades.CombinedTradesCTE).
+	if resp.OtherStrategyKey != paperVersion {
+		t.Errorf("other_strategy_key = %q, want %q", resp.OtherStrategyKey, paperVersion)
 	}
 }
