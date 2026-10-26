@@ -165,6 +165,35 @@ async def _insert_clean_window(
         )
 
 
+async def _move_bar(
+    conn: psycopg.AsyncConnection,
+    *,
+    exchange: str,
+    symbol: str,
+    from_start: datetime,
+    to_start: datetime,
+) -> None:
+    """Re-key one bar to another bucket_start.
+
+    An UPDATE of the partition column cannot move a row into another daily
+    Timescale chunk (it fails the chunk's check constraint), so the row is
+    deleted and re-inserted with the new key, every other column unchanged.
+    """
+    async with conn.cursor() as cur:
+        await cur.execute(
+            "WITH moved AS ("
+            "  DELETE FROM timeseries.bybit_momentum_bars_1m"
+            "  WHERE exchange = %s AND symbol = %s AND bucket_start = %s RETURNING *"
+            ") INSERT INTO timeseries.bybit_momentum_bars_1m "
+            "SELECT (jsonb_populate_record("
+            "  NULL::timeseries.bybit_momentum_bars_1m,"
+            "  to_jsonb(moved) || jsonb_build_object('bucket_start', %s::timestamptz)"
+            ")).* FROM moved",
+            (exchange, symbol, from_start, to_start),
+        )
+        assert cur.rowcount == 1
+
+
 async def _cleanup(conn: psycopg.AsyncConnection, *, exchange: str) -> None:
     async with conn.cursor() as cur:
         await cur.execute(
@@ -489,17 +518,47 @@ async def test_future_timestamp_is_rejected() -> None:
     now = datetime.now(tz=UTC).replace(microsecond=0)
     try:
         await _insert_clean_window(conn, exchange=exchange, symbol="FUTUSDT", end_at=now)
-        async with conn.cursor() as cur:
-            await cur.execute(
-                "UPDATE timeseries.bybit_momentum_bars_1m SET bucket_start = %s "
-                "WHERE exchange = %s AND symbol = %s AND bucket_start = %s",
-                (now + timedelta(minutes=30), exchange, "FUTUSDT", now),
-            )
+        await _move_bar(
+            conn,
+            exchange=exchange,
+            symbol="FUTUSDT",
+            from_start=now,
+            to_start=now + timedelta(minutes=30),
+        )
         outcome = await _evaluate(exchange=exchange, symbol="FUTUSDT")
         assert outcome is not None
         _row, result = outcome
         assert result.qualified is False
         assert WindowQualityReason.FUTURE_TIMESTAMP in result.reasons
+    finally:
+        await _cleanup(conn, exchange=exchange)
+        await conn.close()
+
+
+async def test_a_bar_can_be_moved_across_a_daily_chunk_boundary() -> None:
+    """Regression for the midnight flake: between 23:30 and 00:00 UTC the future
+    bar of the test above lands in the next day's chunk."""
+    conn = await _connect_or_skip()
+    exchange = _test_exchange()
+    late = datetime(2026, 10, 25, 23, 45, tzinfo=UTC)
+    try:
+        await _insert_clean_window(conn, exchange=exchange, symbol="MIDUSDT", end_at=late)
+        await _move_bar(
+            conn,
+            exchange=exchange,
+            symbol="MIDUSDT",
+            from_start=late,
+            to_start=late + timedelta(minutes=30),
+        )
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT max(bucket_start), count(*) FROM timeseries.bybit_momentum_bars_1m "
+                "WHERE exchange = %s AND symbol = %s",
+                (exchange, "MIDUSDT"),
+            )
+            latest, rows = await cur.fetchone()  # type: ignore[misc]
+        assert latest == late + timedelta(minutes=30)
+        assert rows == _REQUIRED_BUCKETS
     finally:
         await _cleanup(conn, exchange=exchange)
         await conn.close()
