@@ -1,6 +1,6 @@
 """HYP-031: post-funding reaction on Bybit USDT perpetuals, minute variant.
 
-Implements docs/research/bybit-post-funding-minute-v1.md (v1 with Amendments 1 and 2).
+Implements docs/research/bybit-post-funding-minute-v1.md (v1 with Amendments 1 to 3).
 Each stage (discovery, test) is fetched and read on its own, so the test year has no
 prices on disk until discovery has passed:
 
@@ -35,7 +35,7 @@ from .reporting import markdown_table, normalize_code_revision
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterable, Sequence
 
-VERSION: Final = "bybit_post_funding_minute_v1_a2"
+VERSION: Final = "bybit_post_funding_minute_v1_a3"
 MINUTE_MS: Final = 60_000
 HOUR_MS: Final = 60 * MINUTE_MS
 DAY_MS: Final = 24 * HOUR_MS
@@ -413,6 +413,7 @@ async def fetch_windows(
 ) -> dict[str, Any]:
     index = load_index(verified(index_path, index_sha256))
     todo = plan(index)
+    stage_last = STAGES[index.stage][1]
     ends = {symbol: inst.end_ms for symbol, inst in index.instruments.items()}
     writer = SnapshotWriter(path)
     writer.record("index", None, {}, {"sha256": index_sha256, "stage": index.stage})
@@ -422,7 +423,9 @@ async def fetch_windows(
     async def one(symbol: str, t: int) -> None:
         start = t - WINDOW_BEFORE_MS
         # Cap at delivery: backward paging from a later end returns an empty first page.
-        end = min(t + WINDOW_AFTER_MS - 1, ends.get(symbol, DATA_UNTIL_MS), DATA_UNTIL_MS)
+        # A symbol missing from the index (its fetch failed, as BTCUSDT may) still
+        # stops at the stage end, so no window reads the next stage's prices.
+        end = min(t + WINDOW_AFTER_MS - 1, ends.get(symbol, stage_last), stage_last)
         params = {
             "category": "linear",
             "symbol": symbol,
@@ -494,16 +497,22 @@ class HeldPath:
     gross_bps: float
     exit_delayed: bool
     adverse_bps: float  # worst move against the position inside the hold
+    exit_start: int  # start of the bar whose close is the exit
 
 
-def held(bars: Bars, t: int, *, side: int, hold_ms: int = HOLD_MS) -> HeldPath | str:
-    """side = -1 for a short, +1 for a long."""
+def held(
+    bars: Bars, t: int, *, side: int, hold_ms: int = HOLD_MS, exit_at: int | None = None
+) -> HeldPath | str:
+    """side = -1 for a short, +1 for a long. ``exit_at`` forces the exit bar (a control
+    exits on the event's own exit bar) and allows no fallback."""
     entry_bar = bars.get(t + ENTRY_OFFSET_MS)
     if entry_bar is None:
         return "entry_missing"
     entry = entry_bar[0]
     exit_start = t + ENTRY_OFFSET_MS + hold_ms - MINUTE_MS
     last_start = max(exit_start, t + LAST_EXIT_BAR_OFFSET_MS) if hold_ms == HOLD_MS else exit_start
+    if exit_at is not None:
+        exit_start = last_start = exit_at
     start = exit_start
     while start <= last_start and start not in bars:
         start += MINUTE_MS
@@ -517,7 +526,9 @@ def held(bars: Bars, t: int, *, side: int, hold_ms: int = HOLD_MS) -> HeldPath |
         adverse = max(bar[1] for bar in inside) / entry - 1
     else:
         adverse = 1 - min(bar[2] for bar in inside) / entry
-    return HeldPath(side * (exit_ / entry - 1) * 10_000, start != exit_start, adverse * 10_000)
+    return HeldPath(
+        side * (exit_ / entry - 1) * 10_000, start != exit_start, adverse * 10_000, start
+    )
 
 
 def first_minute_short_bps(bars: Bars, t: int) -> float | None:
@@ -575,8 +586,9 @@ def mean_of(cs: Sequence[Cluster]) -> float | None:
 
 
 def week_block_lower_bound(cs: Sequence[Cluster]) -> float | None:
-    """Lower bound of the 90% interval of the pooled cluster mean, resampling whole UTC
-    weeks (each week keeps all of its symbol-day clusters)."""
+    """Lower bound of the two-sided 90% interval (the 5th percentile) of the pooled
+    cluster mean, resampling whole UTC weeks (each week keeps all of its symbol-day
+    clusters)."""
     if len({c.week for c in cs}) < 2:
         return None
     computation = cluster_bootstrap_mean(
@@ -656,7 +668,11 @@ def read_stage(index: Index, windows: dict[tuple[str, int], Bars]) -> dict[str, 
         values = []
         for c in todo.controls.get((e.symbol, e.t), []):
             bars = windows.get((c.symbol, c.t))
-            result = held(bars, c.t, side=-1) if bars is not None else "window_missing"
+            result = (
+                held(bars, c.t, side=-1, exit_at=p.exit_start)
+                if bars is not None
+                else "window_missing"
+            )
             if not isinstance(result, str):
                 values.append(result.gross_bps)
         if values:
@@ -679,6 +695,9 @@ def read_stage(index: Index, windows: dict[tuple[str, int], Bars]) -> dict[str, 
         "symbols": len({c.symbol for c in cs}) >= MIN_SYMBOLS,
         "weeks": len({c.week for c in cs}) >= MIN_WEEKS,
         "complete_share": complete_share >= MIN_COMPLETE_SHARE,
+        # A failed or mismatched fetch drops an instrument whole, often a delisted
+        # one; its events are unknown, not absent, so no formal read proceeds.
+        "fetch_complete": not index.failed,
     }
     conditions = {
         "size": mean_net is not None and mean_net >= MIN_NET_BPS,
@@ -734,9 +753,13 @@ def read_stage(index: Index, windows: dict[tuple[str, int], Bars]) -> dict[str, 
         "floor": floor,
         "conditions": conditions,
         "verdict": verdict,
+        # The protocol opens the seconds-level variant on a pass, or when discovery
+        # fails with a strong first minute; a test-year hint never opens it.
         "seconds_variant_permitted": verdict == "pass"
         or (
-            first_minute_mean is not None and first_minute_mean >= SECONDS_VARIANT_FIRST_MINUTE_BPS
+            index.stage == "discovery"
+            and first_minute_mean is not None
+            and first_minute_mean >= SECONDS_VARIANT_FIRST_MINUTE_BPS
         ),
         "diagnostics": diagnostics(todo, primary, main, windows, first_minute, by_hour_type),
     }
@@ -807,7 +830,7 @@ def diagnostics(
         "pre_settlement_drift_long_gross": summary(pre),
         "btc_adjusted_short_gross": summary(btc_adjusted),
         "adverse_p99_bps": adverse[int(0.99 * (len(adverse) - 1))] if adverse else None,
-        "one_position": one_position(main, stage_months(todo)),
+        "one_position": one_position(primary, main, stage_months(todo)),
     }
     return out
 
@@ -816,21 +839,31 @@ def stage_months(todo: Plan) -> int:
     return len({_month(t) for t in range(todo.first, todo.last + 1, DAY_MS)})
 
 
-def one_position(main: Outcomes, months: int) -> dict[str, Any]:
-    """USD 50, one position at a time: the most negative r_t at each settlement time.
-    A 30-minute hold never overlaps the next settlement time, which is at least an hour
-    later, so every chosen time is taken."""
-    best: dict[int, tuple[Settlement, HeldPath]] = {}
-    for e, p in main.complete:
-        current = best.get(e.t)
-        if current is None or (e.rate, e.symbol) < (current[0].rate, current[0].symbol):
-            best[e.t] = (e, p)
+def one_position(primary: Sequence[Settlement], main: Outcomes, months: int) -> dict[str, Any]:
+    """USD 50, one position at a time: the most negative r_t among the eligible events
+    at each settlement time, chosen before its outcome is known; a chosen event without
+    a complete path is counted as unresolved, never replaced. A 30-minute hold never
+    overlaps the next settlement time, which is at least an hour later."""
+    chosen: dict[int, Settlement] = {}
+    for e in primary:
+        current = chosen.get(e.t)
+        if current is None or (e.rate, e.symbol) < (current.rate, current.symbol):
+            chosen[e.t] = e
+    paths = {(e.symbol, e.t): p for e, p in main.complete}
     by_month: dict[str, list[float]] = defaultdict(list)
-    for t, (_, p) in best.items():
+    unresolved = 0
+    for t, e in chosen.items():
+        p = paths.get((e.symbol, t))
+        if p is None:
+            unresolved += 1
+            continue
         by_month[_month(t)].append((p.gross_bps - COST_BPS) * NOTIONAL_USD / 10_000)
+    trades = len(chosen) - unresolved
     return {
-        "trades": len(best),
-        "trades_per_month": len(best) / months,
+        "chosen": len(chosen),
+        "unresolved": unresolved,
+        "trades": trades,
+        "trades_per_month": trades / months,
         "net_usd": sum(sum(v) for v in by_month.values()),
         "net_usd_per_month": sum(sum(v) for v in by_month.values()) / months,
         "by_month_usd": {k: sum(v) for k, v in sorted(by_month.items())},
@@ -930,6 +963,8 @@ def build_parser() -> argparse.ArgumentParser:
     index = sub.add_parser("fetch-index", help="catalog, settlements and hourly klines")
     index.add_argument("--stage", choices=sorted(STAGES), required=True)
     index.add_argument("--snapshot", type=Path, required=True)
+    index.add_argument("--discovery-result", type=Path, help="required for --stage test")
+    index.add_argument("--discovery-result-sha256", help="required for --stage test")
     windows = sub.add_parser("fetch-windows", help="1-minute windows of events and controls")
     windows.add_argument("--index", type=Path, required=True)
     windows.add_argument("--index-sha256", required=True)
@@ -962,9 +997,27 @@ def _run_fetch(job: Callable[[Any], Any], snapshot: Path) -> None:
     sys.stdout.write(json.dumps(coverage | {"sha256": file_sha256(snapshot)}) + "\n")
 
 
+def require_discovery_pass(path: Path | None, sha256: str | None) -> None:
+    """The test year is fetched only after a verified discovery pass of this version."""
+    if path is None or sha256 is None:
+        raise SystemExit("--stage test needs --discovery-result and --discovery-result-sha256")
+    if hashlib.sha256(path.read_bytes()).hexdigest() != sha256:
+        raise SystemExit(f"{path.name} does not match its sha256")
+    report = json.loads(path.read_bytes())
+    result = report.get("result", {})
+    if report.get("version") != VERSION or result.get("stage") != "discovery":
+        raise SystemExit("the discovery result is not this version's discovery stage")
+    if result.get("verdict") != "pass":
+        raise SystemExit(
+            f"discovery verdict is {result.get('verdict')!r}; the test year stays unread"
+        )
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     if args.command == "fetch-index":
+        if args.stage == "test":
+            require_discovery_pass(args.discovery_result, args.discovery_result_sha256)
         _run_fetch(lambda c: fetch_index(c, args.snapshot, args.stage), args.snapshot)
         return
     if args.command == "fetch-windows":

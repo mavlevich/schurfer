@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import TYPE_CHECKING, Any
 
 import pytest
@@ -171,9 +172,11 @@ def test_week_block_bootstrap_keeps_weeks_whole() -> None:
     assert lower is not None and lower == pytest.approx(-50.0)
 
 
-def _stage_data(*, drop: float, symbols: int, weeks: int) -> tuple[Index, dict[Any, Bars]]:
+def _stage_data(
+    *, drop: float, symbols: int, weeks: int, stage: str = "discovery"
+) -> tuple[Index, dict[Any, Bars]]:
     """One event per symbol and week at an 8-hour boundary, each with a calm control."""
-    last = STAGES["discovery"][1]
+    start, last, _ = STAGES[stage]
     instruments: dict[str, Instrument] = {}
     windows: dict[Any, Bars] = {}
     for k in range(symbols):
@@ -182,14 +185,14 @@ def _stage_data(*, drop: float, symbols: int, weeks: int) -> tuple[Index, dict[A
         instruments[calm_sym] = Instrument(last)
         for w in range(weeks):
             # spread symbols over the hours of a week so clusters differ by day
-            t = D0 + w * WEEK_MS + (k % 21) * 8 * HOUR_MS
+            t = start + w * WEEK_MS + (k % 21) * 8 * HOUR_MS
             for sym, rate in ((event_sym, -0.005), (calm_sym, 0.0)):
                 instruments[sym].funding[t] = rate
                 instruments[sym].turnover.update(liquid_hours(t))
             windows[(event_sym, t)] = falling_after(t, drop)
             windows[(calm_sym, t)] = flat_bars(t)
     instruments["BTCUSDT"] = Instrument(last)
-    return _index(instruments), windows
+    return Index(stage, instruments, ()), windows
 
 
 def test_reading_passes_a_large_clean_effect_and_fails_a_negative_one() -> None:
@@ -267,3 +270,146 @@ def test_windows_are_capped_at_delivery(tmp_path: Path) -> None:
     assert ends["BTCUSDT"] == t + 65 * MINUTE_MS - 1
     with pytest.raises(SystemExit):
         screen.load_windows(tmp_path / "windows.jsonl.gz", "0" * 64)  # another index
+
+
+# Regressions from the 2026-10-26 review of #526.
+
+
+def _catalog_row(symbol: str, delivery: int = 0) -> dict[str, str]:
+    return {
+        "symbol": symbol,
+        "contractType": "LinearPerpetual",
+        "settleCoin": "USDT",
+        "launchTime": "0",
+        "deliveryTime": str(delivery),
+    }
+
+
+class _RecordingClient:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    async def public_get_v5_market_kline(self, params: dict[str, Any]) -> Any:
+        self.calls.append(params)
+        return {"retCode": 0, "result": {"symbol": params["symbol"], "list": []}}
+
+
+def test_a_symbol_missing_from_the_index_never_reads_past_the_stage_end(tmp_path: Path) -> None:
+    last = STAGES["discovery"][1]
+    t = last + 1 - HOUR_MS  # the last hourly settlement of discovery
+    index_path = tmp_path / "index.jsonl.gz"
+    writer = SnapshotWriter(index_path)
+    writer.record("stage", None, {}, {"stage": "discovery"})
+    writer.record(
+        "catalog", None, {}, {"list": [_catalog_row("GONEUSDT"), _catalog_row("BTCUSDT")]}
+    )
+    rows = [{"symbol": "GONEUSDT", "fundingRateTimestamp": str(t), "fundingRate": "-0.005"}]
+    writer.record("funding", "GONEUSDT", {}, {"retCode": 0, "result": {"list": rows}})
+    bars = [[str(h), "1", "1", "1", "1", "1", "200000"] for h in liquid_hours(t)]
+    writer.record(
+        "kline_60", "GONEUSDT", {}, {"retCode": 0, "result": {"symbol": "GONEUSDT", "list": bars}}
+    )
+    writer.record("fetch_error", "BTCUSDT", {}, {"error": "timeout"})  # BTC left the index
+    writer.close()
+
+    client = _RecordingClient()
+    sha = screen.file_sha256(index_path)
+    asyncio.run(screen.fetch_windows(client, index_path, sha, tmp_path / "w.jsonl.gz"))
+    ends = {call["symbol"]: call["end"] for call in client.calls}
+    assert ends["BTCUSDT"] <= last
+    assert ends["GONEUSDT"] <= last
+
+
+def test_a_failed_instrument_fetch_blocks_the_reading() -> None:
+    index, windows = _stage_data(drop=0.01, symbols=45, weeks=30)
+    failed = Index(index.stage, index.instruments, ("FAILEDUSDT",))
+    result = read_stage(failed, windows)
+    assert result["floor"]["fetch_complete"] is False
+    assert result["verdict"] == "insufficient_data"
+
+
+def _late_drop(t: int) -> Bars:
+    """Flat at 100 through the t + 30 min bar, then 99 from t + 31 min."""
+    bars = flat_bars(t)
+    for m in range(t + 31 * MINUTE_MS, t + 65 * MINUTE_MS, MINUTE_MS):
+        bars[m] = (99.0, 99.0, 99.0, 99.0)
+    return bars
+
+
+def test_the_control_exits_on_the_event_s_own_exit_bar() -> None:
+    index, windows = _stage_data(drop=0.0, symbols=45, weeks=30)
+    for key in list(windows):
+        symbol, t = key
+        windows[key] = _late_drop(t)
+        if symbol.startswith("E"):
+            del windows[key][t + 30 * MINUTE_MS]  # the event exits one bar late, at 99
+    result = read_stage(index, windows)
+    assert result["mean_gross_bps_break_even"] == pytest.approx(100.0)
+    # the same market move hits the control at the same exit: no excess
+    assert result["excess_over_control_bps"] == pytest.approx(0.0, abs=1e-6)
+    assert result["conditions"]["excess_over_control"] is False
+
+
+def test_one_position_chooses_before_the_outcome_and_counts_unresolved() -> None:
+    t = D0 + 2 * DAY_MS
+    hours = liquid_hours(t)
+    last = STAGES["discovery"][1]
+    index = _index(
+        {
+            "AUSDT": Instrument(last, {t: -0.01}, hours),
+            "BUSDT": Instrument(last, {t: -0.005}, hours),
+            "BTCUSDT": Instrument(last),
+        }
+    )
+    windows = {("BUSDT", t): falling_after(t, 0.01)}  # AUSDT, the chosen one, has none
+    one = read_stage(index, windows)["diagnostics"]["one_position"]
+    assert one["chosen"] == 1 and one["unresolved"] == 1 and one["trades"] == 0
+    assert one["net_usd"] == 0
+
+
+def _strong_first_minute_then_loss(t: int) -> Bars:
+    bars = flat_bars(t)
+    bars[t] = (100.0, 100.0, 99.0, 99.0)  # the first minute falls 1%
+    for m in range(t + MINUTE_MS, t + 65 * MINUTE_MS, MINUTE_MS):
+        bars[m] = (99.0, 100.0, 99.0, 100.0)  # then the short loses from 99 to 100
+    return bars
+
+
+@pytest.mark.parametrize(("stage", "permitted"), [("discovery", True), ("test", False)])
+def test_only_discovery_can_open_the_seconds_variant_after_a_failure(
+    stage: str, permitted: bool
+) -> None:
+    index, windows = _stage_data(drop=0.0, symbols=45, weeks=30, stage=stage)
+    for key in list(windows):
+        if key[0].startswith("E"):
+            windows[key] = _strong_first_minute_then_loss(key[1])
+    result = read_stage(index, windows)
+    assert result["verdict"] == "fail"
+    assert result["seconds_variant_permitted"] is permitted
+
+
+def test_the_test_year_needs_a_verified_discovery_pass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fetched: list[Path] = []
+    monkeypatch.setattr(screen, "_run_fetch", lambda job, snapshot: fetched.append(snapshot))
+    base = ["fetch-index", "--stage", "test", "--snapshot", str(tmp_path / "i.jsonl.gz")]
+    with pytest.raises(SystemExit):
+        screen.main(base)
+
+    def result_file(verdict: str) -> tuple[Path, str]:
+        path = tmp_path / f"{verdict}.json"
+        report = {"version": screen.VERSION, "result": {"stage": "discovery", "verdict": verdict}}
+        path.write_text(json.dumps(report))
+        return path, screen.file_sha256(path)
+
+    for verdict in ("not_passed", "fail", "insufficient_data"):
+        path, sha = result_file(verdict)
+        with pytest.raises(SystemExit):
+            screen.main([*base, "--discovery-result", str(path), "--discovery-result-sha256", sha])
+    path, sha = result_file("pass")
+    with pytest.raises(SystemExit):  # a wrong hash
+        screen.main([*base, "--discovery-result", str(path), "--discovery-result-sha256", "0" * 64])
+    assert fetched == []
+    screen.main([*base, "--discovery-result", str(path), "--discovery-result-sha256", sha])
+    assert fetched == [tmp_path / "i.jsonl.gz"]
