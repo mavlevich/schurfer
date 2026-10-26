@@ -4,7 +4,8 @@ import asyncio
 import gzip
 import json
 from collections import Counter
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import Any
 
 import pytest
 from schurfer_analytics import bybit_carry_economics_screen as screen
@@ -24,9 +25,6 @@ from schurfer_analytics.bybit_carry_economics_screen import (
     simulate_one_slot,
     simulate_pair,
 )
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 T0 = DECISIONS_FROM_MS
 
@@ -403,3 +401,20 @@ def test_a_pair_whose_fetch_fails_is_dropped_whole(tmp_path: Path) -> None:
         path, screen.file_sha256(path), code_revision="abc", working_tree_dirty=False
     )
     assert report["coverage"]["pairs"] == 0
+
+
+def test_a_position_open_at_the_end_without_an_exit_bar_blocks_the_reading(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def slot_left_open(_data: Any, _paths: Any, _h: int, missing: Counter[str]) -> list[Trade]:
+        missing["no_exit_bar"] += 1  # entered at the data boundary, no later bar
+        return []
+
+    monkeypatch.setattr(screen, "simulate_one_slot", slot_left_open)
+    monkeypatch.setattr(screen, "load_snapshot", lambda _path: ({}, []))
+    monkeypatch.setattr(screen, "file_sha256", lambda _path: "x")
+    report = screen.build_report(Path("s"), "x", code_revision="0" * 40, working_tree_dirty=False)
+    for view in report["by_threshold"].values():
+        assert view["one_slot"]["exit_unresolved"] == 1
+    for checks in report["reading"]["conditions"].values():
+        assert checks["no_unresolved_exit"] is False

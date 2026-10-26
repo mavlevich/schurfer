@@ -760,7 +760,9 @@ def build_report(
         by_threshold[str(threshold)] = {
             "all_pairs": summarize(every),
             "one_slot": portfolio(slot, months)
-            | {"exit_unresolved": slot_missing["exit_unresolved"]},
+            # A position still open at the end with no later bar is as unresolved as
+            # one whose exit price never came back.
+            | {"exit_unresolved": slot_missing["exit_unresolved"] + slot_missing["no_exit_bar"]},
         }
         missing[str(threshold)] = {
             **{f"all_pairs_{k}": v for k, v in pair_missing.items()},

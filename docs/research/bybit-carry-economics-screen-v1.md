@@ -141,6 +141,10 @@ positive; both make the figures honest.
 - **An unresolved exit keeps the one-slot capital to the end of the window.** It was
   freed at the next bar. An unresolved exit already fails the reading.
 
+- **A position still open at the end with no later bar** (`no_exit_bar`) now also fails
+  `no_unresolved_exit`, from a second review. The snapshot read here has no such case in
+  the one-slot view, so the result below is unchanged.
+
 The reported third gap, a same-pair re-entry before a delayed exit in the all-pairs
 view, cannot occur: a re-entry needs a bar with both closes after the exit signal, and
 the delayed exit takes the first such bar. No change there.
