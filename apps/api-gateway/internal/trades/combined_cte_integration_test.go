@@ -117,6 +117,52 @@ func TestCombinedTradesCTEAgainstRealPostgres(t *testing.T) {
 	}
 }
 
+// TestCombinedTradesCTEReadsPaperVersionAndLeverage is a regression for the
+// 2026-10-17 audit finding: every paper probe was reported as strategy_key
+// "momentum_flow_v1" with leverage 1, so the 3x variant
+// (momentum_flow_paper_v1_lev3) showed a third of its ROE and merged with the
+// 1x versions in the by-strategy view.
+func TestCombinedTradesCTEReadsPaperVersionAndLeverage(t *testing.T) {
+	pool := connectTestPool(t)
+	defer pool.Close()
+
+	paperVersion := "test_paper_lev3_" + newTestUUID()[:8]
+	defer cleanupPaperTestRows(pool, paperVersion)
+	insertPaperRunWithLeverage(t, pool, paperVersion, 3)
+	paperID := newTestUUID()
+	insertStillOpenPaperProbe(t, pool, paperVersion, paperID)
+
+	h := &Handler{pool: &poolAdapter{inner: pool}}
+	req := httptest.NewRequest(http.MethodGet, "/api/trades?origin=momentum_flow_paper", nil)
+	w := httptest.NewRecorder()
+	h.List(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp listResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v (%s)", err, w.Body.String())
+	}
+	var found *tradeRow
+	for i := range resp.Trades {
+		if resp.Trades[i].ID == "momentum_flow_paper:"+paperID {
+			found = &resp.Trades[i]
+		}
+	}
+	if found == nil {
+		t.Fatalf("probe missing from response: %+v", resp.Trades)
+	}
+	if found.Leverage != 3 {
+		t.Errorf("Leverage: want 3 (from the run's contract), got %v", found.Leverage)
+	}
+	if found.StrategyKey != paperVersion || found.StrategyVersion != paperVersion {
+		t.Errorf("strategy key/version: want %q, got %q/%q", paperVersion, found.StrategyKey, found.StrategyVersion)
+	}
+	if found.Side != "long" {
+		t.Errorf("Side: want long, got %q", found.Side)
+	}
+}
+
 // TestCombinedTradesCTEReadsCanonicalStrategyIdentity is a regression for
 // the colleague-review finding that strategy_name/strategy_version were
 // derived from setup_context->>'strategy', which pump_short's own
@@ -311,12 +357,21 @@ func cleanupByStrategyTestRows(pool *pgxpool.Pool, names ...string) {
 
 func insertPaperRun(t *testing.T, pool *pgxpool.Pool, paperVersion string) {
 	t.Helper()
+	insertPaperRunWithLeverage(t, pool, paperVersion, 1)
+}
+
+// insertPaperRunWithLeverage stores a contract_json shaped like the worker's own
+// PaperContract.canonical_json(), which has carried "leverage" since the first
+// paper contract (#203).
+func insertPaperRunWithLeverage(t *testing.T, pool *pgxpool.Pool, paperVersion string, leverage int) {
+	t.Helper()
 	_, err := pool.Exec(context.Background(), `
 		INSERT INTO app.momentum_flow_paper_runs
 			(paper_version, contract_sha256, contract_json, cohort_started_at)
-		VALUES ($1, repeat('b', 64), '{}'::jsonb, now())
+		VALUES ($1::text, repeat('b', 64),
+			jsonb_build_object('paper_version', $1::text, 'side', 'long', 'leverage', $2::int), now())
 		ON CONFLICT (paper_version) DO NOTHING`,
-		paperVersion,
+		paperVersion, leverage,
 	)
 	if err != nil {
 		t.Fatalf("insertPaperRun: %v", err)
