@@ -413,3 +413,77 @@ def test_the_test_year_needs_a_verified_discovery_pass(
     assert fetched == []
     screen.main([*base, "--discovery-result", str(path), "--discovery-result-sha256", sha])
     assert fetched == [tmp_path / "i.jsonl.gz"]
+
+
+class _FlakyCalls:
+    """A public endpoint that fails ``failures`` times, then answers."""
+
+    def __init__(self, failures: int) -> None:
+        self.failures = failures
+        self.calls = 0
+
+    async def __call__(self, params: dict[str, Any]) -> Any:
+        self.calls += 1
+        if self.calls <= self.failures:
+            return {"retCode": 10016, "retMsg": "svc error: Get kline failed"}
+        return {"retCode": 0, "result": {"symbol": params.get("symbol"), "list": []}}
+
+
+def test_a_transient_bybit_error_is_retried(monkeypatch: pytest.MonkeyPatch) -> None:
+    pauses: list[float] = []
+
+    async def no_wait(seconds: float) -> None:
+        pauses.append(seconds)
+
+    monkeypatch.setattr(screen, "_sleep", no_wait)
+    screen.recovered.clear()
+    call = _FlakyCalls(failures=2)
+    response = asyncio.run(screen._retrying(call, {"symbol": "XUSDT"}, "window XUSDT 1"))
+    assert response["retCode"] == 0 and call.calls == 3
+    assert pauses == [1.0, 2.0]
+    assert screen.recovered == {"window": 1}
+
+
+def test_a_persistent_bybit_error_still_fails_after_bounded_retries(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def no_wait(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(screen, "_sleep", no_wait)
+    call = _FlakyCalls(failures=100)
+    with pytest.raises(RuntimeError, match="bybit error"):
+        asyncio.run(screen._retrying(call, {}, "kline 60 XUSDT"))
+    assert call.calls == len(screen.RETRY_DELAYS_SECONDS) + 1
+
+
+def test_a_window_fetch_survives_one_transient_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def no_wait(_seconds: float) -> None:
+        return None
+
+    monkeypatch.setattr(screen, "_sleep", no_wait)
+    t = D0 + 2 * DAY_MS
+    index_path = tmp_path / "index.jsonl.gz"
+    writer = SnapshotWriter(index_path)
+    writer.record("stage", None, {}, {"stage": "discovery"})
+    writer.record("catalog", None, {}, {"list": [_catalog_row("GONEUSDT")]})
+    rows = [{"symbol": "GONEUSDT", "fundingRateTimestamp": str(t), "fundingRate": "-0.005"}]
+    writer.record("funding", "GONEUSDT", {}, {"retCode": 0, "result": {"list": rows}})
+    bars = [[str(h), "1", "1", "1", "1", "1", "200000"] for h in liquid_hours(t)]
+    writer.record(
+        "kline_60", "GONEUSDT", {}, {"retCode": 0, "result": {"symbol": "GONEUSDT", "list": bars}}
+    )
+    writer.close()
+
+    class Client:
+        def __init__(self) -> None:
+            self.public_get_v5_market_kline = _FlakyCalls(failures=1)
+
+    sha = screen.file_sha256(index_path)
+    coverage = asyncio.run(
+        screen.fetch_windows(Client(), index_path, sha, tmp_path / "windows.jsonl.gz")
+    )
+    assert coverage["errors"] == 0
+    assert coverage["recovered_requests"] == {"window": 1}
