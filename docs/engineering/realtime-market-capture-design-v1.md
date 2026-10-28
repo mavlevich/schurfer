@@ -3,6 +3,13 @@
 Status: **design review 1 folded in; the owner accepted the proposed change of order
 (2026-10-04).** No code yet.
 
+**2026-10-28:** the MEXC codec built for this design (#497) was removed unused: no
+binary ran it, no MEXC capture is registered, and none of the 2026-10-31 options (the
+brief's Gate collector or carry, the program review draft's HYP-031 on Bybit public
+history) is one, so none can exist by the dead-code allowance's 2026-11-30 deadline.
+The MEXC codec contract below stays as the design; the code is in git history
+before the removal. The Bybit codec and the shared runtime remain.
+
 ## Why
 
 Today's detection is late by construction (see the measurements in
