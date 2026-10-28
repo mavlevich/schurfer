@@ -103,6 +103,20 @@ const (
 // (momentum_flow_paper_v1_lev3) at a third of its ROE and merged every paper
 // version in the by-strategy view. The JOIN cannot drop a probe: probes
 // reference their run with ON DELETE RESTRICT.
+//
+// Paper returns stay hidden while HYP-015 is unread (2026-10-28): the
+// registered hold12h verdict (docs/research/momentum-flow-hold12h-verdict-v1.md)
+// reads the paper probes from its cohort start, 2026-10-05, once,
+// from 2026-11-04. Until that read completes (a 'completed' row in
+// app.hold12h_formal_read_claims), every paper probe entered from the cohort
+// start shows its entry only: exit price and time, exit reason, costs and
+// returns are NULL (fees and funding 0, since those columns are not nullable
+// here), and status and accounting_status read 'blinded' (colleague review:
+// a 12-hour position seen as closed after 30 minutes is a stop, and polling
+// the list dates the close). A status filter therefore never matches these
+// rows, so open/closed lists and their totals do not count them either.
+// Neither this list, the stats nor a token page shows the outcome early; the
+// rows still count as activity.
 const CombinedTradesCTE = `
 	WITH combined AS (
 		SELECT
@@ -139,28 +153,37 @@ const CombinedTradesCTE = `
 			'momentum_flow' AS strategy_name,
 			p.paper_version AS strategy_version,
 			'paper' AS mode,
-			p.exit_reason AS exit_reason,
+			CASE WHEN b.blind THEN NULL ELSE p.exit_reason END AS exit_reason,
 			p.symbol, p.exchange, p.market_type, (r.contract_json->>'side')::varchar AS side,
 			p.entry_filled_notional_usd::float8 AS size_usd,
 			(r.contract_json->>'leverage')::float8 AS leverage,
 			p.entry_vwap::float8 AS entry_price, p.entry_at,
-			p.exit_vwap::float8 AS exit_price, p.exit_at,
+			CASE WHEN b.blind THEN NULL ELSE p.exit_vwap::float8 END AS exit_price,
+			CASE WHEN b.blind THEN NULL ELSE p.exit_at END AS exit_at,
 			NULL::float8 AS entry_slippage_bps,
 			NULL::float8 AS exit_slippage_bps,
-			coalesce(p.fees_usd, 0)::float8 AS fees_usd, coalesce(p.funding_usd, 0)::float8 AS funding_usd,
+			CASE WHEN b.blind THEN 0 ELSE coalesce(p.fees_usd, 0) END::float8 AS fees_usd,
+			CASE WHEN b.blind THEN 0 ELSE coalesce(p.funding_usd, 0) END::float8 AS funding_usd,
 			NULL::float8 AS slippage_usd,
-			p.gross_pnl_usd::float8 AS gross_pnl_usd, p.gross_return_pct::float8 AS gross_pnl_pct,
-			CASE WHEN p.accounting_status = 'complete' THEN p.net_pnl_usd::float8 ELSE NULL END AS net_pnl_usd,
-			CASE WHEN p.accounting_status = 'complete' THEN p.net_return_pct::float8 ELSE NULL END AS net_pnl_pct,
+			CASE WHEN b.blind THEN NULL ELSE p.gross_pnl_usd::float8 END AS gross_pnl_usd,
+			CASE WHEN b.blind THEN NULL ELSE p.gross_return_pct::float8 END AS gross_pnl_pct,
+			CASE WHEN p.accounting_status = 'complete' AND NOT b.blind THEN p.net_pnl_usd::float8 ELSE NULL END AS net_pnl_usd,
+			CASE WHEN p.accounting_status = 'complete' AND NOT b.blind THEN p.net_return_pct::float8 ELSE NULL END AS net_pnl_pct,
 			NULL::float8 AS pnl_usd, NULL::float8 AS pnl_pct,
 			'momentum_flow_paper_v1'::varchar AS accounting_version,
-			coalesce(p.accounting_status, 'pending')::varchar AS accounting_status,
-			p.accounting_error,
-			p.position_status AS status, p.exit_reason AS outcome_label,
+			CASE WHEN b.blind THEN 'blinded' ELSE coalesce(p.accounting_status, 'pending') END::varchar AS accounting_status,
+			CASE WHEN b.blind THEN NULL ELSE p.accounting_error END AS accounting_error,
+			CASE WHEN b.blind THEN 'blinded' ELSE p.position_status END::varchar AS status,
+			CASE WHEN b.blind THEN NULL ELSE p.exit_reason END AS outcome_label,
 			'{}'::jsonb AS setup_context, NULL::text AS notes, p.created_at,
 			split_part(p.unified_symbol, '/', 1) AS normalized_base
 		FROM app.momentum_flow_paper_probes p
 		JOIN app.momentum_flow_paper_runs r ON r.paper_version = p.paper_version
+		CROSS JOIN LATERAL (
+			SELECT p.entry_at >= '2026-10-05T00:00:00Z'::timestamptz AND NOT EXISTS (
+				SELECT 1 FROM app.hold12h_formal_read_claims c WHERE c.status = 'completed'
+			) AS blind
+		) b
 		WHERE p.entry_status = 'opened'
 	)
 `
