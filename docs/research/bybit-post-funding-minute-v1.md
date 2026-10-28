@@ -227,3 +227,74 @@ the split; each closes a way the reading could pass on something other than the 
   unresolved and is never replaced by another.
 - **The uncertainty bound is the 5th percentile,** the lower end of the two-sided 90%
   week-block interval (stricter than a one-sided 90% bound).
+
+## Runbook (2026-10-26, sizes from a pre-discovery smoke, no stage data read)
+
+Sizes come from a live smoke of the fetchers on 2024-09-16..22, before discovery,
+coverage only: the catalog gives the discovery universe as 672 instruments (262 since
+delisted), 498 symbol-years; the week had 96 events and 265 windows; requests ran at
+about 8 to 9 per second with 4 in flight. About 1% of requests got a transient
+`retCode 10016`, which the bounded retries absorb.
+
+| Step                           | Requests      | Time      | Snapshot, gzip |
+| ------------------------------ | ------------- | --------- | -------------- |
+| Index: settlements, 1 h klines | 7.7k to 10.7k | 15-20 min | 90 to 140 MB   |
+| Windows: events and controls   | 14k to 40k    | 30-85 min | 35 to 105 MB   |
+
+The window range runs from the smoke week times 52 to the "tens of thousands" above; a
+closer count needs the stage's rates, which stay unread until the line opens. The index
+range allows 3 to 6 settlements per instrument-day, since 1-hour contracts grew after
+the smoke week. The fetch uses public endpoints from a workstation; production hosts and
+their disk are not involved.
+
+1. **Preconditions.** The bounded fetch retries are on `main`, and the owner has opened
+   the line. The tree is a clean checkout of `origin/main`; its revision `<rev>` is
+   recorded. Snapshots go to `D=runtime/research/hyp031-discovery` (ignored by git).
+   Every command runs from the repository root with `--package schurfer-analytics`:
+   a plain `uv run` there does not install the analytics package in a fresh checkout.
+2. **Index.** It prints coverage and the sha256; `errors` must be 0.
+
+   ```bash
+   uv run --frozen --package schurfer-analytics bybit-post-funding-screen fetch-index \
+     --stage discovery \
+     --snapshot $D/index-<rev>.jsonl.gz
+   ```
+
+3. **Windows.** `errors` must be 0.
+
+   ```bash
+   uv run --frozen --package schurfer-analytics bybit-post-funding-screen fetch-windows \
+     --index $D/index-<rev>.jsonl.gz --index-sha256 <index sha> \
+     --snapshot $D/windows-<rev>.jsonl.gz
+   ```
+
+4. **A failed fetch is redone into a new file,** decided on the error count alone and
+   before any report runs; every attempt and its sha256 are recorded. Neither snapshot
+   is read by a person before the report.
+5. **Provenance before the read.** A commit records the revision, both sha256 values and
+   the coverage lines, before `report` runs.
+6. **Read, on the owner's separate go.**
+
+   ```bash
+   uv run --frozen --package schurfer-analytics bybit-post-funding-screen report \
+     --index $D/index-<rev>.jsonl.gz --index-sha256 <index sha> \
+     --windows $D/windows-<rev>.jsonl.gz --windows-sha256 <windows sha> \
+     --output-dir $D/report-<rev> --code-revision <rev> --no-working-tree-dirty
+   ```
+
+7. **After the verdict.** The result and its sha256 are recorded here whatever it is.
+   No parameter of the minute variant changes after the read, and a stage is never
+   refetched or reread to get another verdict.
+   - `pass`: the test year is fetched only on a new owner go, with the same code
+     revision and parameters (`fetch-index --stage test` requires this discovery
+     result and its sha256).
+   - `not_passed`, `fail` or `insufficient_data`: the minute variant stops and the test
+     year stays unread, as the reading rule says. The report's failed conditions or
+     floor items are recorded, nothing more.
+   - **Seconds-level variant:** it may be registered only as the separate protocol the
+     seconds clause names, designed on the discovery year only, and only when its
+     condition holds: a pass, or a discovery `fail` or `not_passed` with a
+     first-minute cluster mean of at least 30 bps gross (the report's
+     `seconds_variant_permitted`). The report also sets that flag on
+     `insufficient_data`, a case the clause does not name: there it opens nothing
+     without an amendment committed first.
