@@ -89,7 +89,7 @@ CONCURRENCY: Final = 4
 # fetch_complete), so every request gets bounded retries with growing pauses.
 RETRY_DELAYS_SECONDS: Final = (1.0, 2.0, 4.0, 8.0, 16.0)
 _sleep = asyncio.sleep  # replaced in tests
-retries: Counter[str] = Counter()  # requests that needed a retry, by kind, per fetch
+recovered: Counter[str] = Counter()  # requests that succeeded after a retry, by kind, per fetch
 
 
 # ---------------------------------------------------------------- fetching
@@ -112,7 +112,7 @@ async def _retrying(call: Any, params: dict[str, Any], what: str) -> Any:
             await _sleep(delay)
         else:
             if attempt:
-                retries[what.split(" ")[0]] += 1
+                recovered[what.split(" ")[0]] += 1
             return response
     raise AssertionError("unreachable")
 
@@ -206,7 +206,7 @@ class SnapshotWriter:
 
 
 async def fetch_index(client: Any, path: Path, stage: str) -> dict[str, Any]:
-    retries.clear()
+    recovered.clear()
     first = STAGES[stage][0]
     live = await fetch_linear_catalog(client, None)
     closed = await fetch_linear_catalog(client, "Closed")
@@ -263,7 +263,7 @@ async def fetch_index(client: Any, path: Path, stage: str) -> dict[str, Any]:
         "symbols": len(symbols),
         "errors": errors,
         "responses": writer.written,
-        "retried_requests": dict(retries),
+        "recovered_requests": dict(recovered),
     }
 
 
@@ -443,7 +443,7 @@ def plan(index: Index) -> Plan:
 async def fetch_windows(
     client: Any, index_path: Path, index_sha256: str, path: Path
 ) -> dict[str, Any]:
-    retries.clear()
+    recovered.clear()
     index = load_index(verified(index_path, index_sha256))
     todo = plan(index)
     stage_last = STAGES[index.stage][1]
@@ -488,7 +488,7 @@ async def fetch_windows(
         "windows": len(todo.windows),
         "errors": len(errors),
         "responses": writer.written,
-        "retried_requests": dict(retries),
+        "recovered_requests": dict(recovered),
     }
 
 

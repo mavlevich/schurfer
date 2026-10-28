@@ -436,12 +436,12 @@ def test_a_transient_bybit_error_is_retried(monkeypatch: pytest.MonkeyPatch) -> 
         pauses.append(seconds)
 
     monkeypatch.setattr(screen, "_sleep", no_wait)
-    screen.retries.clear()
+    screen.recovered.clear()
     call = _FlakyCalls(failures=2)
     response = asyncio.run(screen._retrying(call, {"symbol": "XUSDT"}, "window XUSDT 1"))
     assert response["retCode"] == 0 and call.calls == 3
     assert pauses == [1.0, 2.0]
-    assert screen.retries == {"window": 1}
+    assert screen.recovered == {"window": 1}
 
 
 def test_a_persistent_bybit_error_still_fails_after_bounded_retries(
@@ -486,4 +486,4 @@ def test_a_window_fetch_survives_one_transient_error(
         screen.fetch_windows(Client(), index_path, sha, tmp_path / "windows.jsonl.gz")
     )
     assert coverage["errors"] == 0
-    assert coverage["retried_requests"] == {"window": 1}
+    assert coverage["recovered_requests"] == {"window": 1}
