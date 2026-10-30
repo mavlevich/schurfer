@@ -14,6 +14,7 @@ import structlog
 from psycopg.rows import dict_row
 
 from . import exit as exit_module
+from . import notify
 from . import reconciliation as rec
 from .supervisor import SUBMISSION_UNKNOWN_BLOCKER, WorkerReadinessGate
 
@@ -88,7 +89,13 @@ SET status = %s,
 WHERE id = %s
 """
 
+# `previous` reads the row as it was before this statement, so the caller can
+# tell a first sighting (NULL) or a reopened incident ('resolved') from a
+# repeat scan of one that is still open, and alert only on the former.
 _UPSERT_INCIDENT_SQL = """
+WITH previous AS (
+    SELECT status FROM app.live_reconciliation_incidents WHERE incident_key = %s
+)
 INSERT INTO app.live_reconciliation_incidents (
     incident_key, exchange, symbol, native_market_id, market_type, side,
     contracts, discrepancy_type, status, evidence_json
@@ -103,6 +110,7 @@ SET last_seen_at = now(),
     recovery_timestamp = NULL,
     contracts = EXCLUDED.contracts,
     evidence_json = EXCLUDED.evidence_json
+RETURNING (SELECT status FROM previous) AS previous_status
 """
 
 
@@ -159,7 +167,12 @@ def _attempt_state_from_order(
     filled = _decimal(order.get("filled"))
     exchange_status = str(order.get("status") or "").lower()
     if filled is not None and filled > 0:
-        return "completed", filled, None
+        if exchange_status in _NO_FILL_STATUSES | {"closed"}:
+            return "completed", filled, None
+        # Filled in part while the order may still fill further: the final
+        # quantity is not known yet, so the attempt stays unresolved
+        # ("accepted" with the filled amount so far) and keeps blocking entries.
+        return "accepted", filled, None
     if exchange_status in _NO_FILL_STATUSES | {"closed"} and filled == 0:
         return "no_fill", filled, None
     if exchange_status in _NO_FILL_STATUSES | {"closed"}:
@@ -182,9 +195,11 @@ class ReconciliationWorker:
         rdb: Any,
         gate: WorkerReadinessGate,
         scan_interval_seconds: float = 30.0,
+        alert_credentials: tuple[str, str] | None = None,
     ) -> None:
         self.exchanges = exchanges
         self.db_url = db_url
+        self.alert_credentials = alert_credentials
         self.rdb = rdb
         self.gate = gate
         self.scan_interval = scan_interval_seconds
@@ -492,6 +507,7 @@ class ReconciliationWorker:
                 _UPSERT_INCIDENT_SQL,
                 (
                     incident_key,
+                    incident_key,
                     identity.exchange,
                     identity.symbol,
                     identity.native_market_id,
@@ -503,7 +519,43 @@ class ReconciliationWorker:
                     json.dumps(evidence),
                 ),
             )
+            row = await cursor.fetchone()
+        previous_status = row[0] if row is not None else None
+        if previous_status is None or previous_status == "resolved":
+            await self._alert_incident(decision, identity, contracts, reopened=previous_status)
         return incident_key
+
+    async def _alert_incident(
+        self,
+        decision: rec.ReconciliationDecision,
+        identity: rec.FullIdentity,
+        contracts: Decimal | None,
+        *,
+        reopened: str | None,
+    ) -> None:
+        """Alert once per new or reopened incident, never on a repeat scan of an
+        open one. A failed delivery is logged as an error and not retried: the
+        incident row and the entry blocker stand regardless."""
+        if self.alert_credentials is None:
+            return
+        text = (
+            f"Reconciliation {'reopened' if reopened else 'new'} incident: "
+            f"{decision.discrepancy.value} on {identity.exchange} {identity.symbol} "
+            f"{identity.side} (contracts {contracts}). New entries are blocked.\n"
+            f"{decision.reason}"
+        )
+        delivered = False
+        try:
+            delivered = await notify.notify_alert(*self.alert_credentials, text=text)
+        except Exception as exc:
+            log.error("reconciliation.alert_delivery_failed", err=str(exc))
+        if not delivered:
+            log.error(
+                "reconciliation.alert_not_delivered",
+                exchange=identity.exchange,
+                symbol=identity.symbol,
+                discrepancy=decision.discrepancy.value,
+            )
 
     async def _resolve_absent_incidents(self, active_keys: set[str]) -> int:
         scanned_exchanges = sorted(self.exchanges)

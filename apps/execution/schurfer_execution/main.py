@@ -38,6 +38,7 @@ from .incident_worker import run_incident_worker
 from .liquidation_cascade import run_liquidation_cascade_scanner
 from .market_refresh import MarketRefresher, run_market_refresher
 from .monitor import run_position_monitor
+from .notify import credentials as notify_credentials
 from .paper import run_paper_monitor
 from .reconciliation import STARTUP_BLOCKER
 from .reconciliation_worker import ReconciliationWorker
@@ -334,6 +335,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             typing.cast("str", cfg.db_url),
             rdb,
             worker_gate,
+            alert_credentials=notify_credentials(cfg),
         )
     pump_short_broker = build_broker(
         pump_short_mode, exchanges=strategy_exchanges, gate=worker_gate
