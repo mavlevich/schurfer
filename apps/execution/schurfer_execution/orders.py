@@ -5,8 +5,8 @@ from typing import Any
 import ccxt
 import structlog
 
+from . import emergency_close, incidents, journal, notify, order_attempts, order_ids
 from . import exit as exit_module
-from . import incidents, journal, notify, order_attempts
 from .account import fetch_margin_balance, fetch_positions
 from .fill_price import (
     FILL_NONE,
@@ -348,7 +348,7 @@ async def place_order(
         # and back on every subsequent fetch of this order, so it survives
         # even a total local crash that loses order_id itself (never
         # captured, or captured but never persisted).
-        entry_client_order_id = str(uuid.uuid4())
+        entry_client_order_id = order_ids.new_entry_client_order_id()
         db_url = getattr(cfg, "db_url", None) if cfg is not None else None
 
         # Durable record written BEFORE the exchange is ever called (see
@@ -525,7 +525,7 @@ async def place_order(
         trigger_price = float(ex.price_to_precision(symbol, trigger_price))
 
         try:
-            sl_client_order_id = str(uuid.uuid4())
+            sl_client_order_id = order_ids.stop_client_order_id(entry_client_order_id, 1)
             sl_order = await ex.create_stop_market_order(
                 symbol,
                 stop_side,
@@ -868,6 +868,30 @@ async def close_position(
         ex = exchanges.get(exchange)
         if not ex:
             return {"closed": False, "reason": f"exchange {exchange!r} not configured"}
+
+        # An active emergency close task owns this instrument's closes: its
+        # executor checks the owned remainder before every send, and a close
+        # from here would make that check fail. With the database down this
+        # protective exit proceeds, since the executor cannot run then either.
+        task_db_url = getattr(cfg, "db_url", None) if cfg is not None else None
+        if task_db_url:
+            try:
+                task_active = await emergency_close.has_active_task(
+                    task_db_url, exchange=exchange, base=base
+                )
+            except Exception as exc:
+                log.error(
+                    "execution.close.emergency_task_check_failed",
+                    base=base,
+                    exchange=exchange,
+                    err=str(exc),
+                )
+                task_active = False
+            if task_active:
+                return {
+                    "closed": False,
+                    "reason": f"emergency close task active for {base} on {exchange}",
+                }
 
         # symbol passed explicitly
         all_positions = await ex.fetch_positions()

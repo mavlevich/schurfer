@@ -6,7 +6,7 @@ import asyncio
 import hashlib
 import json
 from dataclasses import replace
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any
 
 import psycopg
@@ -16,6 +16,9 @@ from psycopg.rows import dict_row
 from . import exit as exit_module
 from . import notify
 from . import reconciliation as rec
+from .exchange_orders import attempt_state_from_order as _attempt_state_from_order
+from .exchange_orders import client_order_id as _client_order_id
+from .exchange_orders import decimal_or_none as _decimal
 from .supervisor import SUBMISSION_UNKNOWN_BLOCKER, WorkerReadinessGate
 
 log = structlog.get_logger()
@@ -26,7 +29,6 @@ _ACTIVE_ATTEMPT_STATUSES = {
     "submission_unknown",
     "manual_required",
 }
-_NO_FILL_STATUSES = {"canceled", "cancelled", "rejected", "expired"}
 _POSITION_KEY_TTL_NAMES = (
     "position:opened_at:{exchange}:{base}",
     "position:sl_order_id:{exchange}:{base}",
@@ -117,31 +119,10 @@ SET last_seen_at = now(),
 """
 
 
-def _decimal(value: Any) -> Decimal | None:
-    if value is None:
-        return None
-    try:
-        return Decimal(str(value))
-    except (InvalidOperation, ValueError):
-        return None
-
-
 def _text(value: Any) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8")
     return str(value)
-
-
-def _client_order_id(order: dict[str, Any]) -> str | None:
-    info = order.get("info")
-    info_dict = info if isinstance(info, dict) else {}
-    value = (
-        order.get("clientOrderId")
-        or info_dict.get("clientOrderId")
-        or info_dict.get("clientOid")
-        or info_dict.get("orderLinkId")
-    )
-    return str(value) if value is not None else None
 
 
 def _incident_key(
@@ -162,25 +143,6 @@ def _incident_key(
         )
     )
     return hashlib.sha256(material.encode()).hexdigest()
-
-
-def _attempt_state_from_order(
-    order: dict[str, Any],
-) -> tuple[str, Decimal | None, str | None]:
-    filled = _decimal(order.get("filled"))
-    exchange_status = str(order.get("status") or "").lower()
-    if filled is not None and filled > 0:
-        if exchange_status in _NO_FILL_STATUSES | {"closed"}:
-            return "completed", filled, None
-        # Filled in part while the order may still fill further: the final
-        # quantity is not known yet, so the attempt stays unresolved
-        # ("accepted" with the filled amount so far) and keeps blocking entries.
-        return "accepted", filled, None
-    if exchange_status in _NO_FILL_STATUSES | {"closed"} and filled == 0:
-        return "no_fill", filled, None
-    if exchange_status in _NO_FILL_STATUSES | {"closed"}:
-        return "manual_required", filled, "terminal exchange order omitted filled amount"
-    return "accepted", filled, None
 
 
 class ReconciliationWorker:
