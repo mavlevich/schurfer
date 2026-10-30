@@ -1,3 +1,4 @@
+import asyncio
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
@@ -263,3 +264,40 @@ async def test_undelivered_incident_alert_is_logged_not_raised() -> None:
 
     assert key
     assert log.error.call_count == 2
+
+
+async def test_entries_are_blocked_while_the_incident_alert_is_pending() -> None:
+    identity = _identity()
+    exchange_snap = rec.ExchangePositionSnapshot(identity, Decimal("1"), Decimal("100"), {})
+    gate = WorkerReadinessGate(set())
+    worker = ReconciliationWorker(
+        {}, "postgresql://test", MagicMock(), gate, alert_credentials=("token", "chat")
+    )
+    worker._fetch_exchange_snapshots = AsyncMock(return_value={identity: exchange_snap})
+    worker._fetch_db_snapshots = AsyncMock(return_value=({}, {}, {}))
+    worker._fetch_redis_snapshots = AsyncMock(return_value={})
+    worker._resolve_attempts = AsyncMock()
+    worker._resolve_absent_incidents = AsyncMock(return_value=1)
+    alert_started = asyncio.Event()
+    release_alert = asyncio.Event()
+
+    async def hung_alert(*_args: object, **_kwargs: object) -> bool:
+        alert_started.set()
+        await release_alert.wait()
+        return True
+
+    with (
+        patch(
+            "schurfer_execution.reconciliation_worker.psycopg.AsyncConnection.connect",
+            AsyncMock(return_value=_mock_conn(None)),
+        ),
+        patch("schurfer_execution.reconciliation_worker.notify.notify_alert", hung_alert),
+    ):
+        scan = asyncio.create_task(worker._run_scan())
+        await asyncio.wait_for(alert_started.wait(), timeout=1)
+        assert not gate.is_open()[0]
+        assert rec.INCIDENT_BLOCKER in gate.get_reasons()
+        release_alert.set()
+        assert await scan
+
+    assert not gate.is_open()[0]

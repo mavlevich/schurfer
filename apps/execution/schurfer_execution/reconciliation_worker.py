@@ -89,13 +89,17 @@ SET status = %s,
 WHERE id = %s
 """
 
-# `previous` reads the row as it was before this statement, so the caller can
-# tell a first sighting (NULL) or a reopened incident ('resolved') from a
-# repeat scan of one that is still open, and alert only on the former.
+# The upsert runs in one transaction behind a per-key advisory lock and a row
+# lock, so concurrent scans of the same incident see each other's committed
+# status: exactly one of them reads a first sighting (no row) or a reopened
+# incident ('resolved') and alerts, never on a repeat scan of an open one.
+_LOCK_INCIDENT_SQL = "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))"
+
+_PREVIOUS_INCIDENT_STATUS_SQL = """
+SELECT status FROM app.live_reconciliation_incidents WHERE incident_key = %s FOR UPDATE
+"""
+
 _UPSERT_INCIDENT_SQL = """
-WITH previous AS (
-    SELECT status FROM app.live_reconciliation_incidents WHERE incident_key = %s
-)
 INSERT INTO app.live_reconciliation_incidents (
     incident_key, exchange, symbol, native_market_id, market_type, side,
     contracts, discrepancy_type, status, evidence_json
@@ -110,7 +114,6 @@ SET last_seen_at = now(),
     recovery_timestamp = NULL,
     contracts = EXCLUDED.contracts,
     evidence_json = EXCLUDED.evidence_json
-RETURNING (SELECT status FROM previous) AS previous_status
 """
 
 
@@ -503,10 +506,13 @@ class ReconciliationWorker:
             await psycopg.AsyncConnection.connect(self.db_url) as connection,
             connection.cursor() as cursor,
         ):
+            await cursor.execute(_LOCK_INCIDENT_SQL, (incident_key,))
+            await cursor.execute(_PREVIOUS_INCIDENT_STATUS_SQL, (incident_key,))
+            row = await cursor.fetchone()
+            previous_status = row[0] if row is not None else None
             await cursor.execute(
                 _UPSERT_INCIDENT_SQL,
                 (
-                    incident_key,
                     incident_key,
                     identity.exchange,
                     identity.symbol,
@@ -519,8 +525,7 @@ class ReconciliationWorker:
                     json.dumps(evidence),
                 ),
             )
-            row = await cursor.fetchone()
-        previous_status = row[0] if row is not None else None
+        # The alert goes out after commit, so a slow delivery holds no locks.
         if previous_status is None or previous_status == "resolved":
             await self._alert_incident(decision, identity, contracts, reopened=previous_status)
         return incident_key
@@ -617,6 +622,9 @@ class ReconciliationWorker:
                     redis_snap,
                 )
                 if decision.incident_required:
+                    # Block entries before the incident is persisted or alerted:
+                    # neither may delay the block.
+                    self.gate.set_safety_blocker(rec.INCIDENT_BLOCKER)
                     active_incident_keys.add(
                         await self._upsert_incident(
                             decision,
