@@ -24,6 +24,11 @@ from .early_momentum import (
     validate_prospective_runtime_policy,
 )
 from .early_momentum_prospective_cohort import register_prospective_cohort
+from .emergency_close import (
+    EmergencyCloseExecutor,
+    EmergencyCloseWorker,
+    PostgresEmergencyCloseStore,
+)
 from .exchanges import build_exchange_clients, close_exchange_clients
 from .execution_intent import (
     STRATEGY_EARLY_MOMENTUM,
@@ -168,6 +173,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     liquidation_cascade_broker: Broker
     source_lead_broker: Broker
     reconciliation_worker: ReconciliationWorker
+    emergency_close_worker: EmergencyCloseWorker
 
     reconciliation_enabled = bool(cfg.db_url and trading_exchanges)
 
@@ -213,6 +219,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             is_critical=True,
             restart_budget=5,
             restart_window_seconds=120.0,
+            stale_timeout_seconds=120.0,
+            enabled=reconciliation_enabled,
+        ),
+        WorkerSpec(
+            name="emergency_closer",
+            factory=lambda tr: emergency_close_worker(tr),
+            # A worker that flattens unprotected positions keeps retrying
+            # rather than taking the service down; while it fails, the gate
+            # stays closed to entries.
+            policy=WorkerRestartPolicy.ALWAYS,
+            is_critical=True,
             stale_timeout_seconds=120.0,
             enabled=reconciliation_enabled,
         ),
@@ -336,6 +353,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             rdb,
             worker_gate,
             alert_credentials=notify_credentials(cfg),
+        )
+        emergency_close_store = PostgresEmergencyCloseStore(typing.cast("str", cfg.db_url))
+        emergency_close_worker = EmergencyCloseWorker(
+            EmergencyCloseExecutor(
+                trading_exchanges,
+                emergency_close_store,
+                rdb,
+                alert_credentials=notify_credentials(cfg),
+            ),
+            emergency_close_store,
         )
     pump_short_broker = build_broker(
         pump_short_mode, exchanges=strategy_exchanges, gate=worker_gate

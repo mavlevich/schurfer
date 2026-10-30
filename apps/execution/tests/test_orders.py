@@ -1440,6 +1440,10 @@ class TestClosePositionCancelsStopLoss:
         with (
             patch("schurfer_execution.orders._tracked_trade_id", AsyncMock(return_value=42)),
             patch(
+                "schurfer_execution.orders.emergency_close.has_active_task",
+                AsyncMock(return_value=False),
+            ),
+            patch(
                 "schurfer_execution.orders.order_attempts.create_close_attempt",
                 AsyncMock(return_value=7),
             ),
@@ -1494,6 +1498,10 @@ class TestClosePositionCancelsStopLoss:
         with (
             patch("schurfer_execution.orders._tracked_trade_id", AsyncMock(return_value=42)),
             patch(
+                "schurfer_execution.orders.emergency_close.has_active_task",
+                AsyncMock(return_value=False),
+            ),
+            patch(
                 "schurfer_execution.orders.order_attempts.create_close_attempt",
                 AsyncMock(side_effect=_create_attempt),
             ) as mock_create_attempt,
@@ -1541,6 +1549,10 @@ class TestClosePositionCancelsStopLoss:
 
         with (
             patch("schurfer_execution.orders._tracked_trade_id", AsyncMock(return_value=42)),
+            patch(
+                "schurfer_execution.orders.emergency_close.has_active_task",
+                AsyncMock(return_value=False),
+            ),
             patch(
                 "schurfer_execution.orders.order_attempts.create_close_attempt",
                 AsyncMock(return_value=7),
