@@ -315,8 +315,11 @@ until that PR is in.
 
    One migration.
 
-3. **Stop placement path:** the durable stop id, bounded retries with lookup, the task
-   on failure, and accounting through the incident path.
+3. **Stop placement path,** delivered in two parts:
+   - **3a:** the durable stop id, bounded retries with lookup, the task on failure with
+     its inline first pass, the one close without a database, and the worker building
+     the task once the database is back.
+   - **3b:** accounting through the incident path, and the `accounted` state.
 4. **Unknown submission path:** durable state first, the locked lookup, partial-active
    handling, and reconciliation's late-fill task.
 

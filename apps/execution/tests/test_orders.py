@@ -6,11 +6,18 @@ import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
 from schurfer_execution import exit as exit_module
-from schurfer_execution import order_attempts
+from schurfer_execution import order_attempts, protective_stop
+from schurfer_execution import reconciliation as rec
 from schurfer_execution.orders import close_position, place_order
 from schurfer_execution.risk import PNL_READY_KEY, TRADING_ENABLED_KEY
 from schurfer_execution.routers.orders import OrderRequest, post_order
 from schurfer_execution.supervisor import WorkerReadinessGate
+
+
+@pytest.fixture(autouse=True)
+def _no_stop_retry_waits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stop retries keep their order and count, without real seconds of waiting."""
+    monkeypatch.setattr(protective_stop, "STOP_RETRY_DELAYS_SECONDS", (0.0, 0.0, 0.0))
 
 
 async def _default_get(key: str) -> bytes | None:
@@ -698,20 +705,32 @@ class TestExchangeStopLoss:
         # Second create_market_order call is the emergency reduce-only close.
         ex.create_market_order = AsyncMock(
             side_effect=[
-                {"id": "entry-1", "status": "closed"},
-                {"id": "emergency-close-1", "status": "closed"},
+                {"id": "entry-1", "status": "closed", "average": 1.0, "filled": 100.0},
+                {"id": "emergency-close-1", "status": "closed", "filled": 100.0},
             ]
         )
+        gate = _open_gate()
 
-        result = await place_order(**_kwargs(side="short", exchanges={"bingx": ex}))
+        result = await place_order(
+            **_kwargs(side="short", exchanges={"bingx": ex}, worker_gate=gate)
+        )
 
         assert not result["allowed"]
         assert result["force_closed"] is True
+        assert result["close_sent"] is True
+        # Entries are blocked by the failure path itself, not a later scan.
+        assert rec.INCIDENT_BLOCKER in gate.get_reasons()
         assert "force-closed" in result["reason"]
         assert ex.create_market_order.call_count == 2
         emergency_call = ex.create_market_order.call_args_list[1]
         assert emergency_call.args == ("BEAT/USDT:USDT", "buy", 100.0)
-        assert emergency_call.kwargs["params"] == {"reduceOnly": True}
+        # Without a database: one reduce-only close under the derived id
+        # <entry>c1, so the emergency worker can find it once the database is back.
+        entry_id = ex.create_market_order.call_args_list[0].kwargs["params"]["clientOrderId"]
+        assert emergency_call.kwargs["params"] == {
+            "reduceOnly": True,
+            "clientOrderId": f"{entry_id}c1",
+        }
 
     @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
     @patch(
@@ -727,7 +746,7 @@ class TestExchangeStopLoss:
         ex.create_stop_market_order = AsyncMock(side_effect=RuntimeError("exchange rejected"))
         ex.create_market_order = AsyncMock(
             side_effect=[
-                {"id": "entry-1", "status": "closed"},
+                {"id": "entry-1", "status": "closed", "average": 1.0, "filled": 100.0},
                 RuntimeError("close also rejected"),
             ]
         )
@@ -737,6 +756,71 @@ class TestExchangeStopLoss:
         assert not result["allowed"]
         assert result["force_closed"] is False
         assert "UNPROTECTED" in result["reason"]
+
+    @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+    @patch(
+        "schurfer_execution.orders.fetch_margin_balance",
+        return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
+    )
+    async def test_close_accepted_but_not_filled_is_not_force_closed(
+        self, _mock_bal: MagicMock, _mock_pos: MagicMock
+    ) -> None:
+        ex = self._entry_exchange()
+        ex.create_stop_market_order = AsyncMock(side_effect=RuntimeError("exchange rejected"))
+        ex.create_market_order = AsyncMock(
+            side_effect=[
+                {"id": "entry-1", "status": "closed", "average": 1.0, "filled": 100.0},
+                {"id": "emergency-close-1", "status": "canceled", "filled": 0.0},
+            ]
+        )
+        kwargs = _kwargs(side="short", exchanges={"bingx": ex})
+
+        result = await place_order(**kwargs)
+
+        assert result["close_sent"] is True
+        assert result["force_closed"] is False
+        assert "UNPROTECTED" in result["reason"]
+        kwargs["rdb"].delete.assert_not_awaited()
+
+    @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+    @patch(
+        "schurfer_execution.orders.fetch_margin_balance",
+        return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
+    )
+    async def test_lost_stop_key_write_does_not_stop_the_journal(
+        self, _mock_bal: MagicMock, _mock_pos: MagicMock
+    ) -> None:
+        ex = self._entry_exchange()
+        ex.create_stop_market_order = AsyncMock(return_value={"id": "sl-1"})
+        rdb = MagicMock()
+
+        async def set_key(key: str, *args: object, **kwargs: object) -> bool:
+            if key.startswith("position:sl_order_id:"):
+                raise ConnectionError("redis down")
+            return True
+
+        rdb.set = AsyncMock(side_effect=set_key)
+        rdb.get = AsyncMock(side_effect=_default_get)
+        rdb.eval = AsyncMock(return_value=1)
+        rdb.delete = AsyncMock(return_value=1)
+        with (
+            patch(
+                "schurfer_execution.orders.journal.complete_open",
+                AsyncMock(return_value=77),
+            ) as complete_open,
+            patch(
+                "schurfer_execution.orders.order_attempts.create_attempt",
+                AsyncMock(return_value=1),
+            ),
+            patch("schurfer_execution.orders.order_attempts.mark_accepted", AsyncMock()),
+            patch("schurfer_execution.orders.order_attempts.mark_completed", AsyncMock()),
+        ):
+            result = await place_order(
+                **_kwargs(exchanges={"bingx": ex}, rdb=rdb, cfg=MagicMock(db_url="postgresql://x"))
+            )
+
+        assert result["allowed"]
+        complete_open.assert_awaited_once()
 
 
 class TestFillEvidenceGovernsTheLedger:

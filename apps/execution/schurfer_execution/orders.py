@@ -5,7 +5,15 @@ from typing import Any
 import ccxt
 import structlog
 
-from . import emergency_close, incidents, journal, notify, order_attempts, order_ids
+from . import (
+    emergency_close,
+    incidents,
+    journal,
+    notify,
+    order_attempts,
+    order_ids,
+    protective_stop,
+)
 from . import exit as exit_module
 from .account import fetch_margin_balance, fetch_positions
 from .fill_price import (
@@ -524,78 +532,74 @@ async def place_order(
         )
         trigger_price = float(ex.price_to_precision(symbol, trigger_price))
 
-        try:
-            sl_client_order_id = order_ids.stop_client_order_id(entry_client_order_id, 1)
-            sl_order = await ex.create_stop_market_order(
-                symbol,
-                stop_side,
-                sl_amount,
-                trigger_price,
-                params={"reduceOnly": True, "clientOrderId": sl_client_order_id},
-            )
-            await rdb.set(
-                SL_ORDER_ID_KEY.format(exchange=exchange, base=base.upper()),
-                str(sl_order.get("id")),
-                ex=86400,
-            )
-            log.info(
-                "execution.stop_loss.placed",
-                base=base,
-                exchange=exchange,
-                trigger_price=trigger_price,
-                order_id=sl_order.get("id"),
-            )
-        except Exception as sl_exc:
+        stop = await protective_stop.place_protective_stop(
+            ex,
+            symbol=symbol,
+            stop_side=stop_side,
+            amount=sl_amount,
+            trigger_price=trigger_price,
+            entry_client_order_id=entry_client_order_id,
+        )
+        if stop.order is None:
             # Fail-safe: a position without a stop-loss must not be left open.
-            # close_position() is not used here — it re-acquires this same lock
+            # close_position() is not used here: it re-acquires this same lock
             # and would deadlock while we still hold it.
             log.error(
                 "execution.stop_loss.failed",
                 base=base,
                 exchange=exchange,
-                err=str(sl_exc),
+                requests=stop.requests,
+                err=stop.error,
             )
-            alert_text = (
-                f"Stop-loss placement FAILED for {base} on {exchange}: {sl_exc}\n"
-                f"Force-closing position immediately."
-            )
-            force_closed = False
-            try:
-                close_order = await ex.create_market_order(
-                    symbol, stop_side, amount, params={"reduceOnly": True}
-                )
-                await rdb.delete(f"position:opened_at:{exchange}:{base.upper()}")
-                log.warning(
-                    "execution.stop_loss.emergency_close",
-                    base=base,
+            return await protective_stop.flatten_after_stop_failure(
+                ex=ex,
+                exchanges=exchanges,
+                rdb=rdb,
+                db_url=db_url,
+                alert_credentials=notify.credentials(cfg) if cfg is not None else None,
+                lease=lease,
+                worker_gate=worker_gate,
+                context=protective_stop.StopFailureContext(
                     exchange=exchange,
-                    order_id=close_order.get("id"),
-                )
-                alert_text += "\nPosition force-closed successfully."
-                force_closed = True
-            except Exception as close_exc:
-                log.critical(
-                    "execution.stop_loss.emergency_close_failed",
                     base=base,
-                    exchange=exchange,
-                    err=str(close_exc),
-                )
-                alert_text += (
-                    f"\nCRITICAL: emergency close ALSO failed ({close_exc}) — "
-                    f"position is UNPROTECTED. Manual intervention required."
-                )
-            creds = notify.credentials(cfg) if cfg is not None else None
-            if creds:
-                await notify.notify_alert(*creds, text=alert_text)
-            reason = (
-                f"stop-loss placement failed, position force-closed: {sl_exc}"
-                if force_closed
-                else (
-                    f"stop-loss placement failed AND emergency close failed — "
-                    f"position UNPROTECTED on {exchange}:{base}: {sl_exc}"
-                )
+                    symbol=symbol,
+                    native_market_id=market.get("id"),
+                    market_type=market.get("type"),
+                    side=side,
+                    entry_client_order_id=entry_client_order_id,
+                    attempt_id=attempt_id,
+                    requested_amount=amount,
+                    filled_amount=resolution.filled_amount,
+                    stop_error=stop.error,
+                ),
             )
-            return {"allowed": False, "reason": reason, "force_closed": force_closed}
+        sl_order = stop.order
+        try:
+            await rdb.set(
+                SL_ORDER_ID_KEY.format(exchange=exchange, base=base.upper()),
+                str(sl_order.get("id")),
+                ex=86400,
+            )
+        except Exception as exc:
+            # The stop rests on the exchange either way. A lost key must not
+            # stop the real entry from being journalled below; the stop stays
+            # findable by its derived id <entry>s<n>.
+            log.error(
+                "execution.stop_loss.key_write_failed",
+                base=base,
+                exchange=exchange,
+                client_order_id=stop.client_order_id,
+                err=str(exc),
+            )
+        log.info(
+            "execution.stop_loss.placed",
+            base=base,
+            exchange=exchange,
+            trigger_price=trigger_price,
+            order_id=sl_order.get("id"),
+            client_order_id=stop.client_order_id,
+            requests=stop.requests,
+        )
 
         if resolution.status == FILL_UNRESOLVED:
             # Exchanges are expected to always return an id for a placed order;
