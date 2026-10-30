@@ -85,6 +85,18 @@ class TaskSpec:
 
 
 @dataclass(frozen=True)
+class AdoptedClose:
+    """A close order found on the exchange, linked to its task when the task is
+    built after a database outage."""
+
+    client_order_id: str
+    status: str
+    order_id: str | None
+    requested_amount: Decimal | None
+    filled_amount: Decimal | None
+
+
+@dataclass(frozen=True)
 class EmergencyCloseTask:
     id: int
     source_attempt_id: int
@@ -114,12 +126,29 @@ class CloseOrder:
     created_at: datetime
 
 
+@dataclass(frozen=True)
+class RecoveryCandidate:
+    """An entry attempt with no task and no journalled trade, which may have a
+    close sent while the database was down."""
+
+    attempt_id: int
+    entry_client_order_id: str
+    exchange: str
+    base: str
+    symbol: str
+    native_market_id: str
+    market_type: str
+    side: str
+
+
 class TaskConflictError(RuntimeError):
     """Another active task already holds the exact identity."""
 
 
 class EmergencyCloseStore(Protocol):
-    async def create_task(self, spec: TaskSpec) -> tuple[int, bool]: ...
+    async def create_task(
+        self, spec: TaskSpec, adopted: tuple[AdoptedClose, ...] = ()
+    ) -> tuple[int, bool]: ...
     async def runnable_task_ids(self) -> list[int]: ...
     async def claim(
         self, task_id: int, owner: str, lease_seconds: float
@@ -154,6 +183,7 @@ class EmergencyCloseStore(Protocol):
         last_error: str | None,
         release: bool,
     ) -> None: ...
+    async def recovery_candidates(self) -> list[RecoveryCandidate]: ...
 
 
 def _same(left: Decimal, right: Decimal) -> bool:
@@ -242,6 +272,36 @@ WHERE task_id = %s
 ORDER BY id
 """
 
+# Entry attempts the database-down path may have closed without a task: derived
+# ids only, no trade, recent, identity complete, and no task yet.
+_RECOVERY_CANDIDATES = """
+SELECT a.id, a.client_order_id, a.exchange, a.base, a.symbol, a.native_market_id,
+    a.market_type, a.side
+FROM app.live_order_attempts AS a
+WHERE a.operation = 'entry'
+  AND a.client_order_id ~ '^[0-9a-f]{32}$'
+  AND a.trade_id IS NULL
+  AND a.native_market_id IS NOT NULL
+  AND a.market_type IS NOT NULL
+  AND a.side IN ('long', 'short')
+  AND a.status IN ('pending', 'accepted', 'submission_unknown', 'completed')
+  AND a.created_at > now() - interval '7 days'
+  AND NOT EXISTS (
+      SELECT 1 FROM app.live_emergency_closes AS e WHERE e.source_attempt_id = a.id
+  )
+ORDER BY a.id
+"""
+
+_ADOPT_CLOSE = """
+INSERT INTO app.live_order_attempts (
+    operation, client_order_id, exchange, base, symbol, native_market_id, market_type,
+    side, size_usd, requested_amount, filled_amount, leverage, exit_params,
+    setup_context, status, order_id, task_id
+) VALUES (
+    'close', %s, %s, %s, %s, %s, %s, %s, 0, %s, %s, 1, '{}'::jsonb, %s::jsonb, %s, %s, %s
+)
+"""
+
 _ACTIVE_TASK_FOR_INSTRUMENT = """
 SELECT 1 FROM app.live_emergency_closes
 WHERE exchange = %s AND base = upper(%s)
@@ -274,8 +334,11 @@ class PostgresEmergencyCloseStore:
     def __init__(self, db_url: str) -> None:
         self.db_url = db_url
 
-    async def create_task(self, spec: TaskSpec) -> tuple[int, bool]:
-        """Write the task and its blocking incident in one transaction.
+    async def create_task(
+        self, spec: TaskSpec, adopted: tuple[AdoptedClose, ...] = ()
+    ) -> tuple[int, bool]:
+        """Write the task, its blocking incident and any adopted closes in one
+        transaction, so a task is never runnable without the closes it owns.
 
         Returns ``(task_id, created)``; an existing task for the same source attempt
         is returned, not duplicated. Raises ``TaskConflictError`` when another
@@ -338,6 +401,25 @@ class PostgresEmergencyCloseStore:
                         ),
                     ),
                 )
+                for close in adopted:
+                    await cursor.execute(
+                        _ADOPT_CLOSE,
+                        (
+                            close.client_order_id,
+                            spec.exchange,
+                            spec.base.upper(),
+                            spec.symbol,
+                            spec.native_market_id,
+                            spec.market_type,
+                            spec.side,
+                            close.requested_amount,
+                            close.filled_amount,
+                            json.dumps({"emergency_close_task_id": task_id, "adopted": True}),
+                            close.status,
+                            close.order_id,
+                            task_id,
+                        ),
+                    )
                 return task_id, True
         except psycopg.errors.UniqueViolation as exc:
             raise TaskConflictError(str(exc)) from exc
@@ -469,6 +551,27 @@ class PostgresEmergencyCloseStore:
             )
             if cursor.rowcount != 1:
                 raise RuntimeError(f"emergency close task {task.id} claim was lost")
+
+    async def recovery_candidates(self) -> list[RecoveryCandidate]:
+        async with (
+            await psycopg.AsyncConnection.connect(self.db_url) as connection,
+            connection.cursor(row_factory=dict_row) as cursor,
+        ):
+            await cursor.execute(_RECOVERY_CANDIDATES)
+            rows = await cursor.fetchall()
+        return [
+            RecoveryCandidate(
+                attempt_id=int(row["id"]),
+                entry_client_order_id=str(row["client_order_id"]),
+                exchange=str(row["exchange"]),
+                base=str(row["base"]),
+                symbol=str(row["symbol"]),
+                native_market_id=str(row["native_market_id"]),
+                market_type=str(row["market_type"]),
+                side=str(row["side"]),
+            )
+            for row in rows
+        ]
 
 
 async def has_active_task(db_url: str, *, exchange: str, base: str) -> bool:
@@ -612,6 +715,61 @@ class EmergencyCloseExecutor:
                 f"remainder {remainder}",
             )
         return await self._send(exchange, task, closes, position)
+
+    async def recover(self, candidate: RecoveryCandidate) -> int | None:
+        """Build the task for a close the database-down path sent, from the attempt
+        row and the exchange. Returns the task id, or None when there is nothing to
+        recover or the entry's fill is not yet final."""
+        exchange = self.exchanges.get(candidate.exchange)
+        if exchange is None:
+            return None
+        closes = await exchange_orders.orders_with_prefix(
+            exchange, candidate.symbol, order_ids.close_prefix(candidate.entry_client_order_id)
+        )
+        if not closes:
+            return None
+        entry = await exchange_orders.find_by_client_order_id(
+            exchange, candidate.symbol, candidate.entry_client_order_id
+        )
+        filled = exchange_orders.decimal_or_none(entry.get("filled")) if entry is not None else None
+        if entry is None or not exchange_orders.is_terminal(entry) or not filled:
+            log.warning(
+                "emergency_close.recovery_waiting_on_entry",
+                attempt_id=candidate.attempt_id,
+            )
+            return None
+        adopted = tuple(
+            AdoptedClose(
+                client_order_id=str(exchange_orders.client_order_id(order)),
+                status=exchange_orders.attempt_state_from_order(order)[0],
+                order_id=str(order["id"]) if order.get("id") is not None else None,
+                requested_amount=exchange_orders.decimal_or_none(order.get("amount")),
+                filled_amount=exchange_orders.attempt_state_from_order(order)[1],
+            )
+            for order in closes
+        )
+        task_id, created = await self.store.create_task(
+            TaskSpec(
+                source_attempt_id=candidate.attempt_id,
+                entry_client_order_id=candidate.entry_client_order_id,
+                exchange=candidate.exchange,
+                base=candidate.base,
+                symbol=candidate.symbol,
+                native_market_id=candidate.native_market_id,
+                market_type=candidate.market_type,
+                side=candidate.side,
+                owned_quantity=filled,
+                reason=REASON_STOP_PLACEMENT_FAILED,
+            ),
+            adopted,
+        )
+        if created:
+            await self._alert(
+                f"Emergency close task {task_id} built after a database outage: "
+                f"{candidate.exchange} {candidate.symbol} {candidate.side}, "
+                f"{len(closes)} close order(s) found on the exchange."
+            )
+        return task_id
 
     async def _follow_closes(self, exchange: Any, task: EmergencyCloseTask) -> list[CloseOrder]:
         closes = await self.store.load_closes(task.id)
@@ -783,13 +941,34 @@ class EmergencyCloseWorker:
         store: EmergencyCloseStore,
         *,
         interval_seconds: float = 2.0,
+        recovery_every: int = 15,
     ) -> None:
         self.executor = executor
         self.store = store
         self.interval_seconds = interval_seconds
+        self.recovery_every = recovery_every
+        self._runs = 0
+
+    async def recover_once(self) -> bool:
+        succeeded = True
+        for candidate in await self.store.recovery_candidates():
+            try:
+                await self.executor.recover(candidate)
+            except Exception as exc:
+                succeeded = False
+                log.error(
+                    "emergency_close.recovery_failed",
+                    attempt_id=candidate.attempt_id,
+                    err=str(exc),
+                )
+        return succeeded
 
     async def run_once(self) -> bool:
         succeeded = True
+        # About every 30 s, look for closes the database-down path sent.
+        if self._runs % self.recovery_every == 0:
+            succeeded = await self.recover_once()
+        self._runs += 1
         for task_id in await self.store.runnable_task_ids():
             try:
                 await self.executor.run_pass(task_id)

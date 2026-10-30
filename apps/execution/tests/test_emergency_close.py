@@ -19,7 +19,9 @@ import ccxt
 import psycopg
 import pytest
 from schurfer_execution import emergency_close as ec
-from schurfer_execution import order_attempts
+from schurfer_execution import order_attempts, protective_stop
+from schurfer_execution import reconciliation as rec
+from schurfer_execution.supervisor import WorkerReadinessGate
 from schurfer_journal.testing_database import (
     assert_active_test_database_url,
     integration_database_url,
@@ -37,8 +39,13 @@ class MemoryStore:
         self.claim_owner: str | None = None
         self.now = T0
 
-    async def create_task(self, spec: ec.TaskSpec) -> tuple[int, bool]:
+    async def create_task(
+        self, spec: ec.TaskSpec, adopted: tuple[ec.AdoptedClose, ...] = ()
+    ) -> tuple[int, bool]:
         raise NotImplementedError
+
+    async def recovery_candidates(self) -> list[ec.RecoveryCandidate]:
+        return []
 
     async def runnable_task_ids(self) -> list[int]:
         return [self.task.id] if self.task.status in ec.RUNNABLE_STATUSES else []
@@ -121,6 +128,8 @@ class FakeExchange:
         self.sent: list[tuple[str, float, dict[str, Any]]] = []
         self.cancelled: list[str] = []
         self.on_create: Any = None
+        self.stop_requests: list[str] = []
+        self.on_stop: Any = None
 
     def set_position(self, contracts: str, *, side: str = "long") -> None:
         self.positions = [
@@ -161,6 +170,14 @@ class FakeExchange:
         self.cancelled.append(order_id)
         self.orders[order_id]["status"] = "canceled"
 
+    async def create_stop_market_order(
+        self, symbol: str, side: str, amount: float, trigger: float, params: dict[str, Any]
+    ) -> dict[str, Any]:
+        self.stop_requests.append(params["clientOrderId"])
+        if self.on_stop is not None:
+            return self.on_stop(params["clientOrderId"])
+        return dict(self.add_order(params["clientOrderId"], status="open", filled=0, stop=True))
+
     def amount_to_precision(self, symbol: str, amount: float) -> str:
         return f"{amount:.8f}".rstrip("0").rstrip(".")
 
@@ -200,6 +217,7 @@ def _rdb() -> MagicMock:
     rdb = MagicMock()
     rdb.set = AsyncMock(return_value=True)
     rdb.eval = AsyncMock(return_value=1)
+    rdb.delete = AsyncMock(return_value=1)
     return rdb
 
 
@@ -493,6 +511,315 @@ async def test_triggered_stop_still_filling_waits_without_a_send() -> None:
     assert exchange.cancelled == []
 
 
+# Stop placement (design section 2).
+
+
+def _place(exchange: FakeExchange) -> Any:
+    return protective_stop.place_protective_stop(
+        exchange,
+        symbol=SYMBOL,
+        stop_side="sell",
+        amount=10.0,
+        trigger_price=90.0,
+        entry_client_order_id=ENTRY,
+    )
+
+
+@pytest.fixture
+def no_stop_waits(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(protective_stop, "STOP_RETRY_DELAYS_SECONDS", (0.0, 0.0, 0.0))
+
+
+@pytest.mark.usefixtures("no_stop_waits")
+async def test_stop_that_timed_out_but_was_created_is_found_not_resent() -> None:
+    exchange = FakeExchange("10")
+
+    def created_then_lost(client_order_id: str) -> dict[str, Any]:
+        exchange.add_order(client_order_id, status="open", filled=0, stop=True)
+        raise ccxt.RequestTimeout("response lost")
+
+    exchange.on_stop = created_then_lost
+
+    placement = await _place(exchange)
+
+    assert placement.order is not None
+    assert placement.order["clientOrderId"] == f"{ENTRY}s1"
+    assert exchange.stop_requests == [f"{ENTRY}s1"]
+
+
+@pytest.mark.usefixtures("no_stop_waits")
+async def test_unknown_stop_not_found_is_retried_under_the_same_id() -> None:
+    exchange = FakeExchange("10")
+    answers = iter([ccxt.NetworkError("reset"), None])
+
+    def flaky(client_order_id: str) -> dict[str, Any]:
+        error = next(answers)
+        if error is not None:
+            raise error
+        return dict(exchange.add_order(client_order_id, status="open", filled=0, stop=True))
+
+    exchange.on_stop = flaky
+
+    placement = await _place(exchange)
+
+    assert placement.order is not None
+    assert exchange.stop_requests == [f"{ENTRY}s1", f"{ENTRY}s1"]
+
+
+@pytest.mark.usefixtures("no_stop_waits")
+async def test_explicit_rejection_takes_a_new_id() -> None:
+    exchange = FakeExchange("10")
+    answers = iter([ccxt.ExchangeError("busy"), None])
+
+    def rejected_once(client_order_id: str) -> dict[str, Any]:
+        error = next(answers)
+        if error is not None:
+            raise error
+        return dict(exchange.add_order(client_order_id, status="open", filled=0, stop=True))
+
+    exchange.on_stop = rejected_once
+
+    placement = await _place(exchange)
+
+    assert placement.order is not None
+    assert exchange.stop_requests == [f"{ENTRY}s1", f"{ENTRY}s2"]
+
+
+@pytest.mark.usefixtures("no_stop_waits")
+async def test_non_retryable_rejection_ends_the_retries() -> None:
+    exchange = FakeExchange("10")
+
+    def invalid(client_order_id: str) -> dict[str, Any]:
+        raise ccxt.InvalidOrder("trigger price invalid")
+
+    exchange.on_stop = invalid
+
+    placement = await _place(exchange)
+
+    assert placement.order is None
+    assert exchange.stop_requests == [f"{ENTRY}s1"]
+    assert "not retryable" in placement.error
+
+
+@pytest.mark.usefixtures("no_stop_waits")
+async def test_three_rejections_fail_with_three_ids() -> None:
+    exchange = FakeExchange("10")
+
+    def rejected(client_order_id: str) -> dict[str, Any]:
+        raise ccxt.ExchangeError("rejected")
+
+    exchange.on_stop = rejected
+
+    placement = await _place(exchange)
+
+    assert placement.order is None
+    assert exchange.stop_requests == [f"{ENTRY}s1", f"{ENTRY}s2", f"{ENTRY}s3"]
+
+
+@pytest.mark.usefixtures("no_stop_waits")
+async def test_unknown_stop_found_cancelled_with_no_fill_allows_a_new_id() -> None:
+    exchange = FakeExchange("10")
+    answers = iter(["lost", "ok"])
+
+    def flaky(client_order_id: str) -> dict[str, Any]:
+        if next(answers) == "lost":
+            exchange.add_order(client_order_id, status="canceled", filled=0, stop=True)
+            raise ccxt.RequestTimeout("response lost")
+        return dict(exchange.add_order(client_order_id, status="open", filled=0, stop=True))
+
+    exchange.on_stop = flaky
+
+    placement = await _place(exchange)
+
+    assert placement.order is not None
+    assert exchange.stop_requests == [f"{ENTRY}s1", f"{ENTRY}s2"]
+
+
+def _failure_context(*, attempt_id: int | None, entry: str = ENTRY, filled: float | None = 10.0):
+    return protective_stop.StopFailureContext(
+        exchange="bybit",
+        base="BTC",
+        symbol=SYMBOL,
+        native_market_id="BTCUSDT",
+        market_type="swap",
+        side="long",
+        entry_client_order_id=entry,
+        attempt_id=attempt_id,
+        requested_amount=10.0,
+        filled_amount=filled,
+        stop_error="rejected",
+    )
+
+
+async def test_without_a_database_one_close_c1_is_sent_and_alerted() -> None:
+    exchange = FakeExchange("10")
+    notify_alert = AsyncMock(return_value=True)
+
+    with patch("schurfer_execution.protective_stop.notify.notify_alert", notify_alert):
+        result = await protective_stop.flatten_after_stop_failure(
+            ex=exchange,
+            exchanges={"bybit": exchange},
+            rdb=_rdb(),
+            db_url=None,
+            alert_credentials=("token", "chat"),
+            lease=MagicMock(),
+            worker_gate=WorkerReadinessGate(set()),
+            context=_failure_context(attempt_id=None),
+        )
+
+    assert result["force_closed"] is True
+    assert exchange.sent == [("sell", 10.0, {"reduceOnly": True, "clientOrderId": f"{ENTRY}c1"})]
+    assert "database unavailable" in notify_alert.await_args.kwargs["text"]
+
+
+async def test_unknown_fill_never_takes_the_position_as_ours() -> None:
+    # Ours may be 4 of a 7-contract position someone topped up by hand: with
+    # the entry's fill unknown, nothing is sent and an operator decides.
+    exchange = FakeExchange("7")
+    exchange.add_order(ENTRY, status="open", filled=4)
+    gate = WorkerReadinessGate(set())
+    notify_alert = AsyncMock(return_value=True)
+
+    with patch("schurfer_execution.protective_stop.notify.notify_alert", notify_alert):
+        result = await protective_stop.flatten_after_stop_failure(
+            ex=exchange,
+            exchanges={"bybit": exchange},
+            rdb=_rdb(),
+            db_url=None,
+            alert_credentials=("token", "chat"),
+            lease=MagicMock(),
+            worker_gate=gate,
+            context=_failure_context(attempt_id=None, filled=None),
+        )
+
+    assert exchange.sent == []
+    assert result["close_sent"] is False
+    assert "UNPROTECTED" in result["reason"]
+    assert rec.INCIDENT_BLOCKER in gate.get_reasons()
+    assert "ownership is not proven" in notify_alert.await_args.kwargs["text"]
+
+
+async def test_unknown_fill_is_taken_from_the_exact_entry_order() -> None:
+    exchange = FakeExchange("7")
+    exchange.add_order(ENTRY, status="closed", filled=4)
+
+    with patch("schurfer_execution.protective_stop.notify.notify_alert", AsyncMock()):
+        await protective_stop.flatten_after_stop_failure(
+            ex=exchange,
+            exchanges={"bybit": exchange},
+            rdb=_rdb(),
+            db_url=None,
+            alert_credentials=None,
+            lease=MagicMock(),
+            worker_gate=WorkerReadinessGate(set()),
+            context=_failure_context(attempt_id=None, filled=None),
+        )
+
+    assert exchange.sent[0][:2] == ("sell", 4.0)
+
+
+async def test_entries_are_blocked_before_the_close_is_sent() -> None:
+    exchange = FakeExchange("10")
+    gate = WorkerReadinessGate(set())
+
+    def created(amount: float, params: dict[str, Any]) -> dict[str, Any]:
+        assert rec.INCIDENT_BLOCKER in gate.get_reasons()
+        return dict(exchange.add_order(params["clientOrderId"], status="closed", filled=amount))
+
+    exchange.on_create = created
+    with patch("schurfer_execution.protective_stop.notify.notify_alert", AsyncMock()):
+        await protective_stop.flatten_after_stop_failure(
+            ex=exchange,
+            exchanges={"bybit": exchange},
+            rdb=_rdb(),
+            db_url=None,
+            alert_credentials=None,
+            lease=MagicMock(),
+            worker_gate=gate,
+            context=_failure_context(attempt_id=None),
+        )
+
+    assert len(exchange.sent) == 1
+
+
+async def test_close_without_a_database_accepted_but_unfilled_is_not_confirmed() -> None:
+    exchange = FakeExchange("10")
+    exchange.on_create = lambda amount, params: dict(
+        exchange.add_order(params["clientOrderId"], status="canceled", filled=0)
+    )
+    rdb = _rdb()
+
+    with patch("schurfer_execution.protective_stop.notify.notify_alert", AsyncMock()):
+        result = await protective_stop.flatten_after_stop_failure(
+            ex=exchange,
+            exchanges={"bybit": exchange},
+            rdb=rdb,
+            db_url=None,
+            alert_credentials=None,
+            lease=MagicMock(),
+            worker_gate=WorkerReadinessGate(set()),
+            context=_failure_context(attempt_id=None),
+        )
+
+    assert (result["close_sent"], result["force_closed"]) == (True, False)
+    assert "UNPROTECTED" in result["reason"]
+    rdb.delete.assert_not_awaited()
+
+
+@pytest.mark.usefixtures("no_stop_waits")
+async def test_stop_ended_after_a_partial_fill_is_not_protection() -> None:
+    exchange = FakeExchange("6")
+
+    def partial_then_lost(client_order_id: str) -> dict[str, Any]:
+        exchange.add_order(client_order_id, status="canceled", filled=4, stop=True)
+        raise ccxt.RequestTimeout("response lost")
+
+    exchange.on_stop = partial_then_lost
+
+    placement = await _place(exchange)
+
+    assert placement.order is None
+    assert "terminal_fill" in placement.error
+    assert exchange.stop_requests == [f"{ENTRY}s1"]
+
+
+@pytest.mark.usefixtures("no_stop_waits")
+async def test_create_response_ended_with_no_fill_is_not_protection() -> None:
+    exchange = FakeExchange("10")
+    answers = iter(["canceled", "open"])
+
+    def respond(client_order_id: str) -> dict[str, Any]:
+        return dict(exchange.add_order(client_order_id, status=next(answers), filled=0, stop=True))
+
+    exchange.on_stop = respond
+
+    placement = await _place(exchange)
+
+    assert placement.order is not None
+    assert exchange.stop_requests == [f"{ENTRY}s1", f"{ENTRY}s2"]
+
+
+@pytest.mark.usefixtures("no_stop_waits")
+async def test_duplicate_id_after_an_unknown_outcome_keeps_looking() -> None:
+    exchange = FakeExchange("10")
+    calls: list[str] = []
+
+    def lost_then_duplicate(client_order_id: str) -> dict[str, Any]:
+        calls.append(client_order_id)
+        if len(calls) == 1:
+            raise ccxt.RequestTimeout("response lost")
+        # The first request had landed; it becomes visible only now.
+        exchange.add_order(client_order_id, status="open", filled=0, stop=True)
+        raise ccxt.InvalidOrder("bybit 110072 OrderLinkedID is duplicate")
+
+    exchange.on_stop = lost_then_duplicate
+
+    placement = await _place(exchange)
+
+    assert placement.order is not None
+    assert exchange.stop_requests == [f"{ENTRY}s1", f"{ENTRY}s1"]
+
+
 # Postgres store and migration 0061.
 
 TEST_DATABASE_URL = integration_database_url()
@@ -517,7 +844,9 @@ async def _connect_or_skip() -> psycopg.AsyncConnection:
         pytest.skip(f"no local postgres/head reachable: {exc}")
 
 
-async def _entry_attempt(connection: psycopg.AsyncConnection, exchange: str) -> tuple[int, str]:
+async def _entry_attempt(
+    connection: psycopg.AsyncConnection, exchange: str, status: str = "completed"
+) -> tuple[int, str]:
     entry = uuid.uuid4().hex
     async with connection.cursor() as cursor:
         await cursor.execute(
@@ -525,8 +854,8 @@ async def _entry_attempt(connection: psycopg.AsyncConnection, exchange: str) -> 
             "client_order_id, exchange, base, symbol, native_market_id, market_type, side, "
             "size_usd, requested_amount, leverage, exit_params, setup_context, status"
             ") VALUES (%s, %s, 'BTC', %s, 'BTCUSDT', 'swap', 'long', 1000, 10, 1, "
-            "'{}'::jsonb, '{}'::jsonb, 'completed') RETURNING id",
-            (entry, exchange, SYMBOL),
+            "'{}'::jsonb, '{}'::jsonb, %s) RETURNING id",
+            (entry, exchange, SYMBOL, status),
         )
         row = await cursor.fetchone()
     assert row is not None
@@ -682,5 +1011,140 @@ async def test_monitor_close_recovery_skips_task_close_rows() -> None:
         assert [a for a in recoverable if a.exchange == exchange_name] == []
         # The pass ended, so another executor may run the next one at once.
         assert await store.claim(task_id, "owner-b", 60) is not None
+    finally:
+        await _cleanup(connection, exchange_name)
+
+
+async def test_stop_failure_creates_a_task_and_the_inline_pass_closes() -> None:
+    connection = await _connect_or_skip()
+    exchange_name = f"itest-{uuid.uuid4().hex[:12]}"
+    exchange = FakeExchange("10")
+    try:
+        attempt_id, entry = await _entry_attempt(connection, exchange_name, status="accepted")
+        context = replace(
+            _failure_context(attempt_id=attempt_id, entry=entry), exchange=exchange_name
+        )
+        with (
+            patch("schurfer_execution.protective_stop.notify.notify_alert", AsyncMock()),
+            patch("schurfer_execution.emergency_close.notify.notify_alert", AsyncMock()),
+        ):
+            result = await protective_stop.flatten_after_stop_failure(
+                ex=exchange,
+                exchanges={exchange_name: exchange},
+                rdb=_rdb(),
+                db_url=TEST_DATABASE_URL,
+                alert_credentials=("token", "chat"),
+                lease=MagicMock(),
+                worker_gate=WorkerReadinessGate(set()),
+                context=context,
+            )
+            task_id = result["emergency_close_task_id"]
+            assert task_id is not None
+            # The second inline pass confirms the close the first one sent.
+            assert (result["close_sent"], result["force_closed"]) == (True, True)
+            assert [params["clientOrderId"] for _side, _amount, params in exchange.sent] == [
+                f"{entry}c1"
+            ]
+
+        async with connection.cursor() as cursor:
+            await cursor.execute(
+                "SELECT status, filled_amount FROM app.live_order_attempts WHERE id = %s",
+                (attempt_id,),
+            )
+            assert await cursor.fetchone() == ("completed", Decimal(10))
+            await cursor.execute(
+                "SELECT status FROM app.live_reconciliation_incidents WHERE incident_key = %s",
+                (ec.incident_key(task_id),),
+            )
+            assert await cursor.fetchone() == ("manual_required",)
+    finally:
+        await _cleanup(connection, exchange_name)
+
+
+async def test_worker_builds_the_task_for_a_close_sent_without_a_database() -> None:
+    connection = await _connect_or_skip()
+    exchange_name = f"itest-{uuid.uuid4().hex[:12]}"
+    exchange = FakeExchange("0")
+    store = ec.PostgresEmergencyCloseStore(TEST_DATABASE_URL)
+    executor = ec.EmergencyCloseExecutor({exchange_name: exchange}, store, _rdb())
+    worker = ec.EmergencyCloseWorker(executor, store)
+    try:
+        attempt_id, entry = await _entry_attempt(connection, exchange_name, status="accepted")
+        exchange.add_order(entry, status="open", filled=10)
+
+        with patch("schurfer_execution.emergency_close.notify.notify_alert", AsyncMock()):
+            # The entry's fill is not final yet: nothing is built.
+            exchange.add_order(f"{entry}c1", status="closed", filled=10)
+            assert await worker.recover_once()
+            assert await store.recovery_candidates() != []
+            async with connection.cursor() as cursor:
+                await cursor.execute(
+                    "SELECT count(*) FROM app.live_emergency_closes WHERE exchange = %s",
+                    (exchange_name,),
+                )
+                assert await cursor.fetchone() == (0,)
+
+            next(o for o in exchange.orders.values() if o["clientOrderId"] == entry)["status"] = (
+                "closed"
+            )
+            assert await worker.recover_once()
+            async with connection.cursor() as cursor:
+                await cursor.execute(
+                    "SELECT id, source_attempt_id, owned_quantity FROM app.live_emergency_closes "
+                    "WHERE exchange = %s",
+                    (exchange_name,),
+                )
+                [(task_id, source_attempt_id, owned)] = await cursor.fetchall()
+            assert (source_attempt_id, owned) == (attempt_id, Decimal(10))
+            assert await executor.run_pass(task_id) == ec.STATUS_CONFIRMED_FLAT
+
+        assert exchange.sent == []
+        async with connection.cursor() as cursor:
+            await cursor.execute(
+                "SELECT client_order_id, status, filled_amount FROM app.live_order_attempts "
+                "WHERE task_id = %s",
+                (task_id,),
+            )
+            assert await cursor.fetchall() == [(f"{entry}c1", "completed", Decimal(10))]
+    finally:
+        await _cleanup(connection, exchange_name)
+
+
+async def test_a_task_built_after_an_outage_never_exists_without_its_closes() -> None:
+    connection = await _connect_or_skip()
+    exchange_name = f"itest-{uuid.uuid4().hex[:12]}"
+    exchange = FakeExchange("6")
+    store = ec.PostgresEmergencyCloseStore(TEST_DATABASE_URL)
+    executor = ec.EmergencyCloseExecutor({exchange_name: exchange}, store, _rdb())
+    worker = ec.EmergencyCloseWorker(executor, store)
+    try:
+        _attempt_id, entry = await _entry_attempt(connection, exchange_name, status="accepted")
+        exchange.add_order(entry, status="closed", filled=10)
+        exchange.add_order(f"{entry}c1", status="canceled", filled=4)
+
+        with (
+            patch("schurfer_execution.emergency_close.notify.notify_alert", AsyncMock()),
+            patch.object(ec, "_ADOPT_CLOSE", "SELECT 1 / 0"),
+        ):
+            assert not await worker.recover_once()
+        async with connection.cursor() as cursor:
+            await cursor.execute(
+                "SELECT count(*) FROM app.live_emergency_closes WHERE exchange = %s",
+                (exchange_name,),
+            )
+            assert await cursor.fetchone() == (0,)
+
+        # The attempt is still a candidate, so the next run builds it whole.
+        with patch("schurfer_execution.emergency_close.notify.notify_alert", AsyncMock()):
+            assert await worker.recover_once()
+            async with connection.cursor() as cursor:
+                await cursor.execute(
+                    "SELECT id FROM app.live_emergency_closes WHERE exchange = %s",
+                    (exchange_name,),
+                )
+                [(task_id,)] = await cursor.fetchall()
+            assert await executor.run_pass(task_id) == ec.STATUS_SENDING
+        assert exchange.sent[0][:2] == ("sell", 6.0)
+        assert exchange.sent[0][2]["clientOrderId"] == f"{entry}c2"
     finally:
         await _cleanup(connection, exchange_name)
