@@ -206,12 +206,29 @@ entries stay blocked until an operator clears it after `accounted`.
 3. **If no stop is confirmed within the deadline,** an emergency close task is created
    at once. It also cancels any stop it knows of (found late) before reaching
    `confirmed_flat`.
-4. **Accounting is never a precondition of the close.**
-   - If the fill price is resolved and the database answers: `complete_open`, then
-     the close is journalled when the task confirms the fill.
-   - If the price is unresolved (`FILL_UNRESOLVED`) or `complete_open` fails: the open
-     goes to `_handle_unresolved_open` and the close to the incident path. The
-     incident worker already waits for the open before closing (`has_pending_open`).
+4. **Accounting is never a precondition of the close.** It starts only once the task
+   is `confirmed_flat`, in its own supervised worker (`emergency_accounting.py`, about
+   every 10 s), so a slow exchange or database there never delays a close. It sends
+   nothing.
+   - **Inputs:** the source attempt row, the task's close rows and the entry's stops
+     that ended with a fill, each found on the exchange by its derived id. A fill
+     amount the exchange does not report yet is unknown, not zero. Once every amount is
+     known, the legs must add up to the owned quantity; otherwise `manual_required`.
+   - **Prices** come from each order, never from a ticker.
+   - **One transaction** publishes the open, each leg in execution order (the last one
+     terminal), the close at the legs' amount-weighted price, and the links of the
+     task, its entry attempt and its close rows to the trade; the task is then
+     `accounted`. Nothing partial is ever visible to reconciliation, and a failed
+     publish leaves nothing behind, so the next run builds the round trip again from
+     the same facts.
+   - **Retries:** anything unknown, or a read or the publish that fails, is retried;
+     still not accounted 10 minutes after the first `confirmed_flat`:
+     `manual_required`.
+   - **Revised in PR 3b.** This first said `complete_open` and the incident path. That
+     path writes exit-tracking keys for a position that is already flat, and leaves the
+     trade open in the journal across several 30 s ticks, which reconciliation reports as
+     `db_only_orphan`. The task already holds every fact the incident path would
+     rebuild.
 
 ### 3. Unknown entry submission (B)
 
@@ -319,7 +336,7 @@ until that PR is in.
    - **3a:** the durable stop id, bounded retries with lookup, the task on failure with
      its inline first pass, the one close without a database, and the worker building
      the task once the database is back.
-   - **3b:** accounting through the incident path, and the `accounted` state.
+   - **3b:** accounting of the confirmed-flat task, and the `accounted` state.
 4. **Unknown submission path:** durable state first, the locked lookup, partial-active
    handling, and reconciliation's late-fill task.
 
@@ -332,7 +349,7 @@ go.
 | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | Stop times out but was created                                  | Found by its id, no second stop                                                                                               |
 | Stop rejected 3 times                                           | Emergency task, flat, round trip journalled, incident `manual_required`                                                       |
-| Stop fails and the fill price is unresolved                     | Close sent at once; open and close accounted through the incident path                                                        |
+| Stop fails and the fill price is unresolved                     | Close sent at once; the round trip is journalled once every price resolves, or `manual_required` after 10 minutes             |
 | Database down before the close                                  | One close `<entry>c1` sent; the task is built from the attempt row and the exchange once the database is back; flat confirmed |
 | Database down, close sent, crash before the database returns    | After restart the worker finds `<entry>c1` by prefix and continues; no blind second send                                      |
 | Restart between each pair of steps                              | Recovery continues from the task and attempt rows; no duplicate exposure                                                      |
