@@ -107,7 +107,10 @@ def require_run_window(now: datetime) -> None:
 
 def canary_pairs(path: Path, expected_sha256: str) -> tuple[list[str], dict[str, Any]]:
     """The canary's passing pairs, from its verified artifact; refuses anything else."""
-    payload = path.read_bytes()
+    try:
+        payload = path.read_bytes()
+    except OSError as exc:
+        raise StageARefused(f"the canary artifact cannot be read: {exc}") from exc
     digest = sha256_bytes(payload)
     if digest != expected_sha256.strip().lower():
         raise StageARefused(f"canary sha256 {digest} is not the published {expected_sha256}")
