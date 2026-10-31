@@ -4010,11 +4010,9 @@ infra/scripts/backup.sh` BEFORE `[2/5]` pulls the new code, so a deploy
 - **Execution Engine Resilience**: Add a `try...except` "bulletproof vest" inside the individual trade loop for `monitor.py` and `paper.py`. This ensures that if one legacy or malformed position raises an exception (like missing keys), it doesn't crash the entire monitoring cycle and block other healthy trades from closing.
 
 - CI caching (Go modules, pnpm store, uv cache) keyed on lockfile hashes.
-- Docker: pin image versions (no `:latest`), add `mem_limit` and `cpus` per service.
-  `mem_limit`/`cpus` are already set for every service in
-  `docker-compose.prod.yml`; `timescale/timescaledb:latest-pg17`,
-  `redis:7-alpine`, `caddy:2-alpine`, and `nats:2-alpine` still float
-  within their major/minor tag.
+- ~~Docker: pin image versions (no `:latest`), add `mem_limit` and `cpus` per service.~~
+  **Done 2026-10-26.** Every service has `mem_limit`/`cpus`, and postgres, redis,
+  nats and caddy are pinned by digest to the images production runs.
 - Frontend polish: `scrollbar-gutter: stable`, force the `en-US` locale in dates and
   the chart, auto-refresh the active OHLCV candle, pump-episode markers on the chart
   (`setMarkers`), and a position-origin badge (paper, bot, manual) on the account
