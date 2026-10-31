@@ -6,8 +6,13 @@ missing order as unknown, never as absent.
 
 from __future__ import annotations
 
+import asyncio
 from decimal import Decimal, InvalidOperation
 from typing import Any
+
+import structlog
+
+log = structlog.get_logger()
 
 NO_FILL_STATUSES = frozenset({"canceled", "cancelled", "rejected", "expired"})
 TERMINAL_STATUSES = NO_FILL_STATUSES | {"closed"}
@@ -100,6 +105,21 @@ async def find_by_client_order_id(exchange: Any, symbol: str, wanted: str) -> di
         if client_order_id(order) == wanted:
             return order
     return None
+
+
+async def look_up(
+    exchange: Any, symbol: str, client_order_id: str, timeout: float
+) -> dict[str, Any] | None:
+    """The order by its id, or None when it is not found or the lookup fails:
+    either way its outcome stays unknown."""
+    try:
+        return await asyncio.wait_for(
+            find_by_client_order_id(exchange, symbol, client_order_id),
+            timeout=max(timeout, 0.1),
+        )
+    except Exception as exc:
+        log.warning("execution.order_lookup_failed", client_order_id=client_order_id, err=str(exc))
+        return None
 
 
 async def orders_with_prefix(exchange: Any, symbol: str, prefix: str) -> list[dict[str, Any]]:
