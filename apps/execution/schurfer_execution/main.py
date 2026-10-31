@@ -24,6 +24,7 @@ from .early_momentum import (
     validate_prospective_runtime_policy,
 )
 from .early_momentum_prospective_cohort import register_prospective_cohort
+from .emergency_accounting import EmergencyCloseAccountant, PostgresAccountingStore
 from .emergency_close import (
     EmergencyCloseExecutor,
     EmergencyCloseWorker,
@@ -174,6 +175,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     source_lead_broker: Broker
     reconciliation_worker: ReconciliationWorker
     emergency_close_worker: EmergencyCloseWorker
+    emergency_accountant: EmergencyCloseAccountant
 
     reconciliation_enabled = bool(cfg.db_url and trading_exchanges)
 
@@ -231,6 +233,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             policy=WorkerRestartPolicy.ALWAYS,
             is_critical=True,
             stale_timeout_seconds=120.0,
+            enabled=reconciliation_enabled,
+        ),
+        WorkerSpec(
+            name="emergency_accountant",
+            factory=lambda tr: emergency_accountant(tr),
+            # Apart from emergency_closer, so accounting never delays a close. Not
+            # critical: a task it cannot account keeps its incident, which already
+            # blocks entries.
+            policy=WorkerRestartPolicy.ALWAYS,
+            is_critical=False,
+            stale_timeout_seconds=180.0,
             enabled=reconciliation_enabled,
         ),
         WorkerSpec(
@@ -363,6 +376,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
                 alert_credentials=notify_credentials(cfg),
             ),
             emergency_close_store,
+        )
+        emergency_accountant = EmergencyCloseAccountant(
+            trading_exchanges,
+            PostgresAccountingStore(typing.cast("str", cfg.db_url)),
+            rdb,
+            alert_credentials=notify_credentials(cfg),
         )
     pump_short_broker = build_broker(
         pump_short_mode, exchanges=strategy_exchanges, gate=worker_gate

@@ -15,8 +15,8 @@ protective stops. Anything else moves the task to ``manual_required``. The task 
 active, and no protective stop of the entry rests on the book.
 
 The executor needs the database. Every store failure raises, so the pass fails and
-the supervised worker retries it. Nothing creates a task yet: the stop placement and
-late fill paths that do land in later PRs.
+the supervised worker retries it. Once a task is confirmed flat, the separate
+accounting worker in emergency_accounting.py journals its round trip.
 """
 
 from __future__ import annotations
@@ -113,6 +113,7 @@ class EmergencyCloseTask:
     reason: str
     status: str
     rejected_sends: int
+    confirmed_flat_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -236,7 +237,11 @@ SET status = %s,
     owned_remainder = %s,
     rejected_sends = %s,
     last_error = %s,
-    confirmed_flat_at = CASE WHEN %s = 'confirmed_flat' THEN now() ELSE confirmed_flat_at END,
+    -- Set once: the accounting deadline counts from the first confirmation.
+    confirmed_flat_at = CASE
+        WHEN %s = 'confirmed_flat' THEN COALESCE(confirmed_flat_at, now())
+        ELSE confirmed_flat_at
+    END,
     claim_owner = CASE WHEN %s THEN NULL ELSE claim_owner END,
     claim_expires_at = CASE WHEN %s THEN NULL ELSE claim_expires_at END,
     updated_at = now()
@@ -310,7 +315,7 @@ LIMIT 1
 """
 
 
-def _task_from_row(row: dict[str, Any]) -> EmergencyCloseTask:
+def task_from_row(row: dict[str, Any]) -> EmergencyCloseTask:
     return EmergencyCloseTask(
         id=int(row["id"]),
         source_attempt_id=int(row["source_attempt_id"]),
@@ -327,6 +332,7 @@ def _task_from_row(row: dict[str, Any]) -> EmergencyCloseTask:
         reason=str(row["reason"]),
         status=str(row["status"]),
         rejected_sends=int(row["rejected_sends"]),
+        confirmed_flat_at=row.get("confirmed_flat_at"),
     )
 
 
@@ -444,7 +450,7 @@ class PostgresEmergencyCloseStore:
         ):
             await cursor.execute(_CLAIM, (owner, lease_seconds, task_id, owner))
             row = await cursor.fetchone()
-        return _task_from_row(row) if row is not None else None
+        return task_from_row(row) if row is not None else None
 
     async def load_closes(self, task_id: int) -> list[CloseOrder]:
         async with (
