@@ -1,6 +1,5 @@
 import uuid
 from datetime import UTC, datetime
-from decimal import Decimal
 from typing import Any
 
 import ccxt
@@ -211,134 +210,13 @@ async def _handle_unresolved_close(
     }
 
 
-def _stop_trigger(
-    ex: Any, symbol: str, side: str, reference_price: float, initial_sl_pct: float
-) -> float:
-    trigger_price = (
-        reference_price * (1 + initial_sl_pct / 100)
-        if side == "short"
-        else reference_price * (1 - initial_sl_pct / 100)
-    )
-    return float(ex.price_to_precision(symbol, trigger_price))
-
-
-class _FillGuard:
-    """Protects what is left of every fill seen on an entry that is still active.
-
-    At each look the stops of the entry, ``<entry>s1``, ``<entry>s2``, ..., are
-    read back: what is left is the entry's fill less the stops' fills, and only a
-    stop not yet terminal protects, for its amount less its fill. A gap gets a new
-    stop of its own. No stop is resized or reused, so none has to be cancelled
-    here: the emergency close task that flattens the entry cancels them all and
-    confirms each one terminal (review: a stop that fired and ended no longer
-    covers anything)."""
-
-    def __init__(
-        self,
-        ex: Any,
-        *,
-        symbol: str,
-        side: str,
-        stop_side: str,
-        reference_price: float,
-        initial_sl_pct: float,
-        entry_client_order_id: str,
-    ) -> None:
-        self.ex = ex
-        self.symbol = symbol
-        self.side = side
-        self.stop_side = stop_side
-        self.reference_price = reference_price
-        self.initial_sl_pct = initial_sl_pct
-        self.entry_client_order_id = entry_client_order_id
-        self.next_sequence = 1
-        self.placed: set[str] = set()
-        self.seen_filled = Decimal(0)
-        self.failure: str | None = None
-        self.report = "nothing filled"
-
-    async def _stops_view(self) -> tuple[Decimal, Decimal] | None:
-        """``(filled, protecting)`` over the entry's stops, or None when any of it
-        cannot be read: a stop placed here but missing from the listing proves
-        nothing, and neither does a fill or an amount the venue omits."""
-        stops = await entry_recovery.entry_stops(self.ex, self.symbol, self.entry_client_order_id)
-        if stops is None:
-            return None
-        if self.placed - {exchange_orders.client_order_id(stop) for stop in stops}:
-            return None
-        filled = protecting = Decimal(0)
-        for stop in stops:
-            stop_filled = exchange_orders.decimal_or_none(stop.get("filled"))
-            if stop_filled is None:
-                return None
-            filled += stop_filled
-            if not exchange_orders.is_terminal(stop):
-                amount = exchange_orders.decimal_or_none(stop.get("amount"))
-                if amount is None:
-                    return None
-                protecting += max(amount - stop_filled, Decimal(0))
-        return filled, protecting
-
-    async def cover(self, order: dict[str, Any]) -> None:
-        filled = exchange_orders.decimal_or_none(order.get("filled")) or Decimal(0)
-        view = await self._stops_view() if self.next_sequence > 1 else (Decimal(0), Decimal(0))
-        if view is None:
-            # The stops cannot be read: only the fill beyond the last look is
-            # known to be bare.
-            left, protecting = None, Decimal(0)
-            gap = filled - self.seen_filled
-        else:
-            stops_filled, protecting = view
-            left = max(filled - stops_filled, Decimal(0))
-            gap = left - protecting
-        self.seen_filled = max(self.seen_filled, filled)
-        if gap > 0 and self.failure is None:
-            average = exchange_orders.decimal_or_none(order.get("average"))
-            placement = await protective_stop.place_protective_stop(
-                self.ex,
-                symbol=self.symbol,
-                stop_side=self.stop_side,
-                amount=float(gap),
-                trigger_price=_stop_trigger(
-                    self.ex,
-                    self.symbol,
-                    self.side,
-                    float(average) if average else self.reference_price,
-                    self.initial_sl_pct,
-                ),
-                entry_client_order_id=self.entry_client_order_id,
-                first_sequence=self.next_sequence,
-            )
-            self.next_sequence = placement.sequence + 1
-            if placement.order is None:
-                # Not resting: rejected, or already triggered. Either way the
-                # flatten that follows settles it; no further stop is tried.
-                self.failure = placement.error
-            else:
-                self.placed.add(placement.client_order_id)
-                protecting += gap
-        self.report = self._describe(filled, left, protecting)
-
-    def _describe(self, filled: Decimal, left: Decimal | None, protecting: Decimal) -> str:
-        if left is None:
-            return (
-                f"{filled} filled, and the fills and states of its stops could not be "
-                "read: what is left UNPROTECTED is unknown"
-            )
-        held = f"{left} of the {filled} filled is still held"
-        if protecting >= left:
-            return f"{held}, all of it covered by resting stops"
-        missing = f"{left - protecting} UNPROTECTED: {held}, {protecting} covered by resting stops"
-        return f"{missing} ({self.failure})" if self.failure else missing
-
-
 async def _recover_unknown_entry(
     *,
     ex: Any,
     symbol: str,
     exchange: str,
     base: str,
-    guard: _FillGuard,
+    guard: entry_recovery.FillGuard,
     entry_client_order_id: str,
     db_url: str | None,
     attempt_id: int | None,
@@ -670,7 +548,7 @@ async def place_order(
                 symbol=symbol,
                 exchange=exchange,
                 base=base,
-                guard=_FillGuard(
+                guard=entry_recovery.FillGuard(
                     ex,
                     symbol=symbol,
                     side=side,
@@ -786,7 +664,9 @@ async def place_order(
             if resolution.filled_amount is not None and resolution.filled_amount > 0
             else amount
         )
-        trigger_price = _stop_trigger(ex, symbol, side, sl_reference_price, initial_sl_pct)
+        trigger_price = entry_recovery.stop_trigger(
+            ex, symbol, side, sl_reference_price, initial_sl_pct
+        )
 
         stop = await protective_stop.place_protective_stop(
             ex,
