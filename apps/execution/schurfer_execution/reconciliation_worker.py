@@ -14,7 +14,7 @@ import structlog
 from psycopg.rows import dict_row
 
 from . import exit as exit_module
-from . import notify
+from . import late_fill, notify
 from . import reconciliation as rec
 from .exchange_orders import attempt_state_from_order as _attempt_state_from_order
 from .exchange_orders import client_order_id as _client_order_id
@@ -148,9 +148,10 @@ def _incident_key(
 class ReconciliationWorker:
     """Audit exact ownership across exchange, Postgres, and Redis.
 
-    The only automatic mutation is resolving an order attempt from an exact
-    exchange order/client-order-id match. Position state is never adopted,
-    closed, reconstructed, or deleted by v1.
+    The automatic mutations are resolving an order attempt from an exact
+    exchange order/client-order-id match and, for an entry fill found late, the
+    emergency close task that flattens it (late_fill.py). Any other position state
+    is never adopted, closed, reconstructed, or deleted.
     """
 
     def __init__(
@@ -168,6 +169,9 @@ class ReconciliationWorker:
         self.rdb = rdb
         self.gate = gate
         self.scan_interval = scan_interval_seconds
+        self.late_fills = late_fill.LateFillRecovery(
+            exchanges, db_url, rdb, alert_credentials=alert_credentials
+        )
 
     async def _fetch_exchange_snapshots(
         self,
@@ -431,6 +435,14 @@ class ReconciliationWorker:
                     attempt.status == "completed" and attempt.filled_amount is None
                 )
                 if not needs_resolution:
+                    continue
+                if late_fill.is_candidate(attempt):
+                    # Under the order lock, so never while the entry path runs.
+                    resolved = await self.late_fills.resolve(
+                        attempt, self._update_attempt_from_order
+                    )
+                    if resolved is not None:
+                        identity_attempts[index] = resolved
                     continue
                 order = await self._find_exact_order(exchange, attempt)
                 if order is not None:

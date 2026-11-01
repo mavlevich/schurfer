@@ -286,34 +286,51 @@ entries stay blocked until an operator clears it after `accounted`.
 
 ### 4. Late fill found by reconciliation
 
-Reconciliation creates an emergency close task (`late_fill_flattened`) only when **all**
-of these hold; otherwise the case stays `manual_required`:
+**Candidates:** an entry attempt still `pending`, `accepted` or `submission_unknown`
+when the scan reads it, with no trade, a complete identity and a derived-id
+`clientOrderId`. An attempt already `completed` without a trade (an unresolved fill
+price, a failed journal write) has its stop and its own recovery, so it is never a
+candidate.
 
-- the exact order is found by `clientOrderId` and is terminal with a known filled
-  amount, or has been made terminal by the partial-active branch of section 3;
-- the identity is complete, and the side matches the attempt;
-- the exchange position equals our accounted quantity for that identity: the source
-  attempt's final filled amount;
-- **open trades:** either none exists for the identity, or exactly one exists and it is
-  linked to this source attempt. "Linked" means the attempt row's `trade_id` points to
-  it and its journalled quantity equals the attempt's filled amount.
-  - The partial-active branch of section 3 journals the open before the task exists,
-    so this case is normal, not a conflict. It also lets recovery continue after a
-    crash between journalling the open and creating the task.
-  - Any other open trade on the identity, or a link that is missing or ambiguous,
-    means `manual_required`;
-- no other active attempt, close attempt or emergency task exists for the identity,
-  and the order lock is free.
+**Under the order lock:** reconciliation takes the instrument's order lock, so the
+entry path is not running, and reads the attempt again; one resolved meanwhile is
+left alone. A busy lock leaves the attempt to its holder until the next scan. Then
+it looks the entry up by `clientOrderId`:
+
+- **not found:** nothing changes, the attempt keeps blocking entries;
+- **still active:** it takes over the stops the entry path left, protects what is
+  held, cancels the rest and confirms the cancel, as in section 3. Stops that cannot
+  be read leave the entry untouched until the next scan, so nothing is placed blind.
+  An unconfirmed cancel stays unresolved and is alerted once;
+- **terminal with no fill, or without a filled amount:** recorded `no_fill` or
+  `manual_required`;
+- **terminal with a fill:** an emergency close task (`late_fill_flattened`) with the
+  final filled amount as owned quantity, created only when nothing else holds the
+  instrument: no open trade on it, no other unresolved attempt, no other active task.
+  The attempt is then recorded `completed` without a trade. Otherwise it is recorded
+  `completed` without a task, and the classifier quarantines it for an operator.
+  Any `<entry>cN` close already on the exchange, sent by the database-down path of
+  section 0, is adopted in the same transaction that writes the task, as the outage
+  recovery does. Without it the task would compare the position with the whole fill
+  and stop for an operator, or reach flat with no close to journal; the outage
+  recovery never sees an attempt that already has a task. Closes that cannot be
+  listed create no task until the next scan.
+
+The task is written before the attempt is recorded, so after a crash in between the
+next scan finds the same task (`created` false, no second alert); the closes of this
+attempt's own task are not a competitor.
+
+**Revised in PR 4b.** This first allowed one open trade linked to the attempt,
+because the partial-active branch journalled the open before the task. Since PR 4a
+nothing journals an open before the task: the accounting worker journals open and
+close together (PR 3b). So any open trade on the instrument means an operator. The
+exchange position is not compared here either: the task's executor compares it
+with the owned remainder (owned less stop and close fills) before every send and
+moves to `manual_required` on any difference, so a position larger than ours is
+never closed.
 
 **The classifier changes:** `MISSING_TRADE_EXACT_ATTEMPT` requires equal quantities. A
 mismatch is `POSITION_SIZE_MISMATCH`, manual.
-
-**One round trip:** when a linked open trade exists, the task closes that trade
-(`close_trade` on its `trade_id`) and does not journal a second open.
-
-**What the worker reads:** the attempt's full row (size, leverage, contract size, exit
-parameters, setup context), and the entry fill price through `resolve_fill_price` on
-the found order, for the journal.
 
 **What does not trigger a close:** a missing Redis stop key on its own. After a Redis
 loss it would flatten every healthy position. The protective-order check reads the
@@ -386,9 +403,10 @@ go.
 | Entry times out, found terminal with no fill                    | `no_fill`, no blocker                                                                                                         |
 | Entry times out, nothing found                                  | `submission_unknown` durable before the lookup; blocker stays                                                                 |
 | Reconciliation later finds the entry active with a partial fill | Part protected, rest cancelled and confirmed, then flattened as a stale entry                                                 |
-| Late partial fill, open already journalled before the task      | Task closes the linked trade; one journalled round trip                                                                       |
-| Late partial fill, restart right after the open was journalled  | Recovery finds the linked trade, creates the task, closes it; one journalled round trip                                       |
-| Late fill with an unlinked open trade on the identity           | `manual_required`, nothing sent                                                                                               |
+| Late fill, crash after the task and before the attempt record   | Next scan finds the same task: no second task, no second alert                                                                |
+| Late fill with a close sent while the database was down         | The task adopts the close: it closes only the rest, or is flat with that close to journal                                     |
+| Late fill while the entry path holds the order lock             | Left to the entry path; looked at again on the next scan                                                                      |
+| Late fill with an open trade on the instrument                  | Recorded completed without a task: quarantined, manual, nothing sent                                                          |
 | Late fill, quantities equal, no competing operation             | Flattened through a task, journalled, incident resolved                                                                       |
 | Late fill, position larger than our quantity                    | `POSITION_SIZE_MISMATCH`, manual, nothing closed                                                                              |
 | Orphan with no exact attempt                                    | Unchanged: quarantined, manual, never closed                                                                                  |
