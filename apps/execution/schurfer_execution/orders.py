@@ -1,5 +1,6 @@
 import uuid
 from datetime import UTC, datetime
+from decimal import Decimal
 from typing import Any
 
 import ccxt
@@ -7,6 +8,8 @@ import structlog
 
 from . import (
     emergency_close,
+    entry_recovery,
+    exchange_orders,
     incidents,
     journal,
     notify,
@@ -206,6 +209,212 @@ async def _handle_unresolved_close(
         "filled_amount": filled_amount,
         "remaining_amount": remaining_amount,
     }
+
+
+def _stop_trigger(
+    ex: Any, symbol: str, side: str, reference_price: float, initial_sl_pct: float
+) -> float:
+    trigger_price = (
+        reference_price * (1 + initial_sl_pct / 100)
+        if side == "short"
+        else reference_price * (1 - initial_sl_pct / 100)
+    )
+    return float(ex.price_to_precision(symbol, trigger_price))
+
+
+class _FillGuard:
+    """Protects what is left of every fill seen on an entry that is still active.
+
+    At each look the stops of the entry, ``<entry>s1``, ``<entry>s2``, ..., are
+    read back: what is left is the entry's fill less the stops' fills, and only a
+    stop not yet terminal protects, for its amount less its fill. A gap gets a new
+    stop of its own. No stop is resized or reused, so none has to be cancelled
+    here: the emergency close task that flattens the entry cancels them all and
+    confirms each one terminal (review: a stop that fired and ended no longer
+    covers anything)."""
+
+    def __init__(
+        self,
+        ex: Any,
+        *,
+        symbol: str,
+        side: str,
+        stop_side: str,
+        reference_price: float,
+        initial_sl_pct: float,
+        entry_client_order_id: str,
+    ) -> None:
+        self.ex = ex
+        self.symbol = symbol
+        self.side = side
+        self.stop_side = stop_side
+        self.reference_price = reference_price
+        self.initial_sl_pct = initial_sl_pct
+        self.entry_client_order_id = entry_client_order_id
+        self.next_sequence = 1
+        self.placed: set[str] = set()
+        self.seen_filled = Decimal(0)
+        self.failure: str | None = None
+        self.report = "nothing filled"
+
+    async def _stops_view(self) -> tuple[Decimal, Decimal] | None:
+        """``(filled, protecting)`` over the entry's stops, or None when any of it
+        cannot be read: a stop placed here but missing from the listing proves
+        nothing, and neither does a fill or an amount the venue omits."""
+        stops = await entry_recovery.entry_stops(self.ex, self.symbol, self.entry_client_order_id)
+        if stops is None:
+            return None
+        if self.placed - {exchange_orders.client_order_id(stop) for stop in stops}:
+            return None
+        filled = protecting = Decimal(0)
+        for stop in stops:
+            stop_filled = exchange_orders.decimal_or_none(stop.get("filled"))
+            if stop_filled is None:
+                return None
+            filled += stop_filled
+            if not exchange_orders.is_terminal(stop):
+                amount = exchange_orders.decimal_or_none(stop.get("amount"))
+                if amount is None:
+                    return None
+                protecting += max(amount - stop_filled, Decimal(0))
+        return filled, protecting
+
+    async def cover(self, order: dict[str, Any]) -> None:
+        filled = exchange_orders.decimal_or_none(order.get("filled")) or Decimal(0)
+        view = await self._stops_view() if self.next_sequence > 1 else (Decimal(0), Decimal(0))
+        if view is None:
+            # The stops cannot be read: only the fill beyond the last look is
+            # known to be bare.
+            left, protecting = None, Decimal(0)
+            gap = filled - self.seen_filled
+        else:
+            stops_filled, protecting = view
+            left = max(filled - stops_filled, Decimal(0))
+            gap = left - protecting
+        self.seen_filled = max(self.seen_filled, filled)
+        if gap > 0 and self.failure is None:
+            average = exchange_orders.decimal_or_none(order.get("average"))
+            placement = await protective_stop.place_protective_stop(
+                self.ex,
+                symbol=self.symbol,
+                stop_side=self.stop_side,
+                amount=float(gap),
+                trigger_price=_stop_trigger(
+                    self.ex,
+                    self.symbol,
+                    self.side,
+                    float(average) if average else self.reference_price,
+                    self.initial_sl_pct,
+                ),
+                entry_client_order_id=self.entry_client_order_id,
+                first_sequence=self.next_sequence,
+            )
+            self.next_sequence = placement.sequence + 1
+            if placement.order is None:
+                # Not resting: rejected, or already triggered. Either way the
+                # flatten that follows settles it; no further stop is tried.
+                self.failure = placement.error
+            else:
+                self.placed.add(placement.client_order_id)
+                protecting += gap
+        self.report = self._describe(filled, left, protecting)
+
+    def _describe(self, filled: Decimal, left: Decimal | None, protecting: Decimal) -> str:
+        if left is None:
+            return (
+                f"{filled} filled, and the fills and states of its stops could not be "
+                "read: what is left UNPROTECTED is unknown"
+            )
+        held = f"{left} of the {filled} filled is still held"
+        if protecting >= left:
+            return f"{held}, all of it covered by resting stops"
+        missing = f"{left - protecting} UNPROTECTED: {held}, {protecting} covered by resting stops"
+        return f"{missing} ({self.failure})" if self.failure else missing
+
+
+async def _recover_unknown_entry(
+    *,
+    ex: Any,
+    symbol: str,
+    exchange: str,
+    base: str,
+    guard: _FillGuard,
+    entry_client_order_id: str,
+    db_url: str | None,
+    attempt_id: int | None,
+    worker_gate: WorkerReadinessGate,
+    error: str,
+    reason: str,
+    alert_credentials: tuple[str, str] | None,
+) -> tuple[dict[str, Any] | None, bool, dict[str, Any] | None]:
+    """The entry request ended without a determinable answer (design section 3).
+
+    Returns ``(order, flatten, result)``. A ``result`` ends ``place_order``.
+    Otherwise ``order`` is the entry found terminal: with ``flatten`` it was found
+    still active and filled, and is flattened; without, the normal path continues.
+    """
+    # Durable first, then the block, then the lookup: a crash during the lookup
+    # leaves an attempt that reconciliation resolves.
+    if db_url and attempt_id is not None:
+        await order_attempts.mark_submission_unknown(db_url, attempt_id, error=error)
+    worker_gate.set_safety_blocker(SUBMISSION_UNKNOWN_BLOCKER)
+
+    found = await entry_recovery.find_entry(ex, symbol, entry_client_order_id)
+    if found is None:
+        return (
+            None,
+            False,
+            {
+                "allowed": False,
+                "reason": (
+                    f"submission_unknown: {reason}; entry {entry_client_order_id} not found, "
+                    "reconciliation continues the lookup"
+                ),
+            },
+        )
+    flatten = False
+    if not exchange_orders.is_terminal(found):
+        settled, latest = await entry_recovery.settle_active_entry(
+            ex, symbol, found, on_active=guard.cover
+        )
+        if settled is None:
+            if db_url and attempt_id is not None:
+                await order_attempts.mark_accepted(db_url, attempt_id, order_id=str(latest["id"]))
+            detail = (
+                f"entry {entry_client_order_id} on {exchange}:{base} is still active and its "
+                f"cancel is not confirmed; as last seen, {guard.report}"
+            )
+            await _alert(alert_credentials, f"Entry submission unknown, then found: {detail}.")
+            return None, False, {"allowed": False, "reason": f"submission_unknown: {detail}"}
+        found = settled
+        # An entry found active is not kept: its signal is stale, its size is not
+        # the one decided, and its fills may be split across several stops.
+        # A stop placed meanwhile also sends it there, even when the terminal
+        # order omits its filled amount: the flatten then asks an operator.
+        final = exchange_orders.decimal_or_none(found.get("filled"))
+        flatten = (final is not None and final > 0) or guard.next_sequence > 1
+    log.warning(
+        "execution.order.found_after_unknown",
+        base=base,
+        exchange=exchange,
+        client_order_id=entry_client_order_id,
+        status=found.get("status"),
+        filled=found.get("filled"),
+        flatten=flatten,
+    )
+    return found, flatten, None
+
+
+async def _alert(credentials: tuple[str, str] | None, text: str) -> None:
+    if credentials is None:
+        return
+    delivered = False
+    try:
+        delivered = await notify.notify_alert(*credentials, text=text)
+    except Exception as exc:
+        log.error("execution.order.alert_delivery_failed", err=str(exc))
+    if not delivered:
+        log.error("execution.order.alert_not_delivered", text=text)
 
 
 async def place_order(
@@ -436,28 +645,81 @@ async def place_order(
                 await order_attempts.mark_failed(db_url, attempt_id, error=reason)
             return {"allowed": False, "reason": reason}
 
+        order: dict[str, Any] | None = None
+        unknown_error: Exception | None = None
+        unknown_reason = ""
         try:
             order = await ex.create_market_order(
                 symbol, ccxt_side, amount, params={"clientOrderId": entry_client_order_id}
             )
         except ccxt.NetworkError as exc:
-            if db_url and attempt_id is not None:
-                await order_attempts.mark_submission_unknown(db_url, attempt_id, error=str(exc))
-            worker_gate.set_safety_blocker(SUBMISSION_UNKNOWN_BLOCKER)
-            return {
-                "allowed": False,
-                "reason": f"submission_unknown: network timeout or error {exc}",
-            }
+            unknown_error, unknown_reason = exc, f"network timeout or error {exc}"
         except ccxt.ExchangeError as exc:
             # Explicit exchange rejection (e.g. InsufficientFunds, InvalidOrder)
             if db_url and attempt_id is not None:
                 await order_attempts.mark_failed(db_url, attempt_id, error=str(exc))
             return {"allowed": False, "reason": f"exchange_rejection: {exc}"}
         except Exception as exc:
-            if db_url and attempt_id is not None:
-                await order_attempts.mark_submission_unknown(db_url, attempt_id, error=str(exc))
-            worker_gate.set_safety_blocker(SUBMISSION_UNKNOWN_BLOCKER)
-            return {"allowed": False, "reason": f"submission_unknown: unexpected error {exc}"}
+            unknown_error, unknown_reason = exc, f"unexpected error {exc}"
+
+        stop_side = "buy" if ccxt_side == "sell" else "sell"
+        if order is None:
+            alert_credentials = notify.credentials(cfg) if cfg is not None else None
+            order, flatten, unknown_result = await _recover_unknown_entry(
+                ex=ex,
+                symbol=symbol,
+                exchange=exchange,
+                base=base,
+                guard=_FillGuard(
+                    ex,
+                    symbol=symbol,
+                    side=side,
+                    stop_side=stop_side,
+                    reference_price=price,
+                    initial_sl_pct=initial_sl_pct,
+                    entry_client_order_id=entry_client_order_id,
+                ),
+                entry_client_order_id=entry_client_order_id,
+                db_url=db_url,
+                attempt_id=attempt_id,
+                worker_gate=worker_gate,
+                error=str(unknown_error),
+                reason=unknown_reason,
+                alert_credentials=alert_credentials,
+            )
+            if unknown_result is not None:
+                return unknown_result
+            assert order is not None
+            if flatten:
+                if db_url and attempt_id is not None:
+                    await order_attempts.mark_accepted(
+                        db_url, attempt_id, order_id=str(order.get("id"))
+                    )
+                return await protective_stop.flatten_after_stop_failure(
+                    ex=ex,
+                    exchanges=exchanges,
+                    rdb=rdb,
+                    db_url=db_url,
+                    alert_credentials=alert_credentials,
+                    lease=lease,
+                    worker_gate=worker_gate,
+                    context=protective_stop.StopFailureContext(
+                        exchange=exchange,
+                        base=base,
+                        symbol=symbol,
+                        native_market_id=market.get("id"),
+                        market_type=market.get("type"),
+                        side=side,
+                        entry_client_order_id=entry_client_order_id,
+                        attempt_id=attempt_id,
+                        requested_amount=amount,
+                        filled_amount=(
+                            float(order["filled"]) if order.get("filled") is not None else None
+                        ),
+                        stop_error="entry found still active after an unknown submission",
+                        task_reason=emergency_close.REASON_LATE_FILL_FLATTENED,
+                    ),
+                )
 
         entry_observed_at = datetime.now(tz=UTC)
 
@@ -524,13 +786,7 @@ async def place_order(
             if resolution.filled_amount is not None and resolution.filled_amount > 0
             else amount
         )
-        stop_side = "buy" if ccxt_side == "sell" else "sell"
-        trigger_price = (
-            sl_reference_price * (1 + initial_sl_pct / 100)
-            if side == "short"
-            else sl_reference_price * (1 - initial_sl_pct / 100)
-        )
-        trigger_price = float(ex.price_to_precision(symbol, trigger_price))
+        trigger_price = _stop_trigger(ex, symbol, side, sl_reference_price, initial_sl_pct)
 
         stop = await protective_stop.place_protective_stop(
             ex,

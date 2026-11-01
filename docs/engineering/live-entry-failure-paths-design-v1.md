@@ -246,11 +246,28 @@ entries stay blocked until an operator clears it after `accounted`.
    - **Terminal with a fill:** `mark_accepted` with the real order id, continue the
      normal path (stop, journal) at the filled amount.
    - **Still open with a partial fill:**
-     - protect the filled part with a stop at once;
-     - cancel the rest and confirm the cancel;
-     - then resize the stop and journal at the final filled amount.
+     - protect the filled part with a stop at once; at every later look while the
+       rest is cancelled, read the entry's stops back and give any gap its own new
+       stop (`<entry>s1`, `<entry>s2`, ...). What is still held is the entry's fill
+       less the stops' fills, and only a stop not yet terminal protects, for its
+       amount less its fill. When the stops cannot be read, only the fill beyond
+       the last look gets a stop, and the coverage is reported unknown;
+     - cancel the rest and confirm the cancel by finding the order terminal;
+     - then flatten the final filled amount through an emergency close task
+       (`late_fill_flattened`), as reconciliation does with a late fill.
 
-     Entries stay blocked until the order is terminal.
+     Entries stay blocked until the order is terminal. If the cancel is not
+     confirmed, the attempt stays unresolved, and the alert states how much of the
+     latest seen fill is still held and how much of that resting stops cover.
+
+     **Revised in PR 4a.** This first said to resize the stop and journal the final
+     amount. Resizing raced in review: a stop placed on the partial fill could fire
+     while the rest was cancelled and then be taken as protection, and a replaced
+     stop whose cancel was not confirmed could later close a new position. The
+     signal is stale by then, and the size is not the one decided, so the entry is
+     not kept. The task counts the stops' fills, cancels every stop of the entry and
+     confirms each one terminal before `confirmed_flat`, and journals the round
+     trip.
 
    - **Terminal with no fill:** `no_fill`, nothing to protect.
    - **Nothing found:** stays `submission_unknown`; reconciliation continues the
@@ -337,8 +354,12 @@ until that PR is in.
      its inline first pass, the one close without a database, and the worker building
      the task once the database is back.
    - **3b:** accounting of the confirmed-flat task, and the `accounted` state.
-4. **Unknown submission path:** durable state first, the locked lookup, partial-active
-   handling, and reconciliation's late-fill task.
+4. **Unknown submission path,** delivered in two parts:
+   - **4a:** in the entry path, durable state first, the locked lookup, and its
+     branches, partial-active handling included. A resolved attempt lifts the
+     `submission_unknown` block on reconciliation's next scan.
+   - **4b:** reconciliation's late-fill task (section 4), with the same branches for
+     an entry it finds later.
 
 Each has the two reviewer touchpoints. The migration is deployed only on the owner's
 go.
@@ -360,8 +381,8 @@ go.
 | A close fills partially (IOC), then is cancelled                | Fill counted, next send for the remainder                                                                                     |
 | Foreign volume added after a partial close                      | Position differs from the remainder: `manual_required`, nothing sent                                                          |
 | Entry times out, found filled                                   | Stop, journal, no blocker                                                                                                     |
-| Entry times out, found open with a partial fill                 | Partial protected, rest cancelled and confirmed, then final size                                                              |
-| Entry times out, the rest fills after the cancel was sent       | Final amount from the terminal order, stop resized                                                                            |
+| Entry times out, found open with a partial fill                 | Partial protected, each later increment too, rest cancelled and confirmed, then flattened through a task                      |
+| Entry times out, the rest fills after the cancel was sent       | Final amount from the terminal order, flattened through a task                                                                |
 | Entry times out, found terminal with no fill                    | `no_fill`, no blocker                                                                                                         |
 | Entry times out, nothing found                                  | `submission_unknown` durable before the lookup; blocker stays                                                                 |
 | Reconciliation later finds the entry active with a partial fill | Part protected, rest cancelled and confirmed, then flattened as a stale entry                                                 |

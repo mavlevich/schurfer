@@ -5,8 +5,8 @@ import ccxt
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
+from schurfer_execution import entry_recovery, order_attempts, protective_stop
 from schurfer_execution import exit as exit_module
-from schurfer_execution import order_attempts, protective_stop
 from schurfer_execution import reconciliation as rec
 from schurfer_execution.orders import close_position, place_order
 from schurfer_execution.risk import PNL_READY_KEY, TRADING_ENABLED_KEY
@@ -18,6 +18,8 @@ from schurfer_execution.supervisor import WorkerReadinessGate
 def _no_stop_retry_waits(monkeypatch: pytest.MonkeyPatch) -> None:
     """Stop retries keep their order and count, without real seconds of waiting."""
     monkeypatch.setattr(protective_stop, "STOP_RETRY_DELAYS_SECONDS", (0.0, 0.0, 0.0))
+    monkeypatch.setattr(entry_recovery, "ENTRY_LOOKUP_AT_SECONDS", (0.0, 0.0, 0.0, 0.0))
+    monkeypatch.setattr(entry_recovery, "CANCEL_CONFIRM_AT_SECONDS", (0.0, 0.0, 0.0, 0.0))
 
 
 async def _default_get(key: str) -> bytes | None:
@@ -1661,3 +1663,362 @@ class TestClosePositionCancelsStopLoss:
         assert "submission_unknown" in result["reason"]
         mock_unknown.assert_awaited_once()
         ex.cancel_order.assert_not_awaited()
+
+
+class _UnknownEntryVenue:
+    """A venue whose entry request times out. ``entry`` is what the venue really
+    did with it (None: nothing), ``after_cancel`` what the entry becomes once its
+    rest is cancelled."""
+
+    def __init__(
+        self,
+        entry: dict | None,  # type: ignore[type-arg]
+        *,
+        after_cancel: dict | None = None,  # type: ignore[type-arg]
+        stop_fails: bool = False,
+    ) -> None:
+        self.markets = {"BEAT/USDT:USDT": {"contractSize": 1.0, "id": "BEATUSDT", "type": "swap"}}
+        self.has = {"fetchOpenOrders": True, "fetchClosedOrders": True}
+        self.entry_template = entry
+        self.after_cancel = after_cancel
+        self.stop_fails = stop_fails
+        self.entry: dict | None = None  # type: ignore[type-arg]
+        self.stops: list[dict] = []  # type: ignore[type-arg]
+        self.cancelled: list[tuple[str, dict]] = []  # type: ignore[type-arg]
+        self.lookups = 0
+
+    async def set_leverage(self, leverage: int, symbol: str) -> None:
+        return None
+
+    async def fetch_ticker(self, symbol: str) -> dict:  # type: ignore[type-arg]
+        return {"last": 1.0}
+
+    def amount_to_precision(self, symbol: str, amount: float) -> str:
+        return "100.0"
+
+    def price_to_precision(self, symbol: str, price: float) -> str:
+        return f"{price:.6f}"
+
+    async def create_market_order(
+        self,
+        symbol: str,
+        side: str,
+        amount: float,
+        params: dict,  # type: ignore[type-arg]
+    ) -> dict:  # type: ignore[type-arg]
+        if self.entry_template is not None:
+            self.entry = {
+                "id": "entry-1",
+                "clientOrderId": params["clientOrderId"],
+                "amount": 100.0,
+                **self.entry_template,
+            }
+        raise ccxt.RequestTimeout("timed out")
+
+    async def create_stop_market_order(
+        self,
+        symbol: str,
+        side: str,
+        amount: float,
+        trigger_price: float,
+        params: dict,  # type: ignore[type-arg]
+    ) -> dict:  # type: ignore[type-arg]
+        if self.stop_fails:
+            raise ccxt.ExchangeError("stop rejected")
+        stop = {
+            "id": f"stop-{len(self.stops) + 1}",
+            "clientOrderId": params["clientOrderId"],
+            "status": "open",
+            "filled": 0.0,
+            "amount": amount,
+            "triggerPrice": trigger_price,
+        }
+        self.stops.append(stop)
+        return dict(stop)
+
+    async def cancel_order(
+        self,
+        order_id: str,
+        symbol: str,
+        params: dict | None = None,  # type: ignore[type-arg]
+    ) -> None:
+        self.cancelled.append((order_id, params or {}))
+        if self.entry is not None and order_id == self.entry["id"] and self.after_cancel:
+            self.entry.update(self.after_cancel)
+        for stop in self.stops:
+            if stop["id"] == order_id:
+                stop["status"] = "canceled"
+
+    def _orders(self, params: dict) -> list[dict]:  # type: ignore[type-arg]
+        if params.get("trigger"):
+            return self.stops
+        self.lookups += 1
+        return [self.entry] if self.entry is not None else []
+
+    async def fetch_open_orders(self, symbol: str, params: dict) -> list[dict]:  # type: ignore[type-arg]
+        return [dict(order) for order in self._orders(params) if order["status"] == "open"]
+
+    async def fetch_closed_orders(self, symbol: str, params: dict) -> list[dict]:  # type: ignore[type-arg]
+        return [dict(order) for order in self._orders(params) if order["status"] != "open"]
+
+    async def fetch_order(self, order_id: str, symbol: str) -> dict:  # type: ignore[type-arg]
+        assert self.entry is not None
+        return dict(self.entry)
+
+    async def fetch_my_trades(self, symbol: str, **kwargs: object) -> list:  # type: ignore[type-arg]
+        return []
+
+
+@patch("schurfer_execution.orders.fetch_positions", AsyncMock(return_value=([], set())))
+@patch(
+    "schurfer_execution.orders.fetch_margin_balance",
+    AsyncMock(return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}]),
+)
+class TestUnknownEntrySubmission:
+    """docs/engineering/live-entry-failure-paths-design-v1.md, section 3."""
+
+    async def _place(
+        self, venue: _UnknownEntryVenue, **patches: AsyncMock
+    ) -> tuple[dict, dict[str, AsyncMock], WorkerReadinessGate]:  # type: ignore[type-arg]
+        events: list[str] = []
+        unknown = AsyncMock(side_effect=lambda *a, **k: events.append("unknown"))
+        mocks = {
+            "create_attempt": AsyncMock(return_value=5),
+            "mark_submission_unknown": unknown,
+            "mark_accepted": AsyncMock(),
+            "mark_completed": AsyncMock(),
+            "mark_failed": AsyncMock(),
+            "complete_open": AsyncMock(return_value=77),
+            "notify_alert": AsyncMock(return_value=True),
+            **patches,
+        }
+        original_orders = venue._orders
+
+        def orders(params: dict) -> list[dict]:  # type: ignore[type-arg]
+            events.append("lookup")
+            return original_orders(params)
+
+        venue._orders = orders  # type: ignore[method-assign]
+        gate = _open_gate()
+        with (
+            patch(
+                "schurfer_execution.orders.order_attempts.create_attempt", mocks["create_attempt"]
+            ),
+            patch(
+                "schurfer_execution.orders.order_attempts.mark_submission_unknown",
+                mocks["mark_submission_unknown"],
+            ),
+            patch("schurfer_execution.orders.order_attempts.mark_accepted", mocks["mark_accepted"]),
+            patch(
+                "schurfer_execution.orders.order_attempts.mark_completed", mocks["mark_completed"]
+            ),
+            patch("schurfer_execution.orders.order_attempts.mark_failed", mocks["mark_failed"]),
+            patch("schurfer_execution.orders.journal.complete_open", mocks["complete_open"]),
+            patch("schurfer_execution.orders.notify.notify_alert", mocks["notify_alert"]),
+            patch(
+                "schurfer_execution.orders.notify.credentials", MagicMock(return_value=("t", "c"))
+            ),
+        ):
+            result = await place_order(
+                **_kwargs(
+                    exchanges={"bingx": venue},
+                    cfg=MagicMock(db_url="postgresql://x"),
+                    worker_gate=gate,
+                )
+            )
+        mocks["events"] = events  # type: ignore[assignment]
+        return result, mocks, gate
+
+    async def test_found_filled_continues_with_stop_and_journal(self) -> None:
+        venue = _UnknownEntryVenue({"status": "closed", "filled": 100.0, "average": 1.5})
+
+        result, mocks, gate = await self._place(venue)
+
+        assert result["allowed"] and result["trade_id"] == 77
+        assert mocks["events"][0] == "unknown"  # durable before the first lookup
+        mocks["mark_accepted"].assert_awaited_with("postgresql://x", 5, order_id="entry-1")
+        ((stop),) = venue.stops
+        assert stop["clientOrderId"].endswith("s1") and stop["amount"] == 100.0
+        assert mocks["complete_open"].await_args.kwargs["entry_price"] == 1.5
+        # The attempt is resolved; reconciliation's next scan lifts this block.
+        assert gate.get_reasons() == ["submission_unknown"]
+
+    async def test_nothing_found_stays_unknown_after_every_lookup(self) -> None:
+        venue = _UnknownEntryVenue(None)
+
+        result, mocks, gate = await self._place(venue)
+
+        assert not result["allowed"]
+        assert "submission_unknown" in result["reason"] and "not found" in result["reason"]
+        assert mocks["events"][0] == "unknown"
+        assert venue.lookups == len(entry_recovery.ENTRY_LOOKUP_AT_SECONDS) * 2
+        mocks["mark_submission_unknown"].assert_awaited_once()
+        assert venue.stops == [] and not mocks["complete_open"].await_count
+        assert gate.get_reasons() == ["submission_unknown"]
+
+    async def test_found_with_no_fill_is_no_position(self) -> None:
+        venue = _UnknownEntryVenue({"status": "canceled", "filled": 0.0, "average": None})
+
+        result, mocks, _gate = await self._place(venue)
+
+        assert not result["allowed"]
+        assert "no fill" in result["reason"]
+        mocks["mark_failed"].assert_awaited_once()
+        assert venue.stops == [] and not mocks["complete_open"].await_count
+
+    async def _place_and_flatten(
+        self, venue: _UnknownEntryVenue
+    ) -> tuple[dict, dict[str, AsyncMock], AsyncMock]:  # type: ignore[type-arg]
+        flatten = AsyncMock(return_value={"allowed": False, "reason": "flattened"})
+        with patch("schurfer_execution.orders.protective_stop.flatten_after_stop_failure", flatten):
+            result, mocks, _gate = await self._place(venue)
+        return result, mocks, flatten
+
+    async def test_partial_fill_on_an_active_entry_is_protected_then_flattened(self) -> None:
+        venue = _UnknownEntryVenue(
+            {"status": "open", "filled": 40.0, "average": 1.5},
+            after_cancel={"status": "canceled"},
+        )
+
+        result, mocks, flatten = await self._place_and_flatten(venue)
+
+        assert result == {"allowed": False, "reason": "flattened"}
+        ((stop),) = venue.stops
+        assert stop["clientOrderId"].endswith("s1") and stop["amount"] == 40.0
+        context = flatten.await_args.kwargs["context"]
+        assert context.filled_amount == 40.0
+        assert context.task_reason == "late_fill_flattened"
+        # Only the entry is cancelled here; the task cancels every stop it knows.
+        assert venue.cancelled == [("entry-1", {})]
+        mocks["mark_accepted"].assert_awaited_with("postgresql://x", 5, order_id="entry-1")
+        assert not mocks["complete_open"].await_count
+
+    async def test_rest_filled_after_the_cancel_is_flattened_at_the_final_amount(self) -> None:
+        venue = _UnknownEntryVenue(
+            {"status": "open", "filled": 40.0, "average": 1.5},
+            after_cancel={"status": "closed", "filled": 100.0},
+        )
+
+        result, mocks, flatten = await self._place_and_flatten(venue)
+
+        assert result["reason"] == "flattened"
+        assert flatten.await_args.kwargs["context"].filled_amount == 100.0
+        assert [stop["amount"] for stop in venue.stops] == [40.0]
+        assert not mocks["complete_open"].await_count
+
+    async def test_a_stop_that_fired_while_the_rest_was_cancelled_is_never_protection(
+        self,
+    ) -> None:
+        """Review: the stop closed 20 of the 40 and ended. Nothing is journalled as
+        a protected open; the task counts the stop's fill and closes the rest."""
+        venue = _UnknownEntryVenue(
+            {"status": "open", "filled": 40.0, "average": 1.5},
+            after_cancel={"status": "canceled"},
+        )
+        cancel = venue.cancel_order
+
+        async def cancel_and_fire(order_id: str, symbol: str, params: dict | None = None) -> None:  # type: ignore[type-arg]
+            await cancel(order_id, symbol, params)
+            venue.stops[0].update(status="canceled", filled=20.0)
+
+        venue.cancel_order = cancel_and_fire  # type: ignore[method-assign]
+
+        result, mocks, flatten = await self._place_and_flatten(venue)
+
+        assert result["reason"] == "flattened"
+        assert flatten.await_args.kwargs["context"].filled_amount == 40.0
+        assert not mocks["complete_open"].await_count
+
+    async def test_fill_growing_while_the_cancel_is_unconfirmed_is_covered_as_it_grows(
+        self,
+    ) -> None:
+        """Review: 40 filled, then 100, and the order stays active. Each increment
+        gets its own stop, and the report states the coverage of the latest view."""
+        venue = _UnknownEntryVenue(
+            {"status": "open", "filled": 40.0, "average": 1.5},
+            after_cancel={"filled": 100.0},
+        )
+
+        result, mocks, _gate = await self._place(venue)
+
+        assert not result["allowed"]
+        assert [stop["amount"] for stop in venue.stops] == [40.0, 60.0]
+        assert [stop["clientOrderId"][-2:] for stop in venue.stops] == ["s1", "s2"]
+        assert "100.0 of the 100.0 filled is still held, all of it covered" in result["reason"]
+        mocks["mark_accepted"].assert_awaited_once_with("postgresql://x", 5, order_id="entry-1")
+        mocks["notify_alert"].assert_awaited_once()
+        assert not mocks["complete_open"].await_count
+
+    async def test_a_stop_that_fired_while_the_cancel_is_unconfirmed_is_replaced(
+        self,
+    ) -> None:
+        """Review of 3630996: 40 filled and its stop placed; the cancel is not
+        confirmed, the stop closes 20 and ends. The 20 still held get a stop of
+        their own, and the report counts only the resting one."""
+        venue = _UnknownEntryVenue({"status": "open", "filled": 40.0, "average": 1.5})
+        cancel = venue.cancel_order
+
+        async def cancel_and_fire(order_id: str, symbol: str, params: dict | None = None) -> None:  # type: ignore[type-arg]
+            await cancel(order_id, symbol, params)
+            venue.stops[0].update(status="canceled", filled=20.0)
+
+        venue.cancel_order = cancel_and_fire  # type: ignore[method-assign]
+
+        result, mocks, gate = await self._place(venue)
+
+        assert not result["allowed"]
+        assert [stop["amount"] for stop in venue.stops] == [40.0, 20.0]
+        assert [stop["status"] for stop in venue.stops] == ["canceled", "open"]
+        assert "20.0 of the 40.0 filled is still held, all of it covered" in result["reason"]
+        mocks["mark_accepted"].assert_awaited_once_with("postgresql://x", 5, order_id="entry-1")
+        assert not mocks["complete_open"].await_count
+        assert gate.get_reasons() == ["submission_unknown"]
+
+    async def test_stops_that_cannot_be_read_leave_the_coverage_unknown(self) -> None:
+        """A stop placed but missing from the listing proves nothing: only the fill
+        beyond the last look gets a new stop, and the report says it is unknown."""
+        venue = _UnknownEntryVenue(
+            {"status": "open", "filled": 40.0, "average": 1.5},
+            after_cancel={"filled": 100.0},
+        )
+        orders = venue._orders
+
+        def without_stops(params: dict) -> list[dict]:  # type: ignore[type-arg]
+            return [] if params.get("trigger") else orders(params)
+
+        venue._orders = without_stops  # type: ignore[method-assign]
+
+        result, _mocks, _gate = await self._place(venue)
+
+        assert [stop["amount"] for stop in venue.stops] == [40.0, 60.0]
+        assert "could not be read" in result["reason"]
+        assert "UNPROTECTED is unknown" in result["reason"]
+
+    async def test_unconfirmed_cancel_reports_the_uncovered_part(self) -> None:
+        venue = _UnknownEntryVenue(
+            {"status": "open", "filled": 40.0, "average": 1.5},
+            after_cancel={"filled": 100.0},
+            stop_fails=True,
+        )
+
+        result, _mocks, gate = await self._place(venue)
+
+        assert "100.0 UNPROTECTED: 100.0 of the 100.0 filled is still held" in result["reason"]
+        assert venue.stops == []
+        assert gate.get_reasons() == ["submission_unknown"]
+
+    async def test_partial_fill_that_cannot_be_protected_is_flattened_once_settled(
+        self,
+    ) -> None:
+        venue = _UnknownEntryVenue(
+            {"status": "open", "filled": 40.0, "average": 1.5},
+            after_cancel={"status": "canceled"},
+            stop_fails=True,
+        )
+
+        result, mocks, flatten = await self._place_and_flatten(venue)
+
+        assert result == {"allowed": False, "reason": "flattened"}
+        assert flatten.await_args.kwargs["context"].filled_amount == 40.0
+        assert venue.cancelled == [("entry-1", {})]
+        assert not mocks["complete_open"].await_count

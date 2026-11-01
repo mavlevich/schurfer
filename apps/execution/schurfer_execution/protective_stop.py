@@ -73,27 +73,13 @@ def _stop_state(order: dict[str, Any]) -> str:
 class StopPlacement:
     order: dict[str, Any] | None
     client_order_id: str
+    sequence: int = 1
     requests: int = 0
     errors: list[str] = field(default_factory=list)
 
     @property
     def error(self) -> str:
         return self.errors[-1] if self.errors else "no stop confirmed"
-
-
-async def _look_up(
-    ex: Any, symbol: str, client_order_id: str, timeout: float
-) -> dict[str, Any] | None:
-    """The order by its id, or None when it is not found or the lookup fails:
-    either way its outcome stays unknown and the id is reused."""
-    try:
-        return await asyncio.wait_for(
-            exchange_orders.find_by_client_order_id(ex, symbol, client_order_id),
-            timeout=max(timeout, 0.1),
-        )
-    except Exception as exc:
-        log.warning("execution.order_lookup_failed", client_order_id=client_order_id, err=str(exc))
-        return None
 
 
 async def place_protective_stop(
@@ -104,13 +90,15 @@ async def place_protective_stop(
     amount: float,
     trigger_price: float,
     entry_client_order_id: str,
+    first_sequence: int = 1,
 ) -> StopPlacement:
-    """``order`` is set only for a stop resting with no fill."""
+    """``order`` is set only for a stop resting with no fill. A stop that
+    replaces an earlier one starts after that one's sequence."""
     started = time.monotonic()
-    sequence = 1
     placement = StopPlacement(
         order=None,
-        client_order_id=order_ids.stop_client_order_id(entry_client_order_id, sequence),
+        client_order_id=order_ids.stop_client_order_id(entry_client_order_id, first_sequence),
+        sequence=first_sequence,
     )
     unknown = False
 
@@ -118,9 +106,10 @@ async def place_protective_stop(
         return STOP_DEADLINE_SECONDS - (time.monotonic() - started)
 
     def next_id() -> None:
-        nonlocal sequence
-        sequence += 1
-        placement.client_order_id = order_ids.stop_client_order_id(entry_client_order_id, sequence)
+        placement.sequence += 1
+        placement.client_order_id = order_ids.stop_client_order_id(
+            entry_client_order_id, placement.sequence
+        )
 
     def settle(order: dict[str, Any]) -> bool:
         """True when the answer ends the placement: protected, or past saving."""
@@ -145,7 +134,9 @@ async def place_protective_stop(
             break
         resending_unknown = False
         if unknown:
-            found = await _look_up(ex, symbol, placement.client_order_id, remaining())
+            found = await exchange_orders.look_up(
+                ex, symbol, placement.client_order_id, remaining()
+            )
             if found is not None and settle(found):
                 return placement
             unknown = found is None
@@ -195,7 +186,9 @@ async def place_protective_stop(
     if unknown:
         # The last request's outcome is still unknown: one more look before
         # giving up, so a stop that was created is never mistaken for none.
-        found = await _look_up(ex, symbol, placement.client_order_id, max(remaining(), 1.0))
+        found = await exchange_orders.look_up(
+            ex, symbol, placement.client_order_id, max(remaining(), 1.0)
+        )
         if found is not None:
             settle(found)
     return placement
@@ -216,6 +209,13 @@ class StopFailureContext:
     requested_amount: float
     filled_amount: float | None
     stop_error: str
+    task_reason: str = emergency_close.REASON_STOP_PLACEMENT_FAILED
+
+    @property
+    def what(self) -> str:
+        if self.task_reason == emergency_close.REASON_LATE_FILL_FLATTENED:
+            return "late entry fill flattened"
+        return "stop-loss placement failed"
 
 
 async def _entry_fill(ex: Any, context: StopFailureContext) -> Decimal | None:
@@ -226,7 +226,7 @@ async def _entry_fill(ex: Any, context: StopFailureContext) -> Decimal | None:
     """
     if context.filled_amount is not None and context.filled_amount > 0:
         return Decimal(str(context.filled_amount))
-    entry = await _look_up(
+    entry = await exchange_orders.look_up(
         ex, context.symbol, context.entry_client_order_id, STOP_REQUEST_TIMEOUT_SECONDS
     )
     if entry is None or not exchange_orders.is_terminal(entry):
@@ -289,7 +289,7 @@ async def flatten_after_stop_failure(
             )
 
     text = (
-        f"Stop-loss placement FAILED for {context.base} on {context.exchange} "
+        f"{context.what.capitalize()} for {context.base} on {context.exchange} "
         f"({context.stop_error}). {outcome}."
     )
     if not force_closed:
@@ -307,15 +307,15 @@ async def flatten_after_stop_failure(
         force_closed=force_closed,
     )
     if force_closed:
-        reason = f"stop-loss placement failed, position force-closed: {context.stop_error}"
+        reason = f"{context.what}, position force-closed: {context.stop_error}"
     elif close_sent:
         reason = (
-            f"stop-loss placement failed, close sent but not confirmed: position may be "
+            f"{context.what}, close sent but not confirmed: position may be "
             f"UNPROTECTED on {context.exchange}:{context.base}: {context.stop_error}"
         )
     else:
         reason = (
-            f"stop-loss placement failed AND no close sent: position UNPROTECTED on "
+            f"{context.what} AND no close sent: position UNPROTECTED on "
             f"{context.exchange}:{context.base}: {context.stop_error}"
         )
     return {
@@ -360,7 +360,7 @@ async def _flatten_through_task(
                 market_type=context.market_type,
                 side=context.side,
                 owned_quantity=owned,
-                reason=emergency_close.REASON_STOP_PLACEMENT_FAILED,
+                reason=context.task_reason,
             )
         )
     except emergency_close.TaskConflictError as exc:
@@ -413,7 +413,9 @@ async def _close_once_without_database(
         return False, False, f"the one emergency close without a database ALSO failed ({exc})"
     if client_order_id is not None and not exchange_orders.is_terminal(order):
         order = (
-            await _look_up(ex, context.symbol, client_order_id, STOP_REQUEST_TIMEOUT_SECONDS)
+            await exchange_orders.look_up(
+                ex, context.symbol, client_order_id, STOP_REQUEST_TIMEOUT_SECONDS
+            )
             or order
         )
     status, filled, _error = exchange_orders.attempt_state_from_order(order)
