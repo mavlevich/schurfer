@@ -129,6 +129,8 @@ HELD_FUNDING = [
     _funding("f9", qty="100", at=SETTLEMENTS[3], fee="-0.02"),
 ]
 LATER = T_EXIT + timedelta(minutes=10)
+HOUR = timedelta(hours=1)
+_PAST_THE_WINDOW = object()
 
 
 def _settle(
@@ -138,15 +140,21 @@ def _settle(
     orders: dict[str, lc.OrderState] | None = None,
     neighbours: lc.Neighbours = NO_NEIGHBOURS,
     settlements: list[datetime] | None = None,
+    published_to: Any = _PAST_THE_WINDOW,
     now: datetime = LATER,
     open_position: bool = False,
 ) -> lc.CostResult:
+    listed = SETTLEMENTS if settlements is None else settlements
     return lc.settle(
         facts or _facts(),
         executions,
-        SETTLEMENTS if settlements is None else settlements,
+        listed,
         ORDERS if orders is None else orders,
         neighbours,
+        # By default the history has published a settlement after every checked range.
+        published_to=max(listed, default=None)
+        if published_to is _PAST_THE_WINDOW
+        else published_to,
         now=now,
         open_position=open_position,
     )
@@ -514,12 +522,95 @@ def test_no_settlement_held_is_a_confirmed_zero_after_5_minutes() -> None:
 
 
 def test_funding_row_matching_no_listed_settlement_needs_an_operator() -> None:
-    result = _settle(
-        [_entry(), *HELD_FUNDING, _exit()],
-        settlements=[SETTLEMENTS[2]],
-    )
+    odd = _funding("f830", qty="100", at=SETTLEMENTS[2] + timedelta(minutes=30), fee="0.01")
+    result = _settle([_entry(), *HELD_FUNDING, odd, _exit()])
 
     assert result.status == lc.STATUS_INCOMPLETE
+    assert "matches no listed settlement" in (result.error or "")
+
+
+# --- Settlements the funding history does not list yet ---------------------------
+
+PUBLISHED_TO_8 = [at for at in SETTLEMENTS if at <= SETTLEMENTS[2]]
+
+
+def test_a_held_settlement_not_published_yet_and_without_a_row_is_never_a_zero() -> None:
+    """The #547 gap: 09:00 is listed neither in the history nor as a row, so the old
+    code checked only 08:00 and settled complete without the 09:00 funding."""
+    result = _settle(
+        [_entry(), HELD_FUNDING[0], _exit()],
+        settlements=PUBLISHED_TO_8,
+        published_to=SETTLEMENTS[2],
+    )
+
+    assert result.status == lc.STATUS_PENDING
+    assert "published to" in (result.error or "")
+
+
+def test_an_interval_back_from_1_hour_to_4_hours_proves_nothing() -> None:
+    """The review's case: history published to 08:00, the 09:00 settlement of an hourly
+    interval not listed anywhere yet, and Bybit back on 4 hours with the next at 12:00.
+    12:00 - 08:00 equals the current interval, yet 09:00 was charged."""
+    result = _settle(
+        [
+            _entry(at=SETTLEMENTS[2] + timedelta(minutes=30)),
+            _exit(at=SETTLEMENTS[3] + timedelta(minutes=30)),
+        ],
+        settlements=PUBLISHED_TO_8,
+        published_to=SETTLEMENTS[2],
+        now=SETTLEMENTS[3] + timedelta(minutes=40),
+    )
+
+    assert result.status == lc.STATUS_PENDING
+    assert result.funding_usd is None
+
+
+def test_a_row_listed_before_its_settlement_is_published_waits_instead_of_an_operator() -> None:
+    result = _settle(
+        [_entry(), *HELD_FUNDING, _exit()],
+        settlements=PUBLISHED_TO_8,
+        published_to=SETTLEMENTS[2],
+    )
+
+    assert result.status == lc.STATUS_PENDING
+
+
+def test_a_history_listing_nothing_is_never_a_zero() -> None:
+    result = _settle([_entry(), *HELD_FUNDING, _exit()], published_to=None)
+
+    assert result.status == lc.STATUS_PENDING
+    assert "lists no settlement" in (result.error or "")
+
+
+def test_a_settlement_exactly_5_s_after_the_exit_is_checked() -> None:
+    """The range's end is included: exit at 09:59:55, settlement at 10:00:00."""
+    exit_at = SETTLEMENTS[4] - lc.BOUNDARY
+    hold = [_entry(), *HELD_FUNDING, _exit(at=exit_at)]
+    now = exit_at + timedelta(minutes=10)
+
+    waiting = _settle(hold, settlements=SETTLEMENTS[:4], published_to=SETTLEMENTS[3], now=now)
+    assert waiting.status == lc.STATUS_PENDING
+    assert "published to" in (waiting.error or "")
+
+    # Published: the exit 5 s before it is a boundary with no row, never a zero.
+    checked = _settle(hold, settlements=SETTLEMENTS[:5], published_to=SETTLEMENTS[4], now=now)
+    assert checked.status == lc.STATUS_INCOMPLETE
+    assert "within 5 s of the settlement" in (checked.error or "")
+
+
+def test_a_settlement_exactly_5_s_before_the_entry_must_be_in_the_list() -> None:
+    """The range's start is included: the history listed 07:00 before the list was
+    read, the list lacks it, so the two reads disagree and nothing settles."""
+    entry_at = SETTLEMENTS[1] + lc.BOUNDARY
+    result = _settle(
+        [_entry(at=entry_at), _exit(at=SETTLEMENTS[1] + timedelta(minutes=30))],
+        settlements=[],
+        published_to=SETTLEMENTS[1],
+        now=SETTLEMENTS[1] + timedelta(minutes=40),
+    )
+
+    assert result.status == lc.STATUS_PENDING
+    assert "listed after the window was read" in (result.error or "")
 
 
 def test_fee_in_another_currency_needs_an_operator() -> None:
@@ -651,6 +742,44 @@ async def test_settlements_page_back_from_the_end() -> None:
     found = await lc.BybitCostSource(exchange).settlements("BTCUSDT", start, hours[-1])
 
     assert found == hours
+
+
+async def test_published_to_is_the_newest_listed_settlement() -> None:
+    exchange = type("Ex", (), {})()
+    exchange.publicGetV5MarketFundingHistory = AsyncMock(
+        return_value=_ok([{"fundingRateTimestamp": str(int(SETTLEMENTS[3].timestamp() * 1000))}])
+    )
+    assert await lc.BybitCostSource(exchange).published_to("BTCUSDT") == SETTLEMENTS[3]
+    exchange.publicGetV5MarketFundingHistory.assert_awaited_once_with(
+        {"category": "linear", "symbol": "BTCUSDT", "limit": 1}
+    )
+
+    exchange.publicGetV5MarketFundingHistory = AsyncMock(return_value=_ok([]))
+    assert await lc.BybitCostSource(exchange).published_to("BTCUSDT") is None
+
+
+async def test_read_takes_the_newest_published_before_the_settlement_list() -> None:
+    calls: list[str] = []
+
+    class Source:
+        async def executions(self, symbol: str, start: datetime, end: datetime) -> list[Any]:
+            return [_entry(), *HELD_FUNDING, _exit()]
+
+        async def published_to(self, symbol: str) -> datetime | None:
+            calls.append("published_to")
+            return SETTLEMENTS[5]
+
+        async def settlements(self, symbol: str, start: datetime, end: datetime) -> list[datetime]:
+            calls.append("settlements")
+            return [at for at in SETTLEMENTS if start <= at <= end]
+
+        async def order(self, symbol: str, order_id: str) -> lc.OrderState | None:
+            return ORDERS.get(order_id)
+
+    result = await lc.read(Source(), _facts(), NO_NEIGHBOURS, now=LATER)
+
+    assert calls == ["published_to", "settlements"]
+    assert result.status == lc.STATUS_COMPLETE, result.error
 
 
 async def test_order_state_from_history_then_open_orders() -> None:
