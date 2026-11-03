@@ -24,6 +24,13 @@ when the trade is its one candidate owner on the one-way position. Funding is a
 confirmed zero only once the settlement list is read past the last exit plus 5 s and
 5 minutes have passed.
 
+The funding history lists a settlement only once it is published, so a settlement it
+does not list yet would never be checked. Nothing about Bybit's schedule proves the
+list complete: a dynamic interval can add a settlement and return to a longer interval
+before either history lists it. So the list counts as complete over the checked range
+only once the history has published a settlement at or after its end
+(``_check_published``); until then the trade stays pending.
+
 Sign conventions (``execFee`` positive is paid, for fills and funding alike) are an
 assumption until the LIVE_PROBE testnet run confirms them; they live in ``_cost``.
 """
@@ -192,19 +199,28 @@ def settle(
     orders: dict[str, OrderState],
     neighbours: Neighbours,
     *,
+    published_to: datetime | None,
     now: datetime,
     open_position: bool = False,
 ) -> CostResult:
     """Attribute the listed executions to the trade and price its costs.
 
     ``executions`` cover the read window, ``settlements`` the instrument's funding
-    times over it, and ``orders`` the state of every order the trade owns rows of or
-    the journal links to it. For an open position (section 6) the exits need not add
+    times over it, ``published_to`` the newest settlement the funding history listed
+    before that (None: none), and ``orders`` the state of every order the trade owns
+    rows of or the journal links to it. For an open position (section 6) the exits need not add
     up yet, funding runs to ``now``, and the figures are the costs paid so far.
     """
     try:
         return _settle(
-            facts, executions, settlements, orders, neighbours, now=now, open_position=open_position
+            facts,
+            executions,
+            settlements,
+            orders,
+            neighbours,
+            published_to=published_to,
+            now=now,
+            open_position=open_position,
         )
     except _StopError as stop:
         return CostResult(status=stop.status, error=stop.error)
@@ -217,6 +233,7 @@ def _settle(
     orders: dict[str, OrderState],
     neighbours: Neighbours,
     *,
+    published_to: datetime | None,
     now: datetime,
     open_position: bool,
 ) -> CostResult:
@@ -248,6 +265,9 @@ def _settle(
             raise _incomplete(f"execution {row.exec_id} fee in {row.fee_currency}")
     if not open_position and now < last_exit + SETTLE_DELAY:
         raise _pending("waiting 5 minutes after the last exit for funding")
+    _check_published(
+        published_to, settlements, start=first_entry - BOUNDARY, end=last_exit + BOUNDARY
+    )
 
     funding_rows = _match_funding(
         facts,
@@ -405,6 +425,30 @@ def _check_orders(
             )
 
 
+def _check_published(
+    published_to: datetime | None,
+    settlements: list[datetime],
+    *,
+    start: datetime,
+    end: datetime,
+) -> None:
+    """Every settlement in [start, end], both included, must be in ``settlements``.
+
+    The history is complete up to the newest settlement it lists, and only up to it.
+    The current interval or the next settlement time proves nothing about the time
+    since: Bybit may settle on a shorter interval and return to a longer one before
+    either history lists that settlement."""
+    if published_to is None:
+        raise _pending("the funding history lists no settlement yet")
+    if start <= published_to <= end and published_to not in settlements:
+        raise _pending(f"settlement {published_to.isoformat()} listed after the window was read")
+    if published_to < end:
+        raise _pending(
+            f"funding history published to {published_to.isoformat()}, the checked range "
+            f"ends {end.isoformat()}"
+        )
+
+
 def _match_funding(
     facts: TradeFacts,
     entry_rows: list[Execution],
@@ -526,6 +570,8 @@ class CostSource(Protocol):
     async def executions(self, symbol: str, start: datetime, end: datetime) -> list[Execution]: ...
 
     async def settlements(self, symbol: str, start: datetime, end: datetime) -> list[datetime]: ...
+
+    async def published_to(self, symbol: str) -> datetime | None: ...
 
     async def order(self, symbol: str, order_id: str) -> OrderState | None: ...
 
@@ -658,6 +704,16 @@ class BybitCostSource:
                 return sorted(found)
         raise RuntimeError("funding history did not end")
 
+    async def published_to(self, symbol: str) -> datetime | None:
+        """The newest settlement the funding history lists; None when it lists none."""
+        result = _result(
+            await self.exchange.publicGetV5MarketFundingHistory(
+                {"category": "linear", "symbol": symbol, "limit": 1}
+            )
+        )
+        listed = [_from_millis(row["fundingRateTimestamp"]) for row in result.get("list") or []]
+        return max(listed) if listed else None
+
     async def order(self, symbol: str, order_id: str) -> OrderState | None:
         """The order from Bybit's order history, then its open orders; None when
         neither lists it (not known yet, never "absent")."""
@@ -690,11 +746,14 @@ async def read(
     The window runs from a minute before the entry attempt was written (no fill comes
     before the order was sent) to now, which the worker reaches only 5 minutes after
     the exit, so it always covers the last exit plus 5 s. It bounds the download only.
+    The newest published settlement is read before the settlement list, so the list
+    holds every settlement up to it.
     """
     end = now
     start = facts.sent_at - WINDOW_MARGIN
     symbol = facts.native_market_id
     executions = await source.executions(symbol, start, end)
+    published_to = await source.published_to(symbol)
     settlements = await source.settlements(symbol, start, end)
     wanted = set(facts.order_ids)
     wanted.update(
@@ -710,5 +769,12 @@ async def read(
         if state is not None:
             orders[order_id] = state
     return settle(
-        facts, executions, settlements, orders, neighbours, now=now, open_position=open_position
+        facts,
+        executions,
+        settlements,
+        orders,
+        neighbours,
+        published_to=published_to,
+        now=now,
+        open_position=open_position,
     )

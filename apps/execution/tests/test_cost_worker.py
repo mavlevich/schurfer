@@ -98,10 +98,21 @@ def _round_trip(entry_cid: str = ENTRY, prefix: str = "") -> list[lc.Execution]:
     ]
 
 
+# The history has published the settlement after every test trade's exit.
+_PUBLISHED_TO = T_SETTLEMENT + timedelta(hours=8)
+
+
 class FakeSource:
-    def __init__(self, executions: list[lc.Execution], *, fail: bool = False) -> None:
+    def __init__(
+        self,
+        executions: list[lc.Execution],
+        *,
+        fail: bool = False,
+        published_to: datetime | None = _PUBLISHED_TO,
+    ) -> None:
         self.rows = executions
         self.fail = fail
+        self.newest = published_to
 
     async def executions(self, symbol: str, start: datetime, end: datetime) -> list[lc.Execution]:
         if self.fail:
@@ -109,7 +120,10 @@ class FakeSource:
         return [row for row in self.rows if start <= row.executed_at <= end]
 
     async def settlements(self, symbol: str, start: datetime, end: datetime) -> list[datetime]:
-        return [at for at in (T_SETTLEMENT,) if start <= at <= end]
+        return [at for at in (T_SETTLEMENT, _PUBLISHED_TO) if start <= at <= end]
+
+    async def published_to(self, symbol: str) -> datetime | None:
+        return self.newest
 
     async def order(self, symbol: str, order_id: str) -> lc.OrderState | None:
         filled = sum((row.quantity for row in self.rows if row.order_id == order_id), Decimal(0))
@@ -233,6 +247,20 @@ async def test_exit_rows_short_by_one_become_incomplete_at_the_deadline() -> Non
     late, _ = _worker(store, FakeSource(rows), now=T_EXIT + timedelta(hours=25))
     with patch("schurfer_execution.cost_worker.notify.notify_alert", AsyncMock()):
         assert await late.settle(5) == lc.STATUS_INCOMPLETE
+
+
+async def test_a_history_not_published_past_the_exit_becomes_incomplete_at_the_deadline() -> None:
+    """The history never lists a settlement after the exit: never a confirmed zero."""
+    store = FakeStore(cw.PendingTrade(_facts(), NO_NEIGHBOURS))
+    source = FakeSource(_round_trip(), published_to=T_SETTLEMENT)
+    worker, _ = _worker(store, source, now=T_EXIT + timedelta(hours=2))
+    assert await worker.settle(5) == lc.STATUS_PENDING
+
+    late, _ = _worker(store, source, now=T_EXIT + timedelta(hours=25))
+    with patch("schurfer_execution.cost_worker.notify.notify_alert", AsyncMock()):
+        assert await late.settle(5) == lc.STATUS_INCOMPLETE
+    assert "published to" in store.incomplete[0]
+    assert store.settled == []
 
 
 class FailingStore(FakeStore):
@@ -415,6 +443,7 @@ async def test_settlement_on_postgres_unblocks_entries_and_is_written_once() -> 
             [T_SETTLEMENT],
             _BOTH_ORDERS,
             NO_NEIGHBOURS,
+            published_to=_PUBLISHED_TO,
             now=now,
         )
         assert result.status == lc.STATUS_COMPLETE, result.error
@@ -472,6 +501,7 @@ async def test_an_execution_claimed_by_another_trade_is_never_counted_twice() ->
             [T_SETTLEMENT],
             _BOTH_ORDERS,
             NO_NEIGHBOURS,
+            published_to=_PUBLISHED_TO,
             now=now,
         )
         assert result.status == lc.STATUS_COMPLETE, result.error

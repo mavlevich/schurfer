@@ -109,6 +109,8 @@ So funding is matched to settlements, never cut by a time rule alone.
 - **Funding is a confirmed zero** only when:
   - the settlement list has been read past the last exit fill plus 5 s, so a settlement
     just after the exit is in it;
+  - the funding history has published a settlement at or after the end of the checked
+    range (see "Fixed after #547");
   - no checked settlement is held or at the boundary;
   - at least 5 minutes have passed since the last exit fill.
 
@@ -327,3 +329,33 @@ What the code does where the text above left a choice, or differs from it:
 - **A failed write** of the figures is retried like a failed read and needs an
   operator after the same 24 h. An execution already attributed to another trade sends
   the trade to an operator at once.
+
+## Fixed after #547
+
+The funding history lists a settlement only once it is published. A settlement inside
+the holding period that it did not list yet, and whose row the execution list did not
+list either, was never checked, and the trade settled `complete` without its funding.
+Before #547 is deployed:
+
+- Before the settlement list, the worker reads the newest settlement the funding
+  history lists, `T_last` (`/v5/market/funding/history`, limit 1).
+- The checked range is from 5 s before the first entry fill to 5 s after the last exit
+  fill, both included. The list counts as complete over it only when `T_last` is at or
+  after its end. A `T_last` inside the range that the list read after it lacks means
+  the two reads disagree.
+- Otherwise the trade stays `pending`; after the 24 h deadline it is `incomplete`. A
+  funding row at a settlement not published yet is then `pending`, not `incomplete`.
+- Nothing about the schedule is used as proof. Bybit's dynamic settlement frequency can
+  settle on a shorter interval and return to a longer one before either history lists
+  that settlement: history at 08:00, an hourly 09:00 not listed, then back to 4 hours
+  with the next at 12:00. `12:00 - 08:00` equals the current interval, yet 09:00 was
+  charged. A first version of this fix took that equality as proof; review found the
+  case.
+
+**The cost.** A closed live trade settles only once the history has published the
+first settlement after its exit, up to one funding interval later (8 hours at most
+today). PnL readiness blocks entries until then. A faster proof would need a schedule
+observed while the position was held, not one inferred afterwards.
+
+Assumed: Bybit publishes settlements in time order, so a listed `T_last` means every
+earlier settlement is listed.
