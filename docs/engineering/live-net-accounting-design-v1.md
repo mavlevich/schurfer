@@ -69,7 +69,8 @@ download, and being inside it makes no row the trade's.
     the last exit fill, sets `incomplete`;
   - a row of an unknown order outside that period is not this trade's; foreign positions
     stay reconciliation's.
-- **Fee currency:** every fee must be in USDT, or the costs are `incomplete`.
+- **Fee currency:** every fee and every funding row counted must be in USDT, or the
+  costs are `incomplete`.
 
 ## 3. Funding
 
@@ -88,7 +89,8 @@ So funding is matched to settlements, never cut by a time rule alone.
     row at T must exist, and its `execQty` must equal the quantity held. A missing row
     leaves the trade `pending`; a different quantity sets `incomplete`.
   - **At the boundary:** a fill of the trade within 5 s of T. A row at T whose `execQty`
-    equals the quantity held just before or just after the fill is counted. Anything
+    equals a quantity the trade held within those 5 s (before the first fill there, or
+    after any of them, since one order can fill in several executions) is counted. Anything
     else, including no row, sets `incomplete` for an operator. It is never taken as a
     zero.
   - **Clearly not held:** no row is expected. A row at that T is not this trade's.
@@ -283,3 +285,45 @@ The testnet run of LIVE_PROBE confirms the sign conventions and the funding row 
 - **Gross:** from the executions, without deducting slippage again.
 - **Open-position collector:** in this PR; wired into L by LIVE_PROBE PR 1.
 - **24 h:** the limit of automatic retries; entries are blocked from the close.
+
+## Revised in the code PR
+
+What the code does where the text above left a choice, or differs from it:
+
+- **Read window:** from a minute before the entry attempt was written (no fill comes
+  before the order was sent) to now. The worker reads only 5 minutes after the exit,
+  so the window always covers the last exit plus 5 s; reading to now cannot add a row
+  to the trade, since ownership is by orders.
+- **Orders of the trade:** the journalled ones (entry, `exit_order_id`, close fills,
+  close attempts and the closes of its emergency task), plus every order whose rows
+  carry the derived prefix. Each is read by its order id from Bybit's order history,
+  then its open orders; one not found yet leaves the trade `pending`.
+- **Rows of other types** (ADL, liquidation, delivery) inside the holding period set
+  `incomplete`, like an unknown order's fill.
+- **Other candidates for funding:** journal times only approximate fills, so another
+  trade of ours is a candidate within 60 s of its entry and exit. An entry attempt with
+  no trade yet is a candidate from when it was written until it ended (open-ended while
+  unresolved), and so is an emergency close task with no trade until it was confirmed
+  flat.
+- **A funding row** is matched to a settlement within 5 s; two rows at one settlement,
+  or a row in the checked range that matches no listed settlement, set `incomplete`.
+- **Generation triggers** (migration 0062): `trades` when a non-paper row's status, PnL,
+  exit time, accounting version or status, or setup context changes, or it is inserted
+  closed or deleted; `trade_close_fills` on any change; `fill_resolution_incidents` on
+  insert, delete or a status change. Opening a trade, and updates of other columns, do
+  not move it, so entries are not refused for nothing.
+- **The tracker's journal reads** are one function, `journal.pnl_snapshot`, in one
+  read-only repeatable-read transaction; `realized_pnl_today`,
+  `any_open_trade_close_fills` and `incidents.any_open_incidents` are folded into it.
+- **The open-position collector** (`live_costs.settle(..., open_position=True)`) returns
+  the fees of every fill so far, a partial close included, since those are paid too.
+- **Operator settlement** records gross, fees and funding; net and its percentage
+  follow from them over the entry value (the trade's `size_usd` unless given).
+- **The entry rechecks the lease** before the order is sent: a close during the
+  pre-flight moves the generation, and the entry is refused with its attempt marked
+  failed. The final checks run slowest first, so nothing awaited stands between the
+  last of them and the order: the lease and generation, then the trading switch, then
+  the local worker gate and its generation.
+- **A failed write** of the figures is retried like a failed read and needs an
+  operator after the same 24 h. An execution already attributed to another trade sends
+  the trade to an operator at once.

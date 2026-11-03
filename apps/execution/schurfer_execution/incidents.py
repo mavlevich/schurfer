@@ -80,7 +80,7 @@ SET recovery_notified_at = %s, updated_at = NOW()
 WHERE id = %s AND recovery_notified_at IS NULL AND notified_at IS NOT NULL
 """
 
-_ANY_OPEN = """
+ANY_OPEN_INCIDENTS_SQL = """
 SELECT 1 FROM app.fill_resolution_incidents WHERE status IN ('pending', 'resolving') LIMIT 1
 """
 
@@ -255,21 +255,4 @@ async def has_pending_open(db_url: str, *, exchange: str, base: str) -> bool:
             err=str(exc),
         )
         # Fail closed: if we can't tell, don't risk resolving the close early.
-        return True
-
-
-async def any_open_incidents(db_url: str) -> bool:
-    """True if any incident is still pending/resolving.
-
-    Mirrors journal.any_pending_closes: the pnl tracker must not declare daily PnL
-    fresh while a fill's price (and therefore its PnL impact) is still unknown.
-    """
-    try:
-        aconn = await psycopg.AsyncConnection.connect(db_url)
-        async with aconn, aconn.cursor() as cur:
-            await cur.execute(_ANY_OPEN)
-            return await cur.fetchone() is not None
-    except Exception as exc:
-        log.error("execution.incident.any_open_check_failed", err=str(exc))
-        # Fail closed: an unknown incident state must not report "clear".
         return True

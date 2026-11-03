@@ -11,13 +11,13 @@ import psycopg
 import structlog
 from psycopg.rows import dict_row
 from schurfer_performance import (
-    LEGACY_ACCOUNTING_VERSION,
+    LIVE_EXCHANGE_COSTS_ACCOUNTING_VERSION,
     PAPER_ACCOUNTING_VERSION,
     calculate_performance,
 )
 
 from . import exit as exit_module
-from . import liquidity
+from . import incidents, liquidity
 from .risk import PNL_READY_KEY
 
 log = structlog.get_logger()
@@ -240,6 +240,19 @@ SELECT
     ), 0)
 """
 
+# A closed live trade whose fees and funding are not settled from the exchange:
+# its pnl_usd is an estimate, so entries wait (cost_worker.py).
+_ANY_UNSETTLED_LIVE_COSTS = """
+SELECT 1
+FROM app.trades
+WHERE status = 'closed'
+  AND accounting_version = %s
+  AND accounting_status IN ('pending', 'incomplete')
+LIMIT 1
+"""
+
+_PNL_GENERATION = "SELECT value FROM app.pnl_generation WHERE id = 1"
+
 _REALIZED_PNL_TODAY = """
 SELECT COALESCE(SUM(pnl_usd), 0)
 FROM app.trades
@@ -281,6 +294,11 @@ def accounting_contract(
     slippage_bps term in calculate_performance). entry_slippage_bps is then
     a known 0.0 -- not a missing reading, so accounting still reaches
     "complete".
+
+    A non-paper trade opens as ``live_exchange_costs_v1`` / ``pending``: its fees and
+    funding come from the exchange's executions once it closes (cost_worker.py), and
+    until then it blocks entries (docs/engineering/live-net-accounting-design-v1.md,
+    section 5). Live trades journalled before that stay ``legacy``.
     """
     quality = setup_context.get("market_quality")
     quality_data = quality if isinstance(quality, dict) else {}
@@ -299,8 +317,8 @@ def accounting_contract(
             exit_slippage_bps,
         )
     return (
-        LEGACY_ACCOUNTING_VERSION,
-        "legacy",
+        LIVE_EXCHANGE_COSTS_ACCOUNTING_VERSION,
+        "pending",
         entry_slippage_bps,
         exit_slippage_bps,
     )
@@ -572,22 +590,6 @@ async def record_close_fill_in(
     if aggregate is None or aggregate[0] is None:
         return None
     return float(aggregate[0])
-
-
-async def any_open_trade_close_fills(db_url: str) -> bool:
-    """Whether realized partial PnL is waiting for the terminal close.
-
-    Until the trade is closed with the aggregate VWAP, the ordinary daily-PnL
-    query cannot include those realized legs.  Keeping the readiness lease
-    revoked prevents new entries from being admitted against understated PnL.
-    """
-    try:
-        async with await psycopg.AsyncConnection.connect(db_url) as aconn, aconn.cursor() as cur:
-            await cur.execute(_ANY_OPEN_TRADE_CLOSE_FILLS)
-            return await cur.fetchone() is not None
-    except Exception as exc:
-        log.error("journal.open_trade_close_fills_check_failed", err=str(exc))
-        return True
 
 
 async def aggregate_close_fill_price(db_url: str, *, trade_id: int) -> float | None:
@@ -1280,7 +1282,7 @@ async def close_trade_in(
         # never got the ack. Treat as success without touching the
         # row again — re-running the UPDATE would overwrite exit_at
         # with this retry's timestamp and could shift the trade into
-        # a different UTC day for realized_pnl_today() purposes.
+        # a different UTC day for pnl_snapshot() purposes.
         # Return the row's own saved accounting verbatim (never
         # recomputed against this retry's exit_price, which may be a
         # later, different ticker read) so a caller can still report
@@ -1337,6 +1339,33 @@ async def close_trade_in(
         pnl_pct = net_pnl_pct
         accounting_status = accounting.status
         accounting_error = accounting.error
+    elif accounting_version == LIVE_EXCHANGE_COSTS_ACCOUNTING_VERSION:
+        # Provisional until the cost worker reads the exchange's executions: the
+        # paper model's fees and funding, for display only. It is not an upper
+        # bound (one funding settlement can cost more), so the trade stays
+        # `pending` and blocks entries until the real costs replace it. Spread and
+        # slippage are in the fill prices, so none is deducted.
+        duration_minutes = max(0.0, (closed_at - entry_at).total_seconds() / 60)
+        estimate = calculate_performance(
+            position_usd=size_usd,
+            entry_price=entry_price,
+            exit_price=exit_price,
+            side=side,
+            duration_minutes=duration_minutes,
+            entry_slippage_bps=0.0,
+            exit_slippage_bps=0.0,
+        )
+        gross_pnl_usd = round(estimate.gross_pnl_usd, 4)
+        gross_pnl_pct = round(estimate.gross_return_pct, 4)
+        net_pnl_usd = None
+        net_pnl_pct = None
+        fees_usd = round(estimate.fees_usd, 4)
+        funding_usd = round(estimate.funding_usd, 4)
+        slippage_usd = None
+        pnl_usd = round(gross_pnl_usd - fees_usd - funding_usd, 4)
+        pnl_pct = round(pnl_usd / size_usd * 100, 4)
+        accounting_status = "pending"
+        accounting_error = "estimated costs until the exchange executions are read"
     else:
         gross_pnl_pct = (
             (entry_price - exit_price) / entry_price * 100
@@ -1560,23 +1589,85 @@ async def find_open_episode_trades(db_url: str) -> list[OpenEpisodeTrade]:
     ]
 
 
-async def realized_pnl_today(db_url: str) -> float | None:
-    """Sum of pnl_usd for real (non-paper) trades closed since UTC midnight today.
+@dataclass(frozen=True)
+class PnlSnapshot:
+    """The tracker's journal inputs, read in one snapshot.
 
-    Returns None on any DB error. This must NOT be treated as "$0 realized" —
-    callers need to distinguish "no loss today" from "couldn't check" and skip
-    updating any cached daily-loss figure in the latter case, or a transient
-    DB outage would silently reset the daily loss circuit breaker to zero.
+    ``generation`` is ``app.pnl_generation`` in that same snapshot (migration 0062):
+    every transaction that changes one of these inputs increments it before it
+    commits, so an entry admitted only while the number is unchanged never trades on
+    figures older than the journal.
+    """
+
+    realized: float
+    generation: int
+    blocker: str | None
+
+
+async def pnl_snapshot(db_url: str) -> PnlSnapshot | None:
+    """Realized PnL of real (non-paper) trades closed since UTC midnight, what still
+    blocks it, and the accounting generation, all in one read-only snapshot.
+
+    Returns None on any DB error. This must NOT be treated as "$0 realized" --
+    callers need to distinguish "no loss today" from "couldn't check", or a
+    transient DB outage would silently reset the daily loss circuit breaker.
+
+    ``blocker`` names the first outstanding condition that keeps the figure from
+    being final, in the tracker's order:
+
+      * ``partial_close_outstanding``: a reduce-only order realized part of a
+        still-open trade, which the realized sum misses until the final close;
+      * ``fill_incident_outstanding``: a fill's price is not confirmed at all
+        (fill_price.py), so its PnL impact is unknown, not zero;
+      * ``live_costs_unsettled``: a closed live trade's fees and funding are not
+        read from the exchange yet (cost_worker.py), so its PnL is an estimate.
     """
     start_of_day = datetime.now(tz=UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     try:
         aconn = await psycopg.AsyncConnection.connect(db_url)
-        async with aconn, aconn.cursor() as cur:
-            await cur.execute(_REALIZED_PNL_TODAY, (start_of_day,))
-            row = await cur.fetchone()
-            return float(row[0]) if row else 0.0
+        async with aconn:
+            await aconn.set_isolation_level(psycopg.IsolationLevel.REPEATABLE_READ)
+            await aconn.set_read_only(True)
+            async with aconn.transaction(), aconn.cursor() as cur:
+                await cur.execute(_PNL_GENERATION)
+                generation_row = await cur.fetchone()
+                if generation_row is None:
+                    raise RuntimeError("app.pnl_generation has no row")
+                await cur.execute(_REALIZED_PNL_TODAY, (start_of_day,))
+                realized_row = await cur.fetchone()
+                blocker = None
+                for name, query, params in (
+                    ("partial_close_outstanding", _ANY_OPEN_TRADE_CLOSE_FILLS, ()),
+                    ("fill_incident_outstanding", incidents.ANY_OPEN_INCIDENTS_SQL, ()),
+                    (
+                        "live_costs_unsettled",
+                        _ANY_UNSETTLED_LIVE_COSTS,
+                        (LIVE_EXCHANGE_COSTS_ACCOUNTING_VERSION,),
+                    ),
+                ):
+                    await cur.execute(query, params)
+                    if await cur.fetchone() is not None:
+                        blocker = name
+                        break
+        return PnlSnapshot(
+            realized=float(realized_row[0]) if realized_row else 0.0,
+            generation=int(generation_row[0]),
+            blocker=blocker,
+        )
     except Exception as exc:
-        log.error("journal.realized_pnl_today.failed", err=str(exc))
+        log.error("journal.pnl_snapshot.failed", err=str(exc))
+        return None
+
+
+async def pnl_generation(db_url: str) -> int | None:
+    """The accounting generation now, or None when it cannot be read."""
+    try:
+        async with await psycopg.AsyncConnection.connect(db_url) as aconn, aconn.cursor() as cur:
+            await cur.execute(_PNL_GENERATION)
+            row = await cur.fetchone()
+            return int(row[0]) if row else None
+    except Exception as exc:
+        log.error("journal.pnl_generation.failed", err=str(exc))
         return None
 
 
@@ -1725,7 +1816,7 @@ async def delete_trade_id_if_matches(rdb: Any, key: str, expected_trade_id: int)
 async def any_pending_closes(rdb: Any) -> bool:
     """True if at least one close is still waiting to be committed to the
     journal. The tracker must not declare daily PnL fresh/ready while this
-    is true — a pending close's loss isn't reflected in realized_pnl_today()
+    is true: a pending close's loss isn't reflected in pnl_snapshot()
     yet, since its trades row is still 'open' in the DB."""
     async for _ in rdb.scan_iter(match=pending_close_key_pattern()):
         return True

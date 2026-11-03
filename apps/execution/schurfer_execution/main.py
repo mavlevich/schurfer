@@ -12,6 +12,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from .config import Config
+from .cost_worker import LiveCostWorker, PostgresCostStore
 from .decisions import _REDIS_SOCKET_TIMEOUT_SECONDS, run_decision_writer
 from .early_momentum import (
     CONTRACT_SHA256 as EARLY_MOMENTUM_CONTRACT_SHA256,
@@ -42,6 +43,7 @@ from .execution_intent import (
 )
 from .incident_worker import run_incident_worker
 from .liquidation_cascade import run_liquidation_cascade_scanner
+from .live_costs import BybitCostSource
 from .market_refresh import MarketRefresher, run_market_refresher
 from .monitor import run_position_monitor
 from .notify import credentials as notify_credentials
@@ -176,6 +178,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     reconciliation_worker: ReconciliationWorker
     emergency_close_worker: EmergencyCloseWorker
     emergency_accountant: EmergencyCloseAccountant
+    live_cost_worker: LiveCostWorker
 
     reconciliation_enabled = bool(cfg.db_url and trading_exchanges)
 
@@ -244,6 +247,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             policy=WorkerRestartPolicy.ALWAYS,
             is_critical=False,
             stale_timeout_seconds=180.0,
+            enabled=reconciliation_enabled,
+        ),
+        WorkerSpec(
+            name="live_cost_worker",
+            factory=lambda tr: live_cost_worker(tr),
+            # Not critical: while it is down, closed live trades stay `pending`,
+            # which already keeps entries blocked through PnL readiness.
+            policy=WorkerRestartPolicy.ALWAYS,
+            is_critical=False,
+            stale_timeout_seconds=300.0,
             enabled=reconciliation_enabled,
         ),
         WorkerSpec(
@@ -380,6 +393,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         emergency_accountant = EmergencyCloseAccountant(
             trading_exchanges,
             PostgresAccountingStore(typing.cast("str", cfg.db_url)),
+            rdb,
+            alert_credentials=notify_credentials(cfg),
+        )
+        live_cost_worker = LiveCostWorker(
+            {
+                name: BybitCostSource(exchange)
+                for name, exchange in trading_exchanges.items()
+                if name == "bybit"
+            },
+            PostgresCostStore(typing.cast("str", cfg.db_url)),
             rdb,
             alert_credentials=notify_credentials(cfg),
         )

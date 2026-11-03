@@ -1,11 +1,13 @@
+import json
+import math
 from dataclasses import dataclass
 from typing import Any
 
 TRADING_ENABLED_KEY = "trading:enabled"
 DAILY_PNL_KEY = "trading:daily_pnl"
-# Positive lease, not a negative flag: presence AND value "1" means PnL is
-# known-fresh. Absence (fresh deploy, Redis flush, tracker never having run
-# or having crashed) fails closed — same polarity as TRADING_ENABLED_KEY.
+# Positive lease, not a negative flag: presence of a valid lease (encode_pnl_lease)
+# means PnL is known-fresh. Absence (fresh deploy, Redis flush, tracker never having
+# run or having crashed) fails closed: same polarity as TRADING_ENABLED_KEY.
 PNL_READY_KEY = "risk:pnl_ready"
 
 
@@ -13,6 +15,61 @@ PNL_READY_KEY = "risk:pnl_ready"
 class RiskCheck:
     allowed: bool
     reason: str
+
+
+@dataclass(frozen=True)
+class PnlLease:
+    """What the tracker published: the daily PnL and the accounting generation it
+    was computed at (None without a database)."""
+
+    generation: int | None
+    daily_pnl: float
+
+
+def encode_pnl_lease(*, generation: int | None, daily_pnl: float) -> str:
+    return json.dumps({"generation": generation, "daily_pnl": daily_pnl})
+
+
+def decode_pnl_lease(raw: Any) -> PnlLease | None:
+    """The lease, or None for anything that is not one (missing, the old ``"1"``,
+    malformed): an unreadable lease admits nothing."""
+    if isinstance(raw, bytes):
+        raw = raw.decode()
+    try:
+        payload = json.loads(raw) if isinstance(raw, str) else None
+    except ValueError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    generation = payload.get("generation")
+    daily_pnl = payload.get("daily_pnl")
+    if generation is not None and (isinstance(generation, bool) or not isinstance(generation, int)):
+        return None
+    if isinstance(daily_pnl, bool) or not isinstance(daily_pnl, int | float):
+        return None
+    if not math.isfinite(daily_pnl):
+        return None
+    return PnlLease(generation=generation, daily_pnl=float(daily_pnl))
+
+
+def pnl_lease_flag(
+    lease: PnlLease | None, current_generation: int | None, *, database: bool
+) -> str | None:
+    """``"1"`` only when the lease admits an entry now.
+
+    With a database, the generation read just now must equal the lease's: a close,
+    partial fill, incident or cost settlement committed after the tracker's snapshot
+    moved it, so the lease's figure is stale even if no revoke reached Redis
+    (docs/engineering/live-net-accounting-design-v1.md, section 5). An unreadable
+    generation admits nothing.
+    """
+    if lease is None:
+        return None
+    if not database:
+        return "1"
+    if lease.generation is None or current_generation is None:
+        return None
+    return "1" if lease.generation == current_generation else None
 
 
 def check_trading_enabled(flag: str | None) -> RiskCheck:

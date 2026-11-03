@@ -1,4 +1,5 @@
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import ccxt
@@ -9,9 +10,21 @@ from schurfer_execution import entry_recovery, order_attempts, protective_stop
 from schurfer_execution import exit as exit_module
 from schurfer_execution import reconciliation as rec
 from schurfer_execution.orders import close_position, place_order
-from schurfer_execution.risk import PNL_READY_KEY, TRADING_ENABLED_KEY
+from schurfer_execution.risk import PNL_READY_KEY, TRADING_ENABLED_KEY, encode_pnl_lease
 from schurfer_execution.routers.orders import OrderRequest, post_order
 from schurfer_execution.supervisor import WorkerReadinessGate
+
+# The tracker's lease and the journal's accounting generation agree: entries are
+# admitted unless a test says otherwise.
+_GENERATION = 7
+_LEASE = encode_pnl_lease(generation=_GENERATION, daily_pnl=0.0).encode()
+
+
+@pytest.fixture(autouse=True)
+def _current_generation(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "schurfer_execution.orders.journal.pnl_generation", AsyncMock(return_value=_GENERATION)
+    )
 
 
 @pytest.fixture(autouse=True)
@@ -28,7 +41,7 @@ async def _default_get(key: str) -> bytes | None:
     if key == TRADING_ENABLED_KEY:
         return b"1"
     if key == PNL_READY_KEY:
-        return b"1"
+        return _LEASE
     return None  # daily pnl = 0, etc.
 
 
@@ -854,7 +867,7 @@ class TestFillEvidenceGovernsTheLedger:
             if key == TRADING_ENABLED_KEY:
                 return b"1"
             if key == PNL_READY_KEY:
-                return b"1"
+                return _LEASE
             return stored.get(key)
 
         async def _set(key: str, value: object, **_kw: object) -> bool:
@@ -1154,7 +1167,7 @@ class TestEmergencyStopDuringPreFlight:
                     return b"0"
                 return b"1"
             if key == PNL_READY_KEY:
-                return b"1"
+                return _LEASE
             return None
 
         rdb = MagicMock()
@@ -1222,6 +1235,174 @@ class TestEmergencyStopDuringPreFlight:
         assert result["allowed"]
         ex.create_market_order.assert_awaited_once()
         ex.create_stop_market_order.assert_awaited_once()
+
+
+class TestPnlLeaseDuringPreFlight:
+    """Colleague review of the net accounting code (P1): the lease and the
+    accounting generation were read once, before the slow pre-flight. Another
+    trade closing in that window, with costs not yet known, moves the generation
+    and revokes the lease; the entry must not go out on the old reading."""
+
+    @staticmethod
+    def _rdb(lease: dict[str, bytes | None]) -> MagicMock:
+        async def _get(key: str) -> bytes | None:
+            if key == TRADING_ENABLED_KEY:
+                return b"1"
+            if key == PNL_READY_KEY:
+                return lease["value"]
+            return None
+
+        rdb = MagicMock()
+        rdb.set = AsyncMock(return_value=True)
+        rdb.get = AsyncMock(side_effect=_get)
+        rdb.eval = AsyncMock(return_value=1)
+        rdb.delete = AsyncMock(return_value=1)
+        return rdb
+
+    @staticmethod
+    def _exchange() -> MagicMock:
+        return TestEmergencyStopDuringPreFlight()._confirmed_exchange()
+
+    async def _place(
+        self, rdb: MagicMock, ex: MagicMock, generations: list[int]
+    ) -> tuple[dict[str, Any], AsyncMock]:
+        with (
+            patch("schurfer_execution.orders.fetch_positions", AsyncMock(return_value=([], set()))),
+            patch(
+                "schurfer_execution.orders.fetch_margin_balance",
+                AsyncMock(
+                    return_value=[
+                        {"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}
+                    ]
+                ),
+            ),
+            patch(
+                "schurfer_execution.orders.journal.pnl_generation",
+                AsyncMock(side_effect=generations),
+            ),
+            patch(
+                "schurfer_execution.orders.order_attempts.create_attempt",
+                AsyncMock(return_value=7),
+            ),
+            patch(
+                "schurfer_execution.orders.order_attempts.mark_failed", AsyncMock()
+            ) as mock_failed,
+        ):
+            result = await place_order(
+                **_kwargs(rdb=rdb, exchanges={"bingx": ex}, cfg=MagicMock(db_url="postgresql://x"))
+            )
+        return result, mock_failed
+
+    async def test_generation_moved_during_preflight_blocks_submission(self) -> None:
+        ex = self._exchange()
+        result, mock_failed = await self._place(
+            self._rdb({"value": _LEASE}), ex, [_GENERATION, _GENERATION + 1]
+        )
+
+        assert not result["allowed"]
+        assert "pre-flight" in result["reason"]
+        ex.create_market_order.assert_not_called()
+        mock_failed.assert_awaited_once()
+
+    async def test_lease_revoked_during_preflight_blocks_submission(self) -> None:
+        lease: dict[str, bytes | None] = {"value": _LEASE}
+        ex = self._exchange()
+
+        async def _revoke(*_args: object, **_kwargs: object) -> None:
+            lease["value"] = None
+
+        ex.set_leverage = AsyncMock(side_effect=_revoke)
+        result, mock_failed = await self._place(self._rdb(lease), ex, [_GENERATION, _GENERATION])
+
+        assert not result["allowed"]
+        ex.create_market_order.assert_not_called()
+        mock_failed.assert_awaited_once()
+
+    async def test_new_lease_beyond_the_loss_limit_blocks_submission(self) -> None:
+        lease: dict[str, bytes | None] = {"value": _LEASE}
+        ex = self._exchange()
+
+        async def _republish(*_args: object, **_kwargs: object) -> None:
+            lease["value"] = encode_pnl_lease(
+                generation=_GENERATION + 1, daily_pnl=-10_000.0
+            ).encode()
+
+        ex.set_leverage = AsyncMock(side_effect=_republish)
+        result, _ = await self._place(self._rdb(lease), ex, [_GENERATION, _GENERATION + 1])
+
+        assert not result["allowed"]
+        assert "loss" in result["reason"].lower()
+        ex.create_market_order.assert_not_called()
+
+    @pytest.mark.parametrize("change", ["trading_switch", "worker_gate"])
+    async def test_switch_or_gate_closing_during_the_pnl_reads_blocks_submission(
+        self, change: str
+    ) -> None:
+        """Colleague review (P1, second round): the PnL recheck awaits Redis and the
+        database. A stop pressed, or a critical worker failing, while it waits must
+        still keep the entry from going out: the switch and the gate are checked
+        after it, the gate last."""
+        state = {"stopped": False, "generation_reads": 0}
+        gate = _open_gate()
+
+        async def _get(key: str) -> bytes | None:
+            if key == TRADING_ENABLED_KEY:
+                return b"0" if state["stopped"] else b"1"
+            if key == PNL_READY_KEY:
+                return _LEASE
+            return None
+
+        async def _generation(_db_url: str) -> int:
+            state["generation_reads"] += 1
+            if state["generation_reads"] == 2:  # the final PnL recheck
+                if change == "trading_switch":
+                    state["stopped"] = True
+                else:
+                    gate.set_safety_blocker("critical-worker-failed")
+            return _GENERATION
+
+        rdb = self._rdb({"value": _LEASE})
+        rdb.get = AsyncMock(side_effect=_get)
+        ex = self._exchange()
+        ex.create_market_order = AsyncMock(side_effect=ccxt.InvalidOrder("must not be sent"))
+        with (
+            patch("schurfer_execution.orders.fetch_positions", AsyncMock(return_value=([], set()))),
+            patch(
+                "schurfer_execution.orders.fetch_margin_balance",
+                AsyncMock(return_value=[{"exchange": "bingx", "free": 1000.0}]),
+            ),
+            patch(
+                "schurfer_execution.orders.journal.pnl_generation",
+                AsyncMock(side_effect=_generation),
+            ),
+            patch(
+                "schurfer_execution.orders.order_attempts.create_attempt",
+                AsyncMock(return_value=7),
+            ),
+            patch(
+                "schurfer_execution.orders.order_attempts.mark_failed", AsyncMock()
+            ) as mock_failed,
+        ):
+            result = await place_order(
+                **_kwargs(
+                    rdb=rdb,
+                    exchanges={"bingx": ex},
+                    worker_gate=gate,
+                    cfg=MagicMock(db_url="postgresql://x"),
+                )
+            )
+
+        assert not result["allowed"]
+        ex.create_market_order.assert_not_awaited()
+        mock_failed.assert_awaited_once()
+
+    async def test_unchanged_lease_and_generation_submit(self) -> None:
+        ex = self._exchange()
+        # Rejected by the venue so the test stops at the submission it checks.
+        ex.create_market_order = AsyncMock(side_effect=ccxt.InvalidOrder("test stop"))
+        await self._place(self._rdb({"value": _LEASE}), ex, [_GENERATION, _GENERATION])
+
+        ex.create_market_order.assert_called_once()
 
 
 class TestPreFlightDurability:

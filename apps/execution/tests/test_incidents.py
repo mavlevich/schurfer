@@ -110,23 +110,6 @@ async def test_claim_creation_notification_is_exactly_once() -> None:
     cur2.execute.assert_awaited_once()
 
 
-async def test_any_open_incidents_fails_closed_on_db_error() -> None:
-    with patch(
-        "schurfer_execution.incidents.psycopg.AsyncConnection.connect",
-        AsyncMock(side_effect=ConnectionError("db down")),
-    ):
-        assert await incidents.any_open_incidents("postgresql://test") is True
-
-
-async def test_any_open_incidents_reports_clear_when_none_found() -> None:
-    conn, _cur = _mock_conn(fetchone_results=[None])
-    with patch(
-        "schurfer_execution.incidents.psycopg.AsyncConnection.connect",
-        AsyncMock(return_value=conn),
-    ):
-        assert await incidents.any_open_incidents("postgresql://test") is False
-
-
 async def test_has_pending_open_true_when_row_found() -> None:
     conn, cur = _mock_conn(fetchone_results=[(1,)])
     with patch(
