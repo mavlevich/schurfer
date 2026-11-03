@@ -187,6 +187,18 @@ class EmergencyCloseStore(Protocol):
     async def recovery_candidates(self) -> list[RecoveryCandidate]: ...
 
 
+def adopted_close(order: dict[str, Any]) -> AdoptedClose:
+    """A ``<entry>cN`` order listed on the exchange, as its task adopts it."""
+    status, filled, _error = exchange_orders.attempt_state_from_order(order)
+    return AdoptedClose(
+        client_order_id=str(exchange_orders.client_order_id(order)),
+        status=status,
+        order_id=str(order["id"]) if order.get("id") is not None else None,
+        requested_amount=exchange_orders.decimal_or_none(order.get("amount")),
+        filled_amount=filled,
+    )
+
+
 def _same(left: Decimal, right: Decimal) -> bool:
     return abs(left - right) <= _TOLERANCE
 
@@ -744,16 +756,7 @@ class EmergencyCloseExecutor:
                 attempt_id=candidate.attempt_id,
             )
             return None
-        adopted = tuple(
-            AdoptedClose(
-                client_order_id=str(exchange_orders.client_order_id(order)),
-                status=exchange_orders.attempt_state_from_order(order)[0],
-                order_id=str(order["id"]) if order.get("id") is not None else None,
-                requested_amount=exchange_orders.decimal_or_none(order.get("amount")),
-                filled_amount=exchange_orders.attempt_state_from_order(order)[1],
-            )
-            for order in closes
-        )
+        adopted = tuple(adopted_close(order) for order in closes)
         task_id, created = await self.store.create_task(
             TaskSpec(
                 source_attempt_id=candidate.attempt_id,
