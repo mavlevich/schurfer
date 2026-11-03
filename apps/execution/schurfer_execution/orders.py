@@ -28,12 +28,16 @@ from .fill_price import (
 from .journal import revoke_pnl_readiness
 from .order_lock import OrderLockLease
 from .risk import (
-    DAILY_PNL_KEY,
     PNL_READY_KEY,
+    RiskCheck,
+    check_daily_loss,
     check_liquidation_distance,
     check_max_position_size,
+    check_pnl_data_available,
     check_sufficient_margin,
     check_trading_enabled,
+    decode_pnl_lease,
+    pnl_lease_flag,
     read_trading_enabled_flag,
     run_all_checks,
 )
@@ -295,6 +299,19 @@ async def _alert(credentials: tuple[str, str] | None, text: str) -> None:
         log.error("execution.order.alert_not_delivered", text=text)
 
 
+async def _pnl_admits_entry(rdb: Any, db_url: str | None, daily_loss_limit_usd: float) -> RiskCheck:
+    """The PnL lease as it stands now: present, of the journal's current accounting
+    generation, and within the daily loss limit."""
+    pnl_lease = decode_pnl_lease(await rdb.get(PNL_READY_KEY))
+    current_generation = await journal.pnl_generation(db_url) if db_url else None
+    ready = check_pnl_data_available(
+        pnl_lease_flag(pnl_lease, current_generation, database=bool(db_url))
+    )
+    if not ready.allowed or pnl_lease is None:
+        return ready
+    return check_daily_loss(pnl_lease.daily_pnl, daily_loss_limit_usd)
+
+
 async def place_order(
     *,
     base: str,
@@ -348,13 +365,17 @@ async def place_order(
         # The default now lives in check_trading_enabled itself, not in this
         # read -- see its docstring.
         trading_flag = await read_trading_enabled_flag(rdb)
-        # trading:daily_pnl is maintained by the pnl tracker (tracker.py), which
-        # also refreshes PNL_READY_KEY below only after a fully successful tick.
-        daily_pnl = float(await rdb.get(DAILY_PNL_KEY) or 0)
-        pnl_ready_raw = await rdb.get(PNL_READY_KEY)
-        pnl_ready_flag = (
-            pnl_ready_raw.decode() if isinstance(pnl_ready_raw, bytes) else pnl_ready_raw
-        )
+        # The pnl tracker (tracker.py) publishes PNL_READY_KEY only after a fully
+        # successful tick, with the daily PnL and the accounting generation it read.
+        # The daily PnL checked is the lease's own, so the figure and its generation
+        # are never read apart; the generation must still be the journal's now, or a
+        # change committed after the tracker's snapshot makes the figure stale
+        # (docs/engineering/live-net-accounting-design-v1.md, section 5).
+        pnl_lease = decode_pnl_lease(await rdb.get(PNL_READY_KEY))
+        db_url = getattr(cfg, "db_url", None) if cfg is not None else None
+        current_generation = await journal.pnl_generation(db_url) if db_url else None
+        pnl_ready_flag = pnl_lease_flag(pnl_lease, current_generation, database=bool(db_url))
+        daily_pnl = pnl_lease.daily_pnl if pnl_lease is not None else 0.0
         positions, failed_exchanges = await fetch_positions(exchanges)
         balances = await fetch_margin_balance(exchanges, exchange)
 
@@ -444,7 +465,6 @@ async def place_order(
         # even a total local crash that loses order_id itself (never
         # captured, or captured but never persisted).
         entry_client_order_id = order_ids.new_entry_client_order_id()
-        db_url = getattr(cfg, "db_url", None) if cfg is not None else None
 
         # Durable record written BEFORE the exchange is ever called (see
         # order_attempts.py's own docstring) -- if this fails while a
@@ -493,9 +513,25 @@ async def place_order(
                 }
             attempt_id = reservation
 
-        is_open, current_token = worker_gate.is_open()
-        if not is_open or current_token != gate_token:
-            reason = "worker readiness gate closed or generation changed during checks"
+        # Final checks before the entry is sent, slowest first, so nothing awaited
+        # stands between the last of them and the order: the PnL lease (Redis and
+        # the database), then the trading switch (Redis), then the local worker
+        # gate and its generation.
+        #
+        # During the slow pre-flight (positions, balances, load_markets,
+        # set_leverage, fetch_ticker) another trade can close with costs not yet
+        # known, moving the accounting generation and revoking the lease. Admit
+        # only on the lease and generation as they stand now, and against the
+        # daily loss limit with the lease's own figure.
+        pnl_recheck = await _pnl_admits_entry(rdb, db_url, daily_loss_limit_usd)
+        if not pnl_recheck.allowed:
+            reason = f"{pnl_recheck.reason} during pre-flight"
+            log.warning(
+                "execution.order.pnl_changed_during_preflight",
+                base=base,
+                exchange=exchange,
+                reason=pnl_recheck.reason,
+            )
             if db_url and attempt_id is not None:
                 await order_attempts.mark_failed(db_url, attempt_id, error=reason)
             return {"allowed": False, "reason": reason}
@@ -519,6 +555,15 @@ async def place_order(
                 exchange=exchange,
                 reason=recheck.reason,
             )
+            if db_url and attempt_id is not None:
+                await order_attempts.mark_failed(db_url, attempt_id, error=reason)
+            return {"allowed": False, "reason": reason}
+
+        # Last, and with no await before the order: a critical worker can fail
+        # while the reads above wait.
+        is_open, current_token = worker_gate.is_open()
+        if not is_open or current_token != gate_token:
+            reason = "worker readiness gate closed or generation changed during checks"
             if db_url and attempt_id is not None:
                 await order_attempts.mark_failed(db_url, attempt_id, error=reason)
             return {"allowed": False, "reason": reason}

@@ -10,9 +10,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import psycopg
 import pytest
-from schurfer_execution import order_attempts
+from schurfer_execution import journal, order_attempts
 from schurfer_execution.orders import place_order
-from schurfer_execution.risk import PNL_READY_KEY, TRADING_ENABLED_KEY
+from schurfer_execution.risk import PNL_READY_KEY, TRADING_ENABLED_KEY, encode_pnl_lease
 from schurfer_execution.supervisor import WorkerReadinessGate
 from schurfer_journal.testing_database import (
     assert_active_test_database_url,
@@ -191,8 +191,16 @@ async def test_concurrent_place_order_calls_submit_only_the_reserved_entry() -> 
     )
     exchange.create_stop_market_order = AsyncMock(return_value={"id": "stop-reserved"})
 
+    # The lease carries the journal's own generation, as the tracker publishes it;
+    # opening trades does not move it, so every concurrent entry is admitted.
+    lease = encode_pnl_lease(
+        generation=await journal.pnl_generation(TEST_DATABASE_URL), daily_pnl=0.0
+    ).encode()
+
     async def _redis_get(key: str) -> bytes | None:
-        if key in {TRADING_ENABLED_KEY, PNL_READY_KEY}:
+        if key == PNL_READY_KEY:
+            return lease
+        if key == TRADING_ENABLED_KEY:
             return b"1"
         return None
 

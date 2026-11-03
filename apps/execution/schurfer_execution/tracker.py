@@ -3,9 +3,9 @@ from typing import Any
 
 import structlog
 
-from . import incidents, journal
+from . import journal
 from .account import fetch_positions
-from .risk import DAILY_PNL_KEY, PNL_READY_KEY
+from .risk import DAILY_PNL_KEY, PNL_READY_KEY, encode_pnl_lease
 
 log = structlog.get_logger()
 
@@ -29,9 +29,10 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, db_url: str | None) -> None
     # Realized PnL is recomputed from the journal (source of truth) on every
     # tick rather than tracked in-process, so it survives execution restarts
     # and Redis eviction without any reset/rollover bookkeeping.
+    generation: int | None = None
     if db_url:
-        realized = await journal.realized_pnl_today(db_url)
-        if realized is None:
+        snapshot = await journal.pnl_snapshot(db_url)
+        if snapshot is None:
             # A DB error is NOT "$0 realized today" — writing that would
             # silently reset the daily loss circuit breaker.
             await rdb.delete(PNL_READY_KEY)
@@ -39,42 +40,43 @@ async def _tick(exchanges: dict[str, Any], rdb: Any, db_url: str | None) -> None
             return
         if await journal.any_pending_closes(rdb):
             # A close was confirmed on the exchange but hasn't been committed
-            # to the journal yet — its loss isn't in realized_pnl_today() yet,
-            # so daily_pnl would understate real exposure if declared ready now.
+            # to the journal yet: its loss isn't in the snapshot yet, so
+            # daily_pnl would understate real exposure if declared ready now.
             await rdb.delete(PNL_READY_KEY)
             log.warning("pnl_tracker.skipping_update", reason="pending_close_outstanding")
             return
-        if await journal.any_open_trade_close_fills(db_url):
-            # A reduce-only order realized only part of an otherwise-open
-            # trade.  Its PnL is not in realized_pnl_today() until the final
-            # close commits the aggregate VWAP, so admitting new entries here
-            # would use an understated daily result.
+        if snapshot.blocker is not None:
+            # A partial close, an unconfirmed fill price or a closed live trade
+            # whose exchange costs are not settled: its PnL impact is not final,
+            # so daily_pnl must not be declared fresh while it's outstanding.
             await rdb.delete(PNL_READY_KEY)
-            log.warning("pnl_tracker.skipping_update", reason="partial_close_outstanding")
+            log.warning("pnl_tracker.skipping_update", reason=snapshot.blocker)
             return
-        if await incidents.any_open_incidents(db_url):
-            # A fill's price is not yet confirmed at all (see fill_price.py) —
-            # its PnL impact is unknown, not zero, so daily_pnl must not be
-            # declared fresh while it's outstanding.
-            await rdb.delete(PNL_READY_KEY)
-            log.warning("pnl_tracker.skipping_update", reason="fill_incident_outstanding")
-            return
+        realized = snapshot.realized
+        generation = snapshot.generation
     else:
         realized = 0.0
     daily_pnl = round(realized + unrealized, 2)
 
     await rdb.set(DAILY_PNL_KEY, str(daily_pnl))
-    await rdb.set(PNL_READY_KEY, "1", ex=_PNL_READY_TTL)
+    await rdb.set(
+        PNL_READY_KEY,
+        encode_pnl_lease(generation=generation, daily_pnl=daily_pnl),
+        ex=_PNL_READY_TTL,
+    )
 
-    # run_pnl_tracker and run_position_monitor are concurrent asyncio tasks —
-    # a close's journal write can land between the any_pending_closes() check
-    # above and this SET. Re-check immediately after publishing and revoke
-    # again if one appeared; write_pending_close() also revokes on its own,
-    # but this closes the gap for the specific interleaving where the lease
-    # gets set after that revoke already ran.
+    # run_pnl_tracker and the closing paths are concurrent: a close can land
+    # between the snapshot above and this SET, and its own revoke can run
+    # before the SET. Entries are safe regardless: place_order admits only
+    # while the accounting generation still equals the lease's. These rechecks
+    # only keep a stale lease from lingering until the next tick.
     if db_url and await journal.any_pending_closes(rdb):
         await rdb.delete(PNL_READY_KEY)
         log.warning("pnl_tracker.lease_revoked_race", reason="pending_close_appeared_after_publish")
+        return
+    if db_url and await journal.pnl_generation(db_url) != generation:
+        await rdb.delete(PNL_READY_KEY)
+        log.warning("pnl_tracker.lease_revoked_race", reason="journal_changed_after_snapshot")
         return
 
     log.debug(
