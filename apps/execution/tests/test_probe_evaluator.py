@@ -397,3 +397,87 @@ async def test_protective_exit_runs_before_cost_reads_and_cannot_skip_l_retry(
         tracker.tick_failed.assert_called_once()
     else:
         tracker.tick_succeeded.assert_called_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("in_memory", [False, True])
+async def test_hung_close_request_is_bounded_and_keeps_the_first_decision(monkeypatch, in_memory):
+    position = replace(POSITION, reached_loss=D(7), reached_inputs={"first_mark": "old"})
+    worker, _store, ex, gate, record, _read, _clock = evaluator(monkeypatch, position=position)
+    monkeypatch.setattr(pe, "_REQUEST_TIMEOUT_SECONDS", 0.01, raising=False)
+    if in_memory:
+        worker._latch("probe", D(7), {"first_mark": "old"})
+
+    async def stuck(*args, **kwargs):
+        await asyncio.Event().wait()
+
+    record.side_effect = stuck
+    assert not await asyncio.wait_for(worker.run_once(), timeout=0.2)
+    assert worker.pending == {"probe": (D(7), {"first_mark": "old"})}
+    gate.clear_safety_blocker.assert_not_called()
+    ex.fetch_positions.assert_not_called()
+    record.side_effect = None
+    record.return_value = probe_close.LReached(False, [])
+    assert await worker.run_once()
+    assert record.await_args.kwargs == {"loss_usd": D(7), "inputs": {"first_mark": "old"}}
+
+
+@pytest.mark.asyncio
+async def test_hung_probe_pass_cannot_stop_the_next_protective_tick(monkeypatch):
+    from schurfer_execution import monitor
+
+    sleeps = 0
+
+    async def sleep(_seconds):
+        nonlocal sleeps
+        sleeps += 1
+        if sleeps > 1:
+            raise asyncio.CancelledError
+
+    async def stuck():
+        await asyncio.Event().wait()
+
+    tick = AsyncMock()
+    tracker = Mock()
+    monkeypatch.setattr(monitor.asyncio, "sleep", sleep)
+    monkeypatch.setattr(monitor, "_tick", tick)
+    monkeypatch.setattr(monitor, "_PROBE_PASS_TIMEOUT_SECONDS", 0.01, raising=False)
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(
+            monitor.run_position_monitor(
+                {}, Mock(), Mock(), tracker, probe_evaluator=SimpleNamespace(run_once=stuck)
+            ),
+            timeout=0.2,
+        )
+    tick.assert_awaited_once()
+    tracker.tick_failed.assert_called_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("blocked_read", ["ticker", "collector"])
+async def test_timed_out_reads_still_count_missing_marks_and_alert_once(monkeypatch, blocked_read):
+    worker, _store, ex, _gate, record, read, _clock = evaluator(monkeypatch)
+    worker.alert_credentials = ("fake", "fake")
+    alert = AsyncMock(return_value=True)
+    monkeypatch.setattr(pe.notify, "notify_alert", alert)
+    original_wait_for = asyncio.wait_for
+
+    def short_evaluation(awaitable, timeout):
+        return original_wait_for(awaitable, timeout=0.01 if timeout == 45 else timeout)
+
+    monkeypatch.setattr(pe.asyncio, "wait_for", short_evaluation)
+
+    async def stuck(*args, **kwargs):
+        await asyncio.Event().wait()
+
+    if blocked_read == "ticker":
+        ex.publicGetV5MarketTickers.side_effect = stuck
+    else:
+        ex.fetch_positions.return_value[0]["markPrice"] = None
+        read.side_effect = stuck
+    for _ in range(4):
+        assert not await worker.run_once()
+    assert worker.stale[1] == 4
+    alert.assert_awaited_once()
+    assert "three monitor ticks" in alert.await_args.kwargs["text"]
+    record.assert_not_called()

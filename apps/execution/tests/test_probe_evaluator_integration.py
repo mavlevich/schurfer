@@ -269,3 +269,41 @@ async def test_a_recovery_task_owns_the_position_until_accounting_finishes():
         len(await _query("SELECT id FROM app.live_emergency_closes WHERE trade_id=%s", (trade,)))
         == 1
     )
+
+
+@pytest.mark.asyncio
+async def test_authorization_row_lock_timeout_preserves_the_decision_until_retry(monkeypatch):
+    import psycopg
+
+    probe, trade, _attempt, worker, ex, _rdb, gate = await setup_probe()
+    monkeypatch.setattr(pe, "_REQUEST_TIMEOUT_SECONDS", 0.05)
+    async with await psycopg.AsyncConnection.connect(TEST_DATABASE_URL) as conn:
+        await conn.execute(
+            "SELECT probe_id FROM app.live_probe_authorizations WHERE probe_id=%s FOR UPDATE",
+            (probe,),
+        )
+        assert not await asyncio.wait_for(worker.run_once(), timeout=1)
+        original = worker.pending[probe]
+        assert original[0] == D("1.1189")
+        gate.clear_safety_blocker.assert_not_called()
+        rows = await _query(
+            "SELECT l_reached_at FROM app.live_probe_authorizations WHERE probe_id=%s", (probe,)
+        )
+        assert rows[0]["l_reached_at"] is None
+    # The lock is released. A recovered price must not erase the earlier decision.
+    ex.fetch_positions.return_value[0]["markPrice"] = "2"
+    monkeypatch.setattr(pe, "_REQUEST_TIMEOUT_SECONDS", 10)
+    assert await worker.run_once()
+    row = (
+        await _query(
+            "SELECT l_reached_loss_usd, l_reached_inputs FROM app.live_probe_authorizations "
+            "WHERE probe_id=%s",
+            (probe,),
+        )
+    )[0]
+    assert (row["l_reached_loss_usd"], row["l_reached_inputs"]) == original
+    assert (
+        len(await _query("SELECT id FROM app.live_emergency_closes WHERE trade_id=%s", (trade,)))
+        == 1
+    )
+    ex.create_order.assert_not_called()

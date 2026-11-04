@@ -27,6 +27,7 @@ log = structlog.get_logger()
 LATCH_BLOCKER = "probe_loss_decision_pending"
 FUNDING_DELAY = timedelta(minutes=30)
 HISTORY_MAX_AGE = timedelta(hours=8, minutes=30)
+_REQUEST_TIMEOUT_SECONDS = 10.0
 
 
 @dataclass(frozen=True)
@@ -45,6 +46,14 @@ class ProbePosition:
     reached_loss: Decimal | None = None
     reached_inputs: dict[str, Any] | None = None
     initial_funding: live_costs.FundingSettlement | None = None
+
+
+@dataclass
+class _MarkRead:
+    # Per-pass evidence, also retained when an awaited read is cancelled by timeout.
+    attempted_at: datetime | None = None
+    mark: Decimal | None = None
+    read_at: datetime | None = None
 
 
 class ProbeStore(Protocol):
@@ -221,10 +230,17 @@ class ProbeLossEvaluator:
                     )
                     succeeded = await self._commit(position.probe_id) and succeeded
                 else:
-                    await asyncio.wait_for(self._evaluate(position), timeout=45)
+                    mark_read = _MarkRead()
+                    try:
+                        await asyncio.wait_for(self._evaluate(position, mark_read), timeout=45)
+                    finally:
+                        await self._note_mark(position, mark_read)
             except Exception as exc:
                 log.error(
-                    "live_probe.loss_evaluation_failed", probe_id=position.probe_id, err=str(exc)
+                    "live_probe.loss_evaluation_failed",
+                    probe_id=position.probe_id,
+                    error_type=type(exc).__name__,
+                    err=str(exc),
                 )
                 succeeded = False
         live_ids = {p.trade_id for p in positions}
@@ -239,11 +255,17 @@ class ProbeLossEvaluator:
     async def _commit(self, probe_id: str) -> bool:
         loss, inputs = self.pending[probe_id]
         try:
-            result = await self.record(
-                self.db_url, self.rdb, probe_id, loss_usd=loss, inputs=inputs
+            result = await asyncio.wait_for(
+                self.record(self.db_url, self.rdb, probe_id, loss_usd=loss, inputs=inputs),
+                timeout=_REQUEST_TIMEOUT_SECONDS,
             )
         except Exception as exc:
-            log.error("live_probe.loss_request_pending", probe_id=probe_id, err=str(exc))
+            log.error(
+                "live_probe.loss_request_pending",
+                probe_id=probe_id,
+                error_type=type(exc).__name__,
+                err=str(exc),
+            )
             await self._alert_once(
                 f"decision:{probe_id}",
                 f"LIVE_PROBE {probe_id}: L reached, loss {loss}; recording/close request "
@@ -260,7 +282,7 @@ class ProbeLossEvaluator:
         )
         return True
 
-    async def _evaluate(self, position: ProbePosition) -> None:
+    async def _evaluate(self, position: ProbePosition, mark_read: _MarkRead) -> None:
         if (
             position.taker_rate is None
             or not position.taker_rate.is_finite()
@@ -281,6 +303,7 @@ class ProbeLossEvaluator:
         ):
             await self._incident(position, "probe instrument does not match its canonical route")
             return
+        mark_read.attempted_at = self.now()
         source = live_costs.BybitCostSource(exchange)
         observed = self.observed.setdefault(position.trade_id, {})
         if position.initial_funding is not None:
@@ -324,6 +347,7 @@ class ProbeLossEvaluator:
                     mark = None
             except ValueError:
                 mark = None
+        mark_read.mark, mark_read.read_at = mark, read_at
         trade = await self.store.load(position.trade_id)
         if trade is None:
             await self._incident(position, "no exact entry evidence for the probe trade")
@@ -350,17 +374,6 @@ class ProbeLossEvaluator:
             log.error("live_probe.open_cost_read_failed", trade_id=position.trade_id, err=str(exc))
             result = live_costs.OpenCostResult(live_costs.STATUS_PENDING, error=str(exc))
         now = self.now()
-        if mark is None or not probe_loss.mark_is_fresh(read_at, now):
-            self.stale[position.trade_id] = self.stale.get(position.trade_id, 0) + 1
-            if self.stale[position.trade_id] >= probe_loss.STALE_MARK_ALERT_TICKS:
-                await self._alert_once(
-                    f"mark:{position.trade_id}",
-                    f"LIVE_PROBE {position.probe_id}: no fresh mark for three monitor ticks; "
-                    "exchange stop remains the independent protection.",
-                )
-        else:
-            self.stale[position.trade_id] = 0
-            self.alerted.discard(f"mark:{position.trade_id}")
         if result.status == live_costs.STATUS_INCOMPLETE:
             await self._incident(position, result.error or "incomplete executions")
             return
@@ -413,6 +426,25 @@ class ProbeLossEvaluator:
         if any(now - s.at >= FUNDING_DELAY for s in result.position.unlisted):
             await self._incident(
                 position, "an observed funding settlement is unlisted for 30 minutes"
+            )
+
+    async def _note_mark(self, position: ProbePosition, read: _MarkRead) -> None:
+        if read.attempted_at is None:
+            return  # No price read was attempted for invalid preflight/identity.
+        if (
+            read.mark is not None
+            and read.read_at is not None
+            and probe_loss.mark_is_fresh(read.read_at, self.now())
+        ):
+            self.stale[position.trade_id] = 0
+            self.alerted.discard(f"mark:{position.trade_id}")
+            return
+        self.stale[position.trade_id] = self.stale.get(position.trade_id, 0) + 1
+        if self.stale[position.trade_id] >= probe_loss.STALE_MARK_ALERT_TICKS:
+            await self._alert_once(
+                f"mark:{position.trade_id}",
+                f"LIVE_PROBE {position.probe_id}: no fresh mark for three monitor ticks; "
+                "exchange stop remains the independent protection.",
             )
 
     async def _incident(self, position: ProbePosition, reason: str) -> None:

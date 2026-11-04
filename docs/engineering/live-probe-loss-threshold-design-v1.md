@@ -341,6 +341,15 @@ mark rearms it. A costs incident is stored and alerted on its database transitio
 including a new transition after the owner clears the previous incident. A funding
 incident never delays a decision already sufficient to reach L.
 
+Each decision-write/close-task request has a 10 s timeout, including retries of a
+process latch or a persisted request. Each position's evaluation has a 45 s timeout,
+and the monitor applies a 60 s timeout to the whole probe pass (database scans and
+all retries included). A timeout keeps a pending decision and its first inputs,
+keeps entries blocked and marks the tick unhealthy; it does not remove the next
+protective tick. These are initial operational budgets for the testnet check.
+Mark availability is accounted in a finalizer, including cancelled/timed-out reads,
+so a hung ticker or collector cannot suppress the three-tick missing-mark alert.
+
 ### Contract the entry PR must persist
 
 PR 2 must store `live_probe_preflight` on the entry attempt's `setup_context`, with:

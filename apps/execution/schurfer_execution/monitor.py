@@ -22,6 +22,8 @@ if TYPE_CHECKING:
 log = structlog.get_logger()
 
 _INTERVAL_SECONDS = 30
+# Leave room within the 120 s worker health window for the next protective tick.
+_PROBE_PASS_TIMEOUT_SECONDS = 60.0
 _TRADE_ID_KEY = "trade:id:{exchange}:{base}"
 _SL_ORDER_KEY_PATTERN = "position:sl_order_id:*"
 
@@ -52,12 +54,18 @@ async def run_position_monitor(
         if probe_evaluator is not None:
             try:
                 # Retrying a latched L request must also survive an exit-tick failure.
-                probe_ok = await probe_evaluator.run_once()
+                probe_ok = await asyncio.wait_for(
+                    probe_evaluator.run_once(), timeout=_PROBE_PASS_TIMEOUT_SECONDS
+                )
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 probe_ok = False
-                log.error("position_monitor.probe_loss_failed", err=str(exc))
+                log.error(
+                    "position_monitor.probe_loss_failed",
+                    error_type=type(exc).__name__,
+                    err=str(exc),
+                )
         if tracker:
             if tick_error is not None:
                 tracker.tick_failed(tick_error)
