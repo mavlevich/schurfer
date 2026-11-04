@@ -187,7 +187,9 @@ RETURNING id
 
 # Every writer of a trade's close legs holds the trade row until it commits: legs and
 # the final close of one trade are serialized, and a closed trade takes no new leg.
-_LOCK_TRADE_FOR_LEGS = "SELECT status FROM app.trades WHERE id = %s FOR UPDATE"
+# Leave FK key-share lookups unblocked: recovery may hold the entry attempt while
+# linking it to this trade, and accounting links that attempt after closing the trade.
+_LOCK_TRADE_FOR_LEGS = "SELECT status FROM app.trades WHERE id = %s FOR NO KEY UPDATE"
 
 _SELECT_CLOSE_FILL = """
 SELECT trade_id, fill_price, filled_amount, requested_amount, remaining_amount, terminal,

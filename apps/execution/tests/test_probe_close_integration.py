@@ -14,12 +14,14 @@ from unittest.mock import AsyncMock, patch
 import ccxt
 import psycopg
 import pytest
+import structlog.testing
 from schurfer_execution import (
     emergency_accounting,
     emergency_close,
     journal,
     live_probe,
     monitor,
+    order_attempts,
     order_ids,
     orders,
     probe_close,
@@ -1112,3 +1114,59 @@ async def test_a_stop_the_monitor_journalled_and_closed_is_accounted_as_it_stand
     [trade] = await _query("SELECT status, exit_price FROM app.trades WHERE id = %s", (trade_id,))
     assert trade["status"] == "closed"
     assert float(trade["exit_price"]) == pytest.approx((3 * 95 + 7 * 94) / 10)
+
+
+async def test_a_late_entry_trade_link_does_not_deadlock_accounting(rdb: LockRedis) -> None:
+    """Recovery links a known journal trade to the entry while accounting publishes.
+    The entry's FK check must not deadlock with the accountant linking that entry."""
+    _, reservation, attempt_id, _ = await _open_position(trade=False)
+    trade_id = await _trade(status="open", pnl=None)
+    venue = _Venue("10", reservation.native_market_id)
+    venue.fills = [(10.0, 94.0)]
+    store = PostgresEmergencyCloseStore(TEST_DATABASE_URL)
+    task_id, _ = await store.create_task(
+        emergency_close.TaskSpec(
+            source_attempt_id=attempt_id,
+            entry_client_order_id=reservation.client_order_id,
+            exchange="bybit",
+            base="TLP",
+            symbol=SYMBOL,
+            native_market_id=reservation.native_market_id,
+            market_type="swap",
+            side="long",
+            owned_quantity=D(10),
+            reason=emergency_close.REASON_STOP_PLACEMENT_FAILED,
+            trade_id=trade_id,
+        )
+    )
+    executor = emergency_close.EmergencyCloseExecutor({"bybit": venue}, store, rdb)
+    assert await executor.run_pass(task_id) == emergency_close.STATUS_SENDING
+    assert await executor.run_pass(task_id) == emergency_close.STATUS_CONFIRMED_FLAT
+    checked = emergency_accounting._journalled_legs
+    linking: list[asyncio.Task[None]] = []
+
+    async def with_a_late_link(*args: Any) -> dict[str, bool]:
+        result = await checked(*args)
+        linking.append(
+            asyncio.create_task(
+                order_attempts.mark_completed(
+                    TEST_DATABASE_URL, attempt_id, trade_id=trade_id, filled_amount=10.0
+                )
+            )
+        )
+        await asyncio.sleep(0.2)
+        return result
+
+    with (
+        structlog.testing.capture_logs() as logs,
+        patch.object(emergency_accounting, "_journalled_legs", with_a_late_link),
+    ):
+        status = await asyncio.wait_for(_accountant(venue, rdb).account(task_id), timeout=5)
+        await asyncio.wait_for(linking[0], timeout=5)
+
+    assert status == emergency_close.STATUS_ACCOUNTED
+    assert not [entry for entry in logs if "deadlock detected" in str(entry)]
+    [entry] = await _query(
+        "SELECT trade_id FROM app.live_order_attempts WHERE id = %s", (attempt_id,)
+    )
+    assert entry["trade_id"] == trade_id

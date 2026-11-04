@@ -901,7 +901,7 @@ async def test_record_close_fill_returns_amount_weighted_aggregate(mock_connect)
     )
 
     assert aggregate == 107.5
-    assert "FOR UPDATE" in cur.execute.call_args_list[0].args[0]
+    assert "FOR NO KEY UPDATE" in cur.execute.call_args_list[0].args[0]
     insert_params = cur.execute.call_args_list[1].args[1]
     assert insert_params[:3] == (42, "bingx", "close-2")
     assert insert_params[3:7] == (110.0, 3.0, 3.0, 0.0)
