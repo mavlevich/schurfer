@@ -14,6 +14,7 @@ from typing import Any
 
 import psycopg
 import pytest
+import structlog.testing
 from psycopg.rows import dict_row
 from schurfer_execution import live_probe as lp
 from schurfer_execution import probe_loss as pl
@@ -702,10 +703,11 @@ async def test_the_cli_issues_shows_and_exports(
     now = datetime.now(UTC)
 
     def run(*argv: str) -> dict[str, Any]:
-        lp.main(list(argv))
-        out = capsys.readouterr().out
-        # The result is the last thing printed, after any log lines.
-        return json.loads(out[out.index("\n{\n") + 1 :] if not out.startswith("{") else out)
+        # Logs are captured, not printed: how they render depends on what configured
+        # structlog before, and stdout must hold only the result.
+        with structlog.testing.capture_logs():
+            lp.main(list(argv))
+        return json.loads(capsys.readouterr().out)
 
     await asyncio.to_thread(
         run,
