@@ -49,6 +49,7 @@ from .monitor import run_position_monitor
 from .notify import credentials as notify_credentials
 from .paper import run_paper_monitor
 from .probe_close import ProbeRecoveryWorker
+from .probe_evaluator import PostgresProbeStore, ProbeLossEvaluator
 from .reconciliation import STARTUP_BLOCKER
 from .reconciliation_worker import ReconciliationWorker
 from .routers import account, control, health, orders
@@ -181,13 +182,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     emergency_accountant: EmergencyCloseAccountant
     live_cost_worker: LiveCostWorker
     probe_recovery_worker: ProbeRecoveryWorker
+    probe_loss_evaluator: ProbeLossEvaluator | None = None
 
     reconciliation_enabled = bool(cfg.db_url and trading_exchanges)
 
     specs = [
         WorkerSpec(
             name="position_monitor",
-            factory=lambda tr: run_position_monitor(trading_exchanges, rdb, cfg, tr),
+            factory=lambda tr: run_position_monitor(
+                trading_exchanges, rdb, cfg, tr, probe_evaluator=probe_loss_evaluator
+            ),
             policy=WorkerRestartPolicy.BOUNDED_FATAL,
             is_critical=True,
             restart_budget=3,
@@ -421,6 +425,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
         )
         probe_recovery_worker = ProbeRecoveryWorker(
             typing.cast("str", cfg.db_url), rdb, alert_credentials=notify_credentials(cfg)
+        )
+        probe_loss_evaluator = ProbeLossEvaluator(
+            typing.cast("str", cfg.db_url),
+            trading_exchanges,
+            PostgresProbeStore(typing.cast("str", cfg.db_url)),
+            rdb,
+            worker_gate,
+            probe_recovery_worker.recovered,
+            alert_credentials=notify_credentials(cfg),
         )
     pump_short_broker = build_broker(
         pump_short_mode, exchanges=strategy_exchanges, gate=worker_gate

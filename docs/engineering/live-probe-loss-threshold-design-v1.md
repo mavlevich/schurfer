@@ -315,11 +315,65 @@ recovery runs on the first successful read, still before any probe evaluation.
 Any deploy of the execution service while a probe position is open therefore closes
 that position. That is the price of not trusting a decision that may have been lost.
 
+## Implementation boundary (PR 1c)
+
+`live_costs.read_open` supplies the open-position result separately from closed-trade
+settlement. It reuses order ownership, side, quantity, fee-currency and funding-owner
+checks. An active partially filled order is pending. Verified fills after `T_last`
+are included; the funding tail is never labelled complete. Missing settlement rows
+are returned separately with their historical quantity, rate and mark, or explicitly
+unknown. The closed cost worker keeps its timestamp-only funding-history interface.
+
+`probe_evaluator.ProbeLossEvaluator` runs inside the position monitor, after startup
+recovery succeeds. It does not create an order. It records L through
+`probe_close.record_l_reached`, and the existing emergency executor owns the close.
+A failed decision/close request retains its first inputs in process and sets the
+shared worker-gate blocker. Retrying that latch precedes even a failed database scan.
+A persisted `l_reached_at` without a task is retried without a mark or collector read.
+A position with an existing, not-yet-accounted emergency task already has its closer
+and is not evaluated again.
+
+Ordinary protective exits run before the cost evaluator, so its network reads cannot
+postpone them. The evaluator still runs if that exit tick fails, so a latched L
+request is retried. Failure of the evaluator makes the monitor tick unhealthy.
+Three consecutive missing/stale marks produce one alert; a fresh
+mark rearms it. A costs incident is stored and alerted on its database transition,
+including a new transition after the owner clears the previous incident. A funding
+incident never delays a decision already sufficient to reach L.
+
+### Contract the entry PR must persist
+
+PR 2 must store `live_probe_preflight` on the entry attempt's `setup_context`, with:
+
+- `taker_rate`: the account's freshly read taker rate, as a decimal string;
+- `next_funding_at`, `funding_rate`, `read_at`: the observed settlement time, its rate
+  and the observation time (timezone-aware ISO timestamps and a decimal string).
+
+The evaluator consumes the actual preflight rate, never the reservation's earlier
+estimate. A missing/invalid rate is a costs incident and permits no L evaluation.
+The initial funding observation is seeded only if read before both sending and the
+settlement. Later monitor reads can update its rate only before its settlement time;
+a later ticker rate is never applied retroactively. Missing initial observations
+leave an unknown tail, not a reconstructed schedule.
+
+The Bybit adapters use the native `fundingRate`/`fundingRateTimestamp` in
+[funding history](https://bybit-exchange.github.io/docs/v5/market/history-fund-rate),
+`nextFundingTime`/`fundingRate` in
+[tickers](https://bybit-exchange.github.io/docs/v5/market/tickers), and the high of the
+two completed one-minute
+[mark-price bars](https://bybit-exchange.github.io/docs/v5/market/mark-kline)
+starting one minute before and at the settlement minute. Both exact bars are required;
+an unfinished or missing bar leaves the estimate unknown.
+
+No migration, entry switch, broker activation, authorization issuance or deployment
+is part of PR 1c. The entry gate, preflight writer and candidate-specific permission
+remain in the following PRs and their registered gates.
+
 ## Tests
 
 | Case                                                             | Expected                                                              |
 | ---------------------------------------------------------------- | --------------------------------------------------------------------- |
-| Long, mark falls until `loss(t)` crosses L                       | Record and close task in one transaction, one alert                   |
+| Long, mark falls until `loss(t)` crosses L                       | Record L, then ensure a close task; one decision alert                |
 | Same, the price recovers on the next tick                        | Task runs until `confirmed_flat`; no entry admitted                   |
 | Long 50 at 1.00, 20 closed at 0.90, mark 1.00                    | Loss before costs 2.00, not 0                                         |
 | Partial close of 20 after `T_last`, its rows listed              | Counted in `open_qty` and `realized_open_parts`; no quantity mismatch |
