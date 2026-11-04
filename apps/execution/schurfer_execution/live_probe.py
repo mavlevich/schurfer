@@ -298,7 +298,7 @@ async def _connect(db_url: str) -> psycopg.AsyncConnection[dict[str, Any]]:
     return await psycopg.AsyncConnection.connect(db_url, row_factory=dict_row)
 
 
-async def _lock_record(
+async def lock_record(
     cursor: psycopg.AsyncCursor[dict[str, Any]], probe_id: str
 ) -> dict[str, Any] | None:
     """Take the record's row lock, then read it with the database clock."""
@@ -399,7 +399,7 @@ async def _set_field(
     """Lock the record, change it only when ``applies`` holds for it, and write the
     event. Returns whether anything changed."""
     async with await _connect(db_url) as conn, conn.transaction(), conn.cursor() as cursor:
-        record = await _lock_record(cursor, probe_id)
+        record = await lock_record(cursor, probe_id)
         if record is None:
             raise LookupError(f"no authorization record {probe_id!r}")
         if not applies(record):
@@ -454,22 +454,31 @@ async def clear_costs_incident(db_url: str, probe_id: str, *, actor: str, note: 
     )
 
 
+async def suspend_active_in(
+    cursor: psycopg.AsyncCursor[dict[str, Any]], *, reason: str
+) -> list[str]:
+    """Suspend every unrevoked record not suspended yet, inside the caller's
+    transaction. Returns their probe ids."""
+    await cursor.execute(
+        "UPDATE app.live_probe_authorizations"
+        " SET suspended_at = clock_timestamp(), suspended_reason = %s"
+        " WHERE revoked_at IS NULL AND suspended_at IS NULL"
+        " RETURNING probe_id",
+        (reason,),
+    )
+    probe_ids = sorted(row["probe_id"] for row in await cursor.fetchall())
+    for probe_id in probe_ids:
+        await cursor.execute(
+            _INSERT_EVENT, (probe_id, "suspended", SERVICE_ACTOR, Jsonb({"reason": reason}))
+        )
+    return probe_ids
+
+
 async def suspend_active(db_url: str, *, reason: str) -> list[str]:
     """Suspend every unrevoked record not suspended yet, as every start of the execution
     service does before any probe evaluation (section 5). Returns their probe ids."""
     async with await _connect(db_url) as conn, conn.transaction(), conn.cursor() as cursor:
-        await cursor.execute(
-            "UPDATE app.live_probe_authorizations"
-            " SET suspended_at = clock_timestamp(), suspended_reason = %s"
-            " WHERE revoked_at IS NULL AND suspended_at IS NULL"
-            " RETURNING probe_id",
-            (reason,),
-        )
-        probe_ids = sorted(row["probe_id"] for row in await cursor.fetchall())
-        for probe_id in probe_ids:
-            await cursor.execute(
-                _INSERT_EVENT, (probe_id, "suspended", SERVICE_ACTOR, Jsonb({"reason": reason}))
-            )
+        probe_ids = await suspend_active_in(cursor, reason=reason)
     for probe_id in probe_ids:
         log.warning("live_probe.suspended", probe_id=probe_id, reason=reason)
     return probe_ids
@@ -491,7 +500,7 @@ async def reserve(db_url: str, request: EntryRequest) -> Reservation | Refused:
                 detail=detail,
             )
 
-        record = await _lock_record(cursor, request.probe_id)
+        record = await lock_record(cursor, request.probe_id)
         if record is None:
             return await refuse(REFUSED_NO_AUTHORIZATION, {})
         if (record["environment"], record["account_key"]) != (
@@ -599,7 +608,7 @@ async def _lock_reservation(
     found = await cursor.fetchone()
     if found is None:
         raise LookupError(f"no reservation {reservation_id}")
-    record = await _lock_record(cursor, found["probe_id"])
+    record = await lock_record(cursor, found["probe_id"])
     assert record is not None
     await cursor.execute(
         "SELECT * FROM app.live_probe_reservations WHERE id = %s FOR UPDATE", (reservation_id,)
@@ -665,6 +674,49 @@ async def refuse_before_send(db_url: str, reservation_id: int, *, reason: str) -
         )
 
 
+# The steps after the send. The record's trigger checks each one again.
+_LINK_ATTEMPT = """
+UPDATE app.live_probe_reservations AS r
+SET attempt_id = o.id
+FROM app.live_order_attempts AS o, app.live_probe_authorizations AS a
+WHERE r.id = %s AND r.state = 'sending' AND r.attempt_id IS NULL
+  AND o.id = %s AND o.operation = 'entry'
+  AND o.client_order_id = r.client_order_id AND o.exchange = a.exchange
+  AND o.native_market_id = r.native_market_id AND o.side = r.side
+  AND a.probe_id = r.probe_id
+"""
+
+_MARK_PLACED = """
+UPDATE app.live_probe_reservations SET state = 'placed', finished_at = clock_timestamp()
+WHERE id = %s AND state = 'sending' AND attempt_id IS NOT NULL
+"""
+
+_MARK_RELEASED = """
+UPDATE app.live_probe_reservations
+SET state = 'released', state_reason = %s, finished_at = clock_timestamp()
+WHERE id = %s AND state = 'sending'
+"""
+
+_LINK_TRADE = """
+UPDATE app.live_probe_reservations AS r
+SET trade_id = o.trade_id
+FROM app.live_order_attempts AS o
+WHERE r.id = %s AND r.state = 'placed' AND r.trade_id IS NULL
+  AND o.id = r.attempt_id AND o.trade_id = %s
+"""
+
+
+async def _apply_step(
+    cursor: psycopg.AsyncCursor[dict[str, Any]],
+    reservation_id: int,
+    sql: str,
+    params: tuple[Any, ...],
+) -> None:
+    await cursor.execute(sql, params)
+    if cursor.rowcount != 1:
+        raise ValueError(f"reservation {reservation_id}: step refused")
+
+
 async def _update_sent(
     db_url: str,
     reservation_id: int,
@@ -693,16 +745,7 @@ async def link_attempt(db_url: str, reservation_id: int, attempt_id: int) -> Non
     await _update_sent(
         db_url,
         reservation_id,
-        """
-        UPDATE app.live_probe_reservations AS r
-        SET attempt_id = o.id
-        FROM app.live_order_attempts AS o, app.live_probe_authorizations AS a
-        WHERE r.id = %s AND r.state = 'sending' AND r.attempt_id IS NULL
-          AND o.id = %s AND o.operation = 'entry'
-          AND o.client_order_id = r.client_order_id AND o.exchange = a.exchange
-          AND o.native_market_id = r.native_market_id AND o.side = r.side
-          AND a.probe_id = r.probe_id
-        """,
+        _LINK_ATTEMPT,
         (reservation_id, attempt_id),
         done=lambda r: r["attempt_id"] == attempt_id,
     )
@@ -713,9 +756,7 @@ async def mark_placed(db_url: str, reservation_id: int) -> None:
     await _update_sent(
         db_url,
         reservation_id,
-        "UPDATE app.live_probe_reservations SET state = 'placed',"
-        " finished_at = clock_timestamp()"
-        " WHERE id = %s AND state = 'sending' AND attempt_id IS NOT NULL",
+        _MARK_PLACED,
         (reservation_id,),
         done=lambda r: r["state"] == STATE_PLACED,
     )
@@ -726,8 +767,7 @@ async def mark_released(db_url: str, reservation_id: int, *, reason: str) -> Non
     await _update_sent(
         db_url,
         reservation_id,
-        "UPDATE app.live_probe_reservations SET state = 'released', state_reason = %s,"
-        " finished_at = clock_timestamp() WHERE id = %s AND state = 'sending'",
+        _MARK_RELEASED,
         (reason, reservation_id),
         done=lambda r: r["state"] == STATE_RELEASED,
     )
@@ -738,16 +778,36 @@ async def link_trade(db_url: str, reservation_id: int, trade_id: int) -> None:
     await _update_sent(
         db_url,
         reservation_id,
-        """
-        UPDATE app.live_probe_reservations AS r
-        SET trade_id = o.trade_id
-        FROM app.live_order_attempts AS o
-        WHERE r.id = %s AND r.state = 'placed' AND r.trade_id IS NULL
-          AND o.id = r.attempt_id AND o.trade_id = %s
-        """,
+        _LINK_TRADE,
         (reservation_id, trade_id),
         done=lambda r: r["trade_id"] == trade_id,
     )
+
+
+async def link_attempt_in(
+    cursor: psycopg.AsyncCursor[dict[str, Any]], reservation_id: int, attempt_id: int
+) -> None:
+    """``link_attempt`` on a reservation the caller's transaction already locked."""
+    await _apply_step(cursor, reservation_id, _LINK_ATTEMPT, (reservation_id, attempt_id))
+
+
+async def mark_placed_in(cursor: psycopg.AsyncCursor[dict[str, Any]], reservation_id: int) -> None:
+    """``mark_placed`` on a reservation the caller's transaction already locked."""
+    await _apply_step(cursor, reservation_id, _MARK_PLACED, (reservation_id,))
+
+
+async def mark_released_in(
+    cursor: psycopg.AsyncCursor[dict[str, Any]], reservation_id: int, *, reason: str
+) -> None:
+    """``mark_released`` on a reservation the caller's transaction already locked."""
+    await _apply_step(cursor, reservation_id, _MARK_RELEASED, (reason, reservation_id))
+
+
+async def link_trade_in(
+    cursor: psycopg.AsyncCursor[dict[str, Any]], reservation_id: int, trade_id: int
+) -> None:
+    """``link_trade`` on a reservation the caller's transaction already locked."""
+    await _apply_step(cursor, reservation_id, _LINK_TRADE, (reservation_id, trade_id))
 
 
 def _json_default(value: Any) -> str:

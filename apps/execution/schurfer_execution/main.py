@@ -48,6 +48,7 @@ from .market_refresh import MarketRefresher, run_market_refresher
 from .monitor import run_position_monitor
 from .notify import credentials as notify_credentials
 from .paper import run_paper_monitor
+from .probe_close import ProbeRecoveryWorker
 from .reconciliation import STARTUP_BLOCKER
 from .reconciliation_worker import ReconciliationWorker
 from .routers import account, control, health, orders
@@ -179,6 +180,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     emergency_close_worker: EmergencyCloseWorker
     emergency_accountant: EmergencyCloseAccountant
     live_cost_worker: LiveCostWorker
+    probe_recovery_worker: ProbeRecoveryWorker
 
     reconciliation_enabled = bool(cfg.db_url and trading_exchanges)
 
@@ -247,6 +249,17 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             policy=WorkerRestartPolicy.ALWAYS,
             is_critical=False,
             stale_timeout_seconds=180.0,
+            enabled=reconciliation_enabled,
+        ),
+        WorkerSpec(
+            name="live_probe_recovery",
+            factory=lambda tr: probe_recovery_worker(tr),
+            # Every start suspends active LIVE_PROBE records and closes any probe
+            # position before anything of the probe runs. Critical: until it has
+            # succeeded once, the gate refuses entries.
+            policy=WorkerRestartPolicy.ALWAYS,
+            is_critical=True,
+            stale_timeout_seconds=120.0,
             enabled=reconciliation_enabled,
         ),
         WorkerSpec(
@@ -405,6 +418,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             PostgresCostStore(typing.cast("str", cfg.db_url)),
             rdb,
             alert_credentials=notify_credentials(cfg),
+        )
+        probe_recovery_worker = ProbeRecoveryWorker(
+            typing.cast("str", cfg.db_url), rdb, alert_credentials=notify_credentials(cfg)
         )
     pump_short_broker = build_broker(
         pump_short_mode, exchanges=strategy_exchanges, gate=worker_gate

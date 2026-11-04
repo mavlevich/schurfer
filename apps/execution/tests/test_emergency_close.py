@@ -47,6 +47,9 @@ class MemoryStore:
     async def recovery_candidates(self) -> list[ec.RecoveryCandidate]:
         return []
 
+    async def link_late_closes(self, task: ec.EmergencyCloseTask) -> str | None:
+        return None
+
     async def runnable_task_ids(self) -> list[int]:
         return [self.task.id] if self.task.status in ec.RUNNABLE_STATUSES else []
 

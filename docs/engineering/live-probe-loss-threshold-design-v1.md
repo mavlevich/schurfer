@@ -200,21 +200,28 @@ on its own and the record has no `l_reached_at`, the admission writes it (sectio
 `loss(t) >= L`. With an unknown settlement (section 1.1) the computed loss is a lower
 bound: it may decide reached, never not reached.
 
-**Recorded with the close, in one transaction:**
+**Recorded, then closed, in two transactions:**
 
-- `l_reached_at`, the loss and its inputs (mark, its read time, quantities, fees,
-  funding, the estimates, unknown settlements) on the authorization record, only if
-  `l_reached_at` is empty;
-- an emergency close task (`emergency_close.py`, section 1 of
-  `live-entry-failure-paths-design-v1.md`) for the probe position, with the reason
-  `probe_loss_threshold`.
+1. `l_reached_at`, the loss and its inputs (mark, its read time, quantities, fees,
+   funding, the estimates, unknown settlements) on the authorization record, only if
+   `l_reached_at` is empty. It commits on its own, so entries stop at once, without
+   waiting for the instrument's order lock.
+2. Under the instrument's order lock (`lock:order:{exchange}:{BASE}`, the lock every
+   close takes), an emergency close task (`emergency_close.py`, section 1 of
+   `live-entry-failure-paths-design-v1.md`) for the probe position, with the reason
+   `probe_loss_threshold`. A busy lock (a monitor exit in flight) writes no task; the
+   step is retried.
 
-The task row is the standing close request: it is written before any close is sent,
-survives a restart, and its executor runs whatever the price and the mark do
-afterwards. If the transaction fails, the evaluator keeps the decision and its inputs
-in process, refuses the probe's entries through the worker gate, and retries the same
-transaction (with the first inputs, not a fresh evaluation) on every tick. A restart
-before it lands loses only that latch: section 5 then closes the position anyway.
+`l_reached_at` on a record with an open probe position and no task is a standing close
+request, not only a field: the evaluator (PR 1c) runs step 2 again on every tick for
+every such record, whether the decision was taken in this process or not, so a failed
+step 2 is finished after a worker restart as well. The task row then carries the
+request: it is written before any close is sent, survives a restart, and its executor
+runs whatever the price and the mark do afterwards. If step 1 fails, the evaluator
+keeps the decision and its inputs in process, refuses the probe's entries through the
+worker gate, and retries step 1 (with the first inputs, not a fresh evaluation) on
+every tick. A restart before it lands loses only that latch: section 5 then closes the
+position anyway.
 
 **Closed by the emergency task.** Its rules are merged and answer the close's failure
 modes:
@@ -235,7 +242,15 @@ modes:
   is sent and the owner resolves it, as section 3 of the LIVE_PROBE design requires.
 - **Orders already in flight.** A close of the trade not terminal when the task is
   created (a monitor exit, a `flat_by` close) is linked the same way and followed as a
-  previous order of the task.
+  previous order of the task. The monitor holds the order lock from its task check
+  until its close row is final, so step 2 sees every such close.
+- **Closes that bypass the task.** The monitor's task check fails open on a database
+  error, so a protective close may still be sent after the task exists. On every pass,
+  under the order lock and before anything is sent, the executor links the trade's
+  closes written since then and follows them; a close of the exact instrument since
+  the task (since the entry, when the task is written) that it cannot link moves the
+  task to `manual_required`. A close proven to be of another exact instrument of the
+  same base does not count; one whose instrument is unknown does.
 - **No send before the previous order is resolved.** An unknown order is looked up, an
   active one is followed to a terminal state; neither allows a new send. A visible
   position proves nothing about an order Bybit is still processing. A terminal
@@ -277,11 +292,14 @@ any entry:
    entry until the owner resumes it with the probe CLI, after seeing the probe's
    state.
 2. For each record with a probe position open in the journal, an emergency close task
-   with the reason `probe_recovery` is created, in the same transaction, unless a task
-   for that position already exists. Its ownership and quantity rules (section 4)
-   apply: a position that does not match the owned remainder is not closed and goes to
-   `manual_required`.
-3. One alert per record: suspended, and whether a recovery close was created.
+   with the reason `probe_recovery` is created, in a second transaction under the order
+   lock (section 4, step 2), unless a task for that position already exists. Its
+   ownership and quantity rules (section 4) apply: a position that does not match the
+   owned remainder is not closed and goes to `manual_required`. Until every position
+   has its task, the start is not recovered and is retried; the suspensions of step 1
+   stay committed.
+3. One alert per record: suspended, and whether a recovery close was created. The
+   suspensions are alerted even when step 2 fails, since a retry suspends nothing more.
 
 If the database is not readable at start, nothing of the probe runs until it is: no
 entry is possible without it, and the protective stop guards an open position. The
@@ -311,6 +329,9 @@ that position. That is the price of not trusting a decision that may have been l
 | Mark stale for three ticks, nothing requested                    | No close, one alert                                                   |
 | Mark stale after the task exists                                 | Task continues                                                        |
 | Decision transaction fails                                       | No send; entries refused in process; same transaction retried         |
+| L recorded, order lock busy, worker restarted                    | Next tick sees `l_reached_at` with no task and writes it              |
+| Monitor check fails open after the task, close unknown           | Linked on the next pass; no send before it is resolved                |
+| Close of another native market of the same base                  | Not counted                                                           |
 | Crash after the decision, before the transaction landed          | Restart: suspended, `probe_recovery` close                            |
 | Entry 10, stop filled 4, exchange 6                              | `owned_quantity` 10, remainder 6, close 6                             |
 | Monitor exit filled 3 before the task                            | Its row linked, not inserted again; remainder 7                       |
@@ -321,6 +342,7 @@ that position. That is the price of not trusting a decision that may have been l
 | Flat, but a close order unknown or a stop still resting          | Not `confirmed_flat`                                                  |
 | Redis down after the decision                                    | No send, alert; exchange stop guards; send once the lock is held      |
 | Restart with an active record and no position                    | Suspended, no close, alert                                            |
+| Restart, order lock busy at step 2                               | Suspensions alerted; step 2 retried; not recovered until it lands     |
 | Restart with an existing task for the position                   | No second task                                                        |
 | `-realized_closed >= L`, record field empty                      | Admission writes `l_reached_at`, refuses                              |
 | Entry whose reserve does not fit under L                         | Refused before the reservation is written                             |

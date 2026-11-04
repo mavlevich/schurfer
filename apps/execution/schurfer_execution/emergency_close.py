@@ -52,6 +52,9 @@ STATUS_MANUAL_REQUIRED = "manual_required"
 
 REASON_STOP_PLACEMENT_FAILED = "stop_placement_failed"
 REASON_LATE_FILL_FLATTENED = "late_fill_flattened"
+# docs/engineering/live-probe-loss-threshold-design-v1.md, sections 4 and 5.
+REASON_PROBE_LOSS_THRESHOLD = "probe_loss_threshold"
+REASON_PROBE_RECOVERY = "probe_recovery"
 
 # The executor works on these; manual_required waits for an operator.
 RUNNABLE_STATUSES = (STATUS_REQUESTED, STATUS_SENDING, STATUS_UNKNOWN)
@@ -64,6 +67,9 @@ INCIDENT_DISCREPANCY = "emergency_close_pending"
 _CLOSE_UNKNOWN = frozenset({"pending", "submission_unknown"})
 _CLOSE_ACTIVE = "accepted"
 _CLOSE_TERMINAL_FILL = "completed"
+# A monitor exit linked to a probe task ends ``partial`` when its order is terminal and
+# the position remains: its fill counts like a completed close.
+_CLOSE_FILLED = frozenset({_CLOSE_TERMINAL_FILL, "partial"})
 _CLOSE_MANUAL = "manual_required"
 
 _TOLERANCE = Decimal("0.00000001")
@@ -150,6 +156,7 @@ class EmergencyCloseStore(Protocol):
     async def create_task(
         self, spec: TaskSpec, adopted: tuple[AdoptedClose, ...] = ()
     ) -> tuple[int, bool]: ...
+    async def link_late_closes(self, task: EmergencyCloseTask) -> str | None: ...
     async def runnable_task_ids(self) -> list[int]: ...
     async def claim(
         self, task_id: int, owner: str, lease_seconds: float
@@ -319,6 +326,45 @@ INSERT INTO app.live_order_attempts (
 )
 """
 
+# The trade's own close orders (a monitor exit, a flat_by close), already journalled as
+# close rows: linked to the task, never inserted a second time.
+_LINK_TRADE_CLOSES = """
+UPDATE app.live_order_attempts SET task_id = %s, updated_at = now()
+WHERE operation = 'close' AND trade_id = %s AND task_id IS NULL
+"""
+
+_FOREIGN_TRADE_CLOSES = """
+SELECT count(*) FROM app.live_order_attempts
+WHERE operation = 'close' AND trade_id = %s AND task_id IS NOT NULL AND task_id <> %s
+"""
+
+# A close of the instrument linked to no task, sent since a point in time: a close that
+# bypassed the task (a monitor exit whose trade was not known when it was written, or
+# one sent while the task check failed open). It may hold a fill of the position. A
+# close proven to be of another exact instrument does not count; one whose exact
+# instrument is unknown does.
+_UNLINKED_INSTRUMENT_CLOSES = """
+SELECT count(*) FROM app.live_order_attempts AS c
+WHERE c.operation = 'close' AND c.task_id IS NULL
+  AND c.exchange = %(exchange)s AND upper(c.base) = upper(%(base)s)
+  AND (c.native_market_id IS NULL OR c.market_type IS NULL
+       OR (c.native_market_id = %(native_market_id)s AND c.market_type = %(market_type)s))
+  AND c.created_at >= {since}
+  AND c.status NOT IN ('failed', 'no_fill')
+"""
+_UNLINKED_SINCE_ENTRY = _UNLINKED_INSTRUMENT_CLOSES.format(
+    since="(SELECT created_at FROM app.live_order_attempts WHERE id = %(since)s)"
+)
+_UNLINKED_SINCE_TASK = _UNLINKED_INSTRUMENT_CLOSES.format(
+    since="(SELECT created_at FROM app.live_emergency_closes WHERE id = %(since)s)"
+)
+
+_TASK_MANUAL = """
+UPDATE app.live_emergency_closes
+SET status = 'manual_required', last_error = %s, updated_at = now()
+WHERE id = %s
+"""
+
 _ACTIVE_TASK_FOR_INSTRUMENT = """
 SELECT 1 FROM app.live_emergency_closes
 WHERE exchange = %s AND base = upper(%s)
@@ -348,6 +394,142 @@ def task_from_row(row: dict[str, Any]) -> EmergencyCloseTask:
     )
 
 
+async def create_task_in(
+    cursor: psycopg.AsyncCursor[Any],
+    spec: TaskSpec,
+    adopted: tuple[AdoptedClose, ...] = (),
+    *,
+    link_trade_closes: bool = False,
+) -> tuple[int, bool]:
+    """``create_task`` inside the caller's transaction. With ``link_trade_closes`` a
+    task for a journalled trade (``spec.trade_id``) takes the trade's existing close
+    rows as its own. A close of the trade that another task already owns, or a close
+    of the instrument after the entry linked to no task, moves the new task to
+    ``manual_required``: its fill cannot be counted. The caller holds the instrument's
+    order lock, so no close of the trade starts while the task is written; a close
+    that bypasses the task later is taken by the executor's ``link_late_closes``."""
+    if not order_ids.is_entry_client_order_id(spec.entry_client_order_id):
+        raise ValueError("emergency close needs a derived-id entry clientOrderId")
+    if spec.side not in {"long", "short"} or spec.owned_quantity <= 0:
+        raise ValueError("emergency close needs a side and a positive owned quantity")
+    await cursor.execute(
+        _INSERT_TASK,
+        (
+            spec.source_attempt_id,
+            spec.entry_client_order_id,
+            spec.exchange,
+            spec.base.upper(),
+            spec.symbol,
+            spec.native_market_id,
+            spec.market_type,
+            spec.side,
+            spec.trade_id,
+            spec.owned_quantity,
+            spec.owned_quantity,
+            spec.reason,
+        ),
+    )
+    row = await cursor.fetchone()
+    if row is None:
+        await cursor.execute(
+            "SELECT id FROM app.live_emergency_closes WHERE source_attempt_id = %s",
+            (spec.source_attempt_id,),
+        )
+        existing = await cursor.fetchone()
+        if existing is None:
+            raise RuntimeError("emergency close task vanished on conflict")
+        return int(_first(existing)), False
+    task_id = int(_first(row))
+    await cursor.execute(
+        _INSERT_INCIDENT,
+        (
+            incident_key(task_id),
+            spec.exchange,
+            spec.symbol,
+            spec.native_market_id,
+            spec.market_type,
+            spec.side,
+            spec.owned_quantity,
+            INCIDENT_DISCREPANCY,
+            json.dumps(
+                {
+                    "task_id": task_id,
+                    "source_attempt_id": spec.source_attempt_id,
+                    "reason": spec.reason,
+                }
+            ),
+        ),
+    )
+    for close in adopted:
+        await cursor.execute(
+            _ADOPT_CLOSE,
+            (
+                close.client_order_id,
+                spec.exchange,
+                spec.base.upper(),
+                spec.symbol,
+                spec.native_market_id,
+                spec.market_type,
+                spec.side,
+                close.requested_amount,
+                close.filled_amount,
+                json.dumps({"emergency_close_task_id": task_id, "adopted": True}),
+                close.status,
+                close.order_id,
+                task_id,
+            ),
+        )
+    if link_trade_closes:
+        problem = await link_closes_in(
+            cursor,
+            task_id,
+            trade_id=spec.trade_id,
+            identity=_identity(spec),
+            since=_UNLINKED_SINCE_ENTRY,
+            since_id=spec.source_attempt_id,
+        )
+        if problem is not None:
+            await cursor.execute(_TASK_MANUAL, (problem, task_id))
+    return task_id, True
+
+
+def _identity(task: TaskSpec | EmergencyCloseTask) -> dict[str, str]:
+    return {
+        "exchange": task.exchange,
+        "base": task.base,
+        "native_market_id": task.native_market_id,
+        "market_type": task.market_type,
+    }
+
+
+async def link_closes_in(
+    cursor: psycopg.AsyncCursor[Any],
+    task_id: int,
+    *,
+    trade_id: int | None,
+    identity: dict[str, str],
+    since: str,
+    since_id: int,
+) -> str | None:
+    """Link the trade's closes that no task owns yet to the task. Returns the problem
+    that keeps the task's remainder from being counted: a close of the trade owned by
+    another task, or a close of the instrument since ``since`` linked to no task."""
+    if trade_id is not None:
+        await cursor.execute(_LINK_TRADE_CLOSES, (task_id, trade_id))
+        await cursor.execute(_FOREIGN_TRADE_CLOSES, (trade_id, task_id))
+        if int(_first(await cursor.fetchone())) > 0:
+            return "a close of the trade belongs to another task"
+    await cursor.execute(since, {**identity, "since": since_id})
+    if int(_first(await cursor.fetchone())) > 0:
+        return "a close of the instrument is linked to no task"
+    return None
+
+
+def _first(row: Any) -> Any:
+    """The first column of a row from a tuple or a dict cursor."""
+    return next(iter(row.values())) if isinstance(row, dict) else row[0]
+
+
 class PostgresEmergencyCloseStore:
     def __init__(self, db_url: str) -> None:
         self.db_url = db_url
@@ -362,85 +544,31 @@ class PostgresEmergencyCloseStore:
         is returned, not duplicated. Raises ``TaskConflictError`` when another
         source attempt's task holds the identity.
         """
-        if not order_ids.is_entry_client_order_id(spec.entry_client_order_id):
-            raise ValueError("emergency close needs a derived-id entry clientOrderId")
-        if spec.side not in {"long", "short"} or spec.owned_quantity <= 0:
-            raise ValueError("emergency close needs a side and a positive owned quantity")
         try:
             async with (
                 await psycopg.AsyncConnection.connect(self.db_url) as connection,
                 connection.cursor() as cursor,
             ):
-                await cursor.execute(
-                    _INSERT_TASK,
-                    (
-                        spec.source_attempt_id,
-                        spec.entry_client_order_id,
-                        spec.exchange,
-                        spec.base.upper(),
-                        spec.symbol,
-                        spec.native_market_id,
-                        spec.market_type,
-                        spec.side,
-                        spec.trade_id,
-                        spec.owned_quantity,
-                        spec.owned_quantity,
-                        spec.reason,
-                    ),
-                )
-                row = await cursor.fetchone()
-                if row is None:
-                    await cursor.execute(
-                        "SELECT id FROM app.live_emergency_closes WHERE source_attempt_id = %s",
-                        (spec.source_attempt_id,),
-                    )
-                    existing = await cursor.fetchone()
-                    if existing is None:
-                        raise RuntimeError("emergency close task vanished on conflict")
-                    return int(existing[0]), False
-                task_id = int(row[0])
-                await cursor.execute(
-                    _INSERT_INCIDENT,
-                    (
-                        incident_key(task_id),
-                        spec.exchange,
-                        spec.symbol,
-                        spec.native_market_id,
-                        spec.market_type,
-                        spec.side,
-                        spec.owned_quantity,
-                        INCIDENT_DISCREPANCY,
-                        json.dumps(
-                            {
-                                "task_id": task_id,
-                                "source_attempt_id": spec.source_attempt_id,
-                                "reason": spec.reason,
-                            }
-                        ),
-                    ),
-                )
-                for close in adopted:
-                    await cursor.execute(
-                        _ADOPT_CLOSE,
-                        (
-                            close.client_order_id,
-                            spec.exchange,
-                            spec.base.upper(),
-                            spec.symbol,
-                            spec.native_market_id,
-                            spec.market_type,
-                            spec.side,
-                            close.requested_amount,
-                            close.filled_amount,
-                            json.dumps({"emergency_close_task_id": task_id, "adopted": True}),
-                            close.status,
-                            close.order_id,
-                            task_id,
-                        ),
-                    )
-                return task_id, True
+                return await create_task_in(cursor, spec, adopted)
         except psycopg.errors.UniqueViolation as exc:
             raise TaskConflictError(str(exc)) from exc
+
+    async def link_late_closes(self, task: EmergencyCloseTask) -> str | None:
+        """Take the closes sent since the task was written that bypassed it (the
+        monitor's task check fails open). The caller holds the order lock, so no
+        other close of the instrument starts meanwhile."""
+        async with (
+            await psycopg.AsyncConnection.connect(self.db_url) as connection,
+            connection.cursor() as cursor,
+        ):
+            return await link_closes_in(
+                cursor,
+                task.id,
+                trade_id=task.trade_id,
+                identity=_identity(task),
+                since=_UNLINKED_SINCE_TASK,
+                since_id=task.id,
+            )
 
     async def runnable_task_ids(self) -> list[int]:
         async with (
@@ -661,6 +789,11 @@ class EmergencyCloseExecutor:
         if exchange is None:
             return await self._manual(task, f"exchange {task.exchange!r} is not configured")
 
+        # Under the order lock: a close that bypassed the task is followed as the
+        # task's own, or stops the task, before anything is sent.
+        problem = await self.store.link_late_closes(task)
+        if problem is not None:
+            return await self._manual(task, problem)
         closes = await self._follow_closes(exchange, task)
         if any(close.status == _CLOSE_MANUAL for close in closes):
             return await self._manual(task, "a close order is terminal without a filled amount")
@@ -700,7 +833,7 @@ class EmergencyCloseExecutor:
             (
                 close.filled_amount or Decimal(0)
                 for close in closes
-                if close.status == _CLOSE_TERMINAL_FILL
+                if close.status in _CLOSE_FILLED
             ),
             Decimal(0),
         )
