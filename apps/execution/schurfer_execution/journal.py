@@ -185,6 +185,10 @@ ON CONFLICT (exchange, order_id) DO NOTHING
 RETURNING id
 """
 
+# Every writer of a trade's close legs holds the trade row until it commits: legs and
+# the final close of one trade are serialized, and a closed trade takes no new leg.
+_LOCK_TRADE_FOR_LEGS = "SELECT status FROM app.trades WHERE id = %s FOR UPDATE"
+
 _SELECT_CLOSE_FILL = """
 SELECT trade_id, fill_price, filled_amount, requested_amount, remaining_amount, terminal,
        executed_at, execution_time_source
@@ -502,27 +506,40 @@ async def record_close_fill_in(
             order_id=order_id,
         )
         return None
-    await cur.execute(
-        _INSERT_CLOSE_FILL,
-        (
-            trade_id,
-            exchange,
-            order_id,
-            fill_price,
-            filled_amount,
-            requested_amount,
-            remaining_amount,
-            terminal,
-            fill_source,
-            executed_at,
-            execution_time_source,
-        ),
-    )
-    inserted = await cur.fetchone()
+    status = await lock_trade_for_legs_in(cur, trade_id)
+    if status is None:
+        log.error("journal.record_close_fill.trade_not_found", trade_id=trade_id)
+        return None
+    inserted = None
+    if status != "closed":
+        await cur.execute(
+            _INSERT_CLOSE_FILL,
+            (
+                trade_id,
+                exchange,
+                order_id,
+                fill_price,
+                filled_amount,
+                requested_amount,
+                remaining_amount,
+                terminal,
+                fill_source,
+                executed_at,
+                execution_time_source,
+            ),
+        )
+        inserted = await cur.fetchone()
     if inserted is None:
         await cur.execute(_SELECT_CLOSE_FILL, (exchange, order_id))
         existing = await cur.fetchone()
         if existing is None:
+            if status == "closed":
+                log.critical(
+                    "journal.record_close_fill.trade_closed",
+                    trade_id=trade_id,
+                    exchange=exchange,
+                    order_id=order_id,
+                )
             return None
         (
             existing_trade_id,
@@ -590,6 +607,27 @@ async def record_close_fill_in(
     if aggregate is None or aggregate[0] is None:
         return None
     return float(aggregate[0])
+
+
+async def lock_trade_for_legs_in(cur: psycopg.AsyncCursor[Any], trade_id: int) -> str | None:
+    """Hold the trade row for the rest of the caller's transaction, the lock every
+    close leg writer takes. Returns the trade's status, or None when it is missing."""
+    await cur.execute(_LOCK_TRADE_FOR_LEGS, (trade_id,))
+    row = await cur.fetchone()
+    if row is None:
+        return None
+    return str(row[0])
+
+
+async def aggregate_close_fill_price_in(
+    cur: psycopg.AsyncCursor[Any], trade_id: int
+) -> float | None:
+    """The trade's amount-weighted exit price over its journalled legs."""
+    await cur.execute(_AGGREGATE_CLOSE_FILLS, (trade_id,))
+    row = await cur.fetchone()
+    if row is None or row[0] is None:
+        return None
+    return float(row[0])
 
 
 async def aggregate_close_fill_price(db_url: str, *, trade_id: int) -> float | None:

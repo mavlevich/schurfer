@@ -261,7 +261,14 @@ modes:
   terminal. A flat position with an unresolved order is not done.
 - **Accounting** of the round trip starts after `confirmed_flat` and never delays the
   close. PR 1 extends it to a trade already in the journal: the task's close legs are
-  written to that trade, not a new round trip.
+  written to that trade, not a new round trip. A leg the journal already holds for the
+  trade (a monitor exit's partial fill linked to the task, or a stop the monitor
+  journalled) is kept as journalled when it matches its exchange order (amount, price,
+  exchange) and is never written again. Only the last leg may already be terminal; then
+  the trade is closed as it stands. A journalled leg of the trade that is not one of
+  the task's legs, or one that does not match, needs the owner, and nothing is written.
+  Every writer of a trade's close legs holds the trade row until it commits, so no leg
+  is added between the check and the writes, and a closed trade takes no new leg.
 - The monitor and reconciliation send no close for an instrument with an active task.
 
 **What the close depends on.** The executor needs the database (its task row) and

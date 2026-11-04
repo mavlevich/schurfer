@@ -884,7 +884,7 @@ class TestAnyPendingCloses:
 
 @patch("psycopg.AsyncConnection.connect")
 async def test_record_close_fill_returns_amount_weighted_aggregate(mock_connect) -> None:
-    conn, cur = _mock_conn([(101,), (107.5, 4.0)])
+    conn, cur = _mock_conn([("open",), (101,), (107.5, 4.0)])
     mock_connect.return_value = conn
 
     aggregate = await journal.record_close_fill(
@@ -901,7 +901,8 @@ async def test_record_close_fill_returns_amount_weighted_aggregate(mock_connect)
     )
 
     assert aggregate == 107.5
-    insert_params = cur.execute.call_args_list[0].args[1]
+    assert "FOR UPDATE" in cur.execute.call_args_list[0].args[0]
+    insert_params = cur.execute.call_args_list[1].args[1]
     assert insert_params[:3] == (42, "bingx", "close-2")
     assert insert_params[3:7] == (110.0, 3.0, 3.0, 0.0)
 
@@ -910,6 +911,7 @@ async def test_record_close_fill_returns_amount_weighted_aggregate(mock_connect)
 async def test_record_close_fill_retry_is_idempotent(mock_connect) -> None:
     conn, _cur = _mock_conn(
         [
+            ("open",),
             None,
             (42, 100.0, 1.0, 4.0, 3.0, False, None, None),
             (100.0, 1.0),
@@ -938,6 +940,7 @@ async def test_record_close_fill_retry_enriches_missing_execution_time(mock_conn
     executed_at = datetime(2026, 9, 9, 23, 58, tzinfo=UTC)
     conn, cur = _mock_conn(
         [
+            ("open",),
             None,
             (42, 100.0, 1.0, 4.0, 3.0, False, None, None),
             (100.0, 1.0),
@@ -961,7 +964,7 @@ async def test_record_close_fill_retry_enriches_missing_execution_time(mock_conn
     )
 
     assert aggregate == 100.0
-    enrichment = cur.execute.call_args_list[2]
+    enrichment = cur.execute.call_args_list[3]
     assert "executed_at IS NULL" in enrichment.args[0]
     assert enrichment.args[1] == (
         executed_at,
@@ -972,8 +975,54 @@ async def test_record_close_fill_retry_enriches_missing_execution_time(mock_conn
 
 
 @patch("psycopg.AsyncConnection.connect")
+async def test_record_close_fill_refuses_a_new_leg_of_a_closed_trade(mock_connect) -> None:
+    conn, cur = _mock_conn([("closed",), None])
+    mock_connect.return_value = conn
+
+    aggregate = await journal.record_close_fill(
+        "postgresql://x",
+        trade_id=42,
+        exchange="bingx",
+        order_id="late-1",
+        fill_price=100.0,
+        filled_amount=1.0,
+        requested_amount=1.0,
+        remaining_amount=0.0,
+        terminal=False,
+        fill_source="order.average",
+    )
+
+    assert aggregate is None
+    assert not any("INSERT" in call.args[0] for call in cur.execute.call_args_list)
+
+
+@patch("psycopg.AsyncConnection.connect")
+async def test_record_close_fill_retry_on_a_closed_trade_is_idempotent(mock_connect) -> None:
+    conn, cur = _mock_conn(
+        [("closed",), (42, 100.0, 1.0, 1.0, 0.0, True, None, None), (100.0, 1.0)]
+    )
+    mock_connect.return_value = conn
+
+    aggregate = await journal.record_close_fill(
+        "postgresql://x",
+        trade_id=42,
+        exchange="bingx",
+        order_id="close-1",
+        fill_price=100.0,
+        filled_amount=1.0,
+        requested_amount=1.0,
+        remaining_amount=0.0,
+        terminal=True,
+        fill_source="order.average",
+    )
+
+    assert aggregate == 100.0
+    assert not any("INSERT" in call.args[0] for call in cur.execute.call_args_list)
+
+
+@patch("psycopg.AsyncConnection.connect")
 async def test_record_close_fill_rejects_conflicting_retry(mock_connect) -> None:
-    conn, _cur = _mock_conn([None, (42, 99.0, 1.0, 4.0, 3.0, False, None, None)])
+    conn, _cur = _mock_conn([("open",), None, (42, 99.0, 1.0, 4.0, 3.0, False, None, None)])
     mock_connect.return_value = conn
 
     aggregate = await journal.record_close_fill(

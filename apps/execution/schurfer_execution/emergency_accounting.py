@@ -8,8 +8,9 @@ its own supervised worker, so a slow exchange or database here never delays a cl
 Every fact comes from durable rows and the exchange, never from process memory:
 
   * the entry: the source attempt row and the entry order found by its derived id;
-  * the close legs: the task's close rows (``<entry>c*``) and the entry's protective
-    stops (``<entry>s*``) that ended with a fill.
+  * the close legs: the task's close rows (``<entry>c*``, and the trade's own closes a
+    probe task links, which may be partial) and the entry's protective stops
+    (``<entry>s*``) that ended with a fill.
 
 A fill amount the exchange does not report yet is unknown, not zero. Once every amount
 is known, the legs must add up to the owned quantity, or an operator is needed. Each
@@ -17,7 +18,14 @@ price is resolved from its exchange order, never from a ticker.
 
 The round trip is then published in one transaction: the open, each leg in execution
 order (the last one terminal), the close at the legs' amount-weighted price, and the
-task, entry attempt and close rows linked to the trade. Nothing partial is ever
+task, entry attempt and close rows linked to the trade. The publish holds the trade
+row, the lock every close leg writer takes, so no leg is added while it checks and
+writes. A leg the journal already holds for the trade (a monitor exit that filled part
+of the position before the task, or a stop the monitor journalled) is kept as it is
+when it matches the exchange order: amount, price and exchange. Only the last leg may
+be journalled as terminal; when it is, the trade is already closed or closed now, and
+nothing is written again. Any other journalled leg of the trade, or a mismatch, needs
+an operator. Nothing partial is ever
 visible, so a failure at any point leaves nothing to reconcile, and the next run
 builds the round trip again from the same facts. Anything still unknown, or any read
 or write that fails, is retried until the deadline, then needs an operator.
@@ -29,6 +37,7 @@ clears it once the task is ``accounted``.
 from __future__ import annotations
 
 import asyncio
+import math
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -57,7 +66,9 @@ if TYPE_CHECKING:
 log = structlog.get_logger()
 
 _TOLERANCE = Decimal("0.00000001")
-_CLOSE_TERMINAL_FILL = "completed"
+# A monitor close a probe task linked may be partial: its order is terminal, its fill
+# real, and the position remained.
+_CLOSE_FILLED = frozenset({"completed", "partial"})
 
 
 @dataclass(frozen=True)
@@ -116,6 +127,11 @@ class _NeedsOperatorError(Exception):
 
 class JournalRefusedError(RuntimeError):
     """The journal refused one write; the whole publish is rolled back."""
+
+
+class JournalConflictError(RuntimeError):
+    """The journal already holds close legs of the trade that contradict the task's
+    legs; the publish is rolled back and an operator is needed."""
 
 
 class AccountingStore(Protocol):
@@ -184,6 +200,11 @@ _LINK_CLOSES = """
 UPDATE app.live_order_attempts SET trade_id = %s, updated_at = now() WHERE task_id = %s
 """
 
+_JOURNALLED_LEGS = """
+SELECT order_id, exchange, fill_price, filled_amount, terminal FROM app.trade_close_fills
+WHERE trade_id = %s
+"""
+
 
 class PostgresAccountingStore(PostgresEmergencyCloseStore):
     async def accountable_task_ids(self) -> list[int]:
@@ -250,24 +271,50 @@ class PostgresAccountingStore(PostgresEmergencyCloseStore):
                 )
                 if trade_id is None:
                     raise JournalRefusedError("the journal did not take the open")
+            status = await journal.lock_trade_for_legs_in(cursor, trade_id)
+            if status is None:
+                raise JournalRefusedError(f"trade {trade_id} is not in the journal")
+            journalled = await _journalled_legs(cursor, trade_id, task.exchange, round_trip)
+            new_legs = [leg for leg in round_trip.legs if leg.order_id not in journalled]
             aggregate: float | None = None
-            for leg in round_trip.legs:
-                aggregate = await journal.record_close_fill_in(
-                    cursor,
-                    trade_id=trade_id,
-                    exchange=task.exchange,
-                    order_id=leg.order_id,
-                    fill_price=leg.price,
-                    filled_amount=float(leg.filled_amount),
-                    requested_amount=float(leg.requested_amount),
-                    remaining_amount=float(leg.remaining_amount),
-                    terminal=leg.terminal,
-                    fill_source=leg.source,
-                    executed_at=leg.executed_at,
-                    execution_time_source=leg.execution_time_source,
-                )
-                if aggregate is None:
-                    raise JournalRefusedError(f"the journal did not take close leg {leg.order_id}")
+            if new_legs:
+                if status == "closed" or any(journalled.values()):
+                    raise JournalConflictError(
+                        f"trade {trade_id} already has its terminal close, yet the journal "
+                        f"lacks the task's legs {', '.join(leg.order_id for leg in new_legs)}"
+                    )
+                if not new_legs[-1].terminal:
+                    raise JournalConflictError(
+                        f"the last close leg of trade {trade_id} is journalled as not "
+                        "terminal, so no terminal leg can be written"
+                    )
+                for leg in new_legs:
+                    aggregate = await journal.record_close_fill_in(
+                        cursor,
+                        trade_id=trade_id,
+                        exchange=task.exchange,
+                        order_id=leg.order_id,
+                        fill_price=leg.price,
+                        filled_amount=float(leg.filled_amount),
+                        requested_amount=float(leg.requested_amount),
+                        remaining_amount=float(leg.remaining_amount),
+                        terminal=leg.terminal,
+                        fill_source=leg.source,
+                        executed_at=leg.executed_at,
+                        execution_time_source=leg.execution_time_source,
+                    )
+                    if aggregate is None:
+                        raise JournalRefusedError(
+                            f"the journal did not take close leg {leg.order_id}"
+                        )
+            else:
+                # Every leg is journalled already, the last one terminal: the monitor
+                # finished the record, so the trade is closed, or is closed here.
+                if not journalled.get(round_trip.legs[-1].order_id):
+                    raise JournalConflictError(
+                        f"every close leg of trade {trade_id} is journalled and none is terminal"
+                    )
+                aggregate = await journal.aggregate_close_fill_price_in(cursor, trade_id)
             if aggregate is None:
                 raise JournalRefusedError("a round trip needs at least one close leg")
             last = round_trip.legs[-1]
@@ -287,6 +334,44 @@ class PostgresAccountingStore(PostgresEmergencyCloseStore):
             await cursor.execute(_LINK_ENTRY, (trade_id, task.source_attempt_id))
             await cursor.execute(_LINK_CLOSES, (trade_id, task.id))
         return trade_id
+
+
+async def _journalled_legs(
+    cursor: psycopg.AsyncCursor[Any], trade_id: int, exchange: str, round_trip: RoundTrip
+) -> dict[str, bool]:
+    """The round trip's legs the journal already holds for the trade, with whether each
+    is terminal. Each must match its exchange order (exchange, filled amount, price);
+    only the round trip's last leg may be terminal; and no journalled leg of the trade
+    may be outside the round trip. The caller holds the trade row."""
+    await cursor.execute(_JOURNALLED_LEGS, (trade_id,))
+    rows = await cursor.fetchall()
+    legs = {leg.order_id: leg for leg in round_trip.legs}
+    last = round_trip.legs[-1].order_id
+    journalled: dict[str, bool] = {}
+    for order_id, leg_exchange, price, filled, terminal in rows:
+        leg = legs.get(str(order_id))
+        if leg is None:
+            raise JournalConflictError(
+                f"the journal holds close leg {order_id} of trade {trade_id}, which is "
+                "not one of the task's legs"
+            )
+        if (
+            leg_exchange != exchange
+            or abs(Decimal(filled) - leg.filled_amount) > _TOLERANCE
+            or not math.isclose(float(price), leg.price, rel_tol=1e-9, abs_tol=1e-12)
+        ):
+            raise JournalConflictError(
+                f"close leg {order_id} of trade {trade_id} is in the journal as {filled} at "
+                f"{price} on {leg_exchange}; the exchange reports {leg.filled_amount} at "
+                f"{leg.price} on {exchange}"
+            )
+        if terminal and order_id != last:
+            raise JournalConflictError(
+                f"close leg {order_id} of trade {trade_id} is journalled as terminal but "
+                "is not the last leg"
+            )
+        journalled[str(order_id)] = bool(terminal)
+    return journalled
 
 
 def close_reason(task: EmergencyCloseTask) -> str:
@@ -359,7 +444,7 @@ class EmergencyCloseAccountant:
             round_trip = await self._round_trip(task)
             await journal.revoke_pnl_readiness(self.rdb)
             trade_id = await self.store.publish(task, self.owner, round_trip)
-        except _NeedsOperatorError as manual:
+        except (_NeedsOperatorError, JournalConflictError) as manual:
             return await self._manual(task, str(manual))
         except Exception as exc:
             # Not known yet, or a read or the publish failed: all retried until the
@@ -391,7 +476,7 @@ class EmergencyCloseAccountant:
 
         leg_orders: list[dict[str, Any]] = []
         for close in closes:
-            if close.status != _CLOSE_TERMINAL_FILL or not close.filled_amount:
+            if close.status not in _CLOSE_FILLED or not close.filled_amount:
                 continue
             order = orders.get(close.client_order_id)
             if order is None:
