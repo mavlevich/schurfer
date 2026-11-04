@@ -4,6 +4,7 @@ sections 4 and 5)."""
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from decimal import Decimal
 from types import SimpleNamespace
@@ -13,7 +14,18 @@ from unittest.mock import AsyncMock, patch
 import ccxt
 import psycopg
 import pytest
-from schurfer_execution import emergency_close, live_probe, orders, probe_close
+import structlog.testing
+from schurfer_execution import (
+    emergency_accounting,
+    emergency_close,
+    journal,
+    live_probe,
+    monitor,
+    order_attempts,
+    order_ids,
+    orders,
+    probe_close,
+)
 from schurfer_execution.emergency_close import PostgresEmergencyCloseStore
 
 from .test_emergency_close import FakeExchange
@@ -55,6 +67,12 @@ class LockRedis:
             del self.keys[key]
         return 1
 
+    async def get(self, key: str) -> str | None:
+        return self.keys.get(key)
+
+    async def delete(self, *keys: str) -> int:
+        return sum(self.keys.pop(key, None) is not None for key in keys)
+
 
 @pytest.fixture
 def rdb() -> LockRedis:
@@ -71,6 +89,7 @@ def _cleanup_tasks() -> Any:
         return
     with conn, conn.transaction():
         conn.execute("SET LOCAL session_replication_role = replica")
+        conn.execute("DELETE FROM app.trade_close_fills WHERE order_id LIKE 'tlp-%%'")
         conn.execute(
             "DELETE FROM app.live_order_attempts WHERE native_market_id LIKE 'TLP%%' "
             "AND operation = 'close'"
@@ -810,3 +829,344 @@ async def test_a_close_of_the_base_whose_exact_instrument_is_unknown_needs_the_o
 
     [task] = await _tasks(reservation.native_market_id)
     assert task["status"] == "manual_required" and "linked to no task" in task["last_error"]
+
+
+# --- Accounting after L (live-entry-failure-paths-design-v1.md, section 1) -----------
+
+
+class _Venue:
+    """One long position and the market orders that close it, priced and timed, as
+    ``close_position``, the executor and the accountant read them."""
+
+    def __init__(self, contracts: str, native_market_id: str) -> None:
+        self.has = {"fetchOpenOrders": True, "fetchClosedOrders": True}
+        self.markets = {SYMBOL: {"contractSize": 1, "id": native_market_id, "type": "swap"}}
+        self.contracts = float(contracts)
+        self.orders: dict[str, dict[str, Any]] = {}
+        self.fills: list[tuple[float, float]] = []
+        self.sent: list[float] = []
+
+    async def fetch_positions(self, symbols: list[str] | None = None) -> list[dict[str, Any]]:
+        return [{"symbol": SYMBOL, "contracts": self.contracts, "side": "long", "markPrice": 95.0}]
+
+    def amount_to_precision(self, symbol: str, amount: float) -> str:
+        return f"{amount:.8f}".rstrip("0").rstrip(".")
+
+    async def create_market_order(
+        self, symbol: str, side: str, amount: float, params: dict[str, Any]
+    ) -> dict[str, Any]:
+        self.sent.append(amount)
+        filled, price = self.fills.pop(0)
+        order_id = f"tlp-{uuid.uuid4().hex}"
+        self.orders[order_id] = {
+            "id": order_id,
+            "clientOrderId": params["clientOrderId"],
+            "status": "closed",
+            "amount": amount,
+            "filled": filled,
+            "average": price,
+            "lastTradeTimestamp": 1_800_000_000_000 + len(self.orders) * 60_000,
+            "stop": False,
+        }
+        self.contracts -= filled
+        return dict(self.orders[order_id])
+
+    def _listing(self, open_orders: bool, params: dict[str, Any] | None) -> list[dict[str, Any]]:
+        trigger = bool((params or {}).get("trigger"))
+        return [
+            dict(order)
+            for order in self.orders.values()
+            if order["stop"] == trigger and (order["status"] == "open") == open_orders
+        ]
+
+    async def fetch_open_orders(
+        self, symbol: str, params: dict[str, Any] | None = None
+    ) -> list[dict[str, Any]]:
+        return self._listing(True, params)
+
+    async def fetch_closed_orders(
+        self, symbol: str, params: dict[str, Any] | None = None
+    ) -> list[dict[str, Any]]:
+        return self._listing(False, params)
+
+    async def fetch_order(self, order_id: str, symbol: str) -> dict[str, Any]:
+        return dict(self.orders[order_id])
+
+    async def fetch_my_trades(self, symbol: str, **kwargs: Any) -> list[dict[str, Any]]:
+        return []
+
+
+async def _flat_after_a_partial_exit(
+    rdb: LockRedis,
+) -> tuple[int, int, _Venue, live_probe.Reservation]:
+    """The monitor exit fills 3 of 10 and journals its leg; L closes the other 7 and
+    the task is confirmed flat. Returns task, trade, venue, reservation."""
+    probe_id, reservation, _, trade_id = await _open_position()
+    assert trade_id is not None
+    venue = _Venue("10", reservation.native_market_id)
+    venue.fills = [(3.0, 95.0), (7.0, 94.0)]
+
+    with patch.object(orders, "_tracked_trade_id", AsyncMock(return_value=trade_id)):
+        exit_ = await orders.close_position(
+            exchanges={"bybit": venue},
+            exchange="bybit",
+            base="TLP",
+            symbol=SYMBOL,
+            reason="monitor exit",
+            rdb=rdb,
+            cfg=SimpleNamespace(db_url=TEST_DATABASE_URL),
+        )
+    assert exit_["closed"] is False and exit_["filled_amount"] == 3.0, exit_
+    monitor_rows = await _query(
+        "SELECT status, filled_amount FROM app.live_order_attempts "
+        "WHERE operation = 'close' AND trade_id = %s",
+        (trade_id,),
+    )
+    assert [(r["status"], r["filled_amount"]) for r in monitor_rows] == [("partial", D(3))]
+
+    result = await probe_close.record_l_reached(
+        TEST_DATABASE_URL, rdb, probe_id, loss_usd=D(60), inputs={}
+    )
+    task_id = result.closes[0].task_id
+    assert task_id is not None
+    executor = emergency_close.EmergencyCloseExecutor(
+        {"bybit": venue}, PostgresEmergencyCloseStore(TEST_DATABASE_URL), rdb
+    )
+    assert await executor.run_pass(task_id) == emergency_close.STATUS_SENDING
+    assert await executor.run_pass(task_id) == emergency_close.STATUS_CONFIRMED_FLAT
+    assert venue.sent == [10.0, 7.0]
+    return task_id, trade_id, venue, reservation
+
+
+def _accountant(venue: _Venue, rdb: LockRedis) -> emergency_accounting.EmergencyCloseAccountant:
+    return emergency_accounting.EmergencyCloseAccountant(
+        {"bybit": venue}, emergency_accounting.PostgresAccountingStore(TEST_DATABASE_URL), rdb
+    )
+
+
+async def _fills(trade_id: int) -> list[tuple[Decimal, bool]]:
+    rows = await _query(
+        "SELECT filled_amount, terminal FROM app.trade_close_fills WHERE trade_id = %s "
+        "ORDER BY executed_at, id",
+        (trade_id,),
+    )
+    return [(r["filled_amount"], r["terminal"]) for r in rows]
+
+
+async def test_a_monitor_partial_exit_then_l_is_accounted_without_a_second_leg(
+    rdb: LockRedis,
+) -> None:
+    """The accountant keeps the monitor's leg as journalled, writes the executor's as
+    the terminal one, and closes the trade at the weighted price of both."""
+    task_id, trade_id, venue, reservation = await _flat_after_a_partial_exit(rdb)
+
+    assert await _accountant(venue, rdb).account(task_id) == emergency_close.STATUS_ACCOUNTED
+
+    assert await _fills(trade_id) == [(D(3), False), (D(7), True)]
+    [trade] = await _query("SELECT status, exit_price FROM app.trades WHERE id = %s", (trade_id,))
+    assert trade["status"] == "closed"
+    assert float(trade["exit_price"]) == pytest.approx((3 * 95 + 7 * 94) / 10)
+    [task] = await _tasks(reservation.native_market_id)
+    assert (task["status"], task["trade_id"]) == ("accounted", trade_id)
+
+
+async def test_a_journalled_leg_the_task_does_not_explain_needs_the_owner(
+    rdb: LockRedis,
+) -> None:
+    task_id, trade_id, venue, reservation = await _flat_after_a_partial_exit(rdb)
+    await _query(
+        "INSERT INTO app.trade_close_fills (trade_id, exchange, order_id, fill_price, "
+        "filled_amount, requested_amount, remaining_amount, terminal, fill_source) "
+        "VALUES (%s, 'bybit', %s, 95, 1, 1, 0, false, 'test') RETURNING id",
+        (trade_id, f"tlp-{uuid.uuid4().hex}"),
+    )
+
+    assert await _accountant(venue, rdb).account(task_id) == emergency_close.STATUS_MANUAL_REQUIRED
+
+    assert await _fills(trade_id) == [(D(3), False), (D(1), False)], "nothing written"
+    [task] = await _tasks(reservation.native_market_id)
+    assert "not one of the task's legs" in task["last_error"]
+
+
+async def test_a_journalled_leg_with_another_amount_needs_the_owner(rdb: LockRedis) -> None:
+    task_id, trade_id, venue, _ = await _flat_after_a_partial_exit(rdb)
+    await _query(
+        "UPDATE app.trade_close_fills SET filled_amount = 2 WHERE trade_id = %s",
+        (trade_id,),
+    )
+
+    assert await _accountant(venue, rdb).account(task_id) == emergency_close.STATUS_MANUAL_REQUIRED
+
+    assert await _fills(trade_id) == [(D(2), False)]
+    [trade] = await _query("SELECT status FROM app.trades WHERE id = %s", (trade_id,))
+    assert trade["status"] == "open"
+
+
+async def test_a_journalled_leg_at_another_price_needs_the_owner(rdb: LockRedis) -> None:
+    task_id, trade_id, venue, _ = await _flat_after_a_partial_exit(rdb)
+    monitor_order = next(iter(venue.orders.values()))
+    monitor_order["average"] = 96.0
+
+    assert await _accountant(venue, rdb).account(task_id) == emergency_close.STATUS_MANUAL_REQUIRED
+
+    assert await _fills(trade_id) == [(D(3), False)]
+    [trade] = await _query("SELECT status FROM app.trades WHERE id = %s", (trade_id,))
+    assert trade["status"] == "open"
+
+
+async def test_a_leg_written_while_the_accountant_holds_the_trade_waits_and_is_refused(
+    rdb: LockRedis,
+) -> None:
+    """Every leg writer holds the trade row: a delayed leg cannot slip in between the
+    accountant's check and its writes, and once the trade is closed it is refused."""
+    task_id, trade_id, venue, _ = await _flat_after_a_partial_exit(rdb)
+    checked = emergency_accounting._journalled_legs
+    late: list[asyncio.Task[float | None]] = []
+
+    async def with_a_late_writer(*args: Any) -> dict[str, bool]:
+        result = await checked(*args)
+        late.append(
+            asyncio.create_task(
+                journal.record_close_fill(
+                    TEST_DATABASE_URL,
+                    trade_id=trade_id,
+                    exchange="bybit",
+                    order_id=f"tlp-{uuid.uuid4().hex}",
+                    fill_price=80.0,
+                    filled_amount=1.0,
+                    requested_amount=1.0,
+                    remaining_amount=0.0,
+                    terminal=False,
+                    fill_source="delayed_incident",
+                )
+            )
+        )
+        await asyncio.sleep(0.5)
+        assert not late[0].done(), "the late writer waits for the trade row"
+        return result
+
+    with patch.object(emergency_accounting, "_journalled_legs", with_a_late_writer):
+        status = await _accountant(venue, rdb).account(task_id)
+
+    assert status == emergency_close.STATUS_ACCOUNTED
+    assert await late[0] is None, "a closed trade takes no new leg"
+    assert await _fills(trade_id) == [(D(3), False), (D(7), True)]
+
+
+async def test_a_stop_the_monitor_journalled_and_closed_is_accounted_as_it_stands(
+    rdb: LockRedis,
+) -> None:
+    """The monitor exit fills 3, the stop fills the other 7 and the monitor journals it
+    and closes the trade before the accountant runs: nothing is written again."""
+    probe_id, reservation, _, trade_id = await _open_position()
+    assert trade_id is not None
+    venue = _Venue("10", reservation.native_market_id)
+    venue.fills = [(3.0, 95.0)]
+    with patch.object(orders, "_tracked_trade_id", AsyncMock(return_value=trade_id)):
+        await orders.close_position(
+            exchanges={"bybit": venue},
+            exchange="bybit",
+            base="TLP",
+            symbol=SYMBOL,
+            reason="monitor exit",
+            rdb=rdb,
+            cfg=SimpleNamespace(db_url=TEST_DATABASE_URL),
+        )
+    reached = await probe_close.record_l_reached(
+        TEST_DATABASE_URL, rdb, probe_id, loss_usd=D(60), inputs={}
+    )
+    task_id = reached.closes[0].task_id
+    assert task_id is not None
+    stop_id = f"tlp-{uuid.uuid4().hex}"
+    venue.orders[stop_id] = {
+        "id": stop_id,
+        "clientOrderId": order_ids.stop_client_order_id(reservation.client_order_id, 1),
+        "status": "closed",
+        "amount": 10.0,
+        "filled": 7.0,
+        "average": 94.0,
+        "lastTradeTimestamp": 1_800_000_060_000,
+        "stop": True,
+    }
+    venue.contracts = 0.0
+    executor = emergency_close.EmergencyCloseExecutor(
+        {"bybit": venue}, PostgresEmergencyCloseStore(TEST_DATABASE_URL), rdb
+    )
+    assert await executor.run_pass(task_id) == emergency_close.STATUS_CONFIRMED_FLAT
+    rdb.keys["position:sl_order_id:bybit:TLP"] = stop_id
+    rdb.keys["trade:id:bybit:TLP"] = str(trade_id)
+    with (
+        patch.object(
+            monitor.symbols,
+            "resolve_execution_instrument",
+            return_value=SimpleNamespace(symbol=SYMBOL),
+        ),
+        patch.object(monitor.notify, "credentials", return_value=None),
+    ):
+        await monitor._reconcile_one(
+            "bybit", "TLP", {"bybit": venue}, rdb, SimpleNamespace(db_url=TEST_DATABASE_URL)
+        )
+    assert await _fills(trade_id) == [(D(3), False), (D(7), True)]
+
+    assert await _accountant(venue, rdb).account(task_id) == emergency_close.STATUS_ACCOUNTED
+
+    assert await _fills(trade_id) == [(D(3), False), (D(7), True)]
+    [trade] = await _query("SELECT status, exit_price FROM app.trades WHERE id = %s", (trade_id,))
+    assert trade["status"] == "closed"
+    assert float(trade["exit_price"]) == pytest.approx((3 * 95 + 7 * 94) / 10)
+
+
+async def test_a_late_entry_trade_link_does_not_deadlock_accounting(rdb: LockRedis) -> None:
+    """Recovery links a known journal trade to the entry while accounting publishes.
+    The entry's FK check must not deadlock with the accountant linking that entry."""
+    _, reservation, attempt_id, _ = await _open_position(trade=False)
+    trade_id = await _trade(status="open", pnl=None)
+    venue = _Venue("10", reservation.native_market_id)
+    venue.fills = [(10.0, 94.0)]
+    store = PostgresEmergencyCloseStore(TEST_DATABASE_URL)
+    task_id, _ = await store.create_task(
+        emergency_close.TaskSpec(
+            source_attempt_id=attempt_id,
+            entry_client_order_id=reservation.client_order_id,
+            exchange="bybit",
+            base="TLP",
+            symbol=SYMBOL,
+            native_market_id=reservation.native_market_id,
+            market_type="swap",
+            side="long",
+            owned_quantity=D(10),
+            reason=emergency_close.REASON_STOP_PLACEMENT_FAILED,
+            trade_id=trade_id,
+        )
+    )
+    executor = emergency_close.EmergencyCloseExecutor({"bybit": venue}, store, rdb)
+    assert await executor.run_pass(task_id) == emergency_close.STATUS_SENDING
+    assert await executor.run_pass(task_id) == emergency_close.STATUS_CONFIRMED_FLAT
+    checked = emergency_accounting._journalled_legs
+    linking: list[asyncio.Task[None]] = []
+
+    async def with_a_late_link(*args: Any) -> dict[str, bool]:
+        result = await checked(*args)
+        linking.append(
+            asyncio.create_task(
+                order_attempts.mark_completed(
+                    TEST_DATABASE_URL, attempt_id, trade_id=trade_id, filled_amount=10.0
+                )
+            )
+        )
+        await asyncio.sleep(0.2)
+        return result
+
+    with (
+        structlog.testing.capture_logs() as logs,
+        patch.object(emergency_accounting, "_journalled_legs", with_a_late_link),
+    ):
+        status = await asyncio.wait_for(_accountant(venue, rdb).account(task_id), timeout=5)
+        await asyncio.wait_for(linking[0], timeout=5)
+
+    assert status == emergency_close.STATUS_ACCOUNTED
+    assert not [entry for entry in logs if "deadlock detected" in str(entry)]
+    [entry] = await _query(
+        "SELECT trade_id FROM app.live_order_attempts WHERE id = %s", (attempt_id,)
+    )
+    assert entry["trade_id"] == trade_id
