@@ -235,8 +235,17 @@ async def test_busy_lock_then_new_evaluator_recovers_the_standing_request():
 async def test_quantity_mismatch_is_a_single_persistent_incident_never_a_close():
     probe, trade, _attempt, worker, ex, _rdb, _gate = await setup_probe()
     ex.fetch_positions.return_value[0]["contracts"] = "9"
+    for _ in range(2):
+        assert await worker.run_once()
+        row = (
+            await _query(
+                "SELECT costs_incident_at FROM app.live_probe_authorizations WHERE probe_id=%s",
+                (probe,),
+            )
+        )[0]
+        assert row["costs_incident_at"] is None
     assert await worker.run_once()
-    assert await worker.run_once()
+    assert await worker.run_once()  # fourth sample does not duplicate the incident
     rows = await _query(
         "SELECT costs_incident_at, l_reached_at "
         "FROM app.live_probe_authorizations WHERE probe_id=%s",
@@ -306,4 +315,60 @@ async def test_authorization_row_lock_timeout_preserves_the_decision_until_retry
         len(await _query("SELECT id FROM app.live_emergency_closes WHERE trade_id=%s", (trade,)))
         == 1
     )
+    ex.create_order.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("leg_already_recorded", [False, True])
+async def test_review_stop_fill_then_journal_close_does_not_latch_costs_incident(
+    leg_already_recorded,
+):
+    from schurfer_execution import journal
+
+    probe, trade, _attempt, worker, ex, _rdb, _gate = await setup_probe()
+    ex.fetch_positions.return_value = []  # stop filled after the monitor's last snapshot
+    stop_id = "tlp-stop-" + uuid.uuid4().hex
+
+    async def record_leg():
+        price = await journal.record_close_fill(
+            TEST_DATABASE_URL,
+            trade_id=trade,
+            exchange="bybit",
+            order_id=stop_id,
+            fill_price=0.99,
+            filled_amount=10,
+            requested_amount=10,
+            remaining_amount=0,
+            terminal=True,
+            fill_source="test.stop",
+            executed_at=datetime.now(tz=UTC),
+        )
+        assert price == 0.99
+
+    if leg_already_recorded:
+        await record_leg()  # the journal already holds zero, trade row still open
+    assert await worker.run_once()
+    if not leg_already_recorded:
+        await record_leg()
+    outcome = await journal.close_trade(
+        TEST_DATABASE_URL,
+        trade_id=trade,
+        exit_order_id=stop_id,
+        exit_price=0.99,
+        reason="exchange_stop_loss_triggered",
+        executed_at=datetime.now(tz=UTC),
+    )
+    assert outcome.committed
+    for _ in range(3):
+        assert await worker.run_once()
+    row = (
+        await _query(
+            "SELECT costs_incident_at, l_reached_at FROM app.live_probe_authorizations "
+            "WHERE probe_id=%s",
+            (probe,),
+        )
+    )[0]
+    assert row == {"costs_incident_at": None, "l_reached_at": None}
+    assert not worker.quantity_mismatches
+    assert not await _query("SELECT id FROM app.live_emergency_closes WHERE trade_id=%s", (trade,))
     ex.create_order.assert_not_called()

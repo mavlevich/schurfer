@@ -182,16 +182,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     emergency_accountant: EmergencyCloseAccountant
     live_cost_worker: LiveCostWorker
     probe_recovery_worker: ProbeRecoveryWorker
-    probe_loss_evaluator: ProbeLossEvaluator | None = None
+    probe_loss_evaluator: ProbeLossEvaluator
 
     reconciliation_enabled = bool(cfg.db_url and trading_exchanges)
 
     specs = [
         WorkerSpec(
             name="position_monitor",
-            factory=lambda tr: run_position_monitor(
-                trading_exchanges, rdb, cfg, tr, probe_evaluator=probe_loss_evaluator
-            ),
+            factory=lambda tr: run_position_monitor(trading_exchanges, rdb, cfg, tr),
             policy=WorkerRestartPolicy.BOUNDED_FATAL,
             is_critical=True,
             restart_budget=3,
@@ -261,6 +259,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             # Every start suspends active LIVE_PROBE records and closes any probe
             # position before anything of the probe runs. Critical: until it has
             # succeeded once, the gate refuses entries.
+            policy=WorkerRestartPolicy.ALWAYS,
+            is_critical=True,
+            stale_timeout_seconds=120.0,
+            enabled=reconciliation_enabled,
+        ),
+        WorkerSpec(
+            name="live_probe_loss",
+            factory=lambda tr: probe_loss_evaluator(tr),
+            # Isolate cost-source failures from protective monitoring. Its own
+            # failed health closes the entry gate; it retries without losing L.
             policy=WorkerRestartPolicy.ALWAYS,
             is_critical=True,
             stale_timeout_seconds=120.0,

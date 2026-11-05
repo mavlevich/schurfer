@@ -105,10 +105,13 @@ So while a probe position is open, the tail from `T_last` to now is always
 allows). Within the tail:
 
 - **Observed settlements.** The evaluator keeps every `nextFundingTime` it reads from
-  `/v5/market/tickers`, at the entry preflight and on every monitor tick. One that has
+  `/v5/market/tickers`, at the entry preflight and on every loss-worker pass. One that has
   passed and is not listed is a settlement Bybit announced; it is estimated as below.
   If Bybit moved it and it never happened, the loss is overstated until the history
-  passes that time: the safe direction.
+  passes that time: the safe direction. After the complete history has passed an
+  announced time without listing it, that observation is discarded. A settlement
+  actually listed by history stays pending/estimated until its execution row arrives;
+  it is not discarded just because its time is at or before `T_last`.
 - **Anything not observed** (a settlement between two reads, a restart) adds nothing
   and stays unknown.
 
@@ -149,8 +152,9 @@ or mark. The loss is then a lower bound (section 4 says what that allows).
 
 ### 1.2 Who raises the incident
 
-The **probe loss evaluator** (PR 1, inside the position monitor) owns the result. On
-`incomplete`, on an observed settlement not listed 30 minutes after its time, or when
+The **probe loss evaluator** (PR 1, a separate critical supervised worker) owns the
+result. On `incomplete`, on an observed settlement not listed 30 minutes after its
+time and not disproven by the complete history, or when
 the history's `T_last` is more than 8 h 30 min old while a probe position is open
 (assumed: no Bybit interval is longer than 8 h), it writes
 `costs_incident_at` and the reason on the authorization record, once, and sends one
@@ -159,14 +163,22 @@ It never closes the position by itself. After the close, the trade's own costs g
 through the cost worker of #547 as for any live trade, and an `incomplete` there
 blocks entries through PnL readiness as today.
 
+**Concurrent protective fills:** a flat/smaller exchange position or a smaller
+collector quantity can precede the protective monitor's journal update. For the same
+journalled trade, the evaluator skips the L decision on these observations and opens
+an incident only on the third consecutive differing pass. A consistent or unknown
+pass, or the trade leaving the scan, resets the count. A larger/negative quantity,
+wrong side, wrong route or any other incomplete evidence is an immediate incident.
+This grace period never establishes ownership and never permits an L close.
+
 ## 2. The mark and its age
 
 - **Source:** Bybit's `markPrice` from the position read (`/v5/position/list`), the
   same read that proves the position's quantity. `account.fetch_positions` drops
   positions of zero size, so an empty account returns no row and no mark; that is
   correct, because with no open probe position the loss needs no mark (section 1).
-- **Evaluated:** on every position monitor tick (every 30 s) while a probe position is
-  open.
+- **Evaluated:** on every loss-worker pass while a probe position is open, with a
+  30 s pause between passes. Protective monitoring has its own independent cadence.
 - **Maximum age: 60 s.** The age is the time since the read that returned the mark. A
   stale or missing mark never **decides** that L is reached: the exchange's protective
   stop still guards the position. Three ticks in a row without a fresh mark raise one
@@ -281,8 +293,12 @@ other closers.
 **After the close.** `l_reached_at` stays, so the record admits no entry. A new probe
 needs a new record.
 
-**Alerted.** One alert with the probe id, the loss, L, the inputs and whether the
-transaction landed; one more at `confirmed_flat`, or at `manual_required`.
+**Alerted.** Notifications have separate deduplication keys for an unconfirmed
+write/close request and a confirmed durable decision. A confirmed decision states
+whether its close task is pending, already available (with task ids), or no longer
+needed because no probe position remains. If a pending task later becomes available,
+that transition is alerted once too. The probe id, loss, L and decision inputs are
+included; the existing executor alerts at `confirmed_flat` or `manual_required`.
 
 Reaching L never touches a position without a probe link, and never blocks a
 protective stop, a close or a monitor exit.
@@ -324,8 +340,8 @@ are included; the funding tail is never labelled complete. Missing settlement ro
 are returned separately with their historical quantity, rate and mark, or explicitly
 unknown. The closed cost worker keeps its timestamp-only funding-history interface.
 
-`probe_evaluator.ProbeLossEvaluator` runs inside the position monitor, after startup
-recovery succeeds. It does not create an order. It records L through
+`probe_evaluator.ProbeLossEvaluator` runs as the separate critical worker
+`live_probe_loss`, after startup recovery succeeds. It does not create an order. It records L through
 `probe_close.record_l_reached`, and the existing emergency executor owns the close.
 A failed decision/close request retains its first inputs in process and sets the
 shared worker-gate blocker. Retrying that latch precedes even a failed database scan.
@@ -333,22 +349,30 @@ A persisted `l_reached_at` without a task is retried without a mark or collector
 A position with an existing, not-yet-accounted emergency task already has its closer
 and is not evaluated again.
 
-Ordinary protective exits run before the cost evaluator, so its network reads cannot
-postpone them. The evaluator still runs if that exit tick fails, so a latched L
-request is retried. Failure of the evaluator makes the monitor tick unhealthy.
-Three consecutive missing/stale marks produce one alert; a fresh
-mark rearms it. A costs incident is stored and alerted on its database transition,
-including a new transition after the owner clears the previous incident. A funding
-incident never delays a decision already sufficient to reach L.
+The protective monitor does not call or await the evaluator and does not share its
+tick tracker. The loss worker has its own supervisor spec (`ALWAYS`, critical),
+readiness and 30 s pause between passes. A failed/hung cost read closes the entry
+gate through the loss worker's health and can restart that worker alone. The worker
+object retains its in-process L latch across coroutine restarts; full service
+restarts still follow section 5. Three consecutive missing/stale marks produce one
+alert; a fresh mark rearms it. A costs incident is stored and alerted on its database
+transition, including a new transition after the owner clears the previous incident.
+A funding incident never delays a decision already sufficient to reach L.
 
 Each decision-write/close-task request has a 10 s timeout, including retries of a
 process latch or a persisted request. Each position's evaluation has a 45 s timeout,
-and the monitor applies a 60 s timeout to the whole probe pass (database scans and
-all retries included). A timeout keeps a pending decision and its first inputs,
-keeps entries blocked and marks the tick unhealthy; it does not remove the next
-protective tick. These are initial operational budgets for the testnet check.
-Mark availability is accounted in a finalizer, including cancelled/timed-out reads,
-so a hung ticker or collector cannot suppress the three-tick missing-mark alert.
+and the loss worker applies a 60 s timeout to its complete pass (database scans and
+all retries included). A timeout retains a pending decision and its first inputs,
+keeps entries blocked and marks only the loss worker's tick unhealthy. These are
+initial operational budgets for the testnet check. Mark availability is accounted in
+a finalizer, including cancelled/timed-out reads, so a hung ticker or collector
+cannot suppress the three-tick missing-mark alert.
+
+The collector returns structured `quantity_mismatch` evidence with its observed
+quantity, rather than requiring the evaluator to parse error text. Exchange and
+collector quantity decreases share the section 1.2 grace counter, with at most one
+increment per trade/pass. No loss figure is used during a discrepancy. Larger or
+otherwise unowned exposure still needs the owner immediately.
 
 ### Contract the entry PR must persist
 
@@ -382,6 +406,14 @@ remain in the following PRs and their registered gates.
 
 | Case                                                             | Expected                                                              |
 | ---------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Announced 08:00 absent, complete history lists 09:00             | Drop 08:00 estimate; no stale-settlement incident                     |
+| Published 08:00 has no execution row yet                         | Keep estimate/unknown, do not discard                                 |
+| Stop fills after monitor snapshot, journal closes next pass      | Skip L; no sticky costs incident                                      |
+| Smaller quantity persists for three consecutive passes           | One costs incident; no L close                                        |
+| Side/route mismatch or larger quantity                           | Immediate incident; no grace                                          |
+| Cost reads hang/fail and loss worker restarts                    | Entry gate closed; protective worker cadence/restarts unaffected      |
+| First decision write fails, later request succeeds               | Separate unconfirmed and recorded alerts                              |
+| L recorded with pending task, task later appears                 | Explicit pending alert, then one task-id alert                        |
 | Long, mark falls until `loss(t)` crosses L                       | Record L, then ensure a close task; one decision alert                |
 | Same, the price recovers on the next tick                        | Task runs until `confirmed_flat`; no entry admitted                   |
 | Long 50 at 1.00, 20 closed at 0.90, mark 1.00                    | Loss before costs 2.00, not 0                                         |

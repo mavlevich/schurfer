@@ -246,3 +246,44 @@ def test_publication_advancing_during_the_window_read_updates_its_proven_prefix(
     assert result.status == lc.STATUS_UNPROVEN_TAIL
     assert result.published_to == at  # the window itself proves newer publication
     assert result.position.unlisted[0].at == at
+
+
+def test_review_moved_settlement_is_removed_after_history_passes_it():
+    at8, at9 = SETTLEMENTS[2:4]
+    result = collect(
+        rows=[_entry(), _exit("20"), _funding("f9", qty="100", at=at9, fee="0")],
+        settlements=[lc.FundingSettlement(SETTLEMENTS[i], D(".001")) for i in (0, 1, 3)],
+        published_to=at9,
+        observed=(lc.FundingSettlement(at8, D(".01")),),
+        marks={at8: D(1)},
+    )
+    assert result.status == lc.STATUS_UNPROVEN_TAIL
+    assert result.position.unlisted == ()
+
+
+def test_review_published_settlement_with_missing_execution_still_is_estimated():
+    at8 = SETTLEMENTS[2]
+    result = collect(
+        settlements=[lc.FundingSettlement(at8, D(".01"))], published_to=at8, marks={at8: D(1)}
+    )
+    assert result.status == lc.STATUS_UNPROVEN_TAIL
+    assert result.position.unlisted[0].at == at8
+    assert result.position.unlisted[0].estimate("long") == D(1)
+
+
+def test_review_private_funding_contradicting_the_public_prefix_is_not_silently_zeroed():
+    at8, at9 = SETTLEMENTS[2:4]
+    result = collect(
+        rows=[
+            _entry(),
+            _exit("20"),
+            _funding("f8", qty="100", at=at8, fee="1"),
+            _funding("f9", qty="100", at=at9, fee="0"),
+        ],
+        settlements=[lc.FundingSettlement(SETTLEMENTS[i], D(".001")) for i in (0, 1, 3)],
+        published_to=at9,
+        observed=(lc.FundingSettlement(at8, D(".01")),),
+        marks={at8: D(1)},
+    )
+    assert result.status == lc.STATUS_INCOMPLETE
+    assert result.position is None

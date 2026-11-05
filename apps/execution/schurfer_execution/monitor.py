@@ -17,13 +17,10 @@ from .orders import close_position
 
 if TYPE_CHECKING:
     from .config import Config
-    from .probe_evaluator import ProbeLossEvaluator
 
 log = structlog.get_logger()
 
 _INTERVAL_SECONDS = 30
-# Leave room within the 120 s worker health window for the next protective tick.
-_PROBE_PASS_TIMEOUT_SECONDS = 60.0
 _TRADE_ID_KEY = "trade:id:{exchange}:{base}"
 _SL_ORDER_KEY_PATTERN = "position:sl_order_id:*"
 
@@ -33,46 +30,21 @@ async def run_position_monitor(
     rdb: Any,
     cfg: Config,
     tracker: Any = None,
-    *,
-    probe_evaluator: ProbeLossEvaluator | None = None,
 ) -> None:
     while True:
         if tracker:
             tracker.tick_started()
         await asyncio.sleep(_INTERVAL_SECONDS)
-        tick_error: Exception | None = None
         try:
-            # A slow cost/funding read must not postpone a protective exit.
             await _tick(exchanges, rdb, cfg)
+            if tracker:
+                tracker.tick_succeeded()
         except asyncio.CancelledError:
             raise
-        except Exception as exc:
-            tick_error = exc
-            log.error("position_monitor.error", err=str(exc))
-
-        probe_ok = True
-        if probe_evaluator is not None:
-            try:
-                # Retrying a latched L request must also survive an exit-tick failure.
-                probe_ok = await asyncio.wait_for(
-                    probe_evaluator.run_once(), timeout=_PROBE_PASS_TIMEOUT_SECONDS
-                )
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                probe_ok = False
-                log.error(
-                    "position_monitor.probe_loss_failed",
-                    error_type=type(exc).__name__,
-                    err=str(exc),
-                )
-        if tracker:
-            if tick_error is not None:
-                tracker.tick_failed(tick_error)
-            elif not probe_ok:
-                tracker.tick_failed(RuntimeError("probe loss evaluation failed"))
-            else:
-                tracker.tick_succeeded()
+        except Exception as e:
+            if tracker:
+                tracker.tick_failed(e)
+            log.error("position_monitor.error", err=str(e))
 
 
 async def _tick(exchanges: dict[str, Any], rdb: Any, cfg: Config) -> None:

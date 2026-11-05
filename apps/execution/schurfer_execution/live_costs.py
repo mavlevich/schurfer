@@ -45,6 +45,7 @@ from typing import Any, Protocol
 from . import order_ids, probe_loss
 
 STATUS_UNPROVEN_TAIL = "unproven_tail"
+REASON_QUANTITY_MISMATCH = "quantity_mismatch"
 STATUS_COMPLETE = "complete"
 STATUS_PENDING = "pending"
 STATUS_INCOMPLETE = "incomplete"
@@ -880,6 +881,8 @@ class OpenCostResult:
     error: str | None = None
     position: probe_loss.OpenPosition | None = None
     published_to: datetime | None = None
+    reason: str | None = None
+    observed_quantity: Decimal | None = None
 
 
 class OpenCostSource(CostSource, Protocol):
@@ -921,12 +924,16 @@ def collect_open(
         _check_orders(facts, entry + exits, orders, open_position=False)
         quantity = _sum_quantity(entry) - _sum_quantity(exits)
         if quantity <= 0 or quantity != journal_quantity:
-            raise _incomplete(f"open executions hold {quantity}, journal holds {journal_quantity}")
+            return OpenCostResult(
+                STATUS_INCOMPLETE,
+                error=f"open executions hold {quantity}, journal holds {journal_quantity}",
+                published_to=published_to,
+                reason=REASON_QUANTITY_MISMATCH,
+                observed_quantity=quantity,
+            )
         for row in entry + exits:
             if row.price is None or row.price <= 0 or row.quantity <= 0:
                 raise _incomplete(f"execution {row.exec_id} has no positive price or quantity")
-        rates = {s.at: s.rate for s in observed if s.at <= now}
-        rates.update({s.at: s.rate for s in settlements if s.at <= now})
         if published_to is not None:
             _check_published(
                 published_to,
@@ -941,6 +948,15 @@ def collect_open(
             + [s.at for s in settlements if s.at <= now],
             default=None,
         )
+        listed = {s.at: s.rate for s in settlements if s.at <= now}
+        # An announced time absent from history's proven prefix was moved/cancelled.
+        # Keep actual published settlements even while their execution row is pending.
+        rates = {
+            s.at: s.rate
+            for s in observed
+            if s.at <= now and (published_to is None or s.at > published_to or s.at in listed)
+        }
+        rates.update(listed)
         missing: list[datetime] = []
         funding = _match_funding(
             facts,

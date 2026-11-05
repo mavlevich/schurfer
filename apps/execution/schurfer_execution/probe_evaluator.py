@@ -1,4 +1,6 @@
-"""Monitor-side LIVE_PROBE loss evaluation. No entry path or exchange sends.
+"""Supervised LIVE_PROBE loss evaluation, apart from protective monitoring.
+
+No entry path or exchange sends.
 
 The only close request is probe_close.record_l_reached; its durable task is executed
 by the emergency closer. A failed write keeps the first decision in memory and the
@@ -28,6 +30,8 @@ LATCH_BLOCKER = "probe_loss_decision_pending"
 FUNDING_DELAY = timedelta(minutes=30)
 HISTORY_MAX_AGE = timedelta(hours=8, minutes=30)
 _REQUEST_TIMEOUT_SECONDS = 10.0
+_PASS_TIMEOUT_SECONDS = 60.0
+_QUANTITY_GRACE_TICKS = 3
 
 
 @dataclass(frozen=True)
@@ -194,16 +198,41 @@ class ProbeLossEvaluator:
         alert_credentials: tuple[str, str] | None = None,
         now: Callable[[], datetime] | None = None,
         record: Callable[..., Any] = probe_close.record_l_reached,
+        interval_seconds: float = 30.0,
     ) -> None:
         self.db_url, self.exchanges, self.store = db_url, exchanges, store
         self.rdb, self.gate, self.recovered = rdb, gate, recovered
         self.alert_credentials = alert_credentials
         self.now = now or (lambda: datetime.now(tz=UTC))
         self.record = record
+        if interval_seconds <= 0:
+            raise ValueError("probe loss interval must be positive")
+        self.interval_seconds = interval_seconds
+        self.quantity_mismatches: dict[int, int] = {}
         self.pending: dict[str, tuple[Decimal, dict[str, Any]]] = {}
         self.observed: dict[int, dict[datetime, live_costs.FundingSettlement]] = {}
         self.stale: dict[int, int] = {}
         self.alerted: set[str] = set()
+
+    async def __call__(self, tracker: Any) -> None:
+        log.info("live_probe_loss.started")
+        while True:
+            tracker.tick_started()
+            try:
+                succeeded = await asyncio.wait_for(self.run_once(), timeout=_PASS_TIMEOUT_SECONDS)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                succeeded = False
+                self.quantity_mismatches.clear()
+                log.error(
+                    "live_probe.loss_pass_failed", error_type=type(exc).__name__, err=str(exc)
+                )
+            if succeeded:
+                tracker.tick_succeeded()
+            else:
+                tracker.tick_failed(RuntimeError("probe loss evaluation failed"))
+            await asyncio.sleep(self.interval_seconds)
 
     async def run_once(self) -> bool:
         if not self.recovered.is_set():
@@ -216,11 +245,14 @@ class ProbeLossEvaluator:
         try:
             positions = await self.store.positions()
         except Exception as exc:
+            self.quantity_mismatches.clear()
             log.error("live_probe.loss_scan_failed", err=str(exc))
             return False
         for position in positions:
             if position.probe_id in attempted:
+                self.quantity_mismatches.pop(position.trade_id, None)
                 continue
+            previous_mismatches = self.quantity_mismatches.get(position.trade_id, 0)
             try:
                 if position.reached_loss is not None:
                     # A standing request is retried without a mark or collector,
@@ -243,9 +275,17 @@ class ProbeLossEvaluator:
                     err=str(exc),
                 )
                 succeeded = False
+            finally:
+                # An unknown/read-failed or consistent pass interrupts the streak.
+                # Exchange and collector discrepancies share one count per trade/pass.
+                if self.quantity_mismatches.get(position.trade_id, 0) == previous_mismatches:
+                    self.quantity_mismatches.pop(position.trade_id, None)
         live_ids = {p.trade_id for p in positions}
         self.observed = {k: v for k, v in self.observed.items() if k in live_ids}
         self.stale = {k: v for k, v in self.stale.items() if k in live_ids}
+        self.quantity_mismatches = {
+            k: v for k, v in self.quantity_mismatches.items() if k in live_ids
+        }
         return succeeded and not self.pending
 
     def _latch(self, probe_id: str, loss: Decimal, inputs: dict[str, Any]) -> None:
@@ -267,7 +307,7 @@ class ProbeLossEvaluator:
                 err=str(exc),
             )
             await self._alert_once(
-                f"decision:{probe_id}",
+                f"decision_pending:{probe_id}",
                 f"LIVE_PROBE {probe_id}: L reached, loss {loss}; recording/close request "
                 f"not confirmed, retrying with entries blocked. Inputs: {inputs}",
             )
@@ -275,11 +315,27 @@ class ProbeLossEvaluator:
         del self.pending[probe_id]
         if not self.pending:
             self.gate.clear_safety_blocker(LATCH_BLOCKER)
-        await self._alert_once(
-            f"decision:{probe_id}",
-            f"LIVE_PROBE {probe_id}: L reached, loss {loss}; recorded, emergency tasks "
-            f"{[c.task_id for c in result.closes]}. Inputs: {inputs}",
-        )
+        tasks = sorted({c.task_id for c in result.closes if c.task_id is not None})
+        unresolved = [c for c in result.closes if c.pending or c.task_id is None]
+        if tasks:
+            await self._alert_once(
+                f"decision_recorded:{probe_id}:tasks:{tasks}",
+                f"LIVE_PROBE {probe_id}: L reached, loss {loss}; recorded, emergency tasks "
+                f"{tasks}. Details: {[c.note for c in result.closes if c.note]}. Inputs: {inputs}",
+            )
+        if unresolved:
+            await self._alert_once(
+                f"decision_recorded:{probe_id}:close_pending",
+                f"LIVE_PROBE {probe_id}: L recorded, loss {loss}; close task pending, "
+                "the durable close request stands and will be retried. "
+                f"Details: {[c.note for c in unresolved]}. Inputs: {inputs}",
+            )
+        elif not tasks:
+            await self._alert_once(
+                f"decision_recorded:{probe_id}:no_position",
+                f"LIVE_PROBE {probe_id}: L recorded, loss {loss}; no open probe position "
+                f"requires a close task. Inputs: {inputs}",
+            )
         return True
 
     async def _evaluate(self, position: ProbePosition, mark_read: _MarkRead) -> None:
@@ -332,13 +388,18 @@ class ProbeLossEvaluator:
             rows = None
             log.warning("live_probe.mark_read_failed", trade_id=position.trade_id, err=str(exc))
         if rows is not None:
-            if (
-                len(rows) != 1
-                or rows[0].get("side") != position.side
-                or live_costs._decimal(rows[0].get("contracts"), "contracts") != position.quantity
-            ):
+            if not rows:
+                await self._quantity_difference(position, Decimal(0), "exchange position is flat")
+                return
+            if len(rows) != 1 or rows[0].get("side") != position.side:
                 await self._incident(
-                    position, "exchange quantity or side differs from the journalled probe"
+                    position, "exchange side or position identity differs from the probe"
+                )
+                return
+            exchange_quantity = live_costs._decimal(rows[0].get("contracts"), "contracts")
+            if exchange_quantity != position.quantity:
+                await self._quantity_difference(
+                    position, exchange_quantity, "exchange quantity differs from journal"
                 )
                 return
             try:
@@ -375,7 +436,17 @@ class ProbeLossEvaluator:
             result = live_costs.OpenCostResult(live_costs.STATUS_PENDING, error=str(exc))
         now = self.now()
         if result.status == live_costs.STATUS_INCOMPLETE:
-            await self._incident(position, result.error or "incomplete executions")
+            if (
+                result.reason == live_costs.REASON_QUANTITY_MISMATCH
+                and result.observed_quantity is not None
+            ):
+                await self._quantity_difference(
+                    position,
+                    result.observed_quantity,
+                    result.error or "collector quantity differs from journal",
+                )
+            else:
+                await self._incident(position, result.error or "incomplete executions")
             return
         if result.position is None:
             log.info("live_probe.loss_pending", probe_id=position.probe_id, reason=result.error)
@@ -427,6 +498,30 @@ class ProbeLossEvaluator:
             await self._incident(
                 position, "an observed funding settlement is unlisted for 30 minutes"
             )
+
+    async def _quantity_difference(
+        self, position: ProbePosition, observed: Decimal, reason: str
+    ) -> None:
+        # A stop can only reduce our position. Growth/invalid quantities are not
+        # explained by the monitor journalling a concurrent protective fill.
+        if (
+            observed < 0
+            or observed > position.quantity
+            or (observed == position.quantity and observed > 0)
+        ):
+            await self._incident(position, reason)
+            return
+        count = self.quantity_mismatches.get(position.trade_id, 0) + 1
+        self.quantity_mismatches[position.trade_id] = count
+        log.warning(
+            "live_probe.quantity_difference",
+            trade_id=position.trade_id,
+            expected=str(position.quantity),
+            observed=str(observed),
+            ticks=count,
+        )
+        if count >= _QUANTITY_GRACE_TICKS:
+            await self._incident(position, f"{reason}; persists for {count} consecutive ticks")
 
     async def _note_mark(self, position: ProbePosition, read: _MarkRead) -> None:
         if read.attempted_at is None:

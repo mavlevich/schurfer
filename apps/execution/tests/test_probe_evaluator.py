@@ -210,6 +210,9 @@ async def test_incomplete_evidence_is_an_incident_never_an_l_close(monkeypatch):
 async def test_quantity_mismatch_is_not_automatically_closed(monkeypatch):
     worker, store, ex, _gate, record, read, _clock = evaluator(monkeypatch)
     ex.fetch_positions.return_value[0]["contracts"] = "79"
+    for _ in range(2):
+        assert await worker.run_once()
+        store.incident.assert_not_called()
     assert await worker.run_once()
     assert "quantity" in store.incident.await_args.args[1]
     record.assert_not_called()
@@ -245,35 +248,6 @@ async def test_below_l_is_only_a_lower_bound_not_a_new_permission(monkeypatch):
     assert await worker.run_once()
     record.assert_not_called()
     gate.clear_safety_blocker.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_monitor_keeps_protective_exits_when_probe_evaluation_fails(monkeypatch):
-    from schurfer_execution import monitor
-
-    calls = 0
-
-    async def sleep(_seconds):
-        nonlocal calls
-        calls += 1
-        if calls > 1:
-            raise asyncio.CancelledError
-
-    tick = AsyncMock()
-    tracker = Mock()
-    monkeypatch.setattr(monitor.asyncio, "sleep", sleep)
-    monkeypatch.setattr(monitor, "_tick", tick)
-    with pytest.raises(asyncio.CancelledError):
-        await monitor.run_position_monitor(
-            {},
-            Mock(),
-            Mock(),
-            tracker,
-            probe_evaluator=SimpleNamespace(run_once=AsyncMock(side_effect=RuntimeError("failed"))),
-        )
-    tick.assert_awaited_once()
-    tracker.tick_failed.assert_called_once()
-    tracker.tick_succeeded.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -361,45 +335,6 @@ async def test_collector_network_failure_is_visible_in_monitor_readiness(monkeyp
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("exit_error", [False, True])
-async def test_protective_exit_runs_before_cost_reads_and_cannot_skip_l_retry(
-    monkeypatch, exit_error
-):
-    from schurfer_execution import monitor
-
-    sequence = []
-    calls = 0
-
-    async def sleep(_seconds):
-        nonlocal calls
-        calls += 1
-        if calls > 1:
-            raise asyncio.CancelledError
-
-    async def exit_tick(*args):
-        sequence.append("exit")
-        if exit_error:
-            raise RuntimeError("exit read failed")
-
-    async def probe_tick():
-        sequence.append("loss")
-        return True
-
-    tracker = Mock()
-    monkeypatch.setattr(monitor.asyncio, "sleep", sleep)
-    monkeypatch.setattr(monitor, "_tick", exit_tick)
-    with pytest.raises(asyncio.CancelledError):
-        await monitor.run_position_monitor(
-            {}, Mock(), Mock(), tracker, probe_evaluator=SimpleNamespace(run_once=probe_tick)
-        )
-    assert sequence == ["exit", "loss"]
-    if exit_error:
-        tracker.tick_failed.assert_called_once()
-    else:
-        tracker.tick_succeeded.assert_called_once()
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize("in_memory", [False, True])
 async def test_hung_close_request_is_bounded_and_keeps_the_first_decision(monkeypatch, in_memory):
     position = replace(POSITION, reached_loss=D(7), reached_inputs={"first_mark": "old"})
@@ -420,37 +355,6 @@ async def test_hung_close_request_is_bounded_and_keeps_the_first_decision(monkey
     record.return_value = probe_close.LReached(False, [])
     assert await worker.run_once()
     assert record.await_args.kwargs == {"loss_usd": D(7), "inputs": {"first_mark": "old"}}
-
-
-@pytest.mark.asyncio
-async def test_hung_probe_pass_cannot_stop_the_next_protective_tick(monkeypatch):
-    from schurfer_execution import monitor
-
-    sleeps = 0
-
-    async def sleep(_seconds):
-        nonlocal sleeps
-        sleeps += 1
-        if sleeps > 1:
-            raise asyncio.CancelledError
-
-    async def stuck():
-        await asyncio.Event().wait()
-
-    tick = AsyncMock()
-    tracker = Mock()
-    monkeypatch.setattr(monitor.asyncio, "sleep", sleep)
-    monkeypatch.setattr(monitor, "_tick", tick)
-    monkeypatch.setattr(monitor, "_PROBE_PASS_TIMEOUT_SECONDS", 0.01, raising=False)
-    with pytest.raises(asyncio.CancelledError):
-        await asyncio.wait_for(
-            monitor.run_position_monitor(
-                {}, Mock(), Mock(), tracker, probe_evaluator=SimpleNamespace(run_once=stuck)
-            ),
-            timeout=0.2,
-        )
-    tick.assert_awaited_once()
-    tracker.tick_failed.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -481,3 +385,235 @@ async def test_timed_out_reads_still_count_missing_marks_and_alert_once(monkeypa
     alert.assert_awaited_once()
     assert "three monitor ticks" in alert.await_args.kwargs["text"]
     record.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("snapshot", ["flat", "smaller", "collector"])
+async def test_review_one_tick_stop_race_then_closed_trade_is_not_an_incident(
+    monkeypatch, snapshot
+):
+    worker, store, ex, _gate, record, read, _clock = evaluator(monkeypatch)
+    if snapshot == "flat":
+        ex.fetch_positions.return_value = []
+    elif snapshot == "smaller":
+        ex.fetch_positions.return_value[0]["contracts"] = "79"
+    else:
+        from .test_live_costs import _entry, _exit, _orders
+        from .test_open_costs import collect
+
+        read.return_value = collect(
+            rows=[_entry(), _exit("21")],
+            orders=_orders(("o-entry", "100"), ("o-exit", "21")),
+            journal_quantity=D(80),
+        )
+    assert await worker.run_once()
+    store.incident.assert_not_called()
+    record.assert_not_called()
+    store.positions.return_value = []
+    assert await worker.run_once()
+    store.incident.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_review_failure_then_success_sends_both_phase_alerts(monkeypatch):
+    worker, _store, _ex, _gate, record, _read, _clock = evaluator(monkeypatch)
+    worker.alert_credentials = ("fake", "fake")
+    alert = AsyncMock(return_value=True)
+    monkeypatch.setattr(pe.notify, "notify_alert", alert)
+    outcome = probe_close.CloseOutcome("probe", 1, 42, True)
+    record.side_effect = [RuntimeError("DB unavailable"), probe_close.LReached(True, [outcome])]
+    assert not await worker.run_once()
+    assert await worker.run_once()
+    texts = [call.kwargs["text"] for call in alert.await_args_list]
+    assert len(texts) == 2
+    assert "not confirmed" in texts[0]
+    assert "recorded" in texts[1] and "42" in texts[1]
+
+
+@pytest.mark.asyncio
+async def test_review_pending_close_then_created_task_is_not_silently_deduplicated(monkeypatch):
+    p = replace(POSITION, reached_loss=D(7), reached_inputs={"mark": "old"})
+    worker, _store, _ex, _gate, record, _read, _clock = evaluator(monkeypatch, position=p)
+    worker.alert_credentials = ("fake", "fake")
+    alert = AsyncMock(return_value=True)
+    monkeypatch.setattr(pe.notify, "notify_alert", alert)
+    record.side_effect = [
+        probe_close.LReached(
+            False, [probe_close.CloseOutcome("probe", 1, None, False, "entry fill not final", True)]
+        ),
+        probe_close.LReached(False, [probe_close.CloseOutcome("probe", 1, 42, True)]),
+    ]
+    assert await worker.run_once()
+    assert await worker.run_once()
+    texts = [c.kwargs["text"] for c in alert.await_args_list]
+    assert len(texts) == 2
+    assert "pending" in texts[0] and "emergency tasks []" not in texts[0]
+    assert "42" in texts[1]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["error", "hang"])
+async def test_review_loss_worker_failure_does_not_delay_or_restart_protection(
+    monkeypatch, failure
+):
+    from schurfer_execution import monitor
+    from schurfer_execution.supervisor import WorkerRestartPolicy, WorkerSpec, WorkerSupervisor
+
+    from .test_supervisor import _wait_until
+
+    worker, _store, _ex, _gate, _record, _read, _clock = evaluator(monkeypatch)
+    worker.interval_seconds = 0.002
+    monkeypatch.setattr(pe, "_PASS_TIMEOUT_SECONDS", 0.01, raising=False)
+    monkeypatch.setattr(monitor, "_INTERVAL_SECONDS", 0.002)
+    tick = AsyncMock()
+    monkeypatch.setattr(monitor, "_tick", tick)
+    broken = False
+
+    async def run():
+        if not broken:
+            return True
+        if failure == "error":
+            raise RuntimeError("cost endpoint unavailable")
+        await asyncio.Event().wait()
+        return False
+
+    worker.run_once = run
+    supervisor = WorkerSupervisor(
+        [
+            WorkerSpec(
+                "position_monitor",
+                lambda tr: monitor.run_position_monitor({}, Mock(), Mock(), tr),
+                WorkerRestartPolicy.BOUNDED_FATAL,
+                True,
+                restart_budget=3,
+                stale_timeout_seconds=2,
+            ),
+            WorkerSpec(
+                "live_probe_loss",
+                lambda tr: worker(tr),
+                WorkerRestartPolicy.ALWAYS,
+                True,
+                stale_timeout_seconds=2,
+            ),
+        ],
+        monitor_interval_seconds=0.002,
+        restart_backoff_base_seconds=0.002,
+        restart_backoff_max_seconds=0.01,
+    )
+    try:
+        await supervisor.start()
+        await _wait_until(lambda: supervisor.gate.is_open()[0], timeout=2)
+        before = tick.await_count
+        broken = True
+        await _wait_until(
+            lambda: len(supervisor.workers["live_probe_loss"].restarts) >= 1, timeout=2
+        )
+        assert not supervisor.gate.is_open()[0]
+        assert tick.await_count > before + 2
+        assert supervisor.workers["position_monitor"].restarts == []
+        assert supervisor.workers["position_monitor"].tracker.consecutive_failures == 0
+        broken = False
+        await _wait_until(lambda: supervisor.gate.is_open()[0], timeout=2)
+    finally:
+        supervisor.stop()
+        await supervisor.wait_stopped()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("snapshot", ["flat", "smaller", "collector"])
+async def test_review_persistent_quantity_difference_only_incidents_on_third_tick(
+    monkeypatch, snapshot
+):
+    worker, store, ex, _gate, record, read, _clock = evaluator(monkeypatch)
+    if snapshot == "flat":
+        ex.fetch_positions.return_value = []
+    elif snapshot == "smaller":
+        ex.fetch_positions.return_value[0]["contracts"] = "79"
+    else:
+        from .test_live_costs import _entry, _exit, _orders
+        from .test_open_costs import collect
+
+        read.return_value = collect(
+            rows=[_entry(), _exit("21")],
+            orders=_orders(("o-entry", "100"), ("o-exit", "21")),
+            journal_quantity=D(80),
+        )
+    for _ in range(2):
+        assert await worker.run_once()
+        store.incident.assert_not_called()
+    assert await worker.run_once()
+    store.incident.assert_awaited_once()
+    assert "3 consecutive ticks" in store.incident.await_args.args[1]
+    record.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("interrupt", ["consistent", "pending", "scan_failure"])
+async def test_review_quantity_streak_resets_after_an_intervening_pass(monkeypatch, interrupt):
+    worker, store, ex, _gate, record, read, _clock = evaluator(
+        monkeypatch, position=replace(POSITION, threshold=D(50))
+    )
+    ex.fetch_positions.return_value[0]["contracts"] = "79"
+    assert await worker.run_once()
+    ex.fetch_positions.return_value[0]["contracts"] = "80"
+    if interrupt == "pending":
+        read.return_value = lc.OpenCostResult(lc.STATUS_PENDING, error="fills pending")
+    elif interrupt == "scan_failure":
+        store.positions.side_effect = RuntimeError("DB read failed")
+    assert await worker.run_once() is (interrupt != "scan_failure")
+    store.positions.side_effect = None
+    read.return_value = GOOD
+    ex.fetch_positions.return_value[0]["contracts"] = "79"
+    for _ in range(2):
+        assert await worker.run_once()
+        store.incident.assert_not_called()
+    record.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("problem", ["larger", "side", "route"])
+async def test_review_unowned_exposure_is_an_immediate_incident(monkeypatch, problem):
+    worker, store, ex, _gate, record, _read, _clock = evaluator(monkeypatch)
+    if problem == "larger":
+        ex.fetch_positions.return_value[0]["contracts"] = "81"
+    elif problem == "side":
+        ex.fetch_positions.return_value[0]["side"] = "short"
+    else:
+        ex.markets[POSITION.symbol]["symbol"] = "different-symbol"
+    assert await worker.run_once()
+    store.incident.assert_awaited_once()
+    record.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_review_moved_funding_does_not_create_a_thirty_minute_incident(monkeypatch):
+    from .test_live_costs import SETTLEMENTS, _entry, _exit, _funding
+    from .test_open_costs import collect
+
+    at8, at9 = SETTLEMENTS[2:4]
+    result = collect(
+        rows=[_entry(), _exit("20"), _funding("f9", qty="100", at=at9, fee="0")],
+        settlements=[lc.FundingSettlement(SETTLEMENTS[i], D(".001")) for i in (0, 1, 3)],
+        published_to=at9,
+        observed=(lc.FundingSettlement(at8, D(".01")),),
+        marks={at8: D(1)},
+    )
+    worker, store, _ex, _gate, record, _read, _clock = evaluator(
+        monkeypatch, position=replace(POSITION, threshold=D(50)), result=result
+    )
+    assert await worker.run_once()
+    store.incident.assert_not_called()
+    record.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_review_already_closed_position_does_not_claim_a_pending_task(monkeypatch):
+    worker, _store, _ex, _gate, record, _read, _clock = evaluator(monkeypatch)
+    worker.alert_credentials = ("fake", "fake")
+    alert = AsyncMock(return_value=True)
+    monkeypatch.setattr(pe.notify, "notify_alert", alert)
+    record.return_value = probe_close.LReached(True, [])
+    assert await worker.run_once()
+    text = alert.await_args.kwargs["text"]
+    assert "no open probe position" in text
+    assert "tasks []" not in text and "pending" not in text
