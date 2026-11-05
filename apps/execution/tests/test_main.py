@@ -113,3 +113,62 @@ def test_prod_compose_pump_short_mode_substitution(
     )
     environment = json.loads(rendered.stdout)["services"]["execution"]["environment"]
     assert environment["PUMP_SHORT_MODE"] == expected
+
+
+async def test_probe_loss_is_a_separate_critical_worker_on_the_shared_gate() -> None:
+    import asyncio
+
+    from schurfer_execution import main
+
+    cfg = SimpleNamespace(
+        redis_addr="localhost:6379",
+        auto_trade=False,
+        dry_run=False,
+        db_url="postgresql://not-used",
+        pump_short_mode=None,
+        early_momentum_mode=None,
+        liquidation_cascade_mode=None,
+        source_lead_mode=None,
+        market_refresh_interval_seconds=900.0,
+        market_refresh_min_interval_seconds=60.0,
+    )
+    rdb = MagicMock()
+    rdb.aclose = AsyncMock()
+    clients = SimpleNamespace(
+        market={}, trading={"bybit": MagicMock()}, strategy_clients=MagicMock(return_value={})
+    )
+    recovery = SimpleNamespace(recovered=asyncio.Event())
+    loss = AsyncMock()
+    protection = AsyncMock()
+    app = FastAPI()
+    with (
+        patch.object(main, "Config", return_value=cfg),
+        patch.object(main.aioredis, "from_url", return_value=rdb),
+        patch.object(main, "build_exchange_clients", return_value=clients),
+        patch.object(main, "close_exchange_clients", AsyncMock()),
+        patch.object(main.WorkerSupervisor, "start", AsyncMock()),
+        patch.object(main, "ProbeRecoveryWorker", return_value=recovery),
+        patch.object(main, "ProbeLossEvaluator", return_value=loss) as constructor,
+        patch.object(main, "run_position_monitor", protection),
+    ):
+        async with lifespan(app):
+            supervisor = app.state.supervisor
+            spec = supervisor.workers["live_probe_loss"].spec
+            assert spec.enabled and spec.is_critical
+            assert spec.policy == main.WorkerRestartPolicy.ALWAYS
+            assert constructor.call_args.args[4] is app.state.worker_gate
+            assert constructor.call_args.args[5] is recovery.recovered
+            tracker = MagicMock()
+            await spec.factory(tracker)
+            loss.assert_awaited_once_with(tracker)
+            await supervisor.workers["position_monitor"].spec.factory(tracker)
+            protection.assert_awaited_once_with(clients.trading, rdb, cfg, tracker)
+            # No loss readiness means no entry, even when every other source is ready.
+            gate = app.state.worker_gate
+            gate.clear_safety_blocker(main.STARTUP_BLOCKER)
+            for name, worker in supervisor.workers.items():
+                if worker.spec.enabled and worker.spec.is_critical and name != "live_probe_loss":
+                    gate.mark_ready(name)
+            assert not gate.is_open()[0]
+            gate.mark_ready("live_probe_loss")
+            assert gate.is_open()[0]

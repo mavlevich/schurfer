@@ -42,8 +42,10 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol
 
-from . import order_ids
+from . import order_ids, probe_loss
 
+STATUS_UNPROVEN_TAIL = "unproven_tail"
+REASON_QUANTITY_MISMATCH = "quantity_mismatch"
 STATUS_COMPLETE = "complete"
 STATUS_PENDING = "pending"
 STATUS_INCOMPLETE = "incomplete"
@@ -237,32 +239,12 @@ def _settle(
     now: datetime,
     open_position: bool,
 ) -> CostResult:
-    if facts.contract_size is not None and facts.contract_size != 1:
-        raise _incomplete(f"contract size {facts.contract_size} is not 1")
-    if facts.entry_filled <= 0:
-        raise _incomplete("the entry attempt has no filled quantity")
-
-    owned, others, unknown, odd = _partition(facts, executions, neighbours)
-    entry_rows = [row for row in owned if _is_entry(facts, row)]
-    exit_rows = [row for row in owned if not _is_entry(facts, row)]
-    if not entry_rows:
-        raise _pending("no entry execution listed yet")
-
-    _check_sides(facts, entry_rows, exit_rows)
-    _check_quantities(facts, entry_rows, exit_rows, open_position=open_position)
-    _check_orders(facts, owned, orders, open_position=open_position)
-
+    entry_rows, exit_rows, others, unknown = _checked_fills(
+        facts, executions, orders, neighbours, now=now, open_position=open_position
+    )
+    owned = entry_rows + exit_rows
     first_entry = min(row.executed_at for row in entry_rows)
     last_exit = now if open_position else max(row.executed_at for row in exit_rows)
-    for row in unknown + odd:
-        if first_entry <= row.executed_at <= last_exit:
-            raise _incomplete(
-                f"execution {row.exec_id} ({row.exec_type}) of an unknown order inside the "
-                "holding period"
-            )
-    for row in owned:
-        if row.fee_currency not in (None, "", _USDT):
-            raise _incomplete(f"execution {row.exec_id} fee in {row.fee_currency}")
     if not open_position and now < last_exit + SETTLE_DELAY:
         raise _pending("waiting 5 minutes after the last exit for funding")
     _check_published(
@@ -299,6 +281,44 @@ def _settle(
         gross_pnl_usd=gross,
         legs=legs,
     )
+
+
+def _checked_fills(
+    facts: TradeFacts,
+    executions: list[Execution],
+    orders: dict[str, OrderState],
+    neighbours: Neighbours,
+    *,
+    now: datetime,
+    open_position: bool,
+) -> tuple[list[Execution], list[Execution], list[Execution], list[Execution]]:
+    if facts.contract_size is not None and facts.contract_size != 1:
+        raise _incomplete(f"contract size {facts.contract_size} is not 1")
+    if facts.entry_filled <= 0:
+        raise _incomplete("the entry attempt has no filled quantity")
+
+    owned, others, unknown, odd = _partition(facts, executions, neighbours)
+    entry_rows = [row for row in owned if _is_entry(facts, row)]
+    exit_rows = [row for row in owned if not _is_entry(facts, row)]
+    if not entry_rows:
+        raise _pending("no entry execution listed yet")
+
+    _check_sides(facts, entry_rows, exit_rows)
+    _check_quantities(facts, entry_rows, exit_rows, open_position=open_position)
+    _check_orders(facts, owned, orders, open_position=open_position)
+
+    first_entry = min(row.executed_at for row in entry_rows)
+    last_exit = now if open_position else max(row.executed_at for row in exit_rows)
+    for row in unknown + odd:
+        if first_entry <= row.executed_at <= last_exit:
+            raise _incomplete(
+                f"execution {row.exec_id} ({row.exec_type}) of an unknown order inside the "
+                "holding period"
+            )
+    for row in owned:
+        if row.fee_currency not in (None, "", _USDT):
+            raise _incomplete(f"execution {row.exec_id} fee in {row.fee_currency}")
+    return entry_rows, exit_rows, others, unknown
 
 
 def _partition(
@@ -461,29 +481,17 @@ def _match_funding(
     first_entry: datetime,
     last_exit: datetime,
     now: datetime,
+    unlisted: list[datetime] | None = None,
 ) -> list[Execution]:
     start = first_entry - BOUNDARY
     end = last_exit + BOUNDARY
     checked = sorted({at for at in settlements if start <= at <= end})
     fills = entry_rows + exit_rows
 
-    entry_ids = {row.exec_id for row in entry_rows}
-
     def held_before(moment: datetime) -> Decimal:
         return _sum_quantity([r for r in entry_rows if r.executed_at < moment]) - _sum_quantity(
             [r for r in exit_rows if r.executed_at < moment]
         )
-
-    def held_around(at: datetime, near: list[Execution]) -> list[Decimal]:
-        """Every quantity held from 5 s before the settlement to 5 s after it: before
-        the first fill there, then after each fill in turn. Bybit may snapshot the
-        position at any of them, and an order can fill in several executions."""
-        held = held_before(at - BOUNDARY)
-        states = [held]
-        for fill in sorted(near, key=lambda row: (row.executed_at, row.exec_id)):
-            held += fill.quantity if fill.exec_id in entry_ids else -fill.quantity
-            states.append(held)
-        return states
 
     counted: list[Execution] = []
     for at in checked:
@@ -492,6 +500,12 @@ def _match_funding(
             raise _incomplete(f"{len(rows)} funding rows at the settlement {at.isoformat()}")
         row = rows[0] if rows else None
         near = [fill for fill in fills if abs(fill.executed_at - at) <= BOUNDARY]
+        if row is None and unlisted is not None:
+            quantities = _held_quantities(entry_rows, exit_rows, at) if near else [held_before(at)]
+            if max(quantities) > 0:
+                _check_single_owner(at, foreign_rows, neighbours)
+                unlisted.append(at)
+            continue
         if not near:
             held = held_before(at)
             if held == 0:
@@ -503,7 +517,7 @@ def _match_funding(
                     f"funding at {at.isoformat()} for {row.quantity}, the trade held {held}"
                 )
         else:
-            states = held_around(at, near)
+            states = _held_quantities(entry_rows, exit_rows, at)
             if row is None:
                 if now < at + SETTLE_DELAY:
                     raise _pending(f"funding of the settlement {at.isoformat()} not listed yet")
@@ -530,6 +544,22 @@ def _match_funding(
     if unmatched:
         raise _incomplete(f"funding row {unmatched[0].exec_id} matches no listed settlement")
     return counted
+
+
+def _held_quantities(
+    entries: list[Execution], exits: list[Execution], at: datetime
+) -> list[Decimal]:
+    """Every quantity that may be captured within Bybit's five-second boundary."""
+    held = _sum_quantity([r for r in entries if r.executed_at < at - BOUNDARY]) - _sum_quantity(
+        [r for r in exits if r.executed_at < at - BOUNDARY]
+    )
+    states = [held]
+    entry_ids = {r.exec_id for r in entries}
+    near = [r for r in entries + exits if abs(r.executed_at - at) <= BOUNDARY]
+    for row in sorted(near, key=lambda r: (r.executed_at, r.exec_id)):
+        held += row.quantity if row.exec_id in entry_ids else -row.quantity
+        states.append(held)
+    return states
 
 
 def _check_single_owner(
@@ -680,8 +710,22 @@ class BybitCostSource:
         return sorted(rows.values(), key=lambda row: (row.executed_at, row.exec_id))
 
     async def settlements(self, symbol: str, start: datetime, end: datetime) -> list[datetime]:
-        """Funding times in [start, end], newest pages first as Bybit returns them."""
-        found: set[datetime] = set()
+        return sorted(await self._funding_history(symbol, start, end))
+
+    async def funding_rates(
+        self, symbol: str, start: datetime, end: datetime
+    ) -> list[FundingSettlement]:
+        rows = await self._funding_history(symbol, start, end)
+        return [
+            FundingSettlement(at, _optional_decimal(rows[at].get("fundingRate"), "fundingRate"))
+            for at in sorted(rows)
+        ]
+
+    async def _funding_history(
+        self, symbol: str, start: datetime, end: datetime
+    ) -> dict[datetime, dict[str, Any]]:
+        """Page all settlements in [start, end], keeping the native rates."""
+        found: dict[datetime, dict[str, Any]] = {}
         page_end = end
         for _ in range(_MAX_PAGES):
             result = _result(
@@ -695,13 +739,16 @@ class BybitCostSource:
                     }
                 )
             )
-            listed = [_from_millis(row["fundingRateTimestamp"]) for row in result.get("list") or []]
-            found.update(at for at in listed if start <= at <= end)
+            listed = [_from_millis(r["fundingRateTimestamp"]) for r in result.get("list") or []]
+            for row in result.get("list") or []:
+                at = _from_millis(row["fundingRateTimestamp"])
+                if start <= at <= end:
+                    found[at] = row
             if len(listed) < _SETTLEMENT_PAGE:
-                return sorted(found)
+                return found
             page_end = min(listed) - timedelta(milliseconds=1)
             if page_end < start:
-                return sorted(found)
+                return found
         raise RuntimeError("funding history did not end")
 
     async def published_to(self, symbol: str) -> datetime | None:
@@ -713,6 +760,40 @@ class BybitCostSource:
         )
         listed = [_from_millis(row["fundingRateTimestamp"]) for row in result.get("list") or []]
         return max(listed) if listed else None
+
+    async def funding_observation(self, symbol: str) -> FundingSettlement:
+        result = _result(
+            await self.exchange.publicGetV5MarketTickers({"category": "linear", "symbol": symbol})
+        )
+        rows = [r for r in result.get("list") or [] if r.get("symbol") == symbol]
+        if len(rows) != 1:
+            raise RuntimeError("ticker did not identify one exact instrument")
+        return FundingSettlement(
+            _from_millis(rows[0]["nextFundingTime"]),
+            _optional_decimal(rows[0].get("fundingRate"), "fundingRate"),
+        )
+
+    async def settlement_mark(self, symbol: str, at: datetime, now: datetime) -> Decimal | None:
+        minute = at.replace(second=0, microsecond=0)
+        if now < minute + timedelta(minutes=1):
+            return None  # the second bar has not closed yet
+        expected = {minute - timedelta(minutes=1), minute}
+        result = _result(
+            await self.exchange.publicGetV5MarketMarkPriceKline(
+                {
+                    "category": "linear",
+                    "symbol": symbol,
+                    "interval": "1",
+                    "start": _millis(min(expected)),
+                    "end": _millis(minute),
+                    "limit": 2,
+                }
+            )
+        )
+        bars = {_from_millis(r[0]): _decimal(r[2], "mark high") for r in result.get("list") or []}
+        if set(bars) != expected or min(bars.values()) <= 0:
+            return None
+        return max(bars.values())
 
     async def order(self, symbol: str, order_id: str) -> OrderState | None:
         """The order from Bybit's order history, then its open orders; None when
@@ -755,6 +836,23 @@ async def read(
     executions = await source.executions(symbol, start, end)
     published_to = await source.published_to(symbol)
     settlements = await source.settlements(symbol, start, end)
+    orders = await _read_orders(source, facts, executions)
+    return settle(
+        facts,
+        executions,
+        settlements,
+        orders,
+        neighbours,
+        published_to=published_to,
+        now=now,
+        open_position=open_position,
+    )
+
+
+async def _read_orders(
+    source: CostSource, facts: TradeFacts, executions: list[Execution]
+) -> dict[str, OrderState]:
+    symbol = facts.native_market_id
     wanted = set(facts.order_ids)
     wanted.update(
         row.order_id
@@ -768,13 +866,188 @@ async def read(
         state = await source.order(symbol, order_id)
         if state is not None:
             orders[order_id] = state
-    return settle(
+    return orders
+
+
+@dataclass(frozen=True)
+class FundingSettlement:
+    at: datetime
+    rate: Decimal | None
+
+
+@dataclass(frozen=True)
+class OpenCostResult:
+    status: str
+    error: str | None = None
+    position: probe_loss.OpenPosition | None = None
+    published_to: datetime | None = None
+    reason: str | None = None
+    observed_quantity: Decimal | None = None
+
+
+class OpenCostSource(CostSource, Protocol):
+    async def funding_rates(
+        self, symbol: str, start: datetime, end: datetime
+    ) -> list[FundingSettlement]: ...
+
+    async def settlement_mark(self, symbol: str, at: datetime, now: datetime) -> Decimal | None: ...
+
+
+def collect_open(
+    facts: TradeFacts,
+    executions: list[Execution],
+    settlements: list[FundingSettlement],
+    orders: dict[str, OrderState],
+    neighbours: Neighbours,
+    *,
+    journal_quantity: Decimal,
+    published_to: datetime | None,
+    observed: tuple[FundingSettlement, ...],
+    marks: dict[datetime, Decimal | None],
+    now: datetime,
+) -> OpenCostResult:
+    """Prove fills independently of the funding tail; never label an open trade complete.
+
+    Published settlements and times actually observed on tickers may own funding.
+    Missing rows are estimated separately; unobserved times remain an unknown tail.
+    """
+    try:
+        if facts.exit_at is not None:
+            raise _incomplete("the trade is already closed")
+        entry, exits, others, unknown = _checked_fills(
+            facts, executions, orders, neighbours, now=now, open_position=True
+        )
+        if any(row.executed_at > now for row in entry + exits):
+            raise _pending("a fill is timestamped after the observation time")
+        # An active partially filled order can still change ownership. Unlike the
+        # legacy open_costs path, the probe waits for terminal evidence.
+        _check_orders(facts, entry + exits, orders, open_position=False)
+        quantity = _sum_quantity(entry) - _sum_quantity(exits)
+        if quantity <= 0 or quantity != journal_quantity:
+            return OpenCostResult(
+                STATUS_INCOMPLETE,
+                error=f"open executions hold {quantity}, journal holds {journal_quantity}",
+                published_to=published_to,
+                reason=REASON_QUANTITY_MISMATCH,
+                observed_quantity=quantity,
+            )
+        for row in entry + exits:
+            if row.price is None or row.price <= 0 or row.quantity <= 0:
+                raise _incomplete(f"execution {row.exec_id} has no positive price or quantity")
+        if published_to is not None:
+            _check_published(
+                published_to,
+                [settlement.at for settlement in settlements],
+                start=min(r.executed_at for r in entry) - BOUNDARY,
+                end=published_to,
+            )
+        # Publication may advance between the latest-time read and window paging.
+        # Keep the earlier consistency check, then retain the newer proof too.
+        published_to = max(
+            ([published_to] if published_to is not None else [])
+            + [s.at for s in settlements if s.at <= now],
+            default=None,
+        )
+        listed = {s.at: s.rate for s in settlements if s.at <= now}
+        # An announced time absent from history's proven prefix was moved/cancelled.
+        # Keep actual published settlements even while their execution row is pending.
+        rates = {
+            s.at: s.rate
+            for s in observed
+            if s.at <= now and (published_to is None or s.at > published_to or s.at in listed)
+        }
+        rates.update(listed)
+        missing: list[datetime] = []
+        funding = _match_funding(
+            facts,
+            entry,
+            exits,
+            [r for r in executions if r.exec_type == EXEC_FUNDING],
+            list(rates),
+            others + unknown,
+            neighbours,
+            first_entry=min(r.executed_at for r in entry),
+            last_exit=now,
+            now=now,
+            unlisted=missing,
+        )
+        vwap = probe_loss.entry_vwap(
+            probe_loss.Fill(r.quantity, r.price) for r in entry if r.price is not None
+        )
+        estimates = []
+        for at in missing:
+            estimates.append(
+                probe_loss.UnlistedSettlement(
+                    at, rates[at], max(_held_quantities(entry, exits, at)), marks.get(at)
+                )
+            )
+        return OpenCostResult(
+            STATUS_UNPROVEN_TAIL,
+            position=probe_loss.OpenPosition(
+                side=facts.side,
+                entry_vwap=vwap,
+                open_qty=quantity,
+                realized_open_parts=probe_loss.realized_open_parts(
+                    facts.side,
+                    vwap,
+                    (probe_loss.Fill(r.quantity, r.price) for r in exits if r.price is not None),
+                ),
+                fees_paid_open=sum((_cost(r) for r in entry + exits), Decimal(0)),
+                funding_paid_open=sum((_cost(r) for r in funding), Decimal(0)),
+                unlisted=tuple(estimates),
+            ),
+            published_to=published_to,
+        )
+    except _StopError as stop:
+        return OpenCostResult(stop.status, error=stop.error, published_to=published_to)
+
+
+async def read_open(
+    source: OpenCostSource,
+    facts: TradeFacts,
+    neighbours: Neighbours,
+    *,
+    journal_quantity: Decimal,
+    observed: tuple[FundingSettlement, ...],
+    now: datetime,
+) -> OpenCostResult:
+    symbol = facts.native_market_id
+    start = facts.sent_at - WINDOW_MARGIN
+    executions = await source.executions(symbol, start, now)
+    published_to = await source.published_to(symbol)
+    settlements = await source.funding_rates(symbol, start, now)
+    orders = await _read_orders(source, facts, executions)
+    # First validate ownership. Do not read mark bars for rows we cannot attribute.
+    result = collect_open(
         facts,
         executions,
         settlements,
         orders,
         neighbours,
+        journal_quantity=journal_quantity,
         published_to=published_to,
+        observed=observed,
+        marks={},
         now=now,
-        open_position=open_position,
+    )
+    if result.position is None:
+        return result
+    marks: dict[datetime, Decimal | None] = {}
+    for settlement in result.position.unlisted:
+        try:
+            marks[settlement.at] = await source.settlement_mark(symbol, settlement.at, now)
+        except Exception:
+            # The settlement stays explicitly unknown, never priced at today's mark.
+            marks[settlement.at] = None
+    return collect_open(
+        facts,
+        executions,
+        settlements,
+        orders,
+        neighbours,
+        journal_quantity=journal_quantity,
+        published_to=published_to,
+        observed=observed,
+        marks=marks,
+        now=now,
     )

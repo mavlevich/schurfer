@@ -5,11 +5,11 @@ Colleague review, 2026-09-03: the success/low-space/gzip-failure behavior
 this branch's own commit message claimed was never actually exercised by
 an automated test -- only manually, once, in the session that wrote it.
 These tests run the REAL script (`bash infra/scripts/backup.sh`) against a
-fake `docker`/`gzip`/`psql` on PATH and a real, isolated tmp directory for
-BACKUP_DIR (so `df`/`du` see real, if tiny, filesystem state rather than
-also needing to be faked) -- black-box, the same way a human running this
-in a terminal would exercise it, not a reimplementation of its logic in
-Python that could drift from what the shipped script actually does.
+fake `docker` and controlled `df` on PATH, plus real `gzip`/`du` and an
+isolated BACKUP_DIR. Free space is an input: a hosted runner may have less
+than the production 16 GiB floor even though these test dumps are only a
+few KiB. Fault tests replace gzip or docker explicitly. The real backup
+script and its production headroom guard remain under test.
 """
 
 from __future__ import annotations
@@ -30,12 +30,18 @@ _BASH = shutil.which("bash") or "/bin/bash"
 
 def _fake_bin(tmp_path: Path, *, pg_dump_sleep_seconds: float = 0.0) -> Path:
     """A fake `docker` (handles `exec <container> pg_dump ...` and
-    `exec <container> psql ... pg_database_size ...`) and a real-behaving
-    `gzip` passthrough, on their own PATH-prepended directory. Controlled
+    `exec <container> psql ... pg_database_size ...`) and controlled `df`,
+    on their own PATH-prepended directory. The default gzip is real. Controlled
     entirely via env vars the test sets, not arguments, since backup.sh
     itself decides `docker`'s argv."""
     bin_dir = tmp_path / "fakebin"
     bin_dir.mkdir(exist_ok=True)
+    (bin_dir / "df").write_text(
+        "#!/usr/bin/env bash\n"
+        "printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n'\n"
+        "printf 'fixture 67108864 0 %s 0%% /fixture\\n' \"${FAKE_AVAILABLE_KB:-33554432}\"\n"
+    )
+    (bin_dir / "df").chmod(0o755)
     docker_script = bin_dir / "docker"
     docker_script.write_text(
         textwrap.dedent(f"""\
@@ -60,6 +66,27 @@ def _fake_bin(tmp_path: Path, *, pg_dump_sleep_seconds: float = 0.0) -> Path:
     return bin_dir
 
 
+def _backup_env(backup_dir: Path, bin_dir: Path) -> dict[str, str]:
+    env = dict(os.environ)
+    env["PATH"] = f"{bin_dir}:{env['PATH']}"
+    env["BACKUP_DIR"] = str(backup_dir)
+    env["POSTGRES_CONTAINER"] = "fake-postgres"
+    env.pop("TELEGRAM_BOT_TOKEN", None)
+    env.pop("TELEGRAM_CHAT_ID", None)
+    for key in (
+        "MIN_FREE_FLOOR_KB",
+        "MIN_FREE_MULTIPLIER",
+        "COMPRESSED_SIZE_ESTIMATE_DIVISOR",
+        "LOCK_WAIT_SECONDS",
+        "RETENTION_COUNT",
+        "FAKE_AVAILABLE_KB",
+        "FAKE_DB_SIZE_BYTES",
+        "FAKE_PG_DUMP_BYTES",
+    ):
+        env.pop(key, None)
+    return env
+
+
 def _run_backup(
     *,
     backup_dir: Path,
@@ -67,12 +94,7 @@ def _run_backup(
     env_overrides: dict[str, str] | None = None,
     timeout: float = 30.0,
 ) -> subprocess.CompletedProcess[str]:
-    env = dict(os.environ)
-    env["PATH"] = f"{bin_dir}:{env['PATH']}"
-    env["BACKUP_DIR"] = str(backup_dir)
-    env["POSTGRES_CONTAINER"] = "fake-postgres"
-    env.pop("TELEGRAM_BOT_TOKEN", None)
-    env.pop("TELEGRAM_CHAT_ID", None)
+    env = _backup_env(backup_dir, bin_dir)
     if env_overrides:
         env.update(env_overrides)
     return subprocess.run(  # noqa: S603 - fixed executable and reviewed targets
@@ -103,9 +125,8 @@ def test_low_headroom_skips_pg_dump_and_leaves_no_file(tmp_path: Path) -> None:
     backup_dir = tmp_path / "backups"
     bin_dir = _fake_bin(tmp_path)
 
-    # An impossibly large floor forces the pre-flight check to fail
-    # regardless of this test machine's real free space -- deterministic
-    # without needing to fake `df` itself.
+    # An impossibly large floor forces failure even with the fixture's
+    # otherwise ample free-space input.
     result = _run_backup(
         backup_dir=backup_dir,
         bin_dir=bin_dir,
@@ -151,6 +172,7 @@ def test_gzip_failure_before_any_output_leaves_the_backups_dir_empty(tmp_path: P
     result = _run_backup(backup_dir=backup_dir, bin_dir=bin_dir)
 
     assert result.returncode != 0
+    assert "simulated disk-full failure" in result.stderr
     # The exact reproduction of the 2026-09-03 incident: no leftover raw
     # .dump from a run whose gzip step failed partway.
     assert list(backup_dir.glob("schurfer_*")) == []
@@ -178,6 +200,7 @@ def test_gzip_failure_after_partial_output_leaves_no_partial_gz_behind(tmp_path:
     result = _run_backup(backup_dir=backup_dir, bin_dir=bin_dir)
 
     assert result.returncode != 0
+    assert "simulated disk-full failure mid-write" in result.stderr
     # Nothing at all under the real backup filename -- raw dump, partial
     # .gz.partial, AND a partial schurfer_*.dump.gz must all be absent.
     assert list(backup_dir.glob("schurfer_*")) == []
@@ -196,8 +219,7 @@ def test_pg_dump_failure_mid_stream_leaves_no_partial_or_final_file(tmp_path: Pa
     compress) then exits 1, reproducing a dropped connection or a
     statement-timeout kill partway through a real dump."""
     backup_dir = tmp_path / "backups"
-    bin_dir = tmp_path / "fakebin"
-    bin_dir.mkdir(exist_ok=True)
+    bin_dir = _fake_bin(tmp_path)
     docker_script = bin_dir / "docker"
     docker_script.write_text(
         "#!/usr/bin/env bash\n"
@@ -219,6 +241,7 @@ def test_pg_dump_failure_mid_stream_leaves_no_partial_or_final_file(tmp_path: Pa
     result = _run_backup(backup_dir=backup_dir, bin_dir=bin_dir)
 
     assert result.returncode != 0
+    assert "simulated dropped connection" in result.stderr
     # Nothing at all under the real backup filename or its temp partial --
     # pipefail must have caught pg_dump's own failure even though gzip
     # itself "succeeded" on the truncated stream it received.
@@ -234,12 +257,7 @@ def test_concurrent_runs_serialize_instead_of_racing_pg_dump(tmp_path: Path) -> 
     backup_dir = tmp_path / "backups"
     bin_dir = _fake_bin(tmp_path, pg_dump_sleep_seconds=3.0)
 
-    env = dict(os.environ)
-    env["PATH"] = f"{bin_dir}:{env['PATH']}"
-    env["BACKUP_DIR"] = str(backup_dir)
-    env["POSTGRES_CONTAINER"] = "fake-postgres"
-    env.pop("TELEGRAM_BOT_TOKEN", None)
-    env.pop("TELEGRAM_CHAT_ID", None)
+    env = _backup_env(backup_dir, bin_dir)
 
     first = subprocess.Popen(  # noqa: S603 - fixed executable and reviewed targets
         [_BASH, str(_BACKUP_SH)],
@@ -279,3 +297,41 @@ def test_concurrent_runs_serialize_instead_of_racing_pg_dump(tmp_path: Path) -> 
 def _require_backup_script() -> None:
     if not _BACKUP_SH.exists():
         pytest.skip(f"{_BACKUP_SH} not found")
+
+
+def test_success_does_not_depend_on_the_runner_having_16gib_free(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Reproduce PR #553's runner: 15,237,232 KiB free, below the real 16 GiB floor.
+    # The fixture must supply its own df before this simulated host df on PATH.
+    host_bin = tmp_path / "hostbin"
+    host_bin.mkdir()
+    (host_bin / "df").write_text(
+        "#!/usr/bin/env bash\n"
+        "printf 'Filesystem 1024-blocks Used Available Capacity Mounted on\\n'\n"
+        "printf 'host 67108864 0 15237232 0%% /\\n'\n"
+    )
+    (host_bin / "df").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{host_bin}:{os.environ['PATH']}")
+    result = _run_backup(backup_dir=tmp_path / "backups", bin_dir=_fake_bin(tmp_path))
+    assert result.returncode == 0, result.stderr
+    assert len(list((tmp_path / "backups").glob("schurfer_*.dump.gz"))) == 1
+
+
+@pytest.mark.parametrize("available_kb,expected_status", [(16777215, 1), (16777216, 0)])
+def test_the_real_default_floor_is_still_enforced(
+    tmp_path: Path, available_kb: int, expected_status: int
+) -> None:
+    backup_dir = tmp_path / "backups"
+    result = _run_backup(
+        backup_dir=backup_dir,
+        bin_dir=_fake_bin(tmp_path),
+        env_overrides={"FAKE_AVAILABLE_KB": str(available_kb)},
+    )
+    assert result.returncode == expected_status, result.stderr
+    if expected_status:
+        assert "need at least 16777216KB" in result.stderr
+        assert "Not starting pg_dump" in result.stderr
+        assert list(backup_dir.glob("schurfer_*")) == []
+    else:
+        assert len(list(backup_dir.glob("schurfer_*.dump.gz"))) == 1
