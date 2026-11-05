@@ -298,3 +298,25 @@ their disk are not involved.
      `seconds_variant_permitted`). The report also sets that flag on
      `insufficient_data`, a case the clause does not name: there it opens nothing
      without an amendment committed first.
+
+## Discovery result (2026-11-05)
+
+The registered minute variant returned **`fail`**. All 4,928 eligible events
+were complete (2,161 clusters, 357 symbols, 53 UTC weeks), and every coverage
+floor passed. The mean gross break-even cost was +17.0 bps. The mean was
+−13.0 bps net at 30 bps cost and −33.0 bps at 50 bps cost. The week-block
+lower bound was −25.7 bps. The net mean was −18.3 bps without the top five
+symbols and negative in both halves (−14.2 and −11.8 bps). Excess over
+matched controls was +19.1 bps, with controls for 99.5% of eligible events.
+The failed conditions were size, uncertainty, top-symbol removal, both
+halves, and excess over control. The minute variant closes here with its
+test year unread.
+
+The first-minute diagnostic was +68.6 bps gross against a registered +30 bps
+threshold. The result permits registration of a separate seconds-level
+protocol using only discovery for design. Executable return depends on what
+remains after the funding rate is observable and a fill can be obtained.
+
+[Input provenance](evidence/bybit-post-funding-minute-v1/discovery/README.md),
+[original report](evidence/bybit-post-funding-minute-v1/discovery/result.json),
+and [SHA-256](evidence/bybit-post-funding-minute-v1/discovery/result.json.sha256).

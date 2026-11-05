@@ -22,5 +22,11 @@ The window fetch consumed the index with its recorded SHA-256. Both files pass
 `gzip -t`, and independently computed SHA-256 values match the fetch summaries.
 The event count describes the fetch plan, including diagnostic windows. The
 [registered runbook](../../../bybit-post-funding-minute-v1.md#runbook-2026-10-26-sizes-from-a-pre-discovery-smoke-no-stage-data-read)
-specifies a separate owner go for the discovery report. The report and test year
-remain unopened as of this record.
+specifies a separate owner go for the discovery report.
+
+The owner approved the single discovery read on 2026-11-05. The first launch
+stopped at `uv` cache initialization, before the reader started. The subsequent
+offline launch ran on the recorded clean revision and published `fail`. The
+[original result](result.json) matches its [SHA-256 sidecar](result.json.sha256).
+The [runbook result](../../../bybit-post-funding-minute-v1.md#discovery-result-2026-11-05)
+records the failed gates and the separate seconds-level research option.
