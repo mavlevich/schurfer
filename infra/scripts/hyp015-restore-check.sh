@@ -42,13 +42,15 @@ container="$(docker run -d --rm --name "$name" --network "$network" \
     --label schurfer.restore=disposable \
     -e POSTGRES_USER=restore -e POSTGRES_PASSWORD="$password" -e POSTGRES_DB=restore \
     "$image")"
+# The image initializes PostgreSQL on a temporary Unix socket, then restarts it.
+# Wait for TCP so neither probe can mistake the temporary server for the final one.
 for _ in $(seq 1 60); do
-    if docker exec "$container" pg_isready -q -U restore -d restore; then
+    if docker exec "$container" pg_isready -q -h 127.0.0.1 -U restore -d restore; then
         break
     fi
     sleep 1
 done
-docker exec "$container" pg_isready -q -U restore -d restore \
+docker exec "$container" pg_isready -q -h 127.0.0.1 -U restore -d restore \
     || { echo "throwaway TimescaleDB did not become ready" >&2; exit 1; }
 
 mkdir -p /opt/schurfer/runtime/history-archive/hyp015-restore
