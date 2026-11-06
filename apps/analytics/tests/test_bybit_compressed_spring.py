@@ -241,6 +241,8 @@ def test_estimate_scales_each_symbol_mean_size_to_its_days_with_a_file() -> None
     }
     assert spring.cap_status(estimate(scope, listed, sizes)) == "unknown"
     assert spring.cap_status(estimate({"A": ["d1"]}, listed, sizes)) == "within"
+    other_day = {("A", "d9"): 250}  # sampled on a day of the other scope
+    assert estimate({"A": ["d1", "d2"]}, listed, other_day)["estimated_bytes"] == 500
     huge = {("A", "d1"): spring.MAX_PRIMARY_SCOPE_BYTES + 1}
     assert spring.cap_status(estimate({"A": ["d1"]}, listed, huge)) == "over"
 

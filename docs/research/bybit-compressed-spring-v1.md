@@ -391,6 +391,69 @@ listing names inside the window only and sends HEAD requests for the fixed sampl
 The fetch summaries, `counts.json` and the size summary, with their SHA-256 values, are
 recorded here before step 2 is proposed.
 
+## Power step 1 result (2026-11-06)
+
+Counts only: no feature value, price, tape or return was read.
+
+**Features.** `fetch-features` ran from the merged revision 8522f0c, 14:22:49Z to
+15:23:00Z: 672 symbols, no errors, 31,324 responses, 22 kline requests recovered after a
+retry. `features-8522f0c.jsonl.gz`, 177,952,391 bytes, SHA-256
+`a3b54d6ce092a73afbd4911e8ea72862a707846b45fbb23d05ec1d91f71ebab6`. 671 instruments load (LAYERUSDT, live for four hours on 2025-01-24, has no data in the window).
+
+**Counts.** `counts` on that snapshot, 17:39:56Z, 74 s. `counts.json` SHA-256
+`a36880e27a4b55ddac0a3c3654cd8832a3503ed10c727b73582bd788708bbc5a`, `scope.json`
+SHA-256 `a96ea58b0c9b04c8020615e909b435abcb4b711145c98ed9e21699738a54fce2`.
+
+| Funnel (instrument-hours)                  | Count                        |
+| ------------------------------------------ | ---------------------------- |
+| Grid                                       | 4,214,277                    |
+| Liquid                                     | 2,391,909                    |
+| Illiquid / kline gap                       | 1,814,943 / 7,425            |
+| Condition 1 true / false / undefined       | 438,331 / 1,894,834 / 58,744 |
+| Condition 2 true / false / undefined       | 532,535 / 1,800,125 / 59,249 |
+| Condition 3 true / false / undefined       | 373,258 / 2,018,595 / 56     |
+| Conditions 1 to 3 true / false / undefined | 8,131 / 2,371,551 / 12,227   |
+
+| Conditions 1 to 3, by H | 4 h   | 12 h  | 24 h  |
+| ----------------------- | ----- | ----- | ----- |
+| Decisions               | 8,131 | 8,124 | 8,123 |
+| Clusters (symbol-days)  | 2,271 | 2,269 | 2,268 |
+| Symbols                 | 370   | 370   | 370   |
+| ISO weeks               | 50    | 50    | 50    |
+| Top-5 cluster share     | 6.9%  | 6.9%  | 6.9%  |
+| Events, upper bound     | 2,911 | 2,121 | 1,886 |
+
+- 959 of the clusters fall in the first half (before 2025-04-01).
+- One ISO week has no decision: 2024-W49 (2 to 8 December 2024), inside the window.
+- Hours of day are even (301 to 366 decisions each).
+- HYP-031 event times (any r_s <= -0.30%): 2,549.
+- Tape scope: primary 20,673 symbol-days on 370 symbols; ablation 113,826 on 630.
+
+Conditions 1 to 3 alone clear the floor (150 clusters, 40 symbols, 26 weeks, top-5 at
+most 30%) with room; condition 4 is still to come and will cut most of them.
+
+**Archive sizes.** Attempt 1 (17:41:20Z, from 8522f0c) stopped after about 2,730
+requests in 4 minutes: CloudFront answered 403 to every request from this IP. Its
+partial snapshot (`archive-sizes-8522f0c.jsonl.gz`, SHA-256
+`5e7f98f149169ce6d42ee905c2fae4b4e89c1729e842654ad150fe14e403b57e`) is not used.
+Attempt 2 ran from 1fedaff (#555, paced at 3 requests per second), 18:10:24Z to
+18:47:18Z: 630 listings and 6,003 HEAD requests, all 200.
+`archive-sizes-1fedaff.jsonl.gz`, SHA-256
+`22e7c1196536a0db420c616138396022a924274aec73b31b84522fc290d41640`.
+
+| Tape scope | Symbol-days | With a file | Estimated compressed bytes |
+| ---------- | ----------- | ----------- | -------------------------- |
+| Primary    | 20,673      | 20,661      | 160.9 GB                   |
+| Ablation   | 113,826     | 113,702     | 705.9 GB                   |
+
+The run itself printed the primary cap status as `unknown` with 47 symbols "without
+size": its estimate used only samples that fell on primary days, while the sample is
+drawn from the union of both scopes and this protocol's rule is each symbol's mean over
+its whole sample. Recomputed offline from the same snapshot with the corrected
+`estimate` (no new request), every symbol has a size and the primary scope is 160.9 GB,
+`within` the 1 TB cap. At the 4.16 MB/s the HYP-031 tape pilot measured end to end, the
+primary scope is about 11 hours of download and parsing, the ablation scope about 47.
+
 ## Effort and stop
 
 Code mirrors the carry and HYP-031 screens: fetch once into hashed snapshots, report
