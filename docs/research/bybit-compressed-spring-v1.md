@@ -235,7 +235,11 @@ Each uses the same liquidity filter, entry, exit, H, costs and independence rule
   where the setup is determinably false, matched on 24 h turnover decile and then nearest
   14-day volatility of hourly returns (log ratio). It needs no tape.
 - **Ablations:** the primary setup without one condition at a time (4 versions), within
-  the fetched tape scope.
+  the fetched tape scope. Amended 2026-11-06: only the ablation without condition 4 runs
+  (it needs no tape); the three that drop condition 1, 2 or 3 would need the 706 GB
+  ablation scope and are recorded as `not run`. B3 needs no tape, and every matched
+  control candidate whose status depends on S passes conditions 1 to 3, so the primary
+  scope covers both.
 
 **Price-state matched control (condition 6).** For each event, at the same t: liquid
 instruments for which condition 1 holds, R >= 0, and the setup is determinably false
@@ -268,8 +272,53 @@ configuration: this is the test of "more than price".
      no sampled size, an amendment changes the S ranking before
      any tape is fetched.
 2. **Tape.** Only after the mask gates (Data boundary) pass. Fetch the primary scope,
-   masked as above, with a hard byte cap counted during the download, and report the
-   funnel again with condition 4.
+   masked as above, with a hard byte cap of 200 GB counted during the download, and
+   report the funnel after condition 4 and the share of events with a matched control.
+   If coverage or the sample falls below the floor, the study stops there, before any
+   return. Amended 2026-11-06, before any tape is fetched:
+   - **Event hours** are the union of this study's funding and the frozen HYP-031
+     index's (any r_s <= -0.30%), so a fetch gap in either cannot unreserve a boundary.
+     The gate stops the run if any settlement of either snapshot is off the hour.
+   - **Per file.** Each day file is streamed to a temporary file while its gzip EOF and
+     CRC are checked, aggregated per kept minute and taker side (USD and base) with
+     DuckDB, and deleted. Rows of reserved minutes collapse into one row count inside
+     the query; their sums never leave it. A row with an empty or wrong symbol, an empty
+     or unknown side, a time outside the day, or a size, price or notional that is
+     missing, non-finite or not positive makes the whole day `invalid` (also inside a
+     reserved minute, counted without any value), as do a damaged
+     gzip stream and a format error.
+   - **Reconciliation, per hour.** Every UTC hour of a file gets a status. An hour whose
+     two mask boundaries are both unreserved is fully known (kept plus unreserved masked
+     minutes): it is `matched` when its tape base volume is within 0.1% of the hourly
+     kline volume plus one unit of that volume's last published decimal, and `mismatch`
+     otherwise. Hours next to a reserved boundary are `unchecked_reserved`; hours
+     without a kline are `missing_kline`. A `mismatch` hour makes undefined
+     (`tape_mismatch`) exactly the S values whose 6-hour interval uses it; a `missing`
+     or `invalid` day makes undefined every S touching it (`tape_missing`). These gaps
+     then pass through the 269 of 336 rank rule. The pilot and the full run report, over
+     `ok` days only, the share of hours matched (of all hours and of checked hours) and
+     the relative gaps in fixed bins (0.01%, 0.05%, 0.1%, 0.5%, 1%), with rejected days
+     counted apart; no threshold changes on them.
+   - **What S means.** The daily CSV has no block-trade field, and early files no RPI
+     field, so S is the taker-side imbalance of the archive's published trades.
+     Reconciliation finds gaps and duplicates; it does not confirm the trade classes.
+   - **Restartable and bound.** Each file's result is written as its own part; an
+     interrupted run skips the files that have one. Before its first part a run
+     directory is bound (`run.json`) to the scope, features and HYP-031 index SHA-256
+     values, the pilot size and the rule constants; a resume or a `seal` with anything
+     else is refused. The HYP-031 index is pinned to SHA-256
+     `f48fe09f7023a476e524cf70c6ec1b629eee30a9a07cff41c9d149dfb59e0cf5`. `seal`
+     publishes the manifest of all parts with their SHA-256 values once every scope day
+     has a part.
+   - **Hard byte cap.** Each download attempt reserves its whole Content-Length before
+     its first byte is read, by appending it (fsynced) to the run's ledger; the spent
+     total is the ledger's sum, shared by the worker processes and kept across resumes.
+     A broken attempt counts in full, a crash loses nothing, and an attempt that would
+     pass the cap is refused before reading.
+   - **Pilot first.** A fixed pilot of 30 scope days (lowest SHA-256 of
+     `bybit_compressed_spring_v1|pilot|SYMBOL|YYYY-MM-DD`) runs before the full scope:
+     it checks the gate, the per-file checks, the reconciliation rate and the restart,
+     and reads no return.
    - **Mask sensitivity (features only, decides nothing).** Around hour boundaries that
      are not HYP-031 event times nothing is reserved, so for those boundaries only the
      fetcher also keeps the masked minutes' aggregates, in a separate file that no
@@ -390,6 +439,28 @@ uv run --package schurfer-analytics bybit-compressed-spring fetch-archive-sizes 
 listing names inside the window only and sends HEAD requests for the fixed sample only.
 The fetch summaries, `counts.json` and the size summary, with their SHA-256 values, are
 recorded here before step 2 is proposed.
+
+## Runbook for power step 2 (tape)
+
+From a clean checkout of the merged revision, on the owner's go; reads no return. The
+pilot first, then the full scope into its own directory. An interrupted fetch is resumed
+by running the same command again.
+
+```bash
+COMMON="--scope runtime/research/hyp032/step1-8522f0c/scope.json --scope-sha256 SCOPE_SHA \
+  --features runtime/research/hyp032/features-8522f0c.jsonl.gz --features-sha256 FEATURES_SHA \
+  --hyp031-index HYP031_INDEX --hyp031-index-sha256 HYP031_INDEX_SHA"
+uv run --package schurfer-analytics bybit-compressed-spring-tape fetch-tape $COMMON \
+  --out-dir runtime/research/hyp032/tape-pilot-REV --pilot 30 --max-bytes 5000000000
+uv run --package schurfer-analytics bybit-compressed-spring-tape seal $COMMON \
+  --out-dir runtime/research/hyp032/tape-pilot-REV --pilot 30
+uv run --package schurfer-analytics bybit-compressed-spring-tape fetch-tape $COMMON \
+  --out-dir runtime/research/hyp032/tape-REV --max-bytes 200000000000
+uv run --package schurfer-analytics bybit-compressed-spring-tape seal $COMMON \
+  --out-dir runtime/research/hyp032/tape-REV
+```
+
+The fetch logs a progress line every minute (files done, GB, MB/s, hours left, statuses).
 
 ## Power step 1 result (2026-11-06)
 
