@@ -56,6 +56,7 @@ bybit-carry-economics-screen = "schurfer_analytics.bybit_carry_economics_screen:
 bybit-post-funding-screen = "schurfer_analytics.bybit_post_funding_screen:main"
 bybit-compressed-spring = "schurfer_analytics.bybit_compressed_spring:main"
 bybit-compressed-spring-tape = "schurfer_analytics.bybit_compressed_spring_tape:main"
+bybit-compressed-spring-cond4 = "schurfer_analytics.bybit_compressed_spring_cond4:main"
 source-lead-identity-report = "schurfer_analytics.source_lead_identity_report:main"
 gate-identity-candidate-tooling = "schurfer_analytics.gate_identity_candidate_tooling:main"
 source-lead-identity-evidence = "schurfer_analytics.source_lead_identity_evidence:main"
