@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import time
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -93,6 +94,27 @@ def test_aggregate_keeps_s_minutes_sets_aside_unreserved_and_counts_reserved(
     assert out["sensitivity_minutes"] == {str(calm - MINUTE_MS): [6.0, 0.0, 3.0, 0.0, 1]}
     assert out["counts"] == {"rows": 4, "reserved_rows": 2, "bad_rows": 2}
     assert "1000" not in json.dumps(out)  # nothing of the reserved minutes leaves the query
+
+
+def test_aggregate_is_exact_and_repeatable(tmp_path: Path) -> None:
+    rows = [row(D0 + 30 * MINUTE_MS + k, "Buy", 0.1) for k in range(1000)]
+    rows.append(row(D0 + 30 * MINUTE_MS, "Sell", 1).rsplit(",", 1)[0] + ",0.1234567890123456")
+    path = write_csv(tmp_path / "x.csv.gz", rows)
+    first = aggregate(path, "AUSDT", DAY, [])
+    assert first == aggregate(path, "AUSDT", DAY, [])
+    cell = first["s_minutes"][str(D0 + 30 * MINUTE_MS)]
+    assert cell[2] == 100.0  # 1000 x 0.1 exactly, not 99.9999999999986
+    assert cell[1] == pytest.approx(0.123456789012, abs=1e-15)  # beyond 12 decimals: cut
+    assert first["counts"] == {"rows": 1001}
+
+
+def test_parts_are_byte_reproducible(tmp_path: Path) -> None:
+    part = {"status": "ok", "s_minutes": {"1": [1.0, 2.0, 3.0, 4.0, 5]}}
+    tape.write_part(tmp_path / "a.json.gz", part)
+    first = (tmp_path / "a.json.gz").read_bytes()
+    time.sleep(1.1)
+    tape.write_part(tmp_path / "a.json.gz", part)
+    assert (tmp_path / "a.json.gz").read_bytes() == first
 
 
 def test_a_bad_row_in_a_reserved_minute_still_marks_the_day(tmp_path: Path) -> None:

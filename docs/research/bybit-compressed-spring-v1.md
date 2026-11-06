@@ -525,6 +525,30 @@ its whole sample. Recomputed offline from the same snapshot with the corrected
 `within` the 1 TB cap. At the 4.16 MB/s the HYP-031 tape pilot measured end to end, the
 primary scope is about 11 hours of download and parsing, the ablation scope about 47.
 
+## Power step 2 pilot (2026-11-06)
+
+From the merged revision 4c26333 (rules `tape-v2`), 20:48Z; no return read.
+
+- **Gate:** passed. Event hours 2,550: 2,549 from this study's funding, one more only
+  in the HYP-031 index, so the union mattered.
+- **Files:** 30 of 30 `ok`, no bad row; 5,085,484 kept rows and 282,676 rows in reserved
+  minutes (counted only).
+- **Reconciliation:** 319 hours matched, all within 0.01%; no mismatch; 401 hours
+  `unchecked_reserved` (44% of the hours in `ok` days are checked; the event hours are
+  dense).
+- **Volume and speed:** 215,431,329 bytes in 19.5 s (about 11 MB/s; the full 160.9 GB
+  scope is about 4 hours). Parts are about 33 KB each.
+- **Manifest:** `tape-pilot-4c26333/manifest.json`, SHA-256
+  `c1a73d29f54445bbe96281f33dfc4da65d2cd3a0e7b0732d37e465302dc6ebbf`.
+- **Restart:** a second pilot directory was killed with SIGTERM after 11 files (11
+  parts, 11 ledger entries, no temporary file, no worker left); the resumed run
+  fetched the other 19 and sealed with the same statuses and hour counts.
+- **Found:** parts were not byte-reproducible. Three of 30 differed in one minute at the
+  sixteenth digit (DuckDB sums doubles in parallel order) although the source files had
+  the same SHA-256, and gzip wrote a timestamp into each part. Fixed before the full run
+  (rules `tape-v3`): sums are exact DECIMAL(38, 12) and parts are written with gzip
+  mtime 0. The pilot's parts were a check only; the full run uses `tape-v3`.
+
 ## Effort and stop
 
 Code mirrors the carry and HYP-031 screens: fetch once into hashed snapshots, report
