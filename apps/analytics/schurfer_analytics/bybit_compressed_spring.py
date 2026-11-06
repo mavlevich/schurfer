@@ -26,6 +26,7 @@ import json
 import math
 import re
 import sys
+import time
 from collections import Counter, defaultdict, deque
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -90,7 +91,14 @@ SIZE_SAMPLE_EVERY: Final = 20
 SIZE_SAMPLE_MIN: Final = 2
 MAX_PRIMARY_SCOPE_BYTES: Final = 10**12
 HTTP_RETRY_DELAYS_SECONDS: Final = (1.0, 2.0, 4.0, 8.0)
+# The archive sits behind CloudFront, which answered 403 to every request from this IP
+# after about 2,700 requests in 4 minutes (2026-11-06). Requests are paced across all
+# tasks, and a 403 or 429 is treated as a block: long pauses, then a clean stop.
+ARCHIVE_REQUESTS_PER_SECOND: Final = 3.0
+BLOCK_DELAYS_SECONDS: Final = (30.0, 60.0, 120.0, 300.0)
+BLOCK_STATUSES: Final = (403, 429)
 _sleep = asyncio.sleep  # replaced in tests
+_monotonic = time.monotonic  # replaced in tests
 
 REASONS: Final = ("kline_gap", "oi_gap", "no_settlement", "rank_history_short")
 
@@ -560,18 +568,52 @@ def size_sample(symbol: str, days: Sequence[str]) -> list[str]:
     return sorted(sorted(days, key=key)[:want])
 
 
-async def _http(client: httpx.AsyncClient, method: str, url: str) -> httpx.Response:
-    for delay in (*HTTP_RETRY_DELAYS_SECONDS, None):
+class Pacer:
+    """At most ``rate`` request starts per second across every task sharing it."""
+
+    def __init__(self, rate: float) -> None:
+        self.interval = 1.0 / rate
+        self.lock = asyncio.Lock()
+        self.next_at = 0.0
+
+    async def wait(self) -> None:
+        async with self.lock:
+            now = _monotonic()
+            if self.next_at > now:
+                await _sleep(self.next_at - now)
+                now = self.next_at
+            self.next_at = now + self.interval
+
+
+class ArchiveBlockedError(RuntimeError):
+    """The archive kept refusing every request; the run stops instead of guessing."""
+
+
+async def _http(client: httpx.AsyncClient, pacer: Pacer, method: str, url: str) -> httpx.Response:
+    errors = iter((*HTTP_RETRY_DELAYS_SECONDS, None))
+    blocks = iter((*BLOCK_DELAYS_SECONDS, None))
+    while True:
+        await pacer.wait()
         try:
             response = await client.request(method, url)
-            if response.status_code in (200, 404):
-                return response
-            response.raise_for_status()
-        except httpx.HTTPError:
+        except httpx.TransportError:
+            delay = next(errors)
             if delay is None:
                 raise
-        await _sleep(delay or 0)
-    raise AssertionError("unreachable")
+            await _sleep(delay)
+            continue
+        if response.status_code in (200, 404):
+            return response
+        if response.status_code in BLOCK_STATUSES:
+            delay = next(blocks)
+            if delay is None:
+                raise ArchiveBlockedError(f"{response.status_code} for {url} after pauses")
+        else:
+            delay = next(errors)
+            if delay is None:
+                response.raise_for_status()
+                raise RuntimeError(f"{response.status_code} for {url}")
+        await _sleep(delay)
 
 
 def estimate(scope: dict[str, list[str]], listed: dict[str, set[str]],
@@ -614,18 +656,19 @@ async def fetch_archive_sizes(
     listed: dict[str, set[str]] = {}
     sizes: dict[tuple[str, str], int] = {}
     semaphore = asyncio.Semaphore(CONCURRENCY)
+    pacer = Pacer(ARCHIVE_REQUESTS_PER_SECOND)
     async with httpx.AsyncClient(timeout=60, follow_redirects=True, transport=transport) as client:
 
         async def one(symbol: str) -> None:
             async with semaphore:
-                listing = await _http(client, "GET", ARCHIVE_LISTING.format(symbol=symbol))
+                listing = await _http(client, pacer, "GET", ARCHIVE_LISTING.format(symbol=symbol))
                 days = listed_days(symbol, listing.text) if listing.status_code == 200 else set()
                 listed[symbol] = days
                 writer.record("listing", symbol, {"status": listing.status_code}, sorted(days))
                 present = sorted(union[symbol] & days)
                 for day in size_sample(symbol, present):
                     url = ARCHIVE_FILE.format(symbol=symbol, day=day)
-                    head = await _http(client, "HEAD", url)
+                    head = await _http(client, pacer, "HEAD", url)
                     length = head.headers.get("content-length")
                     if head.status_code == 200 and length is not None:
                         sizes[(symbol, day)] = int(length)

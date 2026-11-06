@@ -355,7 +355,12 @@ def test_counts_command_publishes_once(tmp_path: Path) -> None:
     assert MINUTE_MS == 60_000
 
 
-def test_fetch_archive_sizes_heads_only_the_fixed_sample(tmp_path: Path) -> None:
+def test_fetch_archive_sizes_heads_only_the_fixed_sample(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    clock = FakeClock()
+    monkeypatch.setattr(spring, "_monotonic", clock.monotonic)
+    monkeypatch.setattr(spring, "_sleep", clock.sleep)
     days = [spring._day(WINDOW_FIRST_MS + k * DAY_MS) for k in range(40)]
     scope = {"version": spring.VERSION, "primary": {"AUSDT": days[:30]},
              "ablation": {"AUSDT": days, "GONEUSDT": days[:2]}}  # fmt: skip
@@ -383,3 +388,62 @@ def test_fetch_archive_sizes_heads_only_the_fixed_sample(tmp_path: Path) -> None
     with gzip.open(tmp_path / "s.jsonl.gz", "rt") as stream:
         listing = next(json.loads(line) for line in stream if '"listing"' in line)
     assert "2026-10-01" not in json.dumps(listing)
+
+
+class FakeClock:
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.slept: list[float] = []
+
+    def monotonic(self) -> float:
+        return self.now
+
+    async def sleep(self, seconds: float) -> None:
+        self.slept.append(seconds)
+        self.now += seconds
+
+
+def test_pacer_spaces_request_starts_across_tasks(monkeypatch: pytest.MonkeyPatch) -> None:
+    clock = FakeClock()
+    monkeypatch.setattr(spring, "_monotonic", clock.monotonic)
+    monkeypatch.setattr(spring, "_sleep", clock.sleep)
+    pacer = spring.Pacer(4.0)
+    starts: list[float] = []
+
+    async def one() -> None:
+        await pacer.wait()
+        starts.append(clock.now)
+
+    async def run() -> None:
+        await asyncio.gather(*(one() for _ in range(5)))
+
+    asyncio.run(run())
+    assert starts == [0.0, 0.25, 0.5, 0.75, 1.0]
+
+
+def _replay(statuses: list[int]) -> httpx.AsyncClient:
+    answers = iter(statuses)
+
+    def handle(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(next(answers))
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handle))
+
+
+def test_http_waits_out_a_block_then_stops_cleanly(monkeypatch: pytest.MonkeyPatch) -> None:
+    clock = FakeClock()
+    monkeypatch.setattr(spring, "_monotonic", clock.monotonic)
+    monkeypatch.setattr(spring, "_sleep", clock.sleep)
+    pacer = spring.Pacer(1000.0)
+
+    async def call(statuses: list[int]) -> int:
+        async with _replay(statuses) as client:
+            return (await spring._http(client, pacer, "HEAD", "https://x/y")).status_code
+
+    assert asyncio.run(call([403, 429, 200])) == 200
+    assert [s for s in clock.slept if s >= 30] == [30.0, 60.0]
+    with pytest.raises(spring.ArchiveBlockedError, match="403"):
+        asyncio.run(call([403] * 5))
+    assert asyncio.run(call([500, 200])) == 200
+    with pytest.raises(httpx.HTTPStatusError):
+        asyncio.run(call([503] * 5))
