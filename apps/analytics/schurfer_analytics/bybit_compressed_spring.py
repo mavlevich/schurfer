@@ -618,13 +618,18 @@ async def _http(client: httpx.AsyncClient, pacer: Pacer, method: str, url: str) 
 
 def estimate(scope: dict[str, list[str]], listed: dict[str, set[str]],
              sizes: dict[tuple[str, str], int]) -> dict[str, Any]:  # fmt: skip
+    """Each symbol's mean sampled size, over its whole fixed sample (the sample is drawn
+    from the union of both scopes), times its scope days with a file."""
+    by_symbol: dict[str, list[int]] = defaultdict(list)
+    for (symbol, _day), size in sizes.items():
+        by_symbol[symbol].append(size)
     total = 0.0
     with_file = 0
     unsized: list[str] = []
     for symbol, days in scope.items():
         present = [d for d in days if d in listed.get(symbol, set())]
         with_file += len(present)
-        sampled = [sizes[(symbol, d)] for d in present if (symbol, d) in sizes]
+        sampled = by_symbol.get(symbol, [])
         if present and not sampled:
             unsized.append(symbol)
         elif sampled:

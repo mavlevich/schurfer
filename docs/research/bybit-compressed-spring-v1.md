@@ -235,7 +235,11 @@ Each uses the same liquidity filter, entry, exit, H, costs and independence rule
   where the setup is determinably false, matched on 24 h turnover decile and then nearest
   14-day volatility of hourly returns (log ratio). It needs no tape.
 - **Ablations:** the primary setup without one condition at a time (4 versions), within
-  the fetched tape scope.
+  the fetched tape scope. Amended 2026-11-06: only the ablation without condition 4 runs
+  (it needs no tape); the three that drop condition 1, 2 or 3 would need the 706 GB
+  ablation scope and are recorded as `not run`. B3 needs no tape, and every matched
+  control candidate whose status depends on S passes conditions 1 to 3, so the primary
+  scope covers both.
 
 **Price-state matched control (condition 6).** For each event, at the same t: liquid
 instruments for which condition 1 holds, R >= 0, and the setup is determinably false
@@ -268,8 +272,53 @@ configuration: this is the test of "more than price".
      no sampled size, an amendment changes the S ranking before
      any tape is fetched.
 2. **Tape.** Only after the mask gates (Data boundary) pass. Fetch the primary scope,
-   masked as above, with a hard byte cap counted during the download, and report the
-   funnel again with condition 4.
+   masked as above, with a hard byte cap of 200 GB counted during the download, and
+   report the funnel after condition 4 and the share of events with a matched control.
+   If coverage or the sample falls below the floor, the study stops there, before any
+   return. Amended 2026-11-06, before any tape is fetched:
+   - **Event hours** are the union of this study's funding and the frozen HYP-031
+     index's (any r_s <= -0.30%), so a fetch gap in either cannot unreserve a boundary.
+     The gate stops the run if any settlement of either snapshot is off the hour.
+   - **Per file.** Each day file is streamed to a temporary file while its gzip EOF and
+     CRC are checked, aggregated per kept minute and taker side (USD and base) with
+     DuckDB, and deleted. Rows of reserved minutes collapse into one row count inside
+     the query; their sums never leave it. A row with an empty or wrong symbol, an empty
+     or unknown side, a time outside the day, or a size, price or notional that is
+     missing, non-finite or not positive makes the whole day `invalid` (also inside a
+     reserved minute, counted without any value), as do a damaged
+     gzip stream and a format error.
+   - **Reconciliation, per hour.** Every UTC hour of a file gets a status. An hour whose
+     two mask boundaries are both unreserved is fully known (kept plus unreserved masked
+     minutes): it is `matched` when its tape base volume is within 0.1% of the hourly
+     kline volume plus one unit of that volume's last published decimal, and `mismatch`
+     otherwise. Hours next to a reserved boundary are `unchecked_reserved`; hours
+     without a kline are `missing_kline`. A `mismatch` hour makes undefined
+     (`tape_mismatch`) exactly the S values whose 6-hour interval uses it; a `missing`
+     or `invalid` day makes undefined every S touching it (`tape_missing`). These gaps
+     then pass through the 269 of 336 rank rule. The pilot and the full run report, over
+     `ok` days only, the share of hours matched (of all hours and of checked hours) and
+     the relative gaps in fixed bins (0.01%, 0.05%, 0.1%, 0.5%, 1%), with rejected days
+     counted apart; no threshold changes on them.
+   - **What S means.** The daily CSV has no block-trade field, and early files no RPI
+     field, so S is the taker-side imbalance of the archive's published trades.
+     Reconciliation finds gaps and duplicates; it does not confirm the trade classes.
+   - **Restartable and bound.** Each file's result is written as its own part; an
+     interrupted run skips the files that have one. Before its first part a run
+     directory is bound (`run.json`) to the scope, features and HYP-031 index SHA-256
+     values, the pilot size and the rule constants; a resume or a `seal` with anything
+     else is refused. The HYP-031 index is pinned to SHA-256
+     `f48fe09f7023a476e524cf70c6ec1b629eee30a9a07cff41c9d149dfb59e0cf5`. `seal`
+     publishes the manifest of all parts with their SHA-256 values once every scope day
+     has a part.
+   - **Hard byte cap.** Each download attempt reserves its whole Content-Length before
+     its first byte is read, by appending it (fsynced) to the run's ledger; the spent
+     total is the ledger's sum, shared by the worker processes and kept across resumes.
+     A broken attempt counts in full, a crash loses nothing, and an attempt that would
+     pass the cap is refused before reading.
+   - **Pilot first.** A fixed pilot of 30 scope days (lowest SHA-256 of
+     `bybit_compressed_spring_v1|pilot|SYMBOL|YYYY-MM-DD`) runs before the full scope:
+     it checks the gate, the per-file checks, the reconciliation rate and the restart,
+     and reads no return.
    - **Mask sensitivity (features only, decides nothing).** Around hour boundaries that
      are not HYP-031 event times nothing is reserved, so for those boundaries only the
      fetcher also keeps the masked minutes' aggregates, in a separate file that no
@@ -390,6 +439,91 @@ uv run --package schurfer-analytics bybit-compressed-spring fetch-archive-sizes 
 listing names inside the window only and sends HEAD requests for the fixed sample only.
 The fetch summaries, `counts.json` and the size summary, with their SHA-256 values, are
 recorded here before step 2 is proposed.
+
+## Runbook for power step 2 (tape)
+
+From a clean checkout of the merged revision, on the owner's go; reads no return. The
+pilot first, then the full scope into its own directory. An interrupted fetch is resumed
+by running the same command again.
+
+```bash
+COMMON="--scope runtime/research/hyp032/step1-8522f0c/scope.json --scope-sha256 SCOPE_SHA \
+  --features runtime/research/hyp032/features-8522f0c.jsonl.gz --features-sha256 FEATURES_SHA \
+  --hyp031-index HYP031_INDEX --hyp031-index-sha256 HYP031_INDEX_SHA"
+uv run --package schurfer-analytics bybit-compressed-spring-tape fetch-tape $COMMON \
+  --out-dir runtime/research/hyp032/tape-pilot-REV --pilot 30 --max-bytes 5000000000
+uv run --package schurfer-analytics bybit-compressed-spring-tape seal $COMMON \
+  --out-dir runtime/research/hyp032/tape-pilot-REV --pilot 30
+uv run --package schurfer-analytics bybit-compressed-spring-tape fetch-tape $COMMON \
+  --out-dir runtime/research/hyp032/tape-REV --max-bytes 200000000000
+uv run --package schurfer-analytics bybit-compressed-spring-tape seal $COMMON \
+  --out-dir runtime/research/hyp032/tape-REV
+```
+
+The fetch logs a progress line every minute (files done, GB, MB/s, hours left, statuses).
+
+## Power step 1 result (2026-11-06)
+
+Counts only: no feature value, price, tape or return was read.
+
+**Features.** `fetch-features` ran from the merged revision 8522f0c, 14:22:49Z to
+15:23:00Z: 672 symbols, no errors, 31,324 responses, 22 kline requests recovered after a
+retry. `features-8522f0c.jsonl.gz`, 177,952,391 bytes, SHA-256
+`a3b54d6ce092a73afbd4911e8ea72862a707846b45fbb23d05ec1d91f71ebab6`. 671 instruments load (LAYERUSDT, live for four hours on 2025-01-24, has no data in the window).
+
+**Counts.** `counts` on that snapshot, 17:39:56Z, 74 s. `counts.json` SHA-256
+`a36880e27a4b55ddac0a3c3654cd8832a3503ed10c727b73582bd788708bbc5a`, `scope.json`
+SHA-256 `a96ea58b0c9b04c8020615e909b435abcb4b711145c98ed9e21699738a54fce2`.
+
+| Funnel (instrument-hours)                  | Count                        |
+| ------------------------------------------ | ---------------------------- |
+| Grid                                       | 4,214,277                    |
+| Liquid                                     | 2,391,909                    |
+| Illiquid / kline gap                       | 1,814,943 / 7,425            |
+| Condition 1 true / false / undefined       | 438,331 / 1,894,834 / 58,744 |
+| Condition 2 true / false / undefined       | 532,535 / 1,800,125 / 59,249 |
+| Condition 3 true / false / undefined       | 373,258 / 2,018,595 / 56     |
+| Conditions 1 to 3 true / false / undefined | 8,131 / 2,371,551 / 12,227   |
+
+| Conditions 1 to 3, by H | 4 h   | 12 h  | 24 h  |
+| ----------------------- | ----- | ----- | ----- |
+| Decisions               | 8,131 | 8,124 | 8,123 |
+| Clusters (symbol-days)  | 2,271 | 2,269 | 2,268 |
+| Symbols                 | 370   | 370   | 370   |
+| ISO weeks               | 50    | 50    | 50    |
+| Top-5 cluster share     | 6.9%  | 6.9%  | 6.9%  |
+| Events, upper bound     | 2,911 | 2,121 | 1,886 |
+
+- 959 of the clusters fall in the first half (before 2025-04-01).
+- One ISO week has no decision: 2024-W49 (2 to 8 December 2024), inside the window.
+- Hours of day are even (301 to 366 decisions each).
+- HYP-031 event times (any r_s <= -0.30%): 2,549.
+- Tape scope: primary 20,673 symbol-days on 370 symbols; ablation 113,826 on 630.
+
+Conditions 1 to 3 alone clear the floor (150 clusters, 40 symbols, 26 weeks, top-5 at
+most 30%) with room; condition 4 is still to come and will cut most of them.
+
+**Archive sizes.** Attempt 1 (17:41:20Z, from 8522f0c) stopped after about 2,730
+requests in 4 minutes: CloudFront answered 403 to every request from this IP. Its
+partial snapshot (`archive-sizes-8522f0c.jsonl.gz`, SHA-256
+`5e7f98f149169ce6d42ee905c2fae4b4e89c1729e842654ad150fe14e403b57e`) is not used.
+Attempt 2 ran from 1fedaff (#555, paced at 3 requests per second), 18:10:24Z to
+18:47:18Z: 630 listings and 6,003 HEAD requests, all 200.
+`archive-sizes-1fedaff.jsonl.gz`, SHA-256
+`22e7c1196536a0db420c616138396022a924274aec73b31b84522fc290d41640`.
+
+| Tape scope | Symbol-days | With a file | Estimated compressed bytes |
+| ---------- | ----------- | ----------- | -------------------------- |
+| Primary    | 20,673      | 20,661      | 160.9 GB                   |
+| Ablation   | 113,826     | 113,702     | 705.9 GB                   |
+
+The run itself printed the primary cap status as `unknown` with 47 symbols "without
+size": its estimate used only samples that fell on primary days, while the sample is
+drawn from the union of both scopes and this protocol's rule is each symbol's mean over
+its whole sample. Recomputed offline from the same snapshot with the corrected
+`estimate` (no new request), every symbol has a size and the primary scope is 160.9 GB,
+`within` the 1 TB cap. At the 4.16 MB/s the HYP-031 tape pilot measured end to end, the
+primary scope is about 11 hours of download and parsing, the ablation scope about 47.
 
 ## Effort and stop
 
