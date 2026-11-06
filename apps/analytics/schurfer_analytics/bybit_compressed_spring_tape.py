@@ -134,9 +134,9 @@ WITH raw AS (
         TRY_CAST(timestamp AS DECIMAL(18, 6)) AS ts,
         symbol AS sym,
         side,
-        TRY_CAST(size AS DOUBLE) AS q,
-        TRY_CAST(price AS DOUBLE) AS p,
-        TRY_CAST(foreignNotional AS DOUBLE) AS usd
+        TRY_CAST(size AS DECIMAL(38, 12)) AS q,
+        TRY_CAST(price AS DECIMAL(38, 12)) AS p,
+        TRY_CAST(foreignNotional AS DECIMAL(38, 12)) AS usd
     FROM read_csv($path, header = true, all_varchar = true, compression = 'gzip')
 ), timed AS (
     SELECT *, CAST(floor(ts / 60) AS BIGINT) * 60000 AS minute FROM raw
@@ -144,7 +144,7 @@ WITH raw AS (
     SELECT *,
         COALESCE(
             ts IS NULL OR q IS NULL OR p IS NULL OR usd IS NULL OR sym IS NULL
-            OR side IS NULL OR NOT isfinite(q) OR NOT isfinite(p) OR NOT isfinite(usd)
+            OR side IS NULL
             OR sym <> $symbol OR side NOT IN ('Buy', 'Sell') OR q <= 0 OR p <= 0
             OR usd <= 0 OR minute < $day_start OR minute >= $day_end,
             TRUE
@@ -181,7 +181,8 @@ _SIDES: Final = {"Buy": 0, "Sell": 1}
 
 def aggregate(path: Path, symbol: str, day: str, event_hours: Iterable[int]) -> dict[str, Any]:
     """Per-minute taker buy and sell USD and base of one day file. Reserved minutes are
-    collapsed into one row count inside the query; their sums never leave it."""
+    collapsed into one row count inside the query; their sums never leave it. Sums are
+    exact DECIMAL(38, 12), so the result does not depend on DuckDB's parallel order."""
     import duckdb
 
     start = _day_ms(day)
@@ -213,8 +214,8 @@ def aggregate(path: Path, symbol: str, day: str, event_hours: Iterable[int]) -> 
             continue
         cell = kept[minute]
         k = _SIDES[side]  # the query admits only these two
-        cell[k] += usd
-        cell[2 + k] += base
+        cell[k] += float(usd)  # an exact decimal sum, rounded once
+        cell[2 + k] += float(base)
         cell[4] += n
         counts["rows"] += n
     s_minutes = {m: v for m, v in kept.items() if boundary_of(m) is None}
@@ -427,7 +428,8 @@ def run_task(
 
 def write_part(path: Path, part: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    payload = gzip.compress(json.dumps(part, sort_keys=True, separators=(",", ":")).encode())
+    text = json.dumps(part, sort_keys=True, separators=(",", ":")).encode()
+    payload = gzip.compress(text, mtime=0)  # byte-reproducible parts
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_bytes(payload)
     tmp.replace(path)
@@ -485,7 +487,7 @@ def build_tasks(
 
 
 RULES: Final = {
-    "rules": "tape-v2",
+    "rules": "tape-v3",
     "mask_before_ms": MASK_BEFORE_MS,
     "mask_after_ms": MASK_AFTER_MS,
     "event_rate": EVENT_RATE,
