@@ -561,6 +561,10 @@ uv run --package schurfer-analytics bybit-compressed-spring-power \
   --output-dir runtime/research/hyp032/power-REV --code-revision REV --no-working-tree-dirty
 ```
 
+The amended check (2026-11-07) is the same command with `--rule amended-2026-11-07` and
+`--output-dir runtime/research/hyp032/power-amended-REV`; the original run's directory
+is never overwritten.
+
 ## Power step 1 result (2026-11-06)
 
 Counts only: no feature value, price, tape or return was read.
@@ -711,6 +715,69 @@ unreserved, and with 2,550 event hours in the window (one about every 3.4 hours)
 not replaced.
 
 **Next.** Step 4 (dispersion only) adds its registry row first; then step 5 chooses H.
+
+## Power steps 4 and 5 result (2026-11-07)
+
+No mean was computed into any output.
+
+**Run.** `bybit-compressed-spring-power` from the merged revision b65b44c (#560, with
+the step 4 registry row), 19:41:04Z to 19:44:17Z, clean tree, on the same features
+snapshot and sealed tape as step 2. `power.json` SHA-256
+`f3fc81d4287f5c2f92e2a67510fac1ecf0806b0d87daf2ad562696aa093cb777`.
+
+| (a) net long, 30 bps | 4 h   | 12 h  | 24 h  |
+| -------------------- | ----- | ----- | ----- |
+| Usable replicates    | 200   | 200   | 200   |
+| Clusters (median)    | 328   | 319   | 314   |
+| SD, bps              | 307.7 | 556.8 | 793.9 |
+| SE, bps              | 17.96 | 34.18 | 52.33 |
+| Design effect        | 1.087 | 1.201 | 1.318 |
+| MDE, bps (median)    | 44.7  | 85.0  | 130.1 |
+| MDE, bps (p90)       | 58.6  | 109.2 | 170.2 |
+
+| (b) matched excess         | 4 h  | 12 h | 24 h  |
+| -------------------------- | ---- | ---- | ----- |
+| Usable replicates (of 200) | 5    | 10   | 14    |
+| Lost share (events)        | 8.3% | 6.5% | 6.3%  |
+| No-control share (events)  | 5.7% | 5.9% | 6.0%  |
+| MDE, bps (usable, median)  | 34.1 | 68.5 | 101.1 |
+
+**Step 5: `insufficient_power`.** Leg (a) is estimable at every H and its 4 h effect,
+44.7 bps (unrounded 44.66), is under 50 bps and outside the [45, 55] band, so no
+minute-bar check applies to it. Leg (b) is not estimable at any H: the 90% coverage rule
+leaves 5, 10 and 14 usable replicates where 190 are needed, so every H is
+`not_estimable`.
+
+**Coverage of (b), counted afterwards (no value statistic).** Per replicate, the share
+of source clusters that keep a value: 4 h minimum 81.7%, median 86.9%, maximum 92.1%
+(12 h 82.5 / 87.8 / 91.9%; 24 h 83.4 / 87.9 / 91.4%). Every replicate keeps at least
+80%; at 85% the usable counts would be 168, 188 and 188. The losses come from the
+pseudo-samples, not the events (99.4% of the events have a control, step 2): moved to
+another day, a source cluster needs one instrument that is compressed, not falling and
+free of event paths at all of its hours, and then a control. The rule was set against
+near-empty replicates (two observations in review); here no replicate is near empty.
+
+By this protocol the question changes only by an amendment before any setup return
+is read; none is read.
+
+**Amendment 2026-11-07 (one only), after the step 4 dispersion and effects above were
+seen and before any setup return.** The result under the original rule stays
+`insufficient_power` and its `power.json` is kept. The 90% rule mostly measured how well
+the transplant reproduces the events (8.3% of 4 h (b) attempts lost in the move, 5.7%
+without a control, no price gaps), not the power on the events, which have controls in
+99.4% of cases. The amended check, recorded apart from the original:
+
+- Leg (b) keeps a replicate when it keeps a value for at least **80%** of the source
+  clusters, an accepted loss for estimating a paired effect (the reading also needs a
+  control for 80% of complete events, on a different denominator); leg (a) stays at
+  90%. Still 95% usable replicates, the same seeds, 200 replicates and 50 bps.
+- **Losses must not concentrate.** Over the 200 replicates of (b), the source
+  clusters without a value are summed by source symbol and by ISO week; when the 5
+  symbols or the 5 weeks with the most hold more than 30% of them (the floor's top-5
+  rule), that H is `loss_concentrated` and not testable.
+- 34.1 bps for 4 h (b) came from 5 replicates, so no H is taken as passing in advance;
+  with (a) unchanged only 4 h can pass. If the amended check passes no H, or the losses
+  concentrate, the line stops (`insufficient_power`) with no further threshold change.
 
 ## Effort and stop
 

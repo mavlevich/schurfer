@@ -23,7 +23,7 @@ import math
 import random
 import statistics
 import sys
-from collections import defaultdict
+from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final
@@ -67,12 +67,32 @@ Z_ONE_SIDED_5PCT: Final = 1.6449
 Z_POWER_80PCT: Final = 0.8416
 MDE_MAX: Final = 0.0050
 REPLICATES: Final = 200
-USABLE_CLUSTER_SHARE: Final = 0.90  # of the events' clusters, per replicate
+LOSS_TOP: Final = 5  # the source symbols or ISO weeks holding the most lost clusters
+LOSS_TOP_MAX: Final = 0.30  # may hold at most this share of them (the floor's top-5 rule)
 MIN_USABLE_SHARE: Final = 0.95  # of the replicates, per leg
 NEAR_LOW: Final = 0.0045  # an H whose larger effect lies in [45, 55] bps gets the
 NEAR_HIGH: Final = 0.0055  # minute-bar check before it can be chosen
 FLOOR: Final = {"clusters": 150, "symbols": 40, "iso_weeks": 26}
 TOP5_MAX: Final = 0.30
+
+
+@dataclass(frozen=True)
+class Rule:
+    """The usability thresholds of a run: the share of source clusters a replicate of
+    each leg must keep, and whether lost (b) clusters may not concentrate."""
+
+    name: str
+    usable_a: float
+    usable_b: float
+    loss_check: bool
+
+
+RULES: Final = {
+    "original": Rule("original", 0.90, 0.90, loss_check=False),
+    # Amended 2026-11-07 after the original run's dispersion and effects were seen and
+    # before any setup return: (b) keeps 80% of the source clusters, losses dispersed.
+    "amended-2026-11-07": Rule("amended-2026-11-07", 0.90, 0.80, loss_check=True),
+}
 
 
 def seeded(label: str) -> random.Random:
@@ -380,13 +400,13 @@ def _quantile(xs: Sequence[float], q: float) -> float:
     return ordered[min(len(ordered) - 1, int(q * len(ordered)))]
 
 
-def summarize(runs: Sequence[Draws], event_clusters: int) -> dict[str, Any]:
+def summarize(runs: Sequence[Draws], event_clusters: int, usable_share: float) -> dict[str, Any]:
     """A replicate is usable when its dispersion is defined and it keeps a value for at
-    least 90% of the events' own clusters; the leg is estimable when at least 95% of
+    least `usable_share` of the events' own clusters; the leg is estimable when at least 95% of
     the replicates are. Medians over the usable replicates; the effect also at its 90th
     percentile; `minute_check_replicate` is the lowest usable replicate. `mde` is
     unrounded (step 5 compares it); the rest is in bps. No mean."""
-    need = USABLE_CLUSTER_SHARE * event_clusters
+    need = usable_share * event_clusters
     usable: list[tuple[int, Dispersion]] = []
     for index, run in enumerate(runs):
         d = dispersion(*run.clusters())
@@ -432,13 +452,41 @@ def _legs(entry: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     return entry["a_net"], entry["b_excess"]
 
 
+def loss_concentration(runs: Sequence[Draws], source: Sequence[Cluster]) -> dict[str, Any]:
+    """Source clusters without a value, summed over the replicates: the share held by
+    the 5 source symbols and by the 5 ISO weeks with the most; concentrated when either
+    is above 30%."""
+    by_symbol: Counter[str] = Counter()
+    by_week: Counter[str] = Counter()
+    for run in runs:
+        for cluster in source:
+            if cluster not in run.cells:
+                by_symbol[cluster[0]] += 1
+                by_week[_week(cluster[1])] += 1
+    lost = sum(by_symbol.values())
+
+    def top(counts: Counter[str]) -> float:
+        return sum(n for _, n in counts.most_common(LOSS_TOP)) / lost if lost else 0.0
+
+    symbols, weeks = top(by_symbol), top(by_week)
+    return {
+        "lost_cluster_replicates": lost,
+        "top5_symbols_share": round(symbols, 4),
+        "top5_weeks_share": round(weeks, 4),
+        "concentrated": symbols > LOSS_TOP_MAX or weeks > LOSS_TOP_MAX,
+    }
+
+
 def verdict(entry: dict[str, Any]) -> str:
-    """Why an H is or is not testable: floor_not_met, not_estimable, mde_above_50 or
-    testable (both legs estimable, both unrounded effects at most 50 bps)."""
+    """Why an H is or is not testable: floor_not_met, not_estimable, loss_concentrated
+    (when the rule checks it), mde_above_50 or testable (both legs estimable, both
+    unrounded effects at most 50 bps)."""
     if not entry["floor_met"]:
         return "floor_not_met"
     if not all(leg["estimable"] for leg in _legs(entry)):
         return "not_estimable"
+    if entry.get("loss_check") and entry["b_loss"]["concentrated"]:
+        return "loss_concentrated"
     return "testable" if max(leg["mde"] for leg in _legs(entry)) <= MDE_MAX else "mde_above_50"
 
 
@@ -465,7 +513,9 @@ def choose_h(per_horizon: dict[str, Any]) -> str:
     return "insufficient_power"
 
 
-def build_report(u: Universe, replicates: int = REPLICATES) -> dict[str, Any]:
+def build_report(
+    u: Universe, rule: Rule = RULES["original"], replicates: int = REPLICATES
+) -> dict[str, Any]:
     per_horizon: dict[str, Any] = {}
     for horizon in HORIZONS_H:
         kept = [e for e in u.events if e.hour.t <= last_decision_ms(horizon)]
@@ -478,11 +528,14 @@ def build_report(u: Universe, replicates: int = REPLICATES) -> dict[str, Any]:
         b_runs = [
             excess_draws(u, seeded(f"b|{horizon}|{r}"), horizon, plans) for r in range(replicates)
         ]
+        source = sorted({(e.hour.symbol, e.hour.t - e.hour.t % DAY_MS) for e in chosen})
         entry = {
             "events": counts,
             "floor_met": floor_met(counts),
-            "a_net": summarize(a_runs, counts["clusters"]),
-            "b_excess": summarize(b_runs, counts["clusters"]),
+            "a_net": summarize(a_runs, counts["clusters"], rule.usable_a),
+            "b_excess": summarize(b_runs, counts["clusters"], rule.usable_b),
+            "b_loss": loss_concentration(b_runs, source),
+            "loss_check": rule.loss_check,
         }
         entry["verdict"] = verdict(entry)
         entry["near_threshold"] = near_threshold(entry)
@@ -490,6 +543,12 @@ def build_report(u: Universe, replicates: int = REPLICATES) -> dict[str, Any]:
     return {
         "version": VERSION,
         "step": "power steps 4 and 5: dispersion only, no mean",
+        "rule": {
+            "name": rule.name,
+            "usable_a": rule.usable_a,
+            "usable_b": rule.usable_b,
+            "loss_check": rule.loss_check,
+        },
         "cost_round_trip_bps": COST_ROUND_TRIP * 1e4,
         "mde_max_bps": MDE_MAX * 1e4,
         "horizons": per_horizon,
@@ -518,11 +577,13 @@ def render_markdown(report: dict[str, Any]) -> str:
         rows = [(k, *(str(horizons[h][part].get(k)) for h in horizons)) for k in keys]
         lines += [*markdown_table((part, *horizons), rows), ""]
     rows = [
-        (h, str(v["events"]["clusters"]), v["verdict"], str(v["near_threshold"]))
+        (h, str(v["events"]["clusters"]), v["verdict"], str(v["near_threshold"]),
+         str(v["b_loss"]["top5_symbols_share"]), str(v["b_loss"]["top5_weeks_share"]))
         for h, v in horizons.items()
-    ]
-    lines += [*markdown_table(("H", "clusters", "verdict", "near 50 bps"), rows), ""]
-    lines += [f"Chosen H: {report['chosen_h']}"]
+    ]  # fmt: skip
+    head = ("H", "clusters", "verdict", "near 50 bps", "(b) lost top-5 symbols", "top-5 weeks")
+    lines += [*markdown_table(head, rows), ""]
+    lines += [f"Rule: {report['rule']['name']}", f"Chosen H: {report['chosen_h']}"]
     return "\n".join(lines) + "\n"
 
 
@@ -531,6 +592,7 @@ def build_parser() -> argparse.ArgumentParser:
     for name in ("features", "scope", "manifest"):
         parser.add_argument(f"--{name}", type=Path, required=True)
         parser.add_argument(f"--{name}-sha256", required=True)
+    parser.add_argument("--rule", choices=sorted(RULES), default="original")
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--code-revision", required=True)
     dirty = parser.add_mutually_exclusive_group(required=True)
@@ -549,7 +611,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         raise SystemExit("the tape was fetched against another features snapshot")
     features = load_features(verified(args.features, args.features_sha256))
     report = (
-        build_report(build_universe(features, tapes))
+        build_report(build_universe(features, tapes), RULES[args.rule])
         | provenance
         | {
             "features_sha256": args.features_sha256,
