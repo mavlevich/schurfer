@@ -162,3 +162,28 @@ def test_load_tape_checks_hashes_and_marks_unusable_hours(tmp_path: Path) -> Non
     (parts / "A" / f"{day}.json.gz").write_bytes(gzip.compress(b"{}", mtime=0))
     with pytest.raises(SystemExit, match="does not match"):
         c4.load_tape(manifest, file_sha256(manifest))
+
+
+def test_report_reads_only_the_full_tape_of_the_frozen_scope() -> None:
+    scope = {"primary": {"A": ["2024-11-25", "2024-11-26"]}}
+    parts = [{"symbol": "A", "day": "2024-11-25"}, {"symbol": "A", "day": "2024-11-26"}]
+    binding = {"pilot": 0, "rules": c4.TAPE_RULES, "scope_sha256": "s"}
+    c4.require_full_tape({"binding": binding, "parts": parts}, scope, "s")
+    for change, message in (
+        ({"pilot": 30}, "pilot"),
+        ({"rules": "tape-v2"}, "rules"),
+        ({"scope_sha256": "other"}, "another scope"),
+    ):
+        bad = {"binding": binding | change, "parts": parts}
+        with pytest.raises(SystemExit, match=message):
+            c4.require_full_tape(bad, scope, "s")
+    with pytest.raises(SystemExit, match="differ"):
+        c4.require_full_tape({"binding": binding, "parts": parts[:1]}, scope, "s")
+
+
+def test_mask_diagnostic_keeps_windows_with_a_quiet_last_hour() -> None:
+    hours = {T0 - k * HOUR_MS: (1.0, 2.0) for k in range(2, 7)}  # the last hour is quiet
+    tape = tape_with(hours, {DAY0, DAY0 - DAY_MS})
+    tape.masked = {T0 - 3 * HOUR_MS: (1.0, 0.0)}
+    out = c4.sensitivity({"A": tape}, [])
+    assert out["windows_all_unreserved"] > 0

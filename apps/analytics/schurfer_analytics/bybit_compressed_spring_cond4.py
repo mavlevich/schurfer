@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any, Final
 
 from .bybit_carry_feasibility import publish_once
 from .bybit_compressed_spring import (
+    DAY_MS,
     HORIZONS_H,
     HOUR_MS,
     MINUTE_MS,
@@ -38,6 +39,7 @@ from .bybit_compressed_spring import (
     load_features,
     sample_shape,
 )
+from .bybit_compressed_spring_tape import RULES
 from .bybit_post_funding_screen import file_sha256, verified
 from .reporting import markdown_table, normalize_code_revision
 
@@ -48,6 +50,7 @@ S_HOURS: Final = 6
 S_MIN_PCT: Final = 0.80
 CONTROL_R_CALIPER_SD: Final = 0.5
 CONTROLS_PER_EVENT: Final = 5
+TAPE_RULES: Final = RULES["rules"]  # the rules the fetcher binds a run to
 
 
 # ---------------------------------------------------------------- the sealed tape
@@ -261,8 +264,10 @@ def sensitivity(tapes: dict[str, Tape], decisions: Sequence[Decision]) -> dict[s
     agree = compared = 0
     for tape in tapes.values():
         days = covered_days(tape)
-        for t in sorted(set(tape.kept)):
-            t += HOUR_MS
+        if not days:
+            continue
+        grid = range(min(days) + HOUR_MS, max(days) + DAY_MS + HOUR_MS, HOUR_MS)
+        for t in grid:  # every hour, so a quiet last hour does not drop a defined window
             masked_s = s_value(tape, days, t)
             full_s = s_value(tape, days, t, unmasked=True)
             if isinstance(masked_s, str) or isinstance(full_s, str):
@@ -334,7 +339,9 @@ def build_report(features: Features, tapes: dict[str, Tape]) -> dict[str, Any]:
             with_control += bool(controls_for(e, cache[e.hour.t]))
         per_horizon[f"{horizon}h"] = sample_shape([e.hour for e in chosen]) | {
             "events_with_control": with_control,
-            "control_share": round(with_control / len(chosen), 4) if chosen else None,
+            "pre_execution_control_share": (
+                round(with_control / len(chosen), 4) if chosen else None
+            ),
         }
     determinable = sum(1 for d in passing if d.condition4 in ("true", "false"))
     return {
@@ -353,8 +360,16 @@ def render_markdown(report: dict[str, Any]) -> str:
     lines += markdown_table(("Item", "Count"), [(k, v) for k, v in report["funnel"].items()])
     lines += ["", f"Condition 4 determinable: {report['condition4_determinable_share']}", ""]
     horizons = report["events"]
-    keys = ("decisions", "clusters", "symbols", "iso_weeks", "top5_cluster_share",
-            "first_half_clusters", "events_with_control", "control_share")  # fmt: skip
+    keys = (
+        "decisions",
+        "clusters",
+        "symbols",
+        "iso_weeks",
+        "top5_cluster_share",
+        "first_half_clusters",
+        "events_with_control",
+        "pre_execution_control_share",
+    )
     rows = [(k, *(str(horizons[h][k]) for h in horizons)) for k in keys]
     lines += markdown_table(("Events", *horizons), rows)
     lines += [""]
@@ -366,6 +381,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--features", type=Path, required=True)
     parser.add_argument("--features-sha256", required=True)
+    parser.add_argument("--scope", type=Path, required=True)
+    parser.add_argument("--scope-sha256", required=True)
     parser.add_argument("--manifest", type=Path, required=True)
     parser.add_argument("--manifest-sha256", required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
@@ -376,8 +393,29 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def require_full_tape(manifest: dict[str, Any], scope: dict[str, Any], scope_sha256: str) -> None:
+    """The report reads only a full tape: no pilot, the expected rules, the frozen scope's
+    SHA-256 and exactly its primary symbol-days."""
+    binding = manifest.get("binding", {})
+    if binding.get("pilot") != 0:
+        raise SystemExit(f"manifest is a pilot (pilot={binding.get('pilot')}), not the full tape")
+    if binding.get("rules") != TAPE_RULES:
+        raise SystemExit(f"manifest rules {binding.get('rules')!r}, expected {TAPE_RULES!r}")
+    if binding.get("scope_sha256") != scope_sha256:
+        raise SystemExit("manifest was fetched for another scope")
+    expected = {(sym, day) for sym, days in scope["primary"].items() for day in days}
+    got = {(p["symbol"], p["day"]) for p in manifest["parts"]}
+    if got != expected:
+        raise SystemExit(
+            f"manifest parts differ from the primary scope ({len(got)} vs {len(expected)})"
+        )
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
+    scope = json.loads(verified(args.scope, args.scope_sha256).read_bytes())
+    manifest = json.loads(verified(args.manifest, args.manifest_sha256).read_bytes())
+    require_full_tape(manifest, scope, args.scope_sha256)
     tapes, provenance = load_tape(args.manifest, args.manifest_sha256)
     if provenance["manifest"].get("features_sha256") != args.features_sha256:
         raise SystemExit("the tape was fetched against another features snapshot")
