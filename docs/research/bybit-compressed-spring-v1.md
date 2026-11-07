@@ -712,6 +712,50 @@ not replaced.
 
 **Next.** Step 4 (dispersion only) adds its registry row first; then step 5 chooses H.
 
+## Power steps 4 and 5 result (2026-11-07)
+
+No mean was computed into any output.
+
+**Run.** `bybit-compressed-spring-power` from the merged revision b65b44c (#560, with
+the step 4 registry row), 19:41:04Z to 19:44:17Z, clean tree, on the same features
+snapshot and sealed tape as step 2. `power.json` SHA-256
+`f3fc81d4287f5c2f92e2a67510fac1ecf0806b0d87daf2ad562696aa093cb777`.
+
+| (a) net long, 30 bps | 4 h   | 12 h  | 24 h  |
+| -------------------- | ----- | ----- | ----- |
+| Usable replicates    | 200   | 200   | 200   |
+| Clusters (median)    | 328   | 319   | 314   |
+| SD, bps              | 307.7 | 556.8 | 793.9 |
+| SE, bps              | 17.96 | 34.18 | 52.33 |
+| Design effect        | 1.087 | 1.201 | 1.318 |
+| MDE, bps (median)    | 44.7  | 85.0  | 130.1 |
+| MDE, bps (p90)       | 58.6  | 109.2 | 170.2 |
+
+| (b) matched excess         | 4 h  | 12 h | 24 h  |
+| -------------------------- | ---- | ---- | ----- |
+| Usable replicates (of 200) | 5    | 10   | 14    |
+| Lost share (events)        | 8.3% | 6.5% | 6.3%  |
+| No-control share (events)  | 5.7% | 5.9% | 6.0%  |
+| MDE, bps (usable, median)  | 34.1 | 68.5 | 101.1 |
+
+**Step 5: `insufficient_power`.** Leg (a) is estimable at every H and its 4 h effect,
+44.7 bps (unrounded 44.66), is under 50 bps and outside the [45, 55] band, so no
+minute-bar check applies to it. Leg (b) is not estimable at any H: the 90% coverage rule
+leaves 5, 10 and 14 usable replicates where 190 are needed, so every H is
+`not_estimable`.
+
+**Coverage of (b), counted afterwards (no value statistic).** Per replicate, the share
+of source clusters that keep a value: 4 h minimum 81.7%, median 86.9%, maximum 92.1%
+(12 h 82.5 / 87.8 / 91.9%; 24 h 83.4 / 87.9 / 91.4%). Every replicate keeps at least
+80%; at 85% the usable counts would be 168, 188 and 188. The losses come from the
+pseudo-samples, not the events (99.4% of the events have a control, step 2): moved to
+another day, a source cluster needs one instrument that is compressed, not falling and
+free of event paths at all of its hours, and then a control. The rule was set against
+near-empty replicates (two observations in review); here no replicate is near empty.
+
+By this protocol the question changes only by an amendment before any setup return
+is read; none is read.
+
 ## Effort and stop
 
 Code mirrors the carry and HYP-031 screens: fetch once into hashed snapshots, report
