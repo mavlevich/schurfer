@@ -779,6 +779,36 @@ without a control, no price gaps), not the power on the events, which have contr
   with (a) unchanged only 4 h can pass. If the amended check passes no H, or the losses
   concentrate, the line stops (`insufficient_power`) with no further threshold change.
 
+## Amended power check result (2026-11-07)
+
+`bybit-compressed-spring-power --rule amended-2026-11-07` from the merged revision 8e1afe2
+(#561), 20:30:40Z to 20:33:45Z, clean tree, same inputs. `power.json` SHA-256
+`d442857d670a73a927314ebef997be7040587d54bdd73cb6ae93f13ca261e296`. No mean was
+computed into any output.
+
+| (b) matched excess, 80% rule | 4 h   | 12 h  | 24 h  |
+| ---------------------------- | ----- | ----- | ----- |
+| Usable replicates (of 200)   | 200   | 200   | 200   |
+| Clusters (median)            | 285   | 280   | 276   |
+| MDE, bps (median)            | 38.3  | 67.8  | 96.4  |
+| MDE, bps (p90)               | 49.8  | 83.9  | 117.6 |
+| Lost, top-5 symbols share    | 12.3% | 12.7% | 13.3% |
+| Lost, top-5 ISO weeks share  | 38.4% | 37.5% | 37.1% |
+
+Leg (a) is unchanged (4 h 44.7 bps). Every H is `loss_concentrated` on weeks (above
+30%), so the amended check also gives `insufficient_power`, and the rule says the line
+stops with no further threshold change.
+
+**Found after the run (counts only): the week criterion does not separate losses from
+events.** The events' own clusters are uneven across weeks: at 4 h the 5 ISO weeks
+with the most hold 34.2% of the 328 clusters (2025-W07 29, W12 23, W16 23, W26 21,
+W23 16), so losses spread in proportion to the events would already exceed 30%. The
+lost clusters' top-5 share (38.4%) is a little above that; per week, the share of a
+week's clusters lost over the replicates has median 17.6%, 90th percentile 38.0% and
+maximum 57.8% (overall 13.1%). The criterion was set by this study (not by the review
+that asked for a concentration check) without reference to where the events are. What
+follows from this is a team decision recorded below; nothing here changes a rule.
+
 ## Effort and stop
 
 Code mirrors the carry and HYP-031 screens: fetch once into hashed snapshots, report
