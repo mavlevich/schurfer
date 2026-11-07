@@ -1,6 +1,8 @@
 # HYP-032: compressed spring, sell absorption, long (protocol v1, draft)
 
-Status: **draft for the design touchpoint, revised 2026-11-06 after the first review.**
+Status: **stopped 2026-11-07 at the power step (`insufficient_power`, below); no setup
+return was read.** Drafted for the design touchpoint and revised 2026-11-06 after the
+first review.
 Nothing is fetched and no price, open interest, funding or trade value of the discovery
 window has been read for this question. It registers nothing until committed after
 review; any later change needs a dated amendment before any return is read. It is step 3
@@ -778,6 +780,51 @@ without a control, no price gaps), not the power on the events, which have contr
 - 34.1 bps for 4 h (b) came from 5 replicates, so no H is taken as passing in advance;
   with (a) unchanged only 4 h can pass. If the amended check passes no H, or the losses
   concentrate, the line stops (`insufficient_power`) with no further threshold change.
+
+## Amended power check result (2026-11-07)
+
+`bybit-compressed-spring-power --rule amended-2026-11-07` from the merged revision 8e1afe2
+(#561), 20:30:40Z to 20:33:45Z, clean tree, same inputs. `power.json` SHA-256
+`d442857d670a73a927314ebef997be7040587d54bdd73cb6ae93f13ca261e296`. No mean was
+computed into any output.
+
+| (b) matched excess, 80% rule | 4 h   | 12 h  | 24 h  |
+| ---------------------------- | ----- | ----- | ----- |
+| Usable replicates (of 200)   | 200   | 200   | 200   |
+| Clusters (median)            | 285   | 280   | 276   |
+| MDE, bps (median)            | 38.3  | 67.8  | 96.4  |
+| MDE, bps (p90)               | 49.8  | 83.9  | 117.6 |
+| Lost, top-5 symbols share    | 12.3% | 12.7% | 13.3% |
+| Lost, top-5 ISO weeks share  | 38.4% | 37.5% | 37.1% |
+
+Leg (a) is unchanged (4 h 44.7 bps). Every H is `loss_concentrated` on weeks (above
+30%), so the amended check also gives `insufficient_power`, and the rule says the line
+stops with no further threshold change.
+
+**Found after the run (counts only): the week criterion does not separate losses from
+events.** The events' own clusters are uneven across weeks: at 4 h the 5 ISO weeks
+with the most hold 34.2% of the 328 clusters (2025-W07 29, W12 23, W16 23, W26 21,
+W23 16), so losses spread in proportion to the events would already exceed 30%, and the 30%
+threshold was badly set. The comparison that matters is on the same weeks: the 5 weeks
+with the most lost clusters (2025-W15, W26, W23, W08, W06) hold 38.4% of the losses
+and 21.3% of the event clusters (70 of 328), about 1.8 times what proportional losses
+would give. Per week, the share of a week's clusters lost over the replicates has
+median 17.6%, 90th percentile 38.0% and maximum 57.8% (overall 13.1%). So the losses do
+concentrate, which is the stop condition agreed before the rerun.
+
+**Decision (2026-11-07): HYP-032 v1 stops at `insufficient_power`.** Both power results
+stand: the original rule (leg (b) not estimable) and the amended one (losses
+concentrated on weeks). A week-weighted effect for (b) was considered and not adopted
+as a rule: weights restore a week's total weight but not what the lost clusters would
+have shown, the losses depend on which compressed instruments and pairs exist (no
+reason to treat the kept clusters as standing for the lost ones), a week with no kept
+cluster cannot be restored at all, and it would be a third admission rule set after
+the effects were seen. It stays an idea for a future design's power step (prototype
+on the unmerged branch `feat/hyp032-week-representative-power`, commit ff69004). No
+setup return, mean or excess of the events was read: this decides only that the power
+step could not be shown sufficient, and says nothing about whether the setup has an
+edge. A later design that reuses this window needs its own protocol and its own power
+step; its setup returns are still unseen.
 
 ## Effort and stop
 
