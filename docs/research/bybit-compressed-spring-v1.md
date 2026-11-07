@@ -561,6 +561,10 @@ uv run --package schurfer-analytics bybit-compressed-spring-power \
   --output-dir runtime/research/hyp032/power-REV --code-revision REV --no-working-tree-dirty
 ```
 
+The amended check (2026-11-07) is the same command with `--rule amended-2026-11-07` and
+`--output-dir runtime/research/hyp032/power-amended-REV`; the original run's directory
+is never overwritten.
+
 ## Power step 1 result (2026-11-06)
 
 Counts only: no feature value, price, tape or return was read.
@@ -755,6 +759,25 @@ near-empty replicates (two observations in review); here no replicate is near em
 
 By this protocol the question changes only by an amendment before any setup return
 is read; none is read.
+
+**Amendment 2026-11-07 (one only), after the step 4 dispersion and effects above were
+seen and before any setup return.** The result under the original rule stays
+`insufficient_power` and its `power.json` is kept. The 90% rule mostly measured how well
+the transplant reproduces the events (8.3% of 4 h (b) attempts lost in the move, 5.7%
+without a control, no price gaps), not the power on the events, which have controls in
+99.4% of cases. The amended check, recorded apart from the original:
+
+- Leg (b) keeps a replicate when it keeps a value for at least **80%** of the source
+  clusters, an accepted loss for estimating a paired effect (the reading also needs a
+  control for 80% of complete events, on a different denominator); leg (a) stays at
+  90%. Still 95% usable replicates, the same seeds, 200 replicates and 50 bps.
+- **Losses must not concentrate.** Over the 200 replicates of (b), the source
+  clusters without a value are summed by source symbol and by ISO week; when the 5
+  symbols or the 5 weeks with the most hold more than 30% of them (the floor's top-5
+  rule), that H is `loss_concentrated` and not testable.
+- 34.1 bps for 4 h (b) came from 5 replicates, so no H is taken as passing in advance;
+  with (a) unchanged only 4 h can pass. If the amended check passes no H, or the losses
+  concentrate, the line stops (`insufficient_power`) with no further threshold change.
 
 ## Effort and stop
 

@@ -197,9 +197,9 @@ def _runs(n_runs: int, clusters: int) -> list[pw.Draws]:
 
 def test_a_nearly_empty_leg_is_not_estimable() -> None:
     runs = _runs(19, 2) + _runs(1, 300)  # one full replicate, the rest almost empty
-    out = pw.summarize(runs, event_clusters=300)
+    out = pw.summarize(runs, event_clusters=300, usable_share=0.9)
     assert out["usable_replicates"] == 1 and out["estimable"] is False
-    full = pw.summarize(_runs(20, 300), event_clusters=300)
+    full = pw.summarize(_runs(20, 300), event_clusters=300, usable_share=0.9)
     assert full["estimable"] is True and full["mde"] > 0
     assert not any("mean" in k for k in full) and "mean" not in json.dumps(full)
 
@@ -237,3 +237,37 @@ def test_a_shorter_h_near_50_bps_holds_the_choice_for_the_minute_check() -> None
     assert pw.near_threshold(_h(True, 0.0055, 0.001)) is True
     assert pw.near_threshold(_h(True, 0.00449, 0.001)) is False
     assert pw.near_threshold(_h(True, 0.00551, 0.001)) is False
+
+
+def test_the_usable_share_is_set_by_the_rule() -> None:
+    runs = _runs(20, 255)  # 85% of 300 source clusters
+    assert pw.summarize(runs, 300, pw.RULES["original"].usable_b)["estimable"] is False
+    assert pw.summarize(runs, 300, pw.RULES["amended-2026-11-07"].usable_b)["estimable"] is True
+    assert pw.RULES["amended-2026-11-07"].usable_a == 0.90
+
+
+def test_loss_concentration_on_symbols_and_weeks() -> None:
+    weeks = [T0 + k * 7 * DAY_MS for k in range(10)]
+    source = [(f"S{i}", weeks[i % 10]) for i in range(100)]
+    spread = pw.Draws()
+    for i, cluster in enumerate(source):
+        if i % 10 != 0:  # one lost per week, ten symbols
+            spread.add(cluster, _week(cluster[1]), 0.0)
+    out = pw.loss_concentration([spread], source)
+    assert out["lost_cluster_replicates"] == 10 and out["concentrated"] is True  # 5 of 10 = 50%
+    many = [pw.Draws() for _ in range(1)]
+    for i, cluster in enumerate(source):
+        if i >= 40:
+            many[0].add(cluster, _week(cluster[1]), 0.0)
+    out = pw.loss_concentration(many, source)  # 40 lost over 40 symbols and 10 weeks
+    assert out["top5_symbols_share"] == 0.125 and out["top5_weeks_share"] == 0.5
+    assert out["concentrated"] is True
+    entry = {
+        "floor_met": True,
+        "loss_check": True,
+        "b_loss": out,
+        "a_net": {"estimable": True, "mde": 0.001},
+        "b_excess": {"estimable": True, "mde": 0.001},
+    }
+    assert pw.verdict(entry) == "loss_concentrated"
+    assert pw.verdict(entry | {"loss_check": False}) == "testable"
