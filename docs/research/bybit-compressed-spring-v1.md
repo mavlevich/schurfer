@@ -337,6 +337,63 @@ configuration: this is the test of "more than price".
    1 only) and its price-state matched control mean. From these and step 3's counts,
    estimate for each H the minimum detectable effect at 80% power, one-sided 5%, for the
    primary mean net (a) and for the matched excess (b).
+   Amended 2026-11-07, after step 3 and before step 4 runs:
+   - **Pseudo-samples shaped like the events.** For each H, a replicate moves that H's
+     events week by week: one random whole-day shift inside the ISO week (never zero
+     when the week has another day in that H's decision range, wrapping inside the
+     week), so events sharing an hour stay together. Each event symbol-day (a source
+     cluster) gets one instrument for all its events, available at every one of its new
+     hours. An instrument belongs to at most one event symbol per week, fallbacks
+     included, so two source clusters never become one symbol-day: an instrument this
+     symbol already holds if one is available, else a random one no symbol holds yet. A
+     source cluster with no such instrument is lost whole, never split. Only the events'
+     weeks, days, hours of day and symbol identities are used, never a price. 200
+     replicates per H, each seeded by its label.
+   - **No path near an event.** A draw, on either leg, is never an instrument-hour
+     whose path [t, t + H] comes within one hour of any condition 4 event's longest
+     path [t_e, t_e + 24 h] on the same instrument, whatever the H; a control with such
+     a path is not a candidate.
+   - **(a)** draws from liquid instrument-hours; the value is the H-hour net long return
+     at 30 bps with funding in the hold. **(b)** draws from liquid hours where condition
+     1 holds and R >= 0 (the events' own price state; condition 1 alone would draw
+     falling hours that the R caliper then rarely matches); the value is the price
+     return minus the mean of its price-state matched controls (the step 2 rule, tape S
+     part included), and a draw without a control has no value and is counted.
+   - **Hourly prices.** Entry is the hourly close at t and exit the hourly close at
+     t + H; the reading's minute bars start one minute later, and funding uses the
+     hourly close at s for the mark.
+   - **Minute-bar check, decided now.** An H is `near` when its floor is met, both legs
+     are estimable and the larger effect lies in [45, 55] bps, both bounds included
+     (the check could change its verdict). Step 5 walks H from the shortest; a
+     `near` H stops it with `pending_minute_check`, even when a longer H is testable.
+     The check then takes, for each `near` leg, the lowest-index usable replicate of
+     that H and recomputes it on exactly its draws with the reading's prices (entry at
+     the open of the 1-minute bar from t + 1 min, exit at the close of the bar ending
+     t + 1 min + H, funding marks from 1-minute mark-price klines), the bars fetched for
+     those instrument-hours only under their own registry row; a draw without minute
+     bars is dropped from both versions of that replicate. The ratio of its minute to
+     its hourly effect scales the leg's median effect, and step 5 runs again on the
+     scaled effects, with no second check: one replicate measures the sensitivity to
+     the minute shift, never replaces the median of 200. The calibration counts only
+     when, after the unpaired draws are dropped, both versions still keep a value for at
+     least 90% of that H's source clusters and the hourly effect is positive; otherwise
+     the next usable replicate in index order is tried, and when none qualifies that H
+     is not testable (`minute_check_failed`) and step 5 goes on to the next H. The first
+     qualifying replicate's ratio is used whatever it shows, and a next H that is also
+     `near` gets its own check.
+   - **The error is the reading's.** Draws are averaged within each symbol-day first;
+     clusters weigh equally. The standard error of their mean is the ISO-week block
+     (cluster-robust) error, the variance the reading's week-block bootstrap estimates;
+     the design effect is that variance over the independent one. The minimum detectable
+     effect is (1.645 + 0.842) times it.
+   - **Enough replicates.** A replicate is usable when it keeps a value for at least 90%
+     of that H's own event clusters (source clusters, not the clusters they become); a
+     leg is estimable when at least 95% of the 200 replicates are usable. Reported per H and leg: the usable count, the lost, incomplete and
+     no-control shares, and medians over the usable replicates of the standard deviation,
+     error, design effect and effect, with the effect's 90th percentile. No mean is
+     reported. Step 5 compares the unrounded medians with 50 bps; an H with a leg that is
+     not estimable is not testable, and a `near` H holds the choice until its minute-bar
+     check (above) is done.
 5. **Choose H** as the shortest horizon whose minimum detectable effect is at most
    **50 bps** for both (a) and (b), and whose step 3 counts meet the floor. If none is,
    the result is `insufficient_power` or `insufficient_data`: the question changes by an
@@ -488,6 +545,21 @@ deviation of overlapping hourly-stepped 6-hour returns); and the mask sensitivit
 boundaries are all unreserved. Entry and exit bars are not fetched yet, so the control
 share is `pre_execution_control_share`, over all events; the reading's 80% applies to
 complete events with a control that has a usable price path, counted after the bars.
+
+## Runbook for power steps 4 and 5 (dispersion)
+
+After the step 4 registry row is on main, on the owner's go, from a clean checkout of
+the merged revision. It reads the same verified inputs as the condition 4 report and
+publishes `power.json` once: standard deviations, errors, design effects, minimum
+detectable effects and the chosen H, never a mean.
+
+```bash
+uv run --package schurfer-analytics bybit-compressed-spring-power \
+  --features runtime/research/hyp032/features-8522f0c.jsonl.gz --features-sha256 FEATURES_SHA \
+  --scope runtime/research/hyp032/step1-8522f0c/scope.json --scope-sha256 SCOPE_SHA \
+  --manifest runtime/research/hyp032/tape-1327ea1/manifest.json --manifest-sha256 MANIFEST_SHA \
+  --output-dir runtime/research/hyp032/power-REV --code-revision REV --no-working-tree-dirty
+```
 
 ## Power step 1 result (2026-11-06)
 
