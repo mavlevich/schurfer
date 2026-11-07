@@ -576,6 +576,70 @@ From the merged revision 4c26333 (rules `tape-v2`), 20:48Z; no return read.
   (rules `tape-v3`): sums are exact DECIMAL(38, 12) and parts are written with gzip
   mtime 0. The pilot's parts were a check only; the full run uses `tape-v3`.
 
+## Power steps 2 and 3 result (2026-11-07)
+
+Counts only: no price path after t and no return was read.
+
+**Tape.** `fetch-tape` from the merged revision 1327ea1 (rules `tape-v3`), started
+2026-11-06 22:24Z. The Mac slept overnight and the run froze after 3,923 files; it was
+stopped and resumed at 07:31Z under `caffeinate` and finished 10:01Z (16,741 files in
+the resumed run). `seal` passed the gate again (2,550 event hours, 2,549 from this
+study's funding) and sealed at 10:02Z.
+
+- **Files:** 20,661 `ok`, 12 `missing` (exactly the 12 symbol-days without a file in
+  the listing, all within a few days of a listing: KAITO, LA x2, MICHI, NS x2, PROVE x2,
+  SHELL x2, VR x2); no `invalid` day. 4,099,007,045 kept rows and 247,316,801 rows in
+  reserved minutes (counted only).
+- **Reconciliation over `ok` days:** 221,968 hours matched, 2 `mismatch`, 36
+  `missing_kline`, 273,858 `unchecked_reserved`; 44.8% of the hours are checked (the
+  pilot had 44%), and all but 2 of the checked hours match. Gap bins: 221,967 within
+  0.01%, 1 within 0.05%, 2 (the mismatches) within 0.5%, none above.
+- **Bytes:** 168,395,213,408 reserved in the ledger (168,349,027,022 file bytes), under
+  the 200 GB cap.
+- **Manifest:** `tape-1327ea1/manifest.json`, SHA-256
+  `21bdf61989a9aac4ebf76e70d260e1aa3541cb66151c362f3189537389d26d50`.
+
+**Condition 4.** `bybit-compressed-spring-cond4` from the merged revision fdd1f51,
+10:02:51Z to 10:04:47Z, clean tree. `condition4.json` SHA-256
+`73acbd2f92721e89c14b11e715ab1c1fe02d37e4f293e017af555f76c1bb754f`.
+
+| Condition 4 funnel                  | Count         |
+| ----------------------------------- | ------------- |
+| Decisions passing conditions 1 to 3 | 8,131         |
+| S part true / false                 | 1,789 / 6,342 |
+| Condition 4 true / false            | 582 / 7,549   |
+| Condition 4 undefined               | 0             |
+| Determinable share (floor 90%)      | 100%          |
+
+No decision is undefined. 17 decisions (8 symbols) have a tape gap in their rank
+history, 6 to 42 of the 336 values, under the 67 the 269 rule allows; none has one in
+its own 6-hour window.
+
+| Events after each H's independence rule | 4 h   | 12 h  | 24 h  |
+| --------------------------------------- | ----- | ----- | ----- |
+| Decisions                               | 344   | 321   | 314   |
+| Clusters (floor 150)                    | 328   | 319   | 314   |
+| Symbols (floor 40)                      | 174   | 174   | 174   |
+| ISO weeks (floor 26)                    | 47    | 46    | 46    |
+| Top-5 cluster share (at most 30%)       | 8.8%  | 8.8%  | 8.6%  |
+| Clusters in the first half              | 150   | 146   | 144   |
+| Events with a matched control           | 342   | 319   | 312   |
+| `pre_execution_control_share`           | 99.4% | 99.4% | 99.4% |
+
+Every H meets the count part of the floor; event completeness (95%) and the reading's
+80% control share are counted after the entry and exit bars.
+
+**Mask sensitivity (decides nothing).** On 39,780 S windows whose boundaries are all
+unreserved, the masked minutes carry a median 16.8% of the turnover (90th percentile
+24.4%), about their 10 of 60 minutes, so trading does not bunch at the hour edge; S
+changes sign with the mask in 4,488 of them (11.3%). The S-part agreement compared no
+decision: it needs all 343 boundaries of a decision's window and rank history
+unreserved, and with 2,550 event hours in the window (one about every 3.4 hours) no
+14-day history is. The diagnostic cannot be computed as written; it is recorded empty,
+not replaced.
+
+**Next.** Step 4 (dispersion only) adds its registry row first; then step 5 chooses H.
+
 ## Effort and stop
 
 Code mirrors the carry and HYP-031 screens: fetch once into hashed snapshots, report
