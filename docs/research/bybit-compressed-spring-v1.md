@@ -462,6 +462,33 @@ uv run --package schurfer-analytics bybit-compressed-spring-tape seal $COMMON \
 
 The fetch logs a progress line every minute (files done, GB, MB/s, hours left, statuses).
 
+## Runbook for the step 2 report (condition 4)
+
+After the full tape is sealed, on the owner's go; counts only, no return. It verifies
+the manifest and every part's SHA-256, refuses a pilot, a tape bound to other rules
+than `tape-v3`, a tape fetched for another scope or features snapshot, and a manifest
+whose parts are not exactly the primary scope's symbol-days, and publishes
+`condition4.json` once.
+
+```bash
+uv run --package schurfer-analytics bybit-compressed-spring-cond4 \
+  --features runtime/research/hyp032/features-8522f0c.jsonl.gz --features-sha256 FEATURES_SHA \
+  --scope runtime/research/hyp032/step1-8522f0c/scope.json --scope-sha256 SCOPE_SHA \
+  --manifest runtime/research/hyp032/tape-REV/manifest.json --manifest-sha256 MANIFEST_SHA \
+  --output-dir runtime/research/hyp032/cond4-REV --code-revision REV --no-working-tree-dirty
+```
+
+It reports: the S part and condition 4 as true, false or undefined by reason among the
+decisions passing conditions 1 to 3, and their determinable share (the floor needs
+90%); for each H, the events after that H's independence rule (clusters, symbols, ISO
+weeks, top-5 share, first half) and the share with at least one price-state matched
+control (R within 0.5 of the event's R, R scaled by the instrument's 14-day standard
+deviation of overlapping hourly-stepped 6-hour returns); and the mask sensitivity
+(masked-minute turnover share, S sign changes, S-part agreement) on windows whose
+boundaries are all unreserved. Entry and exit bars are not fetched yet, so the control
+share is `pre_execution_control_share`, over all events; the reading's 80% applies to
+complete events with a control that has a usable price path, counted after the bars.
+
 ## Power step 1 result (2026-11-06)
 
 Counts only: no feature value, price, tape or return was read.
