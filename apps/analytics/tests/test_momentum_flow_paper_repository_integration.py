@@ -12,7 +12,7 @@ from uuid import UUID, uuid4
 
 import pytest
 from schurfer_analytics.momentum_flow_paper_contract import PaperContract
-from schurfer_analytics.momentum_flow_paper_market import QuoteFailure
+from schurfer_analytics.momentum_flow_paper_market import ExecutableQuote, QuoteFailure
 from schurfer_analytics.momentum_flow_paper_repository import (
     MomentumFlowPaperRepository,
     _outcomes,
@@ -21,7 +21,7 @@ from schurfer_analytics.momentum_flow_paper_repository import (
     _watch_evaluations,
 )
 from schurfer_journal.testing_database import integration_database_url
-from sqlalchemy import delete, insert, text
+from sqlalchemy import delete, insert, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 TEST_DATABASE_URL = integration_database_url(sqlalchemy=True)
@@ -380,6 +380,135 @@ async def test_monitored_probes_rotate_past_failed_oldest_batch() -> None:
         assert {probe.paper_id for probe in first_batch + second_batch} == set(paper_ids)
     finally:
         async with engine.begin() as connection:
+            await connection.execute(
+                delete(_probes).where(_probes.c.paper_version == test_paper_version)
+            )
+            await connection.execute(
+                delete(_runs).where(_runs.c.paper_version == test_paper_version)
+            )
+        await engine.dispose()
+
+
+def _bid_quote(symbol: str, price: float, at: datetime) -> ExecutableQuote:
+    return ExecutableQuote(
+        symbol=symbol,
+        unified_symbol=f"{symbol[:-4]}/USDT:USDT",
+        market_id=symbol,
+        side="bid",
+        requested_at=at - timedelta(milliseconds=50),
+        observed_at=at,
+        exchange_event_at=at,
+        latency_ms=50,
+        best_bid=price,
+        best_ask=price + 0.1,
+        mid=price + 0.05,
+        spread_bps=10,
+        vwap=price,
+        impact_bps=5,
+        filled_notional_usd=50,
+        contract_size=1,
+    )
+
+
+async def test_quotes_after_the_exit_do_not_move_a_closed_probes_excursions() -> None:
+    engine = await _connect_or_skip()
+    repository = MomentumFlowPaperRepository(engine)
+    now = datetime.now(UTC)
+    test_watch_version = f"test_watch_{uuid4()}"
+    test_paper_version = f"test_paper_{uuid4()}"
+    contract = PaperContract(
+        paper_version=test_paper_version,
+        watch_version=test_watch_version,
+        source_exchange="bybit",
+        market_type="linear",
+        max_hold_minutes=60,
+        outcome_horizons_minutes=(15, 60),
+    )
+    paper_id = uuid4()
+    entry_at = now - timedelta(minutes=70)
+    try:
+        await repository.register_run(
+            contract=contract,
+            contract_sha256=contract.sha256_hex(),
+            now=now - timedelta(hours=2),
+        )
+        async with engine.begin() as connection:
+            await connection.execute(
+                insert(_probes).values(
+                    paper_id=paper_id,
+                    paper_version=test_paper_version,
+                    watch_version=test_watch_version,
+                    watch_id=uuid4(),
+                    episode_id=uuid4(),
+                    exchange="bybit",
+                    market_type="linear",
+                    symbol="TESTUSDT",
+                    watch_bucket_start=entry_at - timedelta(minutes=1),
+                    watch_decision_at=entry_at - timedelta(seconds=30),
+                    claimed_at=entry_at - timedelta(seconds=20),
+                    entry_status="opened",
+                    entry_reason="exact_venue_executable_ask",
+                    entry_at=entry_at,
+                    entry_vwap=100.0,
+                    entry_filled_notional_usd=50.0,
+                    position_status="open",
+                    updated_at=entry_at,
+                )
+            )
+            await connection.execute(
+                insert(_outcomes),
+                [
+                    {
+                        "paper_id": paper_id,
+                        "horizon_minutes": horizon,
+                        "due_at": entry_at + timedelta(minutes=horizon),
+                        "status": "pending",
+                    }
+                    for horizon in (15, 60)
+                ],
+            )
+
+        (probe,) = await repository.monitored_probes(contract=contract, now=now, limit=5)
+        stopped = await repository.apply_quote(
+            probe,
+            _bid_quote("TESTUSDT", 94.0, entry_at + timedelta(minutes=15)),
+            due_horizons=(15,),
+            contract=contract,
+        )
+        assert stopped == "stop_loss"
+
+        (closed,) = await repository.monitored_probes(contract=contract, now=now, limit=5)
+        assert closed.position_status == "closed"
+        assert closed.max_adverse_return_pct == pytest.approx(-6.0)
+        await repository.apply_quote(
+            closed,
+            _bid_quote("TESTUSDT", 80.0, entry_at + timedelta(minutes=60)),  # after the exit
+            due_horizons=(60,),
+            contract=contract,
+        )
+
+        async with engine.connect() as connection:
+            row = (
+                await connection.execute(
+                    select(
+                        _probes.c.max_favorable_return_pct, _probes.c.max_adverse_return_pct
+                    ).where(_probes.c.paper_id == paper_id)
+                )
+            ).one()
+            horizon = (
+                await connection.execute(
+                    select(_outcomes.c.status, _outcomes.c.gross_return_pct).where(
+                        _outcomes.c.paper_id == paper_id, _outcomes.c.horizon_minutes == 60
+                    )
+                )
+            ).one()
+        assert row.max_adverse_return_pct == pytest.approx(-6.0)
+        assert row.max_favorable_return_pct == pytest.approx(0.0)
+        assert horizon.status == "complete"
+        assert horizon.gross_return_pct == pytest.approx(-20.0)
+    finally:
+        async with engine.begin() as connection:
+            await connection.execute(delete(_outcomes).where(_outcomes.c.paper_id == paper_id))
             await connection.execute(
                 delete(_probes).where(_probes.c.paper_version == test_paper_version)
             )

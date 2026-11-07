@@ -278,8 +278,15 @@ def evaluate_probe_quote(
         duration_minutes=duration,
     )
     gross = performance.gross_return_pct
+    favorable = probe.max_favorable_return_pct or 0.0
+    adverse = probe.max_adverse_return_pct or 0.0
     exit_reason: str | None = None
     if probe.position_status == "open":
+        # Excursions describe the held position only: a closed probe is still
+        # quoted for its remaining outcome horizons, but those prices came after
+        # the exit and must not move its MFE/MAE.
+        favorable = max(favorable, gross)
+        adverse = min(adverse, gross)
         if gross <= -contract.stop_loss_pct:
             exit_reason = "stop_loss"
         elif duration >= contract.max_hold_minutes:
@@ -287,8 +294,8 @@ def evaluate_probe_quote(
     return ProbeQuoteEvaluation(
         duration_minutes=duration,
         performance=performance,
-        favorable_return_pct=max(probe.max_favorable_return_pct or 0.0, gross),
-        adverse_return_pct=min(probe.max_adverse_return_pct or 0.0, gross),
+        favorable_return_pct=favorable,
+        adverse_return_pct=adverse,
         exit_reason=exit_reason,
     )
 
@@ -735,12 +742,10 @@ class MomentumFlowPaperRepository:
                         updated_at=quote.observed_at,
                     )
                 )
-            probe_values: dict[str, Any] = {
-                "max_favorable_return_pct": evaluation.favorable_return_pct,
-                "max_adverse_return_pct": evaluation.adverse_return_pct,
-                "last_error": None,
-                "updated_at": quote.observed_at,
-            }
+            probe_values: dict[str, Any] = {"last_error": None, "updated_at": quote.observed_at}
+            if probe.position_status == "open":
+                probe_values["max_favorable_return_pct"] = evaluation.favorable_return_pct
+                probe_values["max_adverse_return_pct"] = evaluation.adverse_return_pct
             if evaluation.exit_reason is not None:
                 probe_values.update(
                     {

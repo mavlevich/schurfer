@@ -100,6 +100,18 @@ def test_closed_probe_does_not_exit_again() -> None:
     assert result.exit_reason is None
 
 
+def test_closed_probe_keeps_its_excursions_for_later_horizon_quotes() -> None:
+    result = evaluate_probe_quote(
+        _probe(position_status="closed"),
+        _quote(price=90.0, minutes=60),  # -10%, after the exit
+        contract=FROZEN_PAPER_CONTRACT,
+    )
+
+    assert result.adverse_return_pct == -2.0
+    assert result.favorable_return_pct == 1.0
+    assert result.performance.gross_return_pct == pytest.approx(-10.0)  # the horizon still sees it
+
+
 class _EmptyRows:
     def all(self) -> list[object]:
         return []
