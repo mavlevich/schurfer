@@ -85,6 +85,7 @@ class Rule:
     usable_a: float
     usable_b: float
     loss_check: bool
+    reweight: bool = False  # (b) decides on its week-representative effect
 
 
 RULES: Final = {
@@ -92,6 +93,12 @@ RULES: Final = {
     # Amended 2026-11-07 after the original run's dispersion and effects were seen and
     # before any setup return: (b) keeps 80% of the source clusters, losses dispersed.
     "amended-2026-11-07": Rule("amended-2026-11-07", 0.90, 0.80, loss_check=True),
+    # Corrected 2026-11-07 after the amended run: its week criterion compared losses with
+    # a uniform spread, which the events' own spread already breaks. (b) instead decides
+    # on its effect with every week weighted as among the events.
+    "corrected-2026-11-07": Rule(
+        "corrected-2026-11-07", 0.90, 0.80, loss_check=False, reweight=True
+    ),
 }
 
 
@@ -154,19 +161,31 @@ class Dispersion:
         return (Z_ONE_SIDED_5PCT + Z_POWER_80PCT) * self.se
 
 
-def dispersion(values: Sequence[float], weeks: Sequence[str]) -> Dispersion | None:
+def dispersion(
+    values: Sequence[float], weeks: Sequence[str], weights: Sequence[float] | None = None
+) -> Dispersion | None:
     """Standard deviation of cluster values and the ISO-week block standard error of
-    their equal-weight mean (the variance the reading's week-block bootstrap estimates).
-    The mean is used inside and never returned."""
+    their mean (the variance the reading's week-block bootstrap estimates): equal weights,
+    or the given ones. The mean is used inside and never returned."""
     n, w = len(values), len(set(weeks))
     if n < 2 or w < 2:
         return None
-    centre = math.fsum(values) / n
+    ws = list(weights) if weights is not None else [1.0] * n
+    total = math.fsum(ws)
+    centre = math.fsum(wi * x for wi, x in zip(ws, values, strict=True)) / total
     per_week: dict[str, float] = defaultdict(float)
-    for x, week in zip(values, weeks, strict=True):
-        per_week[week] += x - centre
-    variance = math.fsum(v * v for v in per_week.values()) / n**2 * w / (w - 1)
+    for x, week, wi in zip(values, weeks, ws, strict=True):
+        per_week[week] += wi * (x - centre)
+    variance = math.fsum(v * v for v in per_week.values()) / total**2 * w / (w - 1)
     return Dispersion(n, w, statistics.stdev(values), math.sqrt(variance))
+
+
+def week_weights(weeks: Sequence[str], event_weeks: Counter[str]) -> list[float]:
+    """Each kept cluster weighted by its week's event clusters over its week's kept
+    clusters, so every week weighs as it does among the events (a week with no kept
+    cluster cannot be restored and drops out)."""
+    kept = Counter(weeks)
+    return [event_weeks[w] / kept[w] for w in weeks]
 
 
 # ---------------------------------------------------------------- pseudo-samples
@@ -400,12 +419,18 @@ def _quantile(xs: Sequence[float], q: float) -> float:
     return ordered[min(len(ordered) - 1, int(q * len(ordered)))]
 
 
-def summarize(runs: Sequence[Draws], event_clusters: int, usable_share: float) -> dict[str, Any]:
+def summarize(
+    runs: Sequence[Draws],
+    event_clusters: int,
+    usable_share: float,
+    event_weeks: Counter[str] | None = None,
+) -> dict[str, Any]:
     """A replicate is usable when its dispersion is defined and it keeps a value for at
     least `usable_share` of the events' own clusters; the leg is estimable when at least 95% of
     the replicates are. Medians over the usable replicates; the effect also at its 90th
     percentile; `minute_check_replicate` is the lowest usable replicate. `mde` is
-    unrounded (step 5 compares it); the rest is in bps. No mean."""
+    unrounded (step 5 compares it); the rest is in bps. With `event_weeks`, the same
+    usable replicates also give the week-representative effect (`mde_weighted`). No mean."""
     need = usable_share * event_clusters
     usable: list[tuple[int, Dispersion]] = []
     for index, run in enumerate(runs):
@@ -429,6 +454,21 @@ def summarize(runs: Sequence[Draws], event_clusters: int, usable_share: float) -
         return out
     found = [d for _, d in usable]
     mde = statistics.median(d.mde for d in found)
+    if event_weeks is not None:
+        weighted, missing = [], []
+        for index, _ in usable:
+            values, weeks = runs[index].clusters()
+            d = dispersion(values, weeks, week_weights(weeks, event_weeks))
+            if d is not None:
+                weighted.append(d.mde)
+            missing.append(len(set(event_weeks) - set(weeks)))
+        if weighted:
+            out |= {
+                "mde_weighted": statistics.median(weighted),
+                "mde_weighted_bps": round(statistics.median(weighted) * 1e4, 1),
+                "mde_weighted_bps_p90": round(_quantile(weighted, 0.9) * 1e4, 1),
+                "event_weeks_without_value_median": statistics.median(missing),
+            }
     return out | {
         "clusters_median": statistics.median(d.clusters for d in found),
         "weeks_median": statistics.median(d.weeks for d in found),
@@ -529,14 +569,23 @@ def build_report(
             excess_draws(u, seeded(f"b|{horizon}|{r}"), horizon, plans) for r in range(replicates)
         ]
         source = sorted({(e.hour.symbol, e.hour.t - e.hour.t % DAY_MS) for e in chosen})
-        entry = {
+        entry: dict[str, Any] = {
             "events": counts,
             "floor_met": floor_met(counts),
             "a_net": summarize(a_runs, counts["clusters"], rule.usable_a),
-            "b_excess": summarize(b_runs, counts["clusters"], rule.usable_b),
+            "b_excess": summarize(
+                b_runs,
+                counts["clusters"],
+                rule.usable_b,
+                Counter(_week(day) for _, day in source) if rule.reweight else None,
+            ),
             "b_loss": loss_concentration(b_runs, source),
             "loss_check": rule.loss_check,
         }
+        b = entry["b_excess"]
+        if rule.reweight and "mde" in b:  # (b) decides on its week-representative effect
+            b["mde_unweighted"] = b["mde"]
+            b["mde"] = b.get("mde_weighted", math.inf)
         entry["verdict"] = verdict(entry)
         entry["near_threshold"] = near_threshold(entry)
         per_horizon[f"{horizon}h"] = entry
@@ -548,6 +597,7 @@ def build_report(
             "usable_a": rule.usable_a,
             "usable_b": rule.usable_b,
             "loss_check": rule.loss_check,
+            "reweight": rule.reweight,
         },
         "cost_round_trip_bps": COST_ROUND_TRIP * 1e4,
         "mde_max_bps": MDE_MAX * 1e4,
@@ -567,6 +617,9 @@ def render_markdown(report: dict[str, Any]) -> str:
         "design_effect",
         "mde_bps",
         "mde_bps_p90",
+        "mde_weighted_bps",
+        "mde_weighted_bps_p90",
+        "event_weeks_without_value_median",
         "usable_replicates",
         "estimable",
         "lost_share",

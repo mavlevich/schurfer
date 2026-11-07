@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import math
+from collections import Counter
 
 import pytest
 from schurfer_analytics import bybit_compressed_spring_power as pw
@@ -271,3 +272,33 @@ def test_loss_concentration_on_symbols_and_weeks() -> None:
     }
     assert pw.verdict(entry) == "loss_concentrated"
     assert pw.verdict(entry | {"loss_check": False}) == "testable"
+
+
+def test_week_weights_restore_each_weeks_event_share() -> None:
+    weeks = ["W1", "W1", "W2"]
+    w = pw.week_weights(weeks, Counter({"W1": 2, "W2": 4}))
+    assert w == [1.0, 1.0, 4.0]  # W2 kept 1 of its 4 clusters
+
+
+def test_weighted_dispersion_equals_equal_weights_when_nothing_is_lost() -> None:
+    values = [0.01, 0.03, -0.02, 0.00, 0.05, -0.01]
+    weeks = ["W1", "W1", "W2", "W2", "W3", "W3"]
+    plain = pw.dispersion(values, weeks)
+    same = pw.dispersion(values, weeks, pw.week_weights(weeks, Counter(weeks)))
+    assert plain is not None and same is not None and same.se == pytest.approx(plain.se)
+    heavy = pw.dispersion(values, weeks, [1, 1, 1, 1, 5, 5])
+    assert heavy is not None and heavy.se != pytest.approx(plain.se)
+
+
+def test_the_corrected_rule_decides_b_on_its_weighted_effect() -> None:
+    rule = pw.RULES["corrected-2026-11-07"]
+    assert (rule.usable_a, rule.usable_b, rule.loss_check, rule.reweight) == (
+        0.90, 0.80, False, True,
+    )  # fmt: skip
+    runs = _runs(20, 300)
+    out = pw.summarize(
+        runs, 300, rule.usable_b, Counter(_week(T0 + (i % 30) * 7 * DAY_MS) for i in range(300))
+    )
+    assert out["mde_weighted"] == pytest.approx(out["mde"])  # nothing lost: same effect
+    assert out["event_weeks_without_value_median"] == 0
+    assert "mde_weighted" not in pw.summarize(runs, 300, rule.usable_b)

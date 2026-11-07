@@ -802,12 +802,27 @@ stops with no further threshold change.
 **Found after the run (counts only): the week criterion does not separate losses from
 events.** The events' own clusters are uneven across weeks: at 4 h the 5 ISO weeks
 with the most hold 34.2% of the 328 clusters (2025-W07 29, W12 23, W16 23, W26 21,
-W23 16), so losses spread in proportion to the events would already exceed 30%. The
-lost clusters' top-5 share (38.4%) is a little above that; per week, the share of a
-week's clusters lost over the replicates has median 17.6%, 90th percentile 38.0% and
-maximum 57.8% (overall 13.1%). The criterion was set by this study (not by the review
+W23 16), so losses spread in proportion to the events would already exceed 30%. The comparison
+that matters is on the same weeks: the 5 weeks with the most lost clusters (2025-W15,
+W26, W23, W08, W06) hold 38.4% of the losses and 21.3% of the event clusters (70 of
+328), so losses do lean towards some weeks. Per week, the share of a week's clusters
+lost over the replicates has median 17.6%, 90th percentile 38.0% and maximum 57.8%
+(overall 13.1%). The criterion was set by this study (not by the review
 that asked for a concentration check) without reference to where the events are. What
 follows from this is a team decision recorded below; nothing here changes a rule.
+
+**Proposed correction (2026-11-07, awaits the team; not run).** The criterion above
+cannot tell losses from events, and a share threshold set now would be chosen after
+seeing these shares. The question the review asked is whether uneven losses distort
+the power estimate, and that is answered on the existing 50 bps: rule
+`corrected-2026-11-07` keeps (b) at 80% and (a) at 90%, drops the share criterion, and
+lets (b) decide on its week-representative effect. In each usable replicate every kept
+cluster is weighted by its week's event clusters over its week's kept clusters, so each
+week weighs as among the events (a week with no kept cluster drops out and is counted),
+and the week-block error of that weighted mean gives the effect. Seeds, 200 replicates,
+95% usable, the [45, 55] minute-check band and 50 bps are unchanged; the unweighted
+effect and the loss shares stay reported. If this does not make an H testable the line
+stops, with no further change.
 
 ## Effort and stop
 
