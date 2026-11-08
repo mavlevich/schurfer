@@ -9,6 +9,10 @@ Implements docs/research/bybit-premium-dislocation-v1.md.
   after its fetch) and publishes the funnel, the events with their matched controls
   (``pairs.json``), the balance of pre-decision returns, the overlap components and the
   power estimate with the floor. Nothing after any decision time t is read.
+
+Amendment 1 (2026-11-08, before any return): controls also need z1 within 0.5, the
+nearest are ranked by the Euclidean distance of (z4, z1) differences, the balance SMD
+weighs its spreads like its means, and |SMD of r1| at most 0.10 is a floor item.
 """
 
 from __future__ import annotations
@@ -70,6 +74,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
 VERSION: Final = "bybit_premium_dislocation_v1"
+AMENDMENT: Final = 1
 # Pinned by a commit after the fetch and before the first count; None refuses counts.
 PREMIUM_SHA256: Final[str | None] = (
     "ec05a2c39f6e9eaa5fba52396ff286b331253ad42a30678e24204c720c28e43a"
@@ -84,6 +89,8 @@ HOLD_MS: Final = HOLD_H * HOUR_MS
 
 CONTROL_WINDOW_MS: Final = 72 * HOUR_MS
 Z4_CALIPER: Final = 0.5
+Z1_CALIPER: Final = 0.5  # Amendment 1
+SMD_R1_MAX: Final = 0.10  # Amendment 1: the balance gate
 
 KLINE_PAGE_LIMIT: Final = 1000
 CONCURRENCY: Final = 4
@@ -181,6 +188,7 @@ class Hour:
     r1: float
     r4: float
     z4: float
+    z1: float
     turnover: float
     pool_neg: bool = False
     pool_pos: bool = False
@@ -291,16 +299,21 @@ def _decide(
         funnel["ordinary_pool_pos"] += pools["pool_pos"]
     else:
         pools = {"pool_neg": False, "pool_pos": False}
-    return Hour(inst.symbol, t, role, r1, r4, r4 / (2 * sd), turnover, **pools)
+    return Hour(inst.symbol, t, role, r1, r4, r4 / (2 * sd), r1 / sd, turnover, **pools)
 
 
 # ---------------------------------------------------------------- matching
 
 
-def match(events: Sequence[Hour], pool: Sequence[Hour]) -> dict[tuple[str, int], list[Hour]]:
-    """For each event, at most 5 nearest controls by |z4 difference| inside the caliper,
-    the same ISO week, turnover bin and last-hour direction, within 72 hours, on another
-    instrument."""
+def match(
+    events: Sequence[Hour], pool: Sequence[Hour], z1_caliper: float | None = Z1_CALIPER
+) -> dict[tuple[str, int], list[Hour]]:
+    """For each event, at most 5 nearest controls inside the calipers, the same ISO week,
+    turnover bin and last-hour direction, within 72 hours, on another instrument.
+
+    Amended: z1 within the caliper too, nearest by the Euclidean distance of the (z4, z1)
+    differences. ``z1_caliper=None`` is the original rule (z4 only, nearest by |z4
+    difference|), kept to report which events the amendment leaves without a control."""
     buckets: dict[tuple[str, int, bool], list[Hour]] = defaultdict(list)
     for h in pool:
         buckets[(_week(h.d), turnover_bin(h.turnover), h.down)].append(h)
@@ -313,11 +326,16 @@ def match(events: Sequence[Hour], pool: Sequence[Hour]) -> dict[tuple[str, int],
         bucket, z = buckets.get(k, []), keys.get(k, [])
         lo = bisect.bisect_left(z, e.z4 - Z4_CALIPER)
         hi = bisect.bisect_right(z, e.z4 + Z4_CALIPER)
-        ranked = [
-            (abs(h.z4 - e.z4), abs(math.log(h.turnover / e.turnover)), h.symbol, h.d, h)
-            for h in bucket[lo:hi]
-            if h.symbol != e.symbol and abs(h.d - e.d) <= CONTROL_WINDOW_MS
-        ]
+        ranked = []
+        for h in bucket[lo:hi]:
+            if h.symbol == e.symbol or abs(h.d - e.d) > CONTROL_WINDOW_MS:
+                continue
+            dz4, dz1 = h.z4 - e.z4, h.z1 - e.z1
+            if z1_caliper is not None and abs(dz1) > z1_caliper:
+                continue
+            distance = abs(dz4) if z1_caliper is None else math.hypot(dz4, dz1)
+            tie = abs(math.log(h.turnover / e.turnover))
+            ranked.append((distance, tie, h.symbol, h.d, h))
         ranked.sort(key=lambda r: r[:4])
         pairs[e.key] = [r[4] for r in ranked[:MAX_CONTROLS]]
     return pairs
@@ -407,7 +425,8 @@ def balance(
     events: Sequence[Hour], pairs: Mapping[tuple[str, int], Sequence[Hour]]
 ) -> dict[str, Any] | None:
     """Weighted means (as in (b)) and standardized mean differences of the raw r1 and
-    r4 of the paired events and their controls; returns before t only."""
+    r4 of the paired events and their controls; returns before t only. The spreads use
+    the same weights as the means (Amendment 1)."""
     weights = weights_excess(events, pairs)
     if not weights:
         return None
@@ -417,25 +436,78 @@ def balance(
         sides: dict[bool, list[tuple[float, float]]] = {True: [], False: []}
         for key, w in weights.items():
             sides[w > 0].append((abs(w), getattr(hours[key], name)))
-        means = {
-            side: math.fsum(w * v for w, v in vals) / math.fsum(w for w, _ in vals)
-            for side, vals in sides.items()
-        }
-        sds = [_sd([v for _, v in vals]) for vals in sides.values()]
-        pooled = math.sqrt((sds[0] ** 2 + sds[1] ** 2) / 2)
+        stats = {side: _weighted(vals) for side, vals in sides.items()}
+        pooled = math.sqrt((stats[True][1] + stats[False][1]) / 2)
+        diff = stats[True][0] - stats[False][0]
+        smd = diff / pooled if pooled > 0 else None
         out[name] = {
-            "event_mean_bps": round(means[True] * 10_000, 1),
-            "control_mean_bps": round(means[False] * 10_000, 1),
-            "smd": round((means[True] - means[False]) / pooled, 3) if pooled > 0 else None,
+            "event_mean_bps": round(stats[True][0] * 10_000, 1),
+            "control_mean_bps": round(stats[False][0] * 10_000, 1),
+            "smd": round(smd, 3) if smd is not None else None,
+            "smd_unrounded": smd,
         }
     return out
 
 
-def _sd(values: Sequence[float]) -> float:
-    if len(values) < 2:
-        return 0.0
-    mean = math.fsum(values) / len(values)
-    return math.sqrt(math.fsum((v - mean) ** 2 for v in values) / (len(values) - 1))
+def _weighted(values: Sequence[tuple[float, float]]) -> tuple[float, float]:
+    """Weighted mean and variance sum(a (v - m)^2) / sum(a) of (a, v) pairs."""
+    total = math.fsum(a for a, _ in values)
+    mean = math.fsum(a * v for a, v in values) / total
+    return mean, math.fsum(a * (v - mean) ** 2 for a, v in values) / total
+
+
+def lost_control(
+    events: Sequence[Hour],
+    pairs: Mapping[tuple[str, int], Sequence[Hour]],
+    original: Mapping[tuple[str, int], Sequence[Hour]],
+) -> dict[str, Any]:
+    """Events with a control under the original rule and none under the amended one,
+    against those that keep one; pre-t values only."""
+    groups = {
+        "lost": [e for e in events if original.get(e.key) and not pairs.get(e.key)],
+        "kept": [e for e in events if pairs.get(e.key)],
+    }
+    out: dict[str, Any] = {name: _describe(group) for name, group in groups.items()}
+    out["mean_r1_bps_all_events"] = _mean_bps([e.r1 for e in events])
+    return out
+
+
+def _describe(group: Sequence[Hour]) -> dict[str, Any]:
+    clusters = Counter(e.symbol for e in group)
+    return {
+        "events": len(group),
+        "down_last_hour_share": round(sum(e.down for e in group) / len(group), 3)
+        if group
+        else None,
+        "median_z1": round(_median([e.z1 for e in group]), 3) if group else None,
+        "median_z4": round(_median([e.z4 for e in group]), 3) if group else None,
+        "mean_r1_bps": _mean_bps([e.r1 for e in group]),
+        "turnover_bins": dict(sorted(Counter(turnover_bin(e.turnover) for e in group).items())),
+        "top5_symbol_share": (
+            round(sum(n for _, n in clusters.most_common(5)) / len(group), 3) if group else None
+        ),
+    }
+
+
+def _median(values: Sequence[float]) -> float:
+    ordered = sorted(values)
+    mid = len(ordered) // 2
+    return ordered[mid] if len(ordered) % 2 else (ordered[mid - 1] + ordered[mid]) / 2
+
+
+def _mean_bps(values: Sequence[float]) -> float | None:
+    return round(math.fsum(values) / len(values) * 10_000, 1) if values else None
+
+
+def gate(verdict: dict[str, Any], bal: dict[str, Any] | None) -> dict[str, Any]:
+    """Amendment 1: |SMD of r1| at most 0.10 on the amended pairs; checked after the data
+    items and before power."""
+    smd = bal["r1"]["smd_unrounded"] if bal else None
+    balanced = smd is not None and abs(smd) <= SMD_R1_MAX
+    out = {**verdict, "balance": {"r1_smd": balanced}}
+    if verdict["verdict"] != "insufficient_data" and not balanced:
+        out["verdict"] = "insufficient_balance"
+    return out
 
 
 # ---------------------------------------------------------------- report
@@ -445,9 +517,12 @@ def side_report(
     instruments: Mapping[str, Instrument], events: Sequence[Hour], pool: Sequence[Hour]
 ) -> tuple[dict[str, Any], dict[tuple[str, int], list[Hour]]]:
     pairs = match(events, pool)
+    original = match(events, pool, z1_caliper=None)
     report = {
         "events": shape(events),
         "controls": control_shape(events, pairs),
+        "controls_original_rule": control_shape(events, original),
+        "lost_control": lost_control(events, pairs, original),
         "events_by_iso_week": dict(sorted(Counter(_week(e.d) for e in events).items())),
         "events_down_last_hour": sum(1 for e in events if e.down),
         "balance": balance(events, pairs),
@@ -486,6 +561,7 @@ def build(features: Features, premium: Premium) -> tuple[dict[str, Any], dict[st
     determinable = (funnel["premium_determinable"], funnel["liquidity_liquid"])
     report = {
         "version": VERSION,
+        "amendment": AMENDMENT,
         "step": "steps 1 and 2: counts and power, no return after any decision",
         "features_sha256": FEATURES_SHA256,
         "premium_sha256": PREMIUM_SHA256,
@@ -500,10 +576,14 @@ def build(features: Features, premium: Premium) -> tuple[dict[str, Any], dict[st
         ),
         "primary": primary,
         "v1": v1,
-        "floor": floor(primary["events"], primary["controls"], determinable, primary["power"]),
+        "floor": gate(
+            floor(primary["events"], primary["controls"], determinable, primary["power"]),
+            primary["balance"],
+        ),
     }
     frozen = {
         "version": VERSION,
+        "amendment": AMENDMENT,
         "primary": frozen_pairs(events, pairs),
         "v1": frozen_pairs(v1_events, v1_pairs),
     }
@@ -512,15 +592,24 @@ def build(features: Features, premium: Premium) -> tuple[dict[str, Any], dict[st
 
 def render_markdown(report: dict[str, Any]) -> str:
     funnel = [(k, f"{v:,}") for k, v in report["funnel"].items()]
-    lines = [f"# {VERSION}: counts and power", ""]
+    lines = [f"# {VERSION}, amendment {AMENDMENT}: counts and power", ""]
     lines += [*markdown_table(("Funnel item", "Decision hours"), funnel), ""]
     for side in ("primary", "v1"):
         part = report[side]
         lines += [f"## {side}", ""]
         rows = [(k, str(v)) for k, v in {**part["events"], **part["controls"]}.items()]
         lines += [*markdown_table(("Item", "Value"), rows), ""]
+        original = part["controls_original_rule"]["events_with_control"]
+        lines += [f"Events with a control under the original rule: {original}", ""]
+        lost = part["lost_control"]
+        lost_rows = [(k, str(lost["lost"][k]), str(lost["kept"][k])) for k in lost["kept"]]
+        lines += [*markdown_table(("Pre-t item", "Lost a control", "Keep one"), lost_rows), ""]
+        lines += [f"Mean r1 of all events, bps: {lost['mean_r1_bps_all_events']}", ""]
         if part["balance"]:
-            bal = [(k, *(str(v) for v in b.values())) for k, b in part["balance"].items()]
+            bal = [
+                (k, str(b["event_mean_bps"]), str(b["control_mean_bps"]), str(b["smd"]))
+                for k, b in part["balance"].items()
+            ]
             head = ("Pre-t return", "Event mean, bps", "Control mean, bps", "SMD")
             lines += [*markdown_table(head, bal), ""]
         power_rows = [
@@ -533,7 +622,8 @@ def render_markdown(report: dict[str, Any]) -> str:
         power_head = ("Leg", "Units", "Components", "Largest", "Scales substituted", "MDE, bps")
         lines += [*markdown_table(power_head, power_rows), ""]
     verdict = report["floor"]
-    floor_rows = [(k, str(v)) for k, v in {**verdict["data"], **verdict["power"]}.items()]
+    items = {**verdict["data"], **verdict.get("balance", {}), **verdict["power"]}
+    floor_rows = [(k, str(v)) for k, v in items.items()]
     lines += [*markdown_table(("Floor item (primary)", "Holds"), floor_rows), ""]
     lines += [f"Premium determinable share: {report['premium_determinable_share']}", ""]
     lines += [f"Verdict: **{verdict['verdict']}**"]

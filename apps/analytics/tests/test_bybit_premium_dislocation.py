@@ -19,6 +19,8 @@ from schurfer_analytics.bybit_premium_dislocation import (
     components,
     dislocation,
     first,
+    gate,
+    lost_control,
     match,
     mde_overlap,
     power,
@@ -116,8 +118,8 @@ def test_liquidity_counts_the_bar_ending_t() -> None:
 
 
 def hour(symbol: str, d: int, z4: float = -2.0, r1: float = -0.01, turnover: float = 5e6,
-         role: str = "ordinary") -> Hour:  # fmt: skip
-    return Hour(symbol, d, role, r1, 0.0, z4, turnover, pool_neg=True)
+         role: str = "ordinary", z1: float = -1.0) -> Hour:  # fmt: skip
+    return Hour(symbol, d, role, r1, 0.0, z4, z1, turnover, pool_neg=True)
 
 
 def test_match_applies_caliper_direction_week_window_and_bin() -> None:
@@ -140,6 +142,30 @@ def test_match_keeps_five_nearest() -> None:
     assert [c.symbol for c in match([event], pool)[event.key]] == [f"S{k}" for k in range(5)]
 
 
+def test_amended_match_needs_z1_and_ranks_by_both_differences() -> None:
+    event = hour("EVT", T, role="event")
+    pool = [
+        hour("A", T, z4=-2.3),  # distance 0.3
+        hour("B", T, z4=-2.1, z1=-1.3),  # distance about 0.32
+        hour("C", T, z4=-2.0, z1=-1.6),  # z1 outside the caliper
+        hour("D", T, z4=-2.05, z1=-0.75),  # distance about 0.26
+    ]
+    assert [c.symbol for c in match([event], pool)[event.key]] == ["D", "A", "B"]
+    original = match([event], pool, z1_caliper=None)[event.key]
+    assert [c.symbol for c in original] == ["C", "D", "B", "A"]
+
+
+def test_lost_control_describes_events_without_an_amended_control() -> None:
+    kept, lost = hour("K", T, role="event"), hour("L", T, role="event", r1=-0.04, z1=-3.0)
+    pool = [hour("A", T, z1=-1.2)]
+    pairs, original = match([kept, lost], pool), match([kept, lost], pool, z1_caliper=None)
+    result = lost_control([kept, lost], pairs, original)
+    assert result["lost"]["events"] == 1
+    assert result["lost"]["mean_r1_bps"] == -400.0
+    assert result["kept"]["down_last_hour_share"] == 1.0
+    assert result["mean_r1_bps_all_events"] == -250.0
+
+
 def test_components_chain_overlapping_holds() -> None:
     units = [("X", T), ("X", T + 3 * HOUR_MS), ("X", T + 6 * HOUR_MS), ("X", T + 10 * HOUR_MS),
              ("Y", T)]  # fmt: skip
@@ -160,9 +186,9 @@ def test_overlap_bound_sums_weights_inside_a_component() -> None:
 
 
 def test_balance_weighs_controls_by_their_pairs() -> None:
-    e = Hour("EVT", T, "event", -0.02, -0.04, -2.0, 5e6)
-    c1 = Hour("A", T, "ordinary", -0.01, -0.03, -2.0, 5e6)
-    c2 = Hour("B", T, "ordinary", -0.03, -0.05, -2.0, 5e6)
+    e = Hour("EVT", T, "event", -0.02, -0.04, -2.0, -1.0, 5e6)
+    c1 = Hour("A", T, "ordinary", -0.01, -0.03, -2.0, -1.0, 5e6)
+    c2 = Hour("B", T, "ordinary", -0.03, -0.05, -2.0, -1.0, 5e6)
     result = balance([e], {e.key: [c1, c2]})
     assert result is not None
     assert result["r1"]["event_mean_bps"] == -200.0
@@ -170,20 +196,53 @@ def test_balance_weighs_controls_by_their_pairs() -> None:
     assert result["r4"]["smd"] == 0.0
 
 
+def test_balance_spreads_use_the_same_weights() -> None:
+    e1 = Hour("E1", T, "event", 0.03, 0.0, -2.0, -1.0, 5e6)
+    e2 = Hour("E2", T + DAY_MS, "event", 0.0, 0.0, -2.0, -1.0, 5e6)
+    a = Hour("A", T, "ordinary", 0.01, 0.0, -2.0, -1.0, 5e6)
+    b = Hour("B", T, "ordinary", 0.03, 0.0, -2.0, -1.0, 5e6)
+    c = Hour("C", T + DAY_MS, "ordinary", 0.0, 0.0, -2.0, -1.0, 5e6)
+    result = balance([e1, e2], {e1.key: [a, b], e2.key: [c]})
+    assert result is not None
+    # events 0.03 and 0.0 at 1/2 each; controls 0.01 and 0.03 at 1/4 each, 0.0 at 1/2
+    event_var = 0.5 * 0.015**2 + 0.5 * 0.015**2
+    control_var = 0.25 * 0.0**2 + 0.25 * 0.02**2 + 0.5 * 0.01**2  # around the mean 0.01
+    expected = 0.005 / math.sqrt((event_var + control_var) / 2)
+    assert result["r1"]["smd_unrounded"] == pytest.approx(expected)
+
+
+def test_balance_gate_after_data_before_power() -> None:
+    passed = {"data": {"clusters": True}, "power": {"a_net": True}, "verdict": "pass_to_reading"}
+    assert gate(passed, {"r1": {"smd_unrounded": -0.09}})["verdict"] == "pass_to_reading"
+    assert gate(passed, {"r1": {"smd_unrounded": 0.11}})["verdict"] == "insufficient_balance"
+    assert gate(passed, None)["verdict"] == "insufficient_balance"
+    unpowered = {**passed, "verdict": "insufficient_power"}
+    assert gate(unpowered, {"r1": {"smd_unrounded": 0.2}})["verdict"] == "insufficient_balance"
+    short = {**passed, "verdict": "insufficient_data"}
+    assert gate(short, {"r1": {"smd_unrounded": 0.2}})["verdict"] == "insufficient_data"
+
+
 def test_no_controls_renders_not_estimable() -> None:
     s = series()
     inst = Instrument("AAAUSDT", s, s)
-    events = [Hour("AAAUSDT", T, "event", -0.01, -0.02, -2.0, 5e6)]
+    events = [Hour("AAAUSDT", T, "event", -0.01, -0.02, -2.0, -1.0, 5e6)]
     pairs: dict[tuple[str, int], list[Hour]] = {events[0].key: []}
     mdes = power({"AAAUSDT": inst}, events, pairs)
     assert mdes["b_excess"] is None
     events_shape, controls = shape(events), control_shape(events, pairs)
-    part = {"events": events_shape, "controls": controls, "balance": None, "power": mdes}
+    part = {
+        "events": events_shape,
+        "controls": controls,
+        "controls_original_rule": controls,
+        "lost_control": lost_control(events, pairs, pairs),
+        "balance": None,
+        "power": mdes,
+    }
     report = {
         "funnel": {"grid": 1},
         "primary": part,
         "v1": part,
-        "floor": floor(events_shape, controls, (1, 1), mdes),
+        "floor": gate(floor(events_shape, controls, (1, 1), mdes), None),
         "premium_determinable_share": 1.0,
     }
     text = render_markdown(report)
