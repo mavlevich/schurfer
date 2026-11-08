@@ -259,7 +259,10 @@ uv run --package schurfer-analytics bybit-premium-dislocation fetch-premium \
 ```
 
 The printed SHA-256 is pinned as `PREMIUM_SHA256` in the code by its own commit before
-the first count, and recorded here. Then:
+the first count, and recorded here. The fetch from a6a1408 (2026-11-08, about 10
+minutes) covered 671 instruments with no error in 4,619 responses (41 MB):
+`premium-a6a1408.jsonl.gz`, SHA-256
+`ec05a2c39f6e9eaa5fba52396ff286b331253ad42a30678e24204c720c28e43a`. Then:
 
 ```bash
 uv run --package schurfer-analytics bybit-premium-dislocation counts \

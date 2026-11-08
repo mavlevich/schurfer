@@ -71,7 +71,9 @@ if TYPE_CHECKING:
 
 VERSION: Final = "bybit_premium_dislocation_v1"
 # Pinned by a commit after the fetch and before the first count; None refuses counts.
-PREMIUM_SHA256: Final[str | None] = None
+PREMIUM_SHA256: Final[str | None] = (
+    "ec05a2c39f6e9eaa5fba52396ff286b331253ad42a30678e24204c720c28e43a"
+)
 
 P_DEPTH: Final = 0.005  # |P(t)| at least 0.50%
 P_RANK_LOW: Final = 0.05
