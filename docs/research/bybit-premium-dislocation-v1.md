@@ -97,7 +97,9 @@ Hourly bars are [h, h + 1 h). The decision time t is the close of the premium ba
   control pool.
 - **Determinability:** each item is `true`, `false` or `undefined` with a reason
   (`premium_gap`, `kline_gap`, `rank_history_short`). Undefined hours are counted,
-  never treated as false.
+  never treated as false. An event or ordinary hour whose r1, 4-hour return or hourly
+  standard deviation (the match inputs, below) is undefined is counted by role and
+  dropped.
 - **Publication, an assumption for discovery:** the premium bar closed at t is
   assumed final and available by the entry at t + 1 min. The API documents a bar's
   start time and close, not when the final close first appears; the live check under
@@ -174,8 +176,8 @@ at 11:00 can both be controls and share three hours of returns, and summing a co
 weights over its pairs does not cover that. So, before the MDE:
 
 - all units of a leg (events and controls) are grouped by instrument into **overlap
-  components**: two holds on one instrument whose [entry, exit] intervals intersect are
-  in one component, transitively;
+  components**: two holds on one instrument share returns when their decision times are
+  less than 4 hours apart, and are then in one component, transitively;
 - a component c contributes (sum over its units of |w(u)| x 1.5 sigma(u))^2 to the
   variance, the bound for any correlation inside it (it equals the single-unit term
   for a component of one); the variance is the sum over components, times the design
@@ -244,6 +246,31 @@ Each enters the [discovery ledger](discovery-ledger.md) with the count: primary 
 - By depth of P(t) (-0.50 to -1%, -1 to -2%, beyond), by turnover bin, by month, by BTC
   24 h return sign.
 - Maximum adverse excursion in the hold (99th percentile).
+
+## Runbook for the fetch and steps 1 and 2
+
+From a committed revision with a clean tree:
+
+```bash
+uv run --package schurfer-analytics bybit-premium-dislocation fetch-premium \
+  --features runtime/research/hyp032/features-8522f0c.jsonl.gz \
+  --features-sha256 a3b54d6ce092a73afbd4911e8ea72862a707846b45fbb23d05ec1d91f71ebab6 \
+  --snapshot runtime/research/hyp034/premium-REV.jsonl.gz
+```
+
+The printed SHA-256 is pinned as `PREMIUM_SHA256` in the code by its own commit before
+the first count, and recorded here. Then:
+
+```bash
+uv run --package schurfer-analytics bybit-premium-dislocation counts \
+  --features runtime/research/hyp032/features-8522f0c.jsonl.gz \
+  --features-sha256 a3b54d6ce092a73afbd4911e8ea72862a707846b45fbb23d05ec1d91f71ebab6 \
+  --premium runtime/research/hyp034/premium-REV.jsonl.gz --premium-sha256 SHA \
+  --output-dir runtime/research/hyp034/counts-REV \
+  --code-revision REV --no-working-tree-dirty
+```
+
+It writes `counts.json`, `counts.md` and `pairs.json` once each and prints the verdict.
 
 ## Effort
 
