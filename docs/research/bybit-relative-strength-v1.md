@@ -186,8 +186,7 @@ is needed.
   HYP-034's overlap bound is used for V3.
 
 Sensitivity, deciding nothing: inflation 1.0, 1.5, 2.0 by design effect 1.0, 1.2, 1.5 by
-F at 1, the estimate and 2. Reported beside it: the earlier unit formula with the
-intraclass correlation of the same segments, as a cross-check. The floor compares
+F at 1, the estimate and 2. The floor compares
 unrounded fractions of integer counts.
 
 **Expectation, stated before counting** (arithmetic, no market data): with about 35
