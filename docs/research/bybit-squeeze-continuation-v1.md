@@ -1,7 +1,8 @@
 # HYP-033: short-squeeze continuation after a first impulse, long (protocol v1, draft)
 
-Status: **draft for the design touchpoint, 2026-11-07; revised 2026-11-08 after the
-first review** (G's span and the publication assumption, separate matching of the
+Status: **stopped 2026-11-08 at step 1 (`insufficient_data`, below); no return was
+read.** Drafted for the design touchpoint 2026-11-07, revised 2026-11-08 after the
+first review (G's span and the publication assumption, separate matching of the
 impulse and the waiting hour inside one week, power on the frozen pairs). Nothing has been counted or
 read for this question: no impulse, funding or open interest value has been computed
 for it, and no return of its events or controls has been seen. It registers nothing
@@ -321,6 +322,49 @@ uv run --package schurfer-analytics bybit-squeeze-continuation counts \
 
 It writes `counts.json`, `counts.md` and `pairs.json` once each and prints the verdict
 (`pass_to_reading`, `insufficient_data` or `insufficient_power`).
+
+## Steps 1 and 2 result (2026-11-08)
+
+`bybit-squeeze-continuation counts` from 27d091c (this branch, clean tree, before
+merge), 2026-11-08, on the pinned features snapshot, 92 s. `counts.json` SHA-256
+`343512373d5bb31696876995c1dfef37dd12338ae0c10b54d5df5c040a10e31f`. Nothing after any
+decision time was read; no mean, return or excess exists in any output.
+
+**Funnel.** 4,214,277 decision hours, 2,391,937 liquid; 22,123 triggers; 12,278 first
+impulses, F and G determinable for 12,277 (99.99%).
+
+| Cell            | Impulses (= clusters) | Symbols | ISO weeks | Top-5 symbols | Top-5 weeks |
+| --------------- | --------------------- | ------- | --------- | ------------- | ----------- |
+| Event (F and G) | 986                   | 361     | 51        | 5.2%          | 22.9%       |
+| F only          | 952                   | 340     | 49        | 6.1%          | 34.1%       |
+| G only          | 5,208                 | 597     | 51        | 2.8%          | 21.4%       |
+| Neither         | 5,131                 | 591     | 51        | 2.7%          | 24.4%       |
+
+**Controls.** 603 of the 986 events (61.2%) have at least one control; median 1 per
+event, 10th percentile 0; 1,656 distinct controls, at most 6 events per control. Of
+the 383 events without a control, every one has candidates in its week, window and
+turnover bin; 97 have none within the impulse caliper, and 286 have some there but none
+also within the waiting-hour caliper. So the separate z1 and zw calipers (counted
+afterwards, deciding nothing) are what leave them unmatched.
+
+**Power.**
+
+| Leg        | Units | Scales substituted | MDE, bps (1.5, 1.2) | Range over the sensitivity grid |
+| ---------- | ----- | ------------------ | ------------------- | ------------------------------- |
+| (a) net    | 986   | 0                  | 43.7                | 26.6 to 65.2                    |
+| (b) excess | 2,259 | 4                  | 61.5                | 37.4 to 91.6                    |
+
+**Floor:** clusters, symbols, weeks, top-5 symbols and determinability pass; the
+control share (61.2% against 80%) fails, and (b)'s MDE (61.5 against 50 bps) fails too.
+Verdict **`insufficient_data`**.
+
+**Decision (2026-11-08): HYP-033 v1 stops at `insufficient_data`,** by the rule fixed
+before the count: the trigger, the combination, the calipers, the horizon and the
+thresholds are not loosened, and the next family is B (spot against perpetual
+premium). The net leg alone would have been testable, but the question is "more than
+the impulse", which needs the control. No return of the events, the controls or the
+impulses was read, so this says nothing about an edge; the window's returns for this
+setup stay unseen.
 
 ## Effort
 
