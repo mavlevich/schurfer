@@ -1,8 +1,9 @@
 # HYP-034: perpetual discount to the index, long (protocol v1)
 
-Status: **steps 1 and 2 passed 2026-11-08 (`pass_to_reading`, below); the control is
-amended (Amendment 1, the same day) and recounted before any return after any decision
-is read.** Drafted for the design touchpoint 2026-11-08 and revised the same
+Status: **stopped 2026-11-08 at the recount under Amendment 1 (`insufficient_data`,
+below); no return after any decision was read.** Steps 1 and 2 first passed
+(`pass_to_reading`) on the original control; the control was amended the same day for
+an imbalance on the last hour, and the amended recount fails the floor. Drafted for the design touchpoint 2026-11-08 and revised the same
 day after the first review (the convergence diagnostic, the last hour's direction in
 the match, overlapping control holds in the power step, a live publication check);
 the premium index was fetched and counted after that. Any later change needs a dated
@@ -358,6 +359,45 @@ opened by the index rising faster or the perpetual lagging. It decides nothing.
 **Order from here:** this amendment, the recount of pairs, balance and power from a
 clean commit, the live publication check on its own window of at least 48 hours, then
 the reading only on the owner's go.
+
+## Recount under Amendment 1 (2026-11-08): stop
+
+`bybit-premium-dislocation counts` from 434c155 (this branch, clean tree, the amendment
+committed in 8364359 before it), 2026-11-08, 6 min 31 s, on the same two snapshots.
+`counts.json` SHA-256
+`f6c67abffbe628d334686fa876c297a776c2871aa771b4c2c953494bfd3d0e41`, `pairs.json`
+`9d581e94f38019ab83fff9701a878b501820b5e965a9a59605f267d4e3f93a67`. Nothing after any
+decision time was read; the only returns in the outputs are pre-t.
+
+| Primary             | Original rule (875cb52) | Amended (434c155) | Floor   | Holds |
+| ------------------- | ----------------------- | ----------------- | ------- | ----- |
+| Events with control | 1,792 (91.6%)           | 1,388 (70.9%)     | >= 80%  | no    |
+| SMD of r1           | 0.36 (unweighted sd)    | 0.085             | <= 0.10 | yes   |
+| SMD of r4           | 0.13                    | 0.118             | none    |       |
+| MDE (a) net, bps    | 38.9                    | 38.9              | <= 50   | yes   |
+| MDE (b) excess, bps | 42.5                    | 50.13             | <= 50   | no    |
+
+Every other floor item holds as before. Verdict **`insufficient_data`**: HYP-034 v1
+stops, as written in Amendment 1. No other z1 caliper, distance or threshold is tried;
+the next family is C (relative strength).
+
+**What the stop shows (pre-t only, decides nothing).** The second caliper balances the
+last hour (SMD 0.085), but 404 events lose their control, and they are a different kind
+of event from the 1,388 that keep one: 10% after a down hour against 31%, median z1 7.6
+against 1.2, mean last-hour return +1,240 bps against +246 bps. All 1,957 events average
++576 bps. So about a fifth of the deep discounts follow an extreme hourly rise of the
+perpetual for which no ordinary hour of comparable size exists, and a matched excess
+can only speak for the calmer rest. Whether the index led those rises is still a
+hypothesis; nothing here measures the index.
+
+V1 under the amendment: 556 of 600 events with a control (92.7%), SMD of r1 0.021, MDE
+97.5 and 96.6 bps; it was never the primary and is not read.
+
+**For any later design (none is proposed here).** The events, pairs and pre-t values
+are seen at the features level; every return after any decision time in this window is
+still unseen for this question. A design about discounts after extreme rises would need
+its own protocol, its own control (ordinary hours cannot match a z1 of 7), and a new
+registry row.
 
 ## Effort
 
