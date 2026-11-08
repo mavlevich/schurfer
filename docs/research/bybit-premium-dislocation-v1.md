@@ -1,6 +1,8 @@
 # HYP-034: perpetual discount to the index, long (protocol v1, draft)
 
-Status: **draft for the design touchpoint, 2026-11-08.** Nothing is fetched, counted or
+Status: **draft for the design touchpoint, 2026-11-08,** revised the same day after the
+first review (the convergence diagnostic, the last hour's direction in the match,
+overlapping control holds in the power step, a live publication check). Nothing is fetched, counted or
 read for this question: no premium index value has been requested, and no return of its
 events or controls has been seen. It registers nothing until committed after review;
 any later change needs a dated amendment before the step it changes runs. It is family
@@ -83,9 +85,11 @@ Hourly bars are [h, h + 1 h). The decision time t is the close of the premium ba
 - **Liquidity:** perp turnover over the 24 bars ending t is at least **USD 2,000,000**.
 - **Dislocation:** P(t) is at most **-0.50%**, and P(t) is at or below the 5th
   percentile of the instrument's own P closes over the 336 hours before t (the 80% rule:
-  at least 269 defined). The absolute level is the economics: a full convergence
-  through the perpetual must clear the 30 to 50 bps round trip. The percentile keeps
-  out instruments whose index sits structurally above the book.
+  at least 269 defined). The absolute level sets the depth of the signal, the
+  percentile its rarity for the instrument: alone, the first would catch chronic
+  discounts and the second small ones. Neither says what a long earns: P measures the
+  book at impact size against the index at t, the gap may change before the entry, and
+  it may close through the index.
 - **First:** no hour in the 24 before t meets the dislocation on the same instrument.
   This is also the independence rule (the hold ends inside those 24 hours).
 - **Event:** a liquid first dislocation. **Ordinary hour:** a liquid hour with
@@ -94,14 +98,16 @@ Hourly bars are [h, h + 1 h). The decision time t is the close of the premium ba
 - **Determinability:** each item is `true`, `false` or `undefined` with a reason
   (`premium_gap`, `kline_gap`, `rank_history_short`). Undefined hours are counted,
   never treated as false.
-- **Publication:** the premium bar closed at t is assumed available by the entry at
-  t + 1 min (the index and premium are computed live each minute). A pass earns a live
-  check before paper.
+- **Publication, an assumption for discovery:** the premium bar closed at t is
+  assumed final and available by the entry at t + 1 min. The API documents a bar's
+  start time and close, not when the final close first appears; the live check under
+  Reading inputs settles this before any return is read.
 - **Entry:** long at the open of the 1-minute perp bar starting t + 1 min (taker).
   **Exit:** close of the 1-minute bar ending t + 1 min + 4 h. **H = 4 h fixed.**
 - **Funding during the hold:** each settlement inside the hold, at the HYP-033 rule
-  (rate times mark over entry); with P < 0 a long usually receives it. Net is reported
-  with and without it; the reading uses net with it.
+  (rate times mark over entry), using the settled rates. A negative P(t) may lower the
+  coming rate, but the sign of a payment is set by the whole interval, so nothing about
+  it is assumed. Net is reported with and without it; the reading uses net with it.
 - **Cluster:** symbol-day of t; every statistic weighs clusters equally.
 - **Completeness:** as HYP-033; incomplete events stay in the denominator.
 
@@ -114,7 +120,8 @@ be wider: a pass earns a live quote measurement before paper.
 ## The matched control (fixed now, one caliper)
 
 HYP-033 lost 39% of its events to two calipers at once. Here the competing explanation
-is one variable, the fall that came with the discount, so the match is on one:
+is the fall that came with the discount, so the match has one numeric caliper and one
+category:
 
 - an ordinary hour (above) on another instrument;
 - t in the same UTC ISO week as the event's and within **72 hours** of it;
@@ -122,32 +129,60 @@ is one variable, the fall that came with the discount, so the match is on one:
   million);
 - z4 within **0.5** of the event's, where z4 is the perp's return over the 4 hours
   ending t divided by twice the standard deviation of its own 1-hour returns over the
-  336 hours before (the 80% rule).
+  336 hours before (the 80% rule);
+- the same direction of the last hour, r1 = close(t) / close(t - 1 h) - 1: down
+  (r1 < 0) or not down (r1 >= 0). The same z4 can follow a fresh fall or a fall whose
+  rebound has begun; the category keeps them apart without a second caliper.
 
 Of those, the at most **5 nearest** by |z4 difference|, ties by turnover log ratio. Each
 leg is measured on its own hold minus BTCUSDT's return over the same interval; the
 event's **excess** is its BTC-relative price return minus the mean of its controls' (no
 funding; both legs pay the same costs). So the control has the event's fall, liquidity
-bin and days, and no dislocation.
+bin, last-hour direction and days, and no dislocation.
+
+**Balance, reported before any reading:** for the events with a control and their
+controls (weighted as in (b)), the mean and the standardized mean difference of the raw
+r1 and the raw 4-hour return ending t. These are returns before t only. They decide
+nothing; they show how close the match is before anything after t is seen. If fewer than
+80% of events have a control, the written stop applies.
 
 ## Step 1: counts (outcome-blind)
 
 From the verified premium snapshot and features snapshot, with no price, return or
 premium value printed: the funnel of decision hours (liquid, premium defined,
-dislocation, first, ordinary), events by ISO week; for the events clusters, symbols,
+dislocation, first, ordinary, last-hour direction), events by ISO week; for the events clusters, symbols,
 weeks, the top-5 symbol and week shares; the share with a control, controls per event
 (median, 10th percentile), and the most events one control serves; and the frozen pairs
 (`pairs.json`), hashed. The positive side (P(t) at least +0.50% at or above its 95th
-percentile) is counted the same way, for V1.
+percentile) is counted the same way, with its own pairs, for V1. The overlap
+components of step 2 (their number, the largest, and the units in components of more
+than one) are reported with the counts.
 
-## Step 2: power (outcome-blind, as HYP-033)
+## Step 2: power (outcome-blind)
 
-On the frozen pairs, HYP-033's method unchanged: units are holds, weights 1 / (K n_k)
-for events and the summed -1 / (K n_k m_e) for controls, scales from the 336 hours before
-t (own 4-hour returns for (a), BTC-relative for (b)), inflation **1.5**, design effect
-**1.2**, MDE = 2.487 x the square root of the variance, an undefined scale takes the 90th
-percentile. Sensitivity grid inflation 1.0, 1.5, 2.0 by design effect 1.0, 1.2, 1.5,
-deciding nothing. The floor compares unrounded fractions of integer counts.
+On the frozen pairs, HYP-033's method with one change: units are holds, weights
+1 / (K n_k) for events and the summed -1 / (K n_k m_e) for controls, scales from the 336
+hours before t (own 4-hour returns for (a), BTC-relative for (b)), inflation **1.5**,
+design effect **1.2**, MDE = 2.487 x the square root of the variance, an undefined scale
+takes the 90th percentile. Sensitivity grid inflation 1.0, 1.5, 2.0 by design effect
+1.0, 1.2, 1.5, deciding nothing. The floor compares unrounded fractions of integer
+counts.
+
+**The change: overlapping holds.** In HYP-033 the first-impulse rule spaced every hold on
+an instrument by more than 24 hours. Here ordinary hours are not spaced: X at 10:00 and X
+at 11:00 can both be controls and share three hours of returns, and summing a control's
+weights over its pairs does not cover that. So, before the MDE:
+
+- all units of a leg (events and controls) are grouped by instrument into **overlap
+  components**: two holds on one instrument whose [entry, exit] intervals intersect are
+  in one component, transitively;
+- a component c contributes (sum over its units of |w(u)| x 1.5 sigma(u))^2 to the
+  variance, the bound for any correlation inside it (it equals the single-unit term
+  for a component of one); the variance is the sum over components, times the design
+  effect 1.2.
+
+The bound is conservative: it treats overlapping holds as one movement counted with
+all its weight, so (b) cannot pass 50 bps by reusing one price path.
 
 ## Floor and stop (fixed now)
 
@@ -161,10 +196,21 @@ and the next family is C (relative strength).
 
 ## Reading inputs (fetched only after step 2 passes)
 
-Under its own registry row: 1-minute perp klines for each event and control hold,
+**Live publication check, first.** On a separate live window of at least 48 hours,
+after counts and power pass and before any return is read: for a fixed set of
+instruments, the premium index kline endpoint is requested every 5 seconds from each
+hour's close to 3 minutes after it, recording when the closed bar first appears and
+whether its close changes on later requests. If the 95th percentile of first
+availability is after t + 1 min, or a close changes after it first appears in more than
+1% of bars, the entry time moves, by a dated amendment before the reading, to the first
+whole minute after which the bar is final. Only publication times and premium values are
+recorded; no return is read.
+
+Then, under its own registry row: 1-minute perp klines for each event and control hold,
 1-minute BTCUSDT klines for the same intervals, the 1-minute mark-price kline at each
-settlement inside a hold, and the 1-minute index-price kline at each event's entry and
-exit (the convergence diagnostic). A few thousand requests, a few MB, hashed.
+settlement inside a hold, the 1-minute index-price kline at each event's entry and exit
+(the convergence diagnostic), and the 1-minute premium index kline at the same two
+minutes. A few thousand requests, a few MB, hashed.
 
 ## Reading (fixed now, at H = 4 h)
 
@@ -189,8 +235,10 @@ Each enters the [discovery ledger](discovery-ledger.md) with the count: primary 
 
 ## Diagnostics (reported, decide nothing)
 
-- **Who converged:** per event, the perpetual's return and the index's return from entry
-  to exit, and the premium's change; the share of the gap closed by the perpetual.
+- **Who converged:** per event, the change of log(perp / index) between entry and exit,
+  split exactly into the perpetual's log return and minus the index's log return over the
+  same two minutes; the change of P between them is shown separately, since P is
+  measured at impact size and log(perp / index) on last prices.
 - Net without funding, and funding received as a share of net.
 - Excess without the BTC adjustment.
 - By depth of P(t) (-0.50 to -1%, -1 to -2%, beyond), by turnover bin, by month, by BTC
