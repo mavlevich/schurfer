@@ -1,12 +1,12 @@
-# HYP-034: perpetual discount to the index, long (protocol v1, draft)
+# HYP-034: perpetual discount to the index, long (protocol v1)
 
-Status: **draft for the design touchpoint, 2026-11-08,** revised the same day after the
-first review (the convergence diagnostic, the last hour's direction in the match,
-overlapping control holds in the power step, a live publication check). Nothing is fetched, counted or
-read for this question: no premium index value has been requested, and no return of its
-events or controls has been seen. It registers nothing until committed after review;
-any later change needs a dated amendment before the step it changes runs. It is family
-4 of the [research strategy v2](research-strategy-v2.md) list ("spot against perpetual
+Status: **steps 1 and 2 passed 2026-11-08 (`pass_to_reading`, below); no return after any
+decision was read.** Drafted for the design touchpoint 2026-11-08 and revised the same
+day after the first review (the convergence diagnostic, the last hour's direction in
+the match, overlapping control holds in the power step, a live publication check);
+the premium index was fetched and counted after that. Any later change needs a dated
+amendment before the step it changes runs. It is family 4 of the
+[research strategy v2](research-strategy-v2.md) list ("spot against perpetual
 premium"), next after [HYP-033](bybit-squeeze-continuation-v1.md) stopped at
 `insufficient_data`.
 
@@ -274,6 +274,47 @@ uv run --package schurfer-analytics bybit-premium-dislocation counts \
 ```
 
 It writes `counts.json`, `counts.md` and `pairs.json` once each and prints the verdict.
+
+## Steps 1 and 2 result (2026-11-08)
+
+`bybit-premium-dislocation counts` from 875cb52 (this branch, clean tree, before merge),
+2026-11-08, 6 min 17 s. `counts.json` SHA-256
+`bd77abdd803cf5db2bf7114987dcabb9e2ef505bd9efea293eb74a3487bbb72c`, `pairs.json`
+`5a4582b614073cd603f5b9133c682223b7dabe8df684ffc496263beffa0e776c`. Nothing after any
+decision time was read; the only returns in the outputs are the pre-t balance returns.
+
+**Funnel.** 4,214,277 decision hours, 2,391,909 liquid, premium determinable for 99.95%
+of them. 10,245 liquid discount hours, 1,957 of them first (the events); 1,258 liquid
+premium hours, 600 first (V1). 2,020,489 ordinary hours in the primary control pool.
+
+| Side          | Events (= clusters) | Symbols | ISO weeks | Top-5 symbols | Top-5 weeks | With a control | Controls per event (median, p10) |
+| ------------- | ------------------- | ------- | --------- | ------------- | ----------- | -------------- | -------------------------------- |
+| Primary, long | 1,957               | 441     | 51        | 7.3%          | 19.9%       | 91.6%          | 5, 1                             |
+| V1, short     | 600                 | 190     | 51        | 14.3%         | 39.5%       | 98.0%          | 5, 5                             |
+
+**Power** (overlap components bounded):
+
+| Leg                | Units | Components | Largest | MDE, bps (1.5, 1.2) | Grid range    |
+| ------------------ | ----- | ---------- | ------- | ------------------- | ------------- |
+| Primary (a) net    | 1,957 | 1,957      | 1       | 38.9                | 23.7 to 58.0  |
+| Primary (b) excess | 9,554 | 8,897      | 7       | 42.5                | 25.9 to 63.3  |
+| V1 (a) net         | 600   | 600        | 1       | 97.5                | 59.3 to 145.3 |
+| V1 (b) excess      | 3,464 | 3,398      | 3       | 96.5                | 58.7 to 143.8 |
+
+**Floor (primary):** every item holds. Verdict **`pass_to_reading`**. V1 is far from 50
+bps; it stays a declared variant, read once after the primary.
+
+**Balance before t (decides nothing).** Only 491 of the 1,957 events (25%) follow a down
+hour. The cluster-weighted mean return of the hour before t is +470 bps for the events
+against +199 bps for their controls (standardized difference 0.36), and of the 4 hours
+before t +739 against +604 bps (0.13). So a deep discount mostly comes with a fast rise,
+where the index has moved ahead of the perpetual, not with a fall as the mechanism
+section assumed; and the z4 caliper with the direction category leaves the events'
+last hour well above their controls'.
+
+**Open before the reading:** whether to amend the control (for example a caliper on the
+last hour's z as well) before any return is read, the live publication check (Reading
+inputs), and the owner's go for the reading.
 
 ## Effort
 
