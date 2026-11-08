@@ -2,7 +2,9 @@
 
 Status: **draft for the design touchpoint, 2026-11-08,** revised the same day after the
 first review (variance by hourly blocks, the fetch admitted by fixed calendar blocks with
-the full pool, one more warm-up day in the scope). Nothing has been counted or read
+the full pool, one more warm-up day in the scope) and after the second (rho of a block
+known at the earliest decision covering it, step 1 recomputed from raw files, the two
+scales stated exactly, seeding of the full fetch from the pilot parts). Nothing has been counted or read
 for this question: no flow value has been computed for it, and no return of its events
 or controls has been seen. It registers nothing until committed after review; any later
 change needs a dated amendment before the step it changes runs. It is family 2 of the
@@ -114,8 +116,9 @@ Decision hours t are UTC hour starts. For a pool member at t, from data before t
 - **qB and qV:** the mid-rank of B and of V among the same instrument's values at the
   336 decision hours before t (below plus half of the equal, over the defined ones);
   at least 269 of 336 defined (HYP-032's 80% rule).
-- **sigma1:** the standard deviation of the instrument's 1-hour log returns over the
-  336 bars before t, from 1-hour kline closes (80% rule).
+- **sigma1:** the standard deviation of the instrument's 336 1-hour log returns whose
+  bars end at t - 1 h, ..., t - 336 h, from 1-hour kline closes (80% rule). The bar
+  ending at t is left out, so r1 is not in its own scale.
 - **z1** = ln(close(t) / close(t - 1 h)) / sigma1 and **z4** = ln(close(t) / close(t -
   4 h)) / (2 sigma1), from 1-hour kline closes (klines are not masked).
 
@@ -176,7 +179,7 @@ variances, the pooled standard deviation as the root of their mean, the weights 
 (b)) is at most **0.10** in absolute value for z1, z4 and ln sigma1. qV and ln V are
 reported.
 
-## Step 1: feature check on HYP-032's tape (outcome-blind, no traffic)
+## Step 1: feature check on HYP-032's tape (outcome-blind, about 0.2 GB of traffic)
 
 HYP-032's tape (`tape-1327ea1/manifest.json`, SHA-256
 `21bdf61989a9aac4ebf76e70d260e1aa3541cb66151c362f3189537389d26d50`, rules `tape-v3`,
@@ -186,9 +189,15 @@ it the set of instruments present at one hour is not the pool, so signal frequen
 control coverage and the overlap structure there can differ from the year in either
 direction. It is used only to check the feature, never to admit a fetch:
 
-- B, V and their ranks computed from the parts agree with an independent recomputation
-  on a fixed sample of 20 symbol-days (lowest SHA-256 of
-  `bybit_absorbed_buying_v1|check|SYMBOL|YYYY-MM-DD`);
+- B and V computed from the parts agree with an independent recomputation on a fixed
+  sample of 20 symbol-days (lowest SHA-256 of
+  `bybit_absorbed_buying_v1|check|SYMBOL|YYYY-MM-DD`): their raw trade files are fetched
+  again (about 0.2 GB, under step 1's registry row and on the owner's go), and B and V are
+  summed straight from the trades under the same mask, by a separate code path. The
+  kline reconciliation of `tape-v3` checks total volume only, so a swapped buy and sell
+  side would pass it and flip the sign of B; this check is for the aggregation;
+- the ranks qB and qV agree with a plain recomputation over the frozen 336 hours of the
+  same sample (the 20 files alone do not hold that history);
 - the mask: no minute from :55 to :04 enters B or V, and the masked minutes kept for
   HYP-032's sensitivity are never read;
 - the undefined reasons (`no_flow`, `tape_missing`, `tape_mismatch`,
@@ -204,7 +213,7 @@ reading's split: decisions **2025-01-13 to 2025-01-26** and **2025-07-07 to
 controls, and its tape scope by the rule above (from 15 days before its first decision
 day): **211 symbols, 8,652 symbol-days, about 82 GB**, for 100,128 pool member-hours (of
 the full 1,189,464). The blocks are a subset of the full scope, so a later full fetch
-under the same rules reuses their verified parts.
+can reuse their verified parts by the seeding rule of step 3.
 
 Only on the owner's go, under its registry row: fetch the blocks with a ledgered byte cap
 of **100 GB**, then report:
@@ -229,7 +238,13 @@ before the full fetch.
 Only after the pilot gate passes and on the owner's go: recompute the scope's size by
 HEAD sampling under HYP-032's rule; stop and ask if it exceeds **650 GB**; then fetch
 with a ledgered byte cap of 650 GB (about 13 to 15 hours at HYP-032's 11 MB/s, kept awake
-as HYP-032's run had to be). Then on the full tape report:
+as HYP-032's run had to be). The full fetch is a new run bound to the full scope's SHA-256;
+it is seeded with the pilot's parts by importing only the `ok` parts whose symbol-day is
+in the full scope, each checked for its SHA-256, its symbol-day, the same features and
+HYP-031 index snapshots, the same mask version and the same rules (`tape-v3`); a part
+failing any check is fetched again, and an incompatible input refuses the seeding as a
+whole. The new manifest keeps each part's origin and reports imported bytes apart from
+the full fetch's own traffic. Then on the full tape report:
 
 - the funnel, events by ISO week and month;
 - for the events: clusters, symbols, weeks, the top-5 symbol share, the top-5 week share,
@@ -245,16 +260,19 @@ On the frozen pairs, with data before each t only:
 - **Units and weights** as in HYP-033: every event hold and every distinct control hold is
   a unit u; with K event clusters, an event in cluster k has weight 1 / (K n_k) in (a);
   in (b) its m_e controls get -1 / (K n_k m_e) each, summed over the pairs a control is in.
-- **Scales:** sigma_a(u) is the standard deviation of the instrument's own 4-hour
-  returns at each hourly close of the 14 days before t (80% rule); sigma_b(u) the same on
-  BTC-relative 4-hour returns. A unit's hourly scale is s(u) = sigma(u) / 2.
+- **Scales:** sigma_a(u) is the standard deviation of the instrument's own 4-hour log
+  returns ending at t - k x 1 h for k = 0, ..., 335 (80% rule; the last ends at t, before
+  the entry at t + 1 min); sigma_b(u) the same on BTC-relative 4-hour returns. This is a
+  separate quantity from sigma1. A unit's hourly scale is s(u) = sigma(u) / 2.
 - **Hourly blocks.** Every hold starts at t + 1 min, so holds split into four hourly
   blocks on one grid; a unit covers the blocks of its hold. Each block's return of an
   instrument is a common part (share rho of its variance) plus its own part (share
   1 - rho), independent across blocks. rho_a and rho_b of a block are the mean pairwise
-  correlation of 1-hour log returns (raw, and BTC-relative) among the pool of the
-  block's month over the 30 days before that month; a hold across a month boundary uses
-  each block's own month.
+  correlation of 1-hour log returns (raw, and BTC-relative) among a month's pool over the
+  30 days before that month, taken for the month of the earliest decision whose hold can
+  cover the block (t = h - 3 h for block h). That estimate is known at every decision
+  covering the block, so a hold across a month boundary never uses prices after its own
+  decision, and all units in one block share one rho.
 - **Variance:** 1.2 x 1.5^2 x the sum over blocks h of [rho_h x (sum over units covering h
   of w(u) s(u))^2 + (1 - rho_h) x sum over instruments i of (sum over units of i covering
   h of w(u) s(u))^2]. A single unit gets sigma(u)^2; two holds of one instrument that
