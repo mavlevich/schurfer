@@ -1,7 +1,8 @@
 # HYP-034: perpetual discount to the index, long (protocol v1)
 
 Status: **stopped 2026-11-08 at the recount under Amendment 1 (`insufficient_data`,
-below); no return after any decision was read.** Steps 1 and 2 first passed
+below); no minute trade or net of any event or control was read.** Some hourly
+closes after decisions entered the spread estimate of later units (see the recount). Steps 1 and 2 first passed
 (`pass_to_reading`) on the original control; the control was amended the same day for
 an imbalance on the last hour, and the amended recount fails the floor. Drafted for the design touchpoint 2026-11-08 and revised the same
 day after the first review (the convergence diagnostic, the last hour's direction in
@@ -367,7 +368,12 @@ committed in 8364359 before it), 2026-11-08, 6 min 31 s, on the same two snapsho
 `counts.json` SHA-256
 `f6c67abffbe628d334686fa876c297a776c2871aa771b4c2c953494bfd3d0e41`, `pairs.json`
 `9d581e94f38019ab83fff9701a878b501820b5e965a9a59605f267d4e3f93a67`. Nothing after any
-decision time was read; the only returns in the outputs are pre-t.
+decision time was read for the trade itself: no minute trade of any event or control and
+no net. Hourly kline closes did enter the spread step: by the frozen pairs' timestamps,
+the 4-hour hourly proxy of 1,172 of the 1,957 events falls inside the pre-t volatility
+window of a later unit. Each unit's own scale uses only data before its own t, so the
+calculation is correct in time; those hourly proxies are seen at the spread level, and
+no return of any event or control was computed or reported.
 
 | Primary             | Original rule (875cb52) | Amended (434c155) | Floor   | Holds |
 | ------------------- | ----------------------- | ----------------- | ------- | ----- |
@@ -394,8 +400,9 @@ V1 under the amendment: 556 of 600 events with a control (92.7%), SMD of r1 0.02
 97.5 and 96.6 bps; it was never the primary and is not read.
 
 **For any later design (none is proposed here).** The events, pairs and pre-t values
-are seen at the features level; every return after any decision time in this window is
-still unseen for this question. A design about discounts after extreme rises would need
+are seen at the features level, and some hourly closes after decisions were used as
+spread inputs (above); every minute trade and net after any decision time in this window
+is still unseen for this question. A design about discounts after extreme rises would need
 its own protocol, its own control (ordinary hours cannot match a z1 of 7), and a new
 registry row.
 
