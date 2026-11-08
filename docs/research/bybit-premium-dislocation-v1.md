@@ -1,7 +1,8 @@
 # HYP-034: perpetual discount to the index, long (protocol v1)
 
-Status: **steps 1 and 2 passed 2026-11-08 (`pass_to_reading`, below); no return after any
-decision was read.** Drafted for the design touchpoint 2026-11-08 and revised the same
+Status: **steps 1 and 2 passed 2026-11-08 (`pass_to_reading`, below); the control is
+amended (Amendment 1, the same day) and recounted before any return after any decision
+is read.** Drafted for the design touchpoint 2026-11-08 and revised the same
 day after the first review (the convergence diagnostic, the last hour's direction in
 the match, overlapping control holds in the power step, a live publication check);
 the premium index was fetched and counted after that. Any later change needs a dated
@@ -120,6 +121,9 @@ HYP-033. The break-even round-trip cost is reported. Books right after a disloca
 be wider: a pass earns a live quote measurement before paper.
 
 ## The matched control (fixed now, one caliper)
+
+Amended before any return was read: a second caliper on z1 and a balance gate, see
+[Amendment 1](#amendment-1-2026-11-08-before-any-return-after-any-decision).
 
 HYP-033 lost 39% of its events to two calipers at once. Here the competing explanation
 is the fall that came with the discount, so the match has one numeric caliper and one
@@ -307,14 +311,53 @@ bps; it stays a declared variant, read once after the primary.
 **Balance before t (decides nothing).** Only 491 of the 1,957 events (25%) follow a down
 hour. The cluster-weighted mean return of the hour before t is +470 bps for the events
 against +199 bps for their controls (standardized difference 0.36), and of the 4 hours
-before t +739 against +604 bps (0.13). So a deep discount mostly comes with a fast rise,
-where the index has moved ahead of the perpetual, not with a fall as the mechanism
-section assumed; and the z4 caliper with the direction category leaves the events'
-last hour well above their controls'.
+before t +739 against +604 bps (0.13). So a deep discount mostly comes after a fast rise
+of the perpetual, not after a fall as the mechanism section assumed. That the index
+moved ahead of the perpetual on that rise is a hypothesis: these counts show only the
+perpetual's own path, and telling how the gap opened needs the perpetual's and the
+index's moves over the same pre-t interval (a diagnostic below). The z4 caliper with the
+direction category leaves the events' last hour well above their controls'.
 
-**Open before the reading:** whether to amend the control (for example a caliper on the
-last hour's z as well) before any return is read, the live publication check (Reading
-inputs), and the owner's go for the reading.
+These outputs and the verdict are kept unchanged: they show that the sample is large
+enough under the original rules. The control is amended below before any return is read.
+
+## Amendment 1 (2026-11-08, before any return after any decision)
+
+Agreed with the colleague's review of the steps 1 and 2 result, written and committed
+before the recount. It changes the control and adds a balance gate; nothing else.
+
+**Second caliper.** A control must also have z1 within **0.5** of the event's, where
+z1 = r1 divided by the standard deviation of the perp's own 1-hour returns over the 336
+hours before (the same sd as in z4). The direction category stays. Of the controls
+inside both calipers, the at most 5 nearest by the Euclidean distance of (z4
+difference, z1 difference), as in HYP-033, ties by turnover log ratio.
+
+**Balance, now with weighted spreads.** The standardized mean difference uses the same
+weights as the means: on each side the weighted variance sum(a (v - m)^2) / sum(a) with
+a = |w(u)| of (b), and the pooled sd is the root of the mean of the two variances. (The
+875cb52 run weighted the means but not the spreads.)
+
+**Balance gate (new floor item).** On the amended pairs, |SMD of r1| at most **0.10**.
+The SMD of the 4-hour return ending t is reported beside it and decides nothing. Also
+reported: the events that had a control under the original rule and have none under the
+amended one, against those that keep one (count, share after a down hour, median z1 and
+z4, turnover bins, top-5 symbol share, mean r1), and the mean r1 of all events against
+the events with a control, so that a change of what the paired events are is visible.
+
+**Floor and stop, otherwise unchanged.** At least 80% of events with a control, MDE at
+most 50 bps for (a) and (b) with the same overlap bound, and every other item as before.
+Any failure, the balance gate included, stops HYP-034 v1 (`insufficient_data`,
+`insufficient_balance` or `insufficient_power`); no other z1 caliper, distance or
+threshold is tried, and the next family is C.
+
+**Diagnostic added to the reading:** for each event, the perpetual's and the index's
+log returns over the hour before t, from the 1-minute index-price kline at t - 1 h and t
+(two more points per event, fetched with the reading inputs), to show whether the gap
+opened by the index rising faster or the perpetual lagging. It decides nothing.
+
+**Order from here:** this amendment, the recount of pairs, balance and power from a
+clean commit, the live publication check on its own window of at least 48 hours, then
+the reading only on the owner's go.
 
 ## Effort
 
