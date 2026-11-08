@@ -1,6 +1,9 @@
 # HYP-035: relative strength, long against BTC (protocol v1, draft)
 
-Status: **draft for the design touchpoint, 2026-11-08; nothing counted or read.** No
+Status: **draft for the design touchpoint, 2026-11-08, revised the same day after the
+review (a dollar-neutral daily book closed every day, costs per long notional, equal
+day weights, power on daily portfolios over pre-formation segments, beta balance);
+nothing counted or read.** No
 formation return, rank, control or return after any decision has been computed for this
 question. It registers nothing until committed after review; any later change needs a
 dated amendment before the step it changes runs. It is family 6 of the
@@ -11,8 +14,8 @@ stopped at `insufficient_data`.
 ## Question
 
 On Bybit USDT perpetuals, does an instrument in the top decile of the liquid cross-section
-by its 7-day return relative to BTC keep outperforming over the next 24 hours: more than
-BTC after costs and funding, and more than same-day instruments of similar volatility and
+by its 7-day return relative to BTC keep outperforming over the next 24 hours: does a
+daily dollar-neutral book (long the decile, short BTC) earn after costs and funding, and more than same-day instruments of similar volatility and
 liquidity from the middle of the ranking?
 
 ## Assumed mechanism, stated before any outcome
@@ -73,42 +76,57 @@ Hourly bars are [h, h + 1 h). **One decision time a day, t = 00:00 UTC**, from
 - **Liquid at t:** turnover over the 24 bars ending t at least **USD 2,000,000**.
 - **Formation:** m(t) = ln(close(t) / close(t - 168 h)) - the same for BTCUSDT, where
   close(t) is the close of the bar [t - 1 h, t). Defined only when both closes exist.
+  Subtracting BTC's return, the same for every instrument at t, does not change the
+  ranks; the hedge matters for the trade's result, not for the selection.
 - **Scale inputs:** the standard deviation of the instrument's own hourly returns over
-  the 336 hours before t (the 80% rule), as HYP-033 and HYP-034.
+  the 336 hours before t (the 80% rule), as HYP-033 and HYP-034, and its beta to BTC:
+  the least-squares slope of its hourly returns on BTCUSDT's over the same hours.
 - **Rank:** the mid-rank of m(t) among the liquid instruments at t with m and the
   scale defined (at least 100 of them, or the day is counted as `thin_cross_section` and
   dropped).
 - **Unit (event):** a liquid instrument with rank at least **0.90** (the top decile).
-  Every top-decile member is a unit; the same instrument on consecutive days gives
-  consecutive, non-overlapping holds.
+  Every top-decile member is a unit, whether or not it was a member the day before: the
+  question is whether current leaders keep leading, not what new leaders do. The same
+  instrument on consecutive days gives consecutive, non-overlapping holds, which may
+  still depend on each other (Step 2).
 - **Determinability:** each item is `true`, `false` or `undefined` with a reason
   (`kline_gap`, `history_short`). Undefined instrument-days are counted, never treated
   as false.
-- **Entry:** long the instrument and short BTCUSDT for the same notional at the open of
-  the 1-minute bars starting t + 1 min (taker). **Exit:** both at the close of the
-  1-minute bars ending t + 1 min + 24 h. **H = 24 h fixed.** The formation closes at t
-  are hourly kline closes, final at t; the minute of margin is for the order, not for
-  publication.
+- **The portfolio, a dollar-neutral daily book.** Each day: long every unit with equal
+  notional, and short BTCUSDT for the sum of the long notionals, at the open of the
+  1-minute bars starting t + 1 min (taker). **Both legs are closed every day** at the
+  close of the 1-minute bars ending t + 1 min + 24 h, with no carry-over or rebalancing
+  of members that stay in the decile, so every day pays entry and exit costs on both
+  legs. **H = 24 h fixed.** Equal notional is dollar-neutral, not beta-neutral: leaders
+  with a beta above 1 keep a residual long exposure to the market, which the result
+  includes. The formation closes at t are hourly kline closes, final at t; the minute of
+  margin is for the order, not for publication.
+- **Units of account.** Every return, cost and threshold is per unit of **long-leg
+  notional**. A unit's net = (its 24-hour return - BTC's over the same minutes) - 42 bps
+  - funding (below). The day's net is the equal-weight mean over its units.
 - **Funding:** every settlement inside the hold on both legs, at the HYP-033 rule (rate
   times mark over entry) with the settled rates: the long pays a positive alt rate, the
   BTC short receives a positive BTC rate. Net is reported with and without it; the
   reading uses net with it.
-- **Cluster:** a unit is one symbol-day, so each unit is its own cluster and every
-  statistic weighs units equally. Units of one day share the market; that is handled in
-  the power step and by the ISO-week block bootstrap in the reading.
-- **Completeness:** as HYP-033; incomplete units stay in the denominator.
+- **Weights: days, then units.** Every decision day weighs the same (a book of the same
+  daily notional), and inside a day its units weigh the same. So a unit's weight in (a)
+  is 1 / (D n_d), with D the days and n_d the day's units. The same weights are used in
+  the power step and in the reading. The cluster is the decision day.
+- **Completeness:** as HYP-033; incomplete units stay in the denominator of their day.
 
 ## Costs
 
-Alt leg taker both sides, **30 bps round trip** primary, **50 bps** sensitivity, as
-HYP-031 to HYP-034. BTC leg taker both sides, **12 bps** round trip primary (2 x 5.5 bps
-fee and 1 bps slippage), **20 bps** sensitivity. Net at the primary costs therefore
-carries 42 bps. The break-even alt-leg cost is reported.
+Per unit of long-leg notional, each day. Alt leg taker both sides, **30 bps round trip**
+primary, **50 bps** sensitivity, as HYP-031 to HYP-034. BTC leg taker both sides, **12
+bps** round trip primary (2 x 5.5 bps fee and 1 bps slippage), **20 bps** sensitivity;
+the BTC notional equals the long notional. Net at the primary costs therefore carries
+**42 bps a day**, at the sensitivity 70 bps. The break-even alt-leg cost is reported, and
+(a diagnostic) the cost of a book that trades only the day's changes in membership.
 
 ## The matched control (fixed now)
 
-The competing explanations are volatility and the alt market, so a control is a unit of
-the same day whose rank is ordinary:
+The competing explanations are volatility and the alt market, so a control is an
+instrument of the same t whose rank is ordinary:
 
 - the same decision time t, another instrument;
 - rank between **0.30 and 0.70** (the middle of the cross-section);
@@ -117,60 +135,72 @@ the same day whose rank is ordinary:
 - ln(sd_c / sd_e) within **0.25**, where sd is the 336-hour scale input above.
 
 Of those, the at most **5 nearest** by |ln sd ratio|, ties by turnover log ratio. A
-control may serve several events of its day; its weight sums over its pairs. The
-event's **excess** is its BTC-relative 24-hour price return minus the mean of its
-controls' (no funding, no costs: both legs pay the same alt costs, and the BTC leg
-cancels).
+control may serve several events of its day. The event's **excess** is its BTC-relative
+24-hour price return minus the mean of its controls' (no funding, no costs: both pay the
+same alt costs, and with the same entry and exit minutes BTC cancels), so (b) measures
+the leaders against the middle of the same cross-section. The day's excess is the
+equal-weight mean over its events with a control; days weigh the same; a control's
+weight sums over its pairs.
 
 **Balance gate (learned from HYP-034, fixed now):** on the pairs, the weighted
 standardized mean difference of ln sd (weights as in (b), the spreads weighted like the
 means) is at most **0.10** in absolute value. Reported beside it and deciding nothing:
-the SMD of the 24-hour BTC-relative return before t and of ln turnover. The 24-hour
-return is not balanced by design: momentum is the treatment.
+the SMD of the beta to BTC (matching on volatility does not rule out that leaders react
+more to the market), of the 24-hour BTC-relative return before t and of ln turnover. The
+24-hour return is not balanced by design: momentum is the treatment.
 
 ## Step 1: counts (outcome-blind)
 
 From the verified features snapshot, with no return after any t: the funnel of
 instrument-days (liquid, scale and formation defined, thin days), cross-section size per
-day (median, minimum), units, symbols, ISO weeks, the top-5 symbol and week shares, the
-share with a control, controls per event (median, 10th percentile), the most events one
-control serves, and the frozen pairs (`pairs.json`), hashed.
+day (median, minimum), units per day (median, minimum), days, symbols, ISO weeks, the
+top-5 symbol share of the (a) weight and the top-5 week share, the share of units that
+were in the previous day's top decile, the share with a control, controls per event
+(median, 10th percentile), the most events one control serves, and the frozen pairs
+(`pairs.json`), hashed.
 
 ## Step 2: power (outcome-blind)
 
-HYP-034's method on the frozen pairs: unit weights 1 / n for events and the summed
--1 / (n m_e) for controls in (b); the scale of a unit is the sd of its 24-hour
-BTC-relative returns ending at each hourly close of the 336 hours before t (one scale
-for both legs: (a) is hedged), inflation **1.5**, design effect
-**1.2**, MDE = 2.487 x the square root of the variance, an undefined scale takes the
-90th percentile.
+**What is measured is a daily portfolio**, so its spread is estimated as one: for each
+leg the day's weighted portfolio, (a) the mean of its units' BTC-relative returns and
+(b) the mean over its events of the event minus its controls' mean, with the day's frozen
+members, pairs and weights. The signs of the weights, a control serving several events,
+and the co-movement of the day's units are then inside the one quantity whose variance
+is needed.
 
-**The change: units of one day move together.** In HYP-033 and HYP-034 events were
-spread over hours and instruments; here every unit of a day is held over the same 24
-hours, and leaders tend to be one theme. So the variance groups units by decision day:
+- **Pre-formation segments.** The spread of day d's portfolio is estimated on the seven
+  non-overlapping 24-hour segments [t - 168 h - 24 h x j, t - 168 h - 24 h x (j - 1)),
+  j = 1 to 7, that is the week before the formation window [t - 168 h, t). These hours
+  did not select the members (the selection uses only m(t), the closes at t - 168 h and
+  t). A member's segment return is undefined when a close is missing; a segment is
+  defined when at least 80% of the day's members (for (b), events with all their
+  controls' segment returns defined at 80%) are; sigma_d is the sample sd of the defined
+  segment returns when at least 5 are, else the 90th percentile of the defined sigma_d.
+- **Dependence across days.** Holds of different days do not overlap, but leaders
+  persist and the momentum factor is serially correlated. The pooled lag-k
+  autocorrelations rho_k (k = 1 to 6) of the segment series, around the grand mean of
+  each leg, give the weekly factor F = max(1, 1 + 2 x sum((1 - k/7) x rho_k)).
+- **MDE.** Var = sum over days of (1.5 x sigma_d)^2 / D^2, times the design effect
+  **1.2**, times F; MDE = 2.487 x its square root.
+- Overlapping holds on one instrument cannot occur at H = 24 h with daily decisions;
+  HYP-034's overlap bound is used for V3.
 
-- day d contributes (1 - rho) x sum(w^2 x (1.5 sigma)^2) + rho x (sum(|w| x 1.5 sigma))^2;
-- rho is estimated outcome-blind, separately per leg, as the one-way intraclass
-  correlation by day of the same units' BTC-relative returns over the 24 hours ending t
-  (for (b), of the event minus its controls' mean), floored at 0. These are the moves
-  that put the units in the top decile, so rho is likely overstated: conservative;
-- overlapping holds on one instrument cannot occur at H = 24 h with daily decisions;
-  the overlap bound of HYP-034 is kept for V3.
+Sensitivity, deciding nothing: inflation 1.0, 1.5, 2.0 by design effect 1.0, 1.2, 1.5 by
+F at 1, the estimate and 2. Reported beside it: the earlier unit formula with the
+intraclass correlation of the same segments, as a cross-check. The floor compares
+unrounded fractions of integer counts.
 
-Sensitivity, deciding nothing: rho at 0, 2 x rho-hat and 1 (each day one movement),
-inflation 1.0, 1.5, 2.0, design effect 1.0, 1.2, 1.5. The floor compares unrounded
-fractions of integer counts.
-
-**Expectation, stated before counting.** With about 35 units a day over about 350 days,
-24-hour sds near 8% and a rho near 0.1, MDE (a) is near 50 bps: a stop at step 2 is
+**Expectation, stated before counting** (arithmetic, no market data): with about 35
+units a day over about 350 days, unit sds near 8% and a within-day correlation of 0.1, a
+day's portfolio sd is near 2.8% and MDE (a) near **62 bps** before F. A stop at step 2 is
 likely. The counts need no fetch and take minutes, so this is the cheap way to find out.
 
 ## Floor and stop (fixed now)
 
-At least **150 clusters, 40 symbols, 26 ISO weeks**; top-5 symbols at most **30%** of
-units; at least **80%** of events with a control; scale and formation defined for at
-least **90%** of liquid instrument-days; the balance gate above; MDE at most **50 bps**
-for (a) and (b).
+At least **150 decision days, 40 symbols, 26 ISO weeks**; top-5 symbols at most **30%**
+of the (a) weight; at least **80%** of events with a control; scale and formation
+defined for at least **90%** of liquid instrument-days; the balance gate above; MDE at
+most **50 bps** for (a) and (b).
 
 **Stop:** any failure stops HYP-035 v1 at `insufficient_data`, `insufficient_balance` or
 `insufficient_power`; the lookback, the decile, the calipers, the horizon and the floor
@@ -185,10 +215,12 @@ requests, a few MB, hashed.
 
 ## Reading (fixed now, at H = 24 h)
 
-HYP-033's five conditions unchanged, seed 35: floor and at least 95% complete; mean net
-(hedged, funding included) at the primary costs at least **+30 bps**; the ISO-week block
+HYP-033's five conditions with this protocol's weights (days equal, units equal inside
+a day), seed 35: floor and at least 95% complete; the mean daily net of the
+dollar-neutral book (funding included) at the primary costs at least **+30 bps** of
+long-leg notional; the ISO-week block
 bootstrap 5th percentile of the mean net above 0 (10,000 resamples); without the top 5
-symbols, and separately without the top 5 weeks, the mean net above 0, and both halves
+symbols (by (a) weight), and separately without the top 5 weeks, the mean net above 0, and both halves
 (before 2025-04-01 and from it) positive; the mean excess at least **+30 bps** with its
 bootstrap 5th percentile above 0 and at least 80% of complete events with a control. A
 negative mean net is `fail`. A pass makes the primary a stage 1 candidate, never orders.
@@ -207,6 +239,8 @@ Each enters the [discovery ledger](discovery-ledger.md) with the count: primary 
 ## Diagnostics (reported, decide nothing)
 
 - Net by the 24-hour return before t (terciles inside the top decile): the reversal risk.
+- Units that were in the previous day's decile against new members, and the cost of a
+  book that trades only membership changes.
 - The alt leg and the BTC leg separately; net without funding; funding as a share of net.
 - By listing age, turnover bin, month, BTC's own 7-day return sign.
 - Rank at least 0.97 (the top of the decile) against 0.90 to 0.97.
