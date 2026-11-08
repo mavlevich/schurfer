@@ -185,15 +185,17 @@ than the impulse".
 From the verified features snapshot, report with no price, return or feature value
 printed:
 
-- the funnel of liquid hours, triggers, first impulses, and F and G each true, false or
-  undefined by reason, by ISO week;
+- the funnel of decision hours (liquid, trigger, first impulse, F and G each true,
+  false or undefined by reason, the waiting bar), and events by ISO week;
 - the four cells of first impulses (F and G, F only, G only, neither), each with
   impulses, clusters, distinct symbols and ISO weeks;
 - for the events: clusters, symbols, weeks, the top-5 symbol share and the top-5 ISO
   week share of clusters, and the share of events with at least one control, with the
   number of controls (median, 10th percentile) and the largest number of events one
   control serves;
-- the minimum detectable effects of step 2.
+- the minimum detectable effects of step 2;
+- the frozen pairs (`pairs.json`): every event and its controls by symbol and t_d,
+  hashed, the list the power step and the reading both use.
 
 ## Step 2: power (outcome-blind, no simulation, no forward data)
 
@@ -221,6 +223,9 @@ event-control pairs from step 1, with data known before each impulse only:
   (volatility after an impulse is higher than before it) and the **design effect 1.2**
   (HYP-032 measured 1.09 at 4 h on random hours; events cluster in market episodes more
   than random hours do). Both treat units as independent apart from the design effect.
+- **An undefined scale** (fewer than 269 defined 4-hour returns) takes the 90th
+  percentile of the defined scales of that leg, conservatively; the substitutions are
+  counted.
 - Sensitivity, reported and deciding nothing: inflation 1.0 and 2.0, design effect 1.0
   and 1.5.
 
@@ -300,6 +305,22 @@ same reading conditions.
 - Excess without the BTC adjustment.
 - Return per dollar-hour; maximum adverse excursion in the hold (99th percentile).
 - By month, by BTC 24 h return sign, by hour of day of t_d.
+
+## Runbook for steps 1 and 2
+
+From a merged revision with a clean tree, on the HYP-032 run's snapshot (the code
+refuses any other SHA-256):
+
+```bash
+uv run --package schurfer-analytics bybit-squeeze-continuation counts \
+  --features runtime/research/hyp032/features-8522f0c.jsonl.gz \
+  --features-sha256 a3b54d6ce092a73afbd4911e8ea72862a707846b45fbb23d05ec1d91f71ebab6 \
+  --output-dir runtime/research/hyp033/counts-REV \
+  --code-revision REV --no-working-tree-dirty
+```
+
+It writes `counts.json`, `counts.md` and `pairs.json` once each and prints the verdict
+(`pass_to_reading`, `insufficient_data` or `insufficient_power`).
 
 ## Effort
 
