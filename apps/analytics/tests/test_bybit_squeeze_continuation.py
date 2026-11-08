@@ -16,12 +16,16 @@ from schurfer_analytics.bybit_compressed_spring import (
 from schurfer_analytics.bybit_squeeze_continuation import (
     Impulse,
     Instrument,
+    control_shape,
     filled,
     floor,
     match,
     mde,
     oi_change,
+    power,
+    render_markdown,
     scan,
+    shape,
     weights_excess,
     weights_net,
 )
@@ -173,20 +177,53 @@ def test_scale_uses_only_returns_before_the_impulse() -> None:
 
 
 def shape_ok() -> dict[str, Any]:
-    return {"clusters": 200, "symbols": 50, "iso_weeks": 40, "top5_symbol_share": 0.2}
+    return {"clusters": 200, "symbols": 50, "iso_weeks": 40, "top5_symbol_clusters": 40}
+
+
+CONTROLS_OK = {"events": 200, "events_with_control": 180}
+POWERED = {"a_net": {"mde_unrounded": 0.004}, "b_excess": {"mde_unrounded": 0.0049}}
 
 
 def test_floor_verdicts() -> None:
-    controls = {"share_with_control": 0.9}
-    powered = {"a_net": {"mde_unrounded": 0.004}, "b_excess": {"mde_unrounded": 0.0049}}
-    assert floor(shape_ok(), controls, 0.95, powered)["verdict"] == "pass_to_reading"
-    weak = powered | {"b_excess": {"mde_unrounded": 0.0051}}
-    assert floor(shape_ok(), controls, 0.95, weak)["verdict"] == "insufficient_power"
+    assert floor(shape_ok(), CONTROLS_OK, (95, 100), POWERED)["verdict"] == "pass_to_reading"
+    weak = POWERED | {"b_excess": {"mde_unrounded": 0.0051}}
+    assert floor(shape_ok(), CONTROLS_OK, (95, 100), weak)["verdict"] == "insufficient_power"
     few = shape_ok() | {"clusters": 149}
-    assert floor(few, controls, 0.95, powered)["verdict"] == "insufficient_data"
-    assert floor(shape_ok(), controls, 0.95, powered | {"b_excess": None})["verdict"] == (
-        "insufficient_power"
-    )
+    assert floor(few, CONTROLS_OK, (95, 100), POWERED)["verdict"] == "insufficient_data"
+    no_b = POWERED | {"b_excess": None}
+    assert floor(shape_ok(), CONTROLS_OK, (95, 100), no_b)["verdict"] == "insufficient_power"
+
+
+def test_floor_compares_unrounded_fractions() -> None:
+    # 11,050 / 12,278 = 89.9984%, which rounds to 90% at four places
+    result = floor(shape_ok(), CONTROLS_OK, (11_050, 12_278), POWERED)
+    assert result["data"]["determinable"] is False
+    assert result["verdict"] == "insufficient_data"
+    almost = {"events": 12_278, "events_with_control": 9_822}  # 79.9967%
+    assert floor(shape_ok(), almost, (95, 100), POWERED)["data"]["control_share"] is False
+    over = shape_ok() | {"clusters": 12_278, "top5_symbol_clusters": 3_684}  # 30.0049%
+    assert floor(over, CONTROLS_OK, (95, 100), POWERED)["data"]["top5_symbols"] is False
+
+
+def test_no_controls_renders_not_estimable() -> None:
+    s = series()
+    inst = Instrument("AAAUSDT", s, s)
+    events = [imp("AAAUSDT", D, f="true")]
+    pairs: dict[tuple[str, int], list[Impulse]] = {events[0].key: []}
+    mdes = power({"AAAUSDT": inst}, events, pairs)
+    assert mdes["b_excess"] is None
+    controls = control_shape(events, pairs)
+    report = {
+        "funnel": {"first_true": 1},
+        "cells": {"event": shape(events)},
+        "controls": controls,
+        "power": mdes,
+        "floor": floor(shape(events), controls, (1, 1), mdes),
+        "fg_determinable_share": 1.0,
+    }
+    text = render_markdown(report)
+    assert "not estimable" in text
+    assert "insufficient_data" in text
 
 
 def test_main_refuses_another_snapshot() -> None:

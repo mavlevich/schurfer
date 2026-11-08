@@ -446,6 +446,7 @@ def shape(impulses: Sequence[Impulse]) -> dict[str, Any]:
         "clusters": n,
         "symbols": len(per_symbol),
         "iso_weeks": len(per_week),
+        "top5_symbol_clusters": top_symbols,
         "top5_symbol_share": round(top_symbols / n, 4) if n else None,
         "top5_week_share": round(top_weeks / n, 4) if n else None,
         "first_half_clusters": sum(1 for _, day in clusters if day < _day(SECOND_HALF_MS)),
@@ -463,6 +464,7 @@ def control_shape(
         return counts[min(len(counts) - 1, math.ceil(q * len(counts)) - 1)] if counts else None
 
     return {
+        "events": len(counts),
         "events_with_control": with_control,
         "share_with_control": round(with_control / len(counts), 4) if counts else None,
         "controls_per_event_median": pct(0.5),
@@ -472,19 +474,27 @@ def control_shape(
     }
 
 
+def _fraction(numerator: int, denominator: int, empty: float) -> float:
+    return numerator / denominator if denominator else empty
+
+
 def floor(
     events_shape: dict[str, Any],
     controls: dict[str, Any],
-    determinable_share: float | None,
+    determinable: tuple[int, int],
     mdes: dict[str, Any],
 ) -> dict[str, Any]:
+    """Compare unrounded fractions of the integer counts; rounding is for output only."""
+    clusters = events_shape["clusters"]
+    top5 = _fraction(events_shape["top5_symbol_clusters"], clusters, 1.0)
+    control = _fraction(controls["events_with_control"], controls["events"], 0.0)
     data = {
-        "clusters": events_shape["clusters"] >= FLOOR_CLUSTERS,
+        "clusters": clusters >= FLOOR_CLUSTERS,
         "symbols": events_shape["symbols"] >= FLOOR_SYMBOLS,
         "iso_weeks": events_shape["iso_weeks"] >= FLOOR_WEEKS,
-        "top5_symbols": (events_shape["top5_symbol_share"] or 1.0) <= TOP_SHARE_MAX,
-        "control_share": (controls["share_with_control"] or 0.0) >= CONTROL_SHARE_MIN,
-        "determinable": (determinable_share or 0.0) >= DETERMINABLE_MIN,
+        "top5_symbols": top5 <= TOP_SHARE_MAX,
+        "control_share": control >= CONTROL_SHARE_MIN,
+        "determinable": _fraction(*determinable, 0.0) >= DETERMINABLE_MIN,
     }
     powered = {
         leg: mdes[leg]["mde_unrounded"] <= MDE_MAX if mdes.get(leg) else False
@@ -537,7 +547,7 @@ def build(features: Features) -> tuple[dict[str, Any], dict[str, Any]]:
         "controls": controls,
         "events_by_iso_week": dict(sorted(Counter(_week(e.d) for e in events).items())),
         "power": mdes,
-        "floor": floor(events_shape, controls, determinable, mdes),
+        "floor": floor(events_shape, controls, (funnel["fg_determinable"], first_impulses), mdes),
     }
     frozen = {
         "version": VERSION,
@@ -562,6 +572,8 @@ def render_markdown(report: dict[str, Any]) -> str:
     controls = [(k, str(v)) for k, v in report["controls"].items()]
     power_rows = [
         (leg, str(v["units"]), str(v["scales_substituted"]), f"{v['mde_bps']:.2f}")
+        if v
+        else (leg, "0", "0", "not estimable")
         for leg, v in report["power"].items()
     ]
     verdict = report["floor"]
@@ -597,6 +609,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         raise SystemExit(f"the protocol pins the features snapshot {FEATURES_SHA256}")
     features = load_features(verified(args.features, args.features_sha256))
     report, frozen = build(features)
+    render_markdown(report)  # fail before anything is published, not after
     pairs_digest = publish_once(args.output_dir / "pairs.json", frozen)
     report |= {
         "pairs_sha256": pairs_digest,

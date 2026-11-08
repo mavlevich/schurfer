@@ -358,6 +358,11 @@ afterwards, deciding nothing) are what leave them unmatched.
 control share (61.2% against 80%) fails, and (b)'s MDE (61.5 against 50 bps) fails too.
 Verdict **`insufficient_data`**.
 
+After review, the floor compares unrounded fractions of the integer counts (the run
+compared four-place rounded shares) and a leg with no controls prints "not estimable"
+instead of failing after `pairs.json` and `counts.json` are written. Neither changes this
+verdict: no share in this run is within rounding of its threshold.
+
 **Decision (2026-11-08): HYP-033 v1 stops at `insufficient_data`,** by the rule fixed
 before the count: the trigger, the combination, the calipers, the horizon and the
 thresholds are not loosened, and the next family is B (spot against perpetual
