@@ -1,12 +1,10 @@
-# HYP-035: relative strength, long against BTC (protocol v1, draft)
+# HYP-035: relative strength, long against BTC (protocol v1)
 
-Status: **draft for the design touchpoint, 2026-11-08, revised the same day after the
-review (a dollar-neutral daily book closed every day, costs per long notional, equal
-day weights, power on daily portfolios over pre-formation segments, beta balance);
-nothing counted or read.** No
-formation return, rank, control or return after any decision has been computed for this
-question. It registers nothing until committed after review; any later change needs a
-dated amendment before the step it changes runs. It is family 6 of the
+Status: **stopped 2026-11-08 at steps 1 and 2 (`insufficient_balance`, and both
+legs above the MDE limit, below); no return after any decision was read.** Drafted for
+the design touchpoint and revised the same day after the review (a dollar-neutral daily
+book closed every day, costs per long notional, equal day weights, power on daily
+portfolios over pre-formation segments, beta balance). Any later change needs a dated amendment before the step it changes runs. It is family 6 of the
 [research strategy v2](research-strategy-v2.md) list ("relative strength"), next after
 [HYP-033](bybit-squeeze-continuation-v1.md) and HYP-034 (perpetual premium, PR #564)
 stopped at `insufficient_data`.
@@ -266,6 +264,60 @@ uv run --package schurfer-analytics bybit-relative-strength counts \
 ```
 
 It writes `counts.json`, `counts.md` and `pairs.json` once each and prints the verdict.
+
+## Steps 1 and 2 result (2026-11-08): stop
+
+`bybit-relative-strength counts` from 5ec0de2 (this branch, clean tree, before merge),
+2026-11-08, 39 s, on the verified features snapshot. `counts.json` SHA-256
+`df83f9647c5e76dfe4c94dd0b900876ea820d24c1a0e9d27263d99e64b121d0a`, `pairs.json`
+`9d514c8eacf1ad62fd9487184b60949961a3985d4cd81db52f8bf8aadb787d7b`. Nothing after any
+decision time was read for that decision; the only returns in the outputs are pre-t
+for their own decision (the 24 hours before t and the seven segments before each
+formation window). Across decisions that is not true: a segment of day t can cover an
+earlier day's hold of the same instrument (a leader 8 to 14 days before), and by the
+labels in `pairs.json` 2,652 of the 9,706 events have such a possible overlap. So hourly
+proxies of part of the holds entered the dispersion estimate, never a mean or a net.
+
+**Counts.** 349 decision days, cross-section median 267 (minimum 174), formation and
+scale defined for 97.8% of liquid instrument-days. 9,706 units on 592 symbols and 51
+weeks, 27 a day (median, minimum 17); top-5 symbols hold 3.3% of the weight; 65.8% of
+units were in the previous day's decile. 83.0% of events have a control (median 5, 10th
+percentile 0).
+
+**Balance** (weighted, deciding nothing except ln sd):
+
+| Pre-t covariate           | Events | Controls | SMD    |
+| ------------------------- | ------ | -------- | ------ |
+| ln sd (the gate, <= 0.10) | -4.036 | -4.080   | 0.132  |
+| Beta to BTC               | 1.54   | 1.78     | -0.354 |
+| 24 h return before t      | +5.7%  | -0.5%    | 0.567  |
+| ln turnover               | 16.82  | 16.69    | 0.090  |
+
+**Power** (daily portfolios, inflation 1.5, design effect 1.2):
+
+| Leg             | Days | Day sigma median | F     | MDE, bps | Without inflation, design effect and F |
+| --------------- | ---- | ---------------- | ----- | -------- | -------------------------------------- |
+| (a) net, hedged | 349  | 318 bps          | 1.163 | 88.7     | 50.0                                   |
+| (b) excess      | 349  | 245 bps          | 1.0   | 66.7     | 40.6                                   |
+
+**Floor:** every data item holds; the balance gate fails (0.132) and both legs are above
+50 bps. Verdict **`insufficient_balance`**, and the power items fail on their own. HYP-035
+v1 stops; nothing is loosened.
+
+**What it shows (decides nothing).** The median spread of a day's book of about 27
+leaders against BTC, estimated on the 24-hour segments before its formation window, is
+about 3.2% a day, and of their excess over same-day middle-rank coins about 2.4%. Under
+the protocol's assumptions (inflation 1.5, design effect 1.2, F) that puts the smallest
+detectable effect at about 67 to 89 bps a day, against 42 bps of daily costs. Even at no inflation and no design effect, (a) sits at the 50 bps
+limit. A daily relative-strength book is not testable on this window at this precision,
+whatever the control. Leaders carry a lower beta to BTC than their controls and a large
+last day (+5.7% against BTC), the reversal risk the diagnostics were to show.
+
+**For any later design (none is proposed here).** No minute-level trade return or net of
+this setup or its controls has been read; hourly proxies of part of the holds entered the
+dispersion estimate only (registry level `outcomes (dispersion only)`), and no mean of
+them was computed. A longer hold lowers daily costs but not
+the power per trade; only a longer window would, and the window is fixed by the program.
 
 ## Effort
 
