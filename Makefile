@@ -8,6 +8,7 @@
 .PHONY: cex-activity-path-coverage-audit-report prod-cex-activity-path-coverage-audit-report
 .PHONY: cex-activity-discovery-report radar-outcome-discovery-report prod-radar-outcome-discovery-report
 .PHONY: prod-disk-growth-install prod-disk-growth-run prod-disk-growth-health prod-disk-growth-budget
+.PHONY: prod-collector-start prod-collector-stop prod-market-hotset-start prod-market-hotset-stop prod-lsr-subscriber-start prod-lsr-subscriber-stop prod-outcome-resolver-start prod-outcome-resolver-stop
 .PHONY: prod-hyp015-watch-export prod-hyp015-archive prod-hyp015-verify prod-hyp015-snapshot-set prod-hyp015-verify-set prod-hyp015-restore-check prod-hyp015-formal-read prod-hyp015-formal-republish
 .PHONY: prod-history-lsr-export prod-history-lsr-archive prod-history-lsr-verify prod-history-lsr-fetch prod-history-lsr-deletion-dry-run
 .PHONY: liquidation-capture-bybit-start liquidation-capture-bybit-stop liquidation-capture-bybit-health liquidation-capture-binance-start liquidation-capture-binance-stop liquidation-capture-binance-health
@@ -2994,3 +2995,48 @@ prod-long-short-ratio-regime-report:
 		$$(test -z "$$(git status --porcelain)" \
 			&& printf '%s' '--no-working-tree-dirty' \
 			|| printf '%s' '--working-tree-dirty') $(ARGS)
+
+# Maintenance-mode services behind compose profiles (docs/engineering/
+# maintenance-inventory-2026-11-09.md). `prod-deploy` leaves them as they are; these
+# targets start or stop one by name. Start brings up its non-profiled dependencies
+# (nats, redis, postgres) as compose's depends_on requires.
+_PROD_PROFILED_START = \
+	test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1); \
+	test "$$(git branch --show-current)" = "main" || (echo "ERROR: deploy only from main." && exit 1); \
+	test -z "$$(git status --porcelain)" || (echo "ERROR: working tree not clean." && exit 1)
+
+prod-collector-start:
+	@$(_PROD_PROFILED_START)
+	$(_PROD) --profile collector up -d --build collector
+	@$(_PROD) --profile collector ps collector
+
+prod-collector-stop:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	$(_PROD) --profile collector stop collector
+
+prod-market-hotset-start:
+	@$(_PROD_PROFILED_START)
+	$(_PROD) --profile market-hotset up -d --build market-hotset
+	@$(_PROD) --profile market-hotset ps market-hotset
+
+prod-market-hotset-stop:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	$(_PROD) --profile market-hotset stop market-hotset
+
+prod-lsr-subscriber-start:
+	@$(_PROD_PROFILED_START)
+	$(_PROD) --profile lsr-subscriber up -d --build lsr-subscriber
+	@$(_PROD) --profile lsr-subscriber ps lsr-subscriber
+
+prod-lsr-subscriber-stop:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	$(_PROD) --profile lsr-subscriber stop lsr-subscriber
+
+prod-outcome-resolver-start:
+	@$(_PROD_PROFILED_START)
+	$(_PROD) --profile outcome-resolver up -d --build outcome-resolver
+	@$(_PROD) --profile outcome-resolver ps outcome-resolver
+
+prod-outcome-resolver-stop:
+	@test -f .env.prod || (echo "ERROR: .env.prod not found." && exit 1)
+	$(_PROD) --profile outcome-resolver stop outcome-resolver
