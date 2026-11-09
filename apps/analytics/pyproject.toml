@@ -64,6 +64,7 @@ bybit-absorbed-buying-match-check = "schurfer_analytics.bybit_absorbed_buying_ma
 bybit-next-candidate-feasibility = "schurfer_analytics.bybit_next_candidate_feasibility:main"
 bybit-liquid-top10-pilot = "schurfer_analytics.bybit_liquid_top10_pilot:main"
 bybit-premium-dislocation = "schurfer_analytics.bybit_premium_dislocation:main"
+bybit-relative-strength = "schurfer_analytics.bybit_relative_strength:main"
 source-lead-identity-report = "schurfer_analytics.source_lead_identity_report:main"
 gate-identity-candidate-tooling = "schurfer_analytics.gate_identity_candidate_tooling:main"
 source-lead-identity-evidence = "schurfer_analytics.source_lead_identity_evidence:main"
