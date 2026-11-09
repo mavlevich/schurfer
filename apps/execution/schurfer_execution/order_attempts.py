@@ -103,6 +103,9 @@ SELECT
 FROM app.live_order_attempts AS a
 LEFT JOIN app.trades AS t ON t.id = a.trade_id
 WHERE a.operation = 'close'
+  -- An emergency close task owns its close rows (emergency_close.py); the
+  -- monitor must not reclassify or finalize them outside the task's lock.
+  AND a.task_id IS NULL
   AND (
       a.status IN ('pending', 'accepted', 'submission_unknown')
       OR (a.status = 'completed' AND t.status = 'open')

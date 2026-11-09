@@ -7,6 +7,7 @@ import pytest
 from schurfer_execution import journal
 from schurfer_performance import (
     LEGACY_ACCOUNTING_VERSION,
+    LIVE_EXCHANGE_COSTS_ACCOUNTING_VERSION,
     PAPER_ACCOUNTING_VERSION,
 )
 
@@ -135,7 +136,7 @@ def test_paper_accounting_contract_zeroes_entry_slippage_when_price_already_incl
     assert exit_bps == 3.5
 
 
-def test_real_trade_keeps_legacy_accounting_until_fill_reconciliation_exists() -> None:
+def test_real_trade_opens_awaiting_its_exchange_costs() -> None:
     version, status, _entry_bps, _exit_bps = journal.accounting_contract(
         {
             "paper": False,
@@ -146,8 +147,8 @@ def test_real_trade_keeps_legacy_accounting_until_fill_reconciliation_exists() -
         }
     )
 
-    assert version == LEGACY_ACCOUNTING_VERSION
-    assert status == "legacy"
+    assert version == LIVE_EXCHANGE_COSTS_ACCOUNTING_VERSION
+    assert status == "pending"
 
 
 async def test_close_trade_loads_entry_price_and_side_from_db() -> None:
@@ -223,6 +224,43 @@ async def test_close_paper_trade_persists_versioned_net_accounting() -> None:
     assert params[15] is None
     assert outcome.net_pnl_pct == pytest.approx(9.7112)
     assert outcome.accounting_status == "complete"
+
+
+async def test_close_live_trade_writes_an_estimate_and_stays_pending() -> None:
+    """A live trade's costs come from the exchange later (cost_worker.py). At close
+    the paper model's fees and funding are shown, deducted from pnl_usd as an
+    estimate, and the trade stays `pending`, which blocks entries; no net yet."""
+    entry_at = datetime(2026, 7, 28, 12, tzinfo=UTC)
+    conn, cur = _mock_conn(
+        [
+            _trade_row(
+                accounting_version=LIVE_EXCHANGE_COSTS_ACCOUNTING_VERSION,
+                entry_at=entry_at,
+            ),
+            (1,),
+        ]
+    )
+
+    with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
+        outcome = await journal.close_trade(
+            "postgresql://x",
+            trade_id=1,
+            exit_order_id="ord-1",
+            exit_price=90.0,
+            reason="test",
+            executed_at=entry_at + timedelta(hours=3),
+        )
+
+    assert outcome.committed is True
+    params = cur.execute.call_args_list[1].args[1]
+    assert params[3] == 10.0  # gross, short 100 -> 90 on $100
+    assert params[5] is None  # no net until the exchange costs settle
+    assert params[7] == pytest.approx(0.2)  # estimated fees
+    assert params[8] == pytest.approx(0.0187, abs=1e-4)  # estimated funding
+    assert params[9] is None  # slippage is inside the fill prices
+    assert params[11] == pytest.approx(10.0 - params[7] - params[8])
+    assert params[14] == "pending"
+    assert outcome.accounting_status == "pending"
 
 
 async def test_close_trade_does_not_double_count_impact_already_inside_vwap_prices() -> None:
@@ -569,33 +607,15 @@ async def test_record_exit_liquidity_failure_is_non_throwing() -> None:
     assert recorded is False
 
 
-async def test_realized_pnl_today_returns_summed_value() -> None:
-    conn, cur = _mock_conn([(42.5,)])
-
-    with patch("psycopg.AsyncConnection.connect", AsyncMock(return_value=conn)):
-        result = await journal.realized_pnl_today("postgresql://x")
-
-    assert result == 42.5
-    query, params = cur.execute.call_args_list[0].args
-    assert "app.trades" in query
-    assert "paper" in query  # excludes paper trades
-    start_of_day = params[0]
-    assert isinstance(start_of_day, datetime)
-    now = datetime.now(tz=UTC)
-    assert start_of_day.date() == now.date()
-    assert start_of_day.hour == 0 and start_of_day.minute == 0
-
-
-async def test_realized_pnl_today_returns_none_on_db_error() -> None:
+async def test_pnl_snapshot_returns_none_on_db_error() -> None:
     """Regression: a DB error must be distinguishable from '$0 realized today' —
     returning 0.0 here would let a transient outage silently reset the daily
     loss circuit breaker."""
     with patch(
         "psycopg.AsyncConnection.connect", AsyncMock(side_effect=Exception("connection refused"))
     ):
-        result = await journal.realized_pnl_today("postgresql://x")
-
-    assert result is None
+        assert await journal.pnl_snapshot("postgresql://x") is None
+        assert await journal.pnl_generation("postgresql://x") is None
 
 
 async def test_find_open_trade_id_returns_matching_row() -> None:
@@ -864,7 +884,7 @@ class TestAnyPendingCloses:
 
 @patch("psycopg.AsyncConnection.connect")
 async def test_record_close_fill_returns_amount_weighted_aggregate(mock_connect) -> None:
-    conn, cur = _mock_conn([(101,), (107.5, 4.0)])
+    conn, cur = _mock_conn([("open",), (101,), (107.5, 4.0)])
     mock_connect.return_value = conn
 
     aggregate = await journal.record_close_fill(
@@ -881,7 +901,8 @@ async def test_record_close_fill_returns_amount_weighted_aggregate(mock_connect)
     )
 
     assert aggregate == 107.5
-    insert_params = cur.execute.call_args_list[0].args[1]
+    assert "FOR NO KEY UPDATE" in cur.execute.call_args_list[0].args[0]
+    insert_params = cur.execute.call_args_list[1].args[1]
     assert insert_params[:3] == (42, "bingx", "close-2")
     assert insert_params[3:7] == (110.0, 3.0, 3.0, 0.0)
 
@@ -890,6 +911,7 @@ async def test_record_close_fill_returns_amount_weighted_aggregate(mock_connect)
 async def test_record_close_fill_retry_is_idempotent(mock_connect) -> None:
     conn, _cur = _mock_conn(
         [
+            ("open",),
             None,
             (42, 100.0, 1.0, 4.0, 3.0, False, None, None),
             (100.0, 1.0),
@@ -918,6 +940,7 @@ async def test_record_close_fill_retry_enriches_missing_execution_time(mock_conn
     executed_at = datetime(2026, 9, 9, 23, 58, tzinfo=UTC)
     conn, cur = _mock_conn(
         [
+            ("open",),
             None,
             (42, 100.0, 1.0, 4.0, 3.0, False, None, None),
             (100.0, 1.0),
@@ -941,7 +964,7 @@ async def test_record_close_fill_retry_enriches_missing_execution_time(mock_conn
     )
 
     assert aggregate == 100.0
-    enrichment = cur.execute.call_args_list[2]
+    enrichment = cur.execute.call_args_list[3]
     assert "executed_at IS NULL" in enrichment.args[0]
     assert enrichment.args[1] == (
         executed_at,
@@ -952,8 +975,54 @@ async def test_record_close_fill_retry_enriches_missing_execution_time(mock_conn
 
 
 @patch("psycopg.AsyncConnection.connect")
+async def test_record_close_fill_refuses_a_new_leg_of_a_closed_trade(mock_connect) -> None:
+    conn, cur = _mock_conn([("closed",), None])
+    mock_connect.return_value = conn
+
+    aggregate = await journal.record_close_fill(
+        "postgresql://x",
+        trade_id=42,
+        exchange="bingx",
+        order_id="late-1",
+        fill_price=100.0,
+        filled_amount=1.0,
+        requested_amount=1.0,
+        remaining_amount=0.0,
+        terminal=False,
+        fill_source="order.average",
+    )
+
+    assert aggregate is None
+    assert not any("INSERT" in call.args[0] for call in cur.execute.call_args_list)
+
+
+@patch("psycopg.AsyncConnection.connect")
+async def test_record_close_fill_retry_on_a_closed_trade_is_idempotent(mock_connect) -> None:
+    conn, cur = _mock_conn(
+        [("closed",), (42, 100.0, 1.0, 1.0, 0.0, True, None, None), (100.0, 1.0)]
+    )
+    mock_connect.return_value = conn
+
+    aggregate = await journal.record_close_fill(
+        "postgresql://x",
+        trade_id=42,
+        exchange="bingx",
+        order_id="close-1",
+        fill_price=100.0,
+        filled_amount=1.0,
+        requested_amount=1.0,
+        remaining_amount=0.0,
+        terminal=True,
+        fill_source="order.average",
+    )
+
+    assert aggregate == 100.0
+    assert not any("INSERT" in call.args[0] for call in cur.execute.call_args_list)
+
+
+@patch("psycopg.AsyncConnection.connect")
 async def test_record_close_fill_rejects_conflicting_retry(mock_connect) -> None:
-    conn, _cur = _mock_conn([None, (42, 99.0, 1.0, 4.0, 3.0, False, None, None)])
+    conn, _cur = _mock_conn([("open",), None, (42, 99.0, 1.0, 4.0, 3.0, False, None, None)])
     mock_connect.return_value = conn
 
     aggregate = await journal.record_close_fill(

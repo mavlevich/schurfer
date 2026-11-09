@@ -6,7 +6,7 @@ import pytest
 from schurfer_execution import order_lock as order_lock_module
 from schurfer_execution.order_lock import OrderLockLease, OrderLockLostError
 from schurfer_execution.orders import place_order
-from schurfer_execution.risk import PNL_READY_KEY, TRADING_ENABLED_KEY
+from schurfer_execution.risk import PNL_READY_KEY, TRADING_ENABLED_KEY, encode_pnl_lease
 from schurfer_execution.supervisor import WorkerReadinessGate
 
 
@@ -43,7 +43,9 @@ class _LeaseRedis:
         return True
 
     async def get(self, key: str) -> bytes | None:
-        if key in {TRADING_ENABLED_KEY, PNL_READY_KEY}:
+        if key == PNL_READY_KEY:
+            return encode_pnl_lease(generation=None, daily_pnl=0.0).encode()
+        if key == TRADING_ENABLED_KEY:
             return b"1"
         value = self.value(key)
         return value.encode() if value is not None else None

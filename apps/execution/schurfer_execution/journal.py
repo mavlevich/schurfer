@@ -11,13 +11,13 @@ import psycopg
 import structlog
 from psycopg.rows import dict_row
 from schurfer_performance import (
-    LEGACY_ACCOUNTING_VERSION,
+    LIVE_EXCHANGE_COSTS_ACCOUNTING_VERSION,
     PAPER_ACCOUNTING_VERSION,
     calculate_performance,
 )
 
 from . import exit as exit_module
-from . import liquidity
+from . import incidents, liquidity
 from .risk import PNL_READY_KEY
 
 log = structlog.get_logger()
@@ -185,6 +185,12 @@ ON CONFLICT (exchange, order_id) DO NOTHING
 RETURNING id
 """
 
+# Every writer of a trade's close legs holds the trade row until it commits: legs and
+# the final close of one trade are serialized, and a closed trade takes no new leg.
+# Leave FK key-share lookups unblocked: recovery may hold the entry attempt while
+# linking it to this trade, and accounting links that attempt after closing the trade.
+_LOCK_TRADE_FOR_LEGS = "SELECT status FROM app.trades WHERE id = %s FOR NO KEY UPDATE"
+
 _SELECT_CLOSE_FILL = """
 SELECT trade_id, fill_price, filled_amount, requested_amount, remaining_amount, terminal,
        executed_at, execution_time_source
@@ -240,6 +246,19 @@ SELECT
     ), 0)
 """
 
+# A closed live trade whose fees and funding are not settled from the exchange:
+# its pnl_usd is an estimate, so entries wait (cost_worker.py).
+_ANY_UNSETTLED_LIVE_COSTS = """
+SELECT 1
+FROM app.trades
+WHERE status = 'closed'
+  AND accounting_version = %s
+  AND accounting_status IN ('pending', 'incomplete')
+LIMIT 1
+"""
+
+_PNL_GENERATION = "SELECT value FROM app.pnl_generation WHERE id = 1"
+
 _REALIZED_PNL_TODAY = """
 SELECT COALESCE(SUM(pnl_usd), 0)
 FROM app.trades
@@ -281,6 +300,11 @@ def accounting_contract(
     slippage_bps term in calculate_performance). entry_slippage_bps is then
     a known 0.0 -- not a missing reading, so accounting still reaches
     "complete".
+
+    A non-paper trade opens as ``live_exchange_costs_v1`` / ``pending``: its fees and
+    funding come from the exchange's executions once it closes (cost_worker.py), and
+    until then it blocks entries (docs/engineering/live-net-accounting-design-v1.md,
+    section 5). Live trades journalled before that stay ``legacy``.
     """
     quality = setup_context.get("market_quality")
     quality_data = quality if isinstance(quality, dict) else {}
@@ -299,8 +323,8 @@ def accounting_contract(
             exit_slippage_bps,
         )
     return (
-        LEGACY_ACCOUNTING_VERSION,
-        "legacy",
+        LIVE_EXCHANGE_COSTS_ACCOUNTING_VERSION,
+        "pending",
         entry_slippage_bps,
         exit_slippage_bps,
     )
@@ -435,94 +459,20 @@ async def record_close_fill(
             await psycopg.AsyncConnection.connect(db_url) as aconn,
             aconn.cursor() as cur,
         ):
-            await cur.execute(
-                _INSERT_CLOSE_FILL,
-                (
-                    trade_id,
-                    exchange,
-                    order_id,
-                    fill_price,
-                    filled_amount,
-                    requested_amount,
-                    remaining_amount,
-                    terminal,
-                    fill_source,
-                    executed_at,
-                    execution_time_source,
-                ),
+            return await record_close_fill_in(
+                cur,
+                trade_id=trade_id,
+                exchange=exchange,
+                order_id=order_id,
+                fill_price=fill_price,
+                filled_amount=filled_amount,
+                requested_amount=requested_amount,
+                remaining_amount=remaining_amount,
+                terminal=terminal,
+                fill_source=fill_source,
+                executed_at=executed_at,
+                execution_time_source=execution_time_source,
             )
-            inserted = await cur.fetchone()
-            if inserted is None:
-                await cur.execute(_SELECT_CLOSE_FILL, (exchange, order_id))
-                existing = await cur.fetchone()
-                if existing is None:
-                    return None
-                (
-                    existing_trade_id,
-                    existing_price,
-                    existing_filled,
-                    existing_requested,
-                    existing_remaining,
-                    existing_terminal,
-                    existing_executed_at,
-                    _existing_time_source,
-                ) = existing
-                expected = (
-                    trade_id,
-                    fill_price,
-                    filled_amount,
-                    requested_amount,
-                    remaining_amount,
-                    terminal,
-                )
-                observed = (
-                    int(existing_trade_id),
-                    float(existing_price),
-                    float(existing_filled),
-                    float(existing_requested),
-                    float(existing_remaining),
-                    bool(existing_terminal),
-                )
-                numeric_match = all(
-                    math.isclose(float(left), float(right), rel_tol=1e-9, abs_tol=1e-12)
-                    for left, right in zip(observed[1:5], expected[1:5], strict=True)
-                )
-                if observed[0] != expected[0] or observed[5] != expected[5] or not numeric_match:
-                    log.critical(
-                        "journal.record_close_fill.idempotency_conflict",
-                        trade_id=trade_id,
-                        exchange=exchange,
-                        order_id=order_id,
-                    )
-                    return None
-                if (
-                    existing_executed_at is not None
-                    and executed_at is not None
-                    and (existing_executed_at != executed_at)
-                ):
-                    log.critical(
-                        "journal.record_close_fill.execution_time_conflict",
-                        trade_id=trade_id,
-                        exchange=exchange,
-                        order_id=order_id,
-                    )
-                    return None
-                if existing_executed_at is None and executed_at is not None:
-                    # A crash may leave the append-only leg committed before
-                    # the caller closes the trade.  Recovery can then obtain
-                    # stronger timestamp evidence from a refetched terminal
-                    # order.  Enrich missing metadata only; never rewrite an
-                    # already recorded exchange time.
-                    await cur.execute(
-                        _ENRICH_CLOSE_FILL_EXECUTION_TIME,
-                        (executed_at, execution_time_source, exchange, order_id),
-                    )
-
-            await cur.execute(_AGGREGATE_CLOSE_FILLS, (trade_id,))
-            aggregate = await cur.fetchone()
-            if aggregate is None or aggregate[0] is None:
-                return None
-            return float(aggregate[0])
     except Exception as exc:
         log.error(
             "journal.record_close_fill.failed",
@@ -534,20 +484,152 @@ async def record_close_fill(
         return None
 
 
-async def any_open_trade_close_fills(db_url: str) -> bool:
-    """Whether realized partial PnL is waiting for the terminal close.
+async def record_close_fill_in(
+    cur: psycopg.AsyncCursor[Any],
+    *,
+    trade_id: int,
+    exchange: str,
+    order_id: str,
+    fill_price: float,
+    filled_amount: float,
+    requested_amount: float,
+    remaining_amount: float,
+    terminal: bool,
+    fill_source: str,
+    executed_at: datetime | None = None,
+    execution_time_source: str | None = None,
+) -> float | None:
+    """record_close_fill on the caller's cursor, inside the caller's transaction."""
+    if min(fill_price, filled_amount, requested_amount) <= 0 or remaining_amount < 0:
+        log.error(
+            "journal.record_close_fill.invalid",
+            trade_id=trade_id,
+            exchange=exchange,
+            order_id=order_id,
+        )
+        return None
+    status = await lock_trade_for_legs_in(cur, trade_id)
+    if status is None:
+        log.error("journal.record_close_fill.trade_not_found", trade_id=trade_id)
+        return None
+    inserted = None
+    if status != "closed":
+        await cur.execute(
+            _INSERT_CLOSE_FILL,
+            (
+                trade_id,
+                exchange,
+                order_id,
+                fill_price,
+                filled_amount,
+                requested_amount,
+                remaining_amount,
+                terminal,
+                fill_source,
+                executed_at,
+                execution_time_source,
+            ),
+        )
+        inserted = await cur.fetchone()
+    if inserted is None:
+        await cur.execute(_SELECT_CLOSE_FILL, (exchange, order_id))
+        existing = await cur.fetchone()
+        if existing is None:
+            if status == "closed":
+                log.critical(
+                    "journal.record_close_fill.trade_closed",
+                    trade_id=trade_id,
+                    exchange=exchange,
+                    order_id=order_id,
+                )
+            return None
+        (
+            existing_trade_id,
+            existing_price,
+            existing_filled,
+            existing_requested,
+            existing_remaining,
+            existing_terminal,
+            existing_executed_at,
+            _existing_time_source,
+        ) = existing
+        expected = (
+            trade_id,
+            fill_price,
+            filled_amount,
+            requested_amount,
+            remaining_amount,
+            terminal,
+        )
+        observed = (
+            int(existing_trade_id),
+            float(existing_price),
+            float(existing_filled),
+            float(existing_requested),
+            float(existing_remaining),
+            bool(existing_terminal),
+        )
+        numeric_match = all(
+            math.isclose(float(left), float(right), rel_tol=1e-9, abs_tol=1e-12)
+            for left, right in zip(observed[1:5], expected[1:5], strict=True)
+        )
+        if observed[0] != expected[0] or observed[5] != expected[5] or not numeric_match:
+            log.critical(
+                "journal.record_close_fill.idempotency_conflict",
+                trade_id=trade_id,
+                exchange=exchange,
+                order_id=order_id,
+            )
+            return None
+        if (
+            existing_executed_at is not None
+            and executed_at is not None
+            and (existing_executed_at != executed_at)
+        ):
+            log.critical(
+                "journal.record_close_fill.execution_time_conflict",
+                trade_id=trade_id,
+                exchange=exchange,
+                order_id=order_id,
+            )
+            return None
+        if existing_executed_at is None and executed_at is not None:
+            # A crash may leave the append-only leg committed before
+            # the caller closes the trade.  Recovery can then obtain
+            # stronger timestamp evidence from a refetched terminal
+            # order.  Enrich missing metadata only; never rewrite an
+            # already recorded exchange time.
+            await cur.execute(
+                _ENRICH_CLOSE_FILL_EXECUTION_TIME,
+                (executed_at, execution_time_source, exchange, order_id),
+            )
 
-    Until the trade is closed with the aggregate VWAP, the ordinary daily-PnL
-    query cannot include those realized legs.  Keeping the readiness lease
-    revoked prevents new entries from being admitted against understated PnL.
-    """
-    try:
-        async with await psycopg.AsyncConnection.connect(db_url) as aconn, aconn.cursor() as cur:
-            await cur.execute(_ANY_OPEN_TRADE_CLOSE_FILLS)
-            return await cur.fetchone() is not None
-    except Exception as exc:
-        log.error("journal.open_trade_close_fills_check_failed", err=str(exc))
-        return True
+    await cur.execute(_AGGREGATE_CLOSE_FILLS, (trade_id,))
+    aggregate = await cur.fetchone()
+    if aggregate is None or aggregate[0] is None:
+        return None
+    return float(aggregate[0])
+
+
+async def lock_trade_for_legs_in(cur: psycopg.AsyncCursor[Any], trade_id: int) -> str | None:
+    """Hold the trade row for the rest of the caller's transaction, the lock every
+    close leg writer takes. Returns the trade's status, or None when it is missing."""
+    await cur.execute(_LOCK_TRADE_FOR_LEGS, (trade_id,))
+    row = await cur.fetchone()
+    if row is None:
+        return None
+    return str(row[0])
+
+
+async def aggregate_close_fill_price_in(
+    cur: psycopg.AsyncCursor[Any], trade_id: int
+) -> float | None:
+    """The trade's amount-weighted exit price over its journalled legs."""
+    await cur.execute(_AGGREGATE_CLOSE_FILLS, (trade_id,))
+    row = await cur.fetchone()
+    if row is None or row[0] is None:
+        return None
+    return float(row[0])
 
 
 async def aggregate_close_fill_price(db_url: str, *, trade_id: int) -> float | None:
@@ -614,102 +696,130 @@ async def open_trade(
 ) -> int | None:
     if side not in ("long", "short"):
         raise ValueError(f"invalid side: {side}")
-    strategy_name, strategy_version = strategy_identity(setup_context)
+    strategy_identity(setup_context)
     try:
-        (
-            accounting_version,
-            accounting_status,
-            entry_slippage_bps,
-            exit_slippage_bps,
-        ) = accounting_contract(setup_context, side=side)
-        stored_context = {
-            **setup_context,
-            "accounting_version": accounting_version,
-        }
         aconn = await psycopg.AsyncConnection.connect(db_url)
-
         async with aconn, aconn.cursor() as cur:
-            await cur.execute(
-                _UPSERT_STRATEGY,
-                (strategy_name, strategy_version, f"Auto-registered strategy: {strategy_name}"),
+            return await open_trade_in(
+                cur,
+                symbol=symbol,
+                exchange=exchange,
+                side=side,
+                order_id=order_id,
+                size_usd=size_usd,
+                leverage=leverage,
+                entry_price=entry_price,
+                setup_context=setup_context,
+                entry_at=entry_at,
             )
-            row = await cur.fetchone()
-            if row is None:
-                return None
-            strategy_id = row[0]
-
-            await cur.execute(
-                _INSERT_TRADE,
-                (
-                    strategy_id,
-                    symbol,
-                    exchange,
-                    side,
-                    order_id,
-                    size_usd,
-                    leverage,
-                    entry_price,
-                    entry_at or datetime.now(tz=UTC),
-                    entry_slippage_bps,
-                    exit_slippage_bps,
-                    accounting_version,
-                    accounting_status,
-                    json.dumps(stored_context),
-                ),
-            )
-            row = await cur.fetchone()
-            if row is not None:
-                return int(row[0])
-            if order_id is None:
-                # DO NOTHING only fires via the partial unique index, which
-                # never matches a NULL entry_order_id -- a NULL row getting
-                # no RETURNING row back is some other, unexpected failure.
-                return None
-            # ON CONFLICT (exchange, entry_order_id) DO NOTHING fired: this
-            # exact exchange order was already journaled by a previous call
-            # (a crash-recovery retry, incident_worker re-processing) --
-            # idempotent by design, so look the existing row up instead of
-            # creating a second one for the same real position (colleague
-            # review).
-            await cur.execute(_SELECT_TRADE_BY_ORDER, (exchange, order_id))
-            existing = await cur.fetchone()
-            if existing is None:
-                # The conflicting row must exist (that's what DO NOTHING
-                # just fired against) -- a concurrent transaction inserted
-                # then rolled back between our INSERT and this SELECT is
-                # the only way this branch is reachable, vanishingly rare.
-                log.error(
-                    "journal.open_trade.conflict_row_vanished",
-                    symbol=symbol,
-                    exchange=exchange,
-                    order_id=order_id,
-                )
-                return None
-            existing_id, existing_symbol, existing_side, existing_strategy_id = existing
-            mismatched = (
-                existing_symbol != symbol
-                or existing_side != side
-                or existing_strategy_id != strategy_id
-            )
-            if mismatched:
-                # A genuine (exchange, order_id) collision that is NOT the
-                # same attempt at the same trade -- returning it anyway
-                # would silently attach this open to the wrong row. Fail
-                # loud instead; this needs a human, not a guess.
-                log.critical(
-                    "journal.open_trade.conflict_mismatch",
-                    symbol=symbol,
-                    exchange=exchange,
-                    order_id=order_id,
-                    existing_trade_id=existing_id,
-                    existing_symbol=existing_symbol,
-                    existing_side=existing_side,
-                )
-                return None
-            return int(existing_id)
     except Exception as exc:
         log.error("journal.open_trade.failed", symbol=symbol, exchange=exchange, err=str(exc))
         return None
+
+
+async def open_trade_in(
+    cur: psycopg.AsyncCursor[Any],
+    *,
+    symbol: str,
+    exchange: str,
+    side: str,
+    order_id: str | None,
+    size_usd: float,
+    leverage: int,
+    entry_price: float,
+    setup_context: dict[str, Any],
+    entry_at: datetime | None = None,
+) -> int | None:
+    """open_trade on the caller's cursor, inside the caller's transaction."""
+    if side not in ("long", "short"):
+        raise ValueError(f"invalid side: {side}")
+    strategy_name, strategy_version = strategy_identity(setup_context)
+    (
+        accounting_version,
+        accounting_status,
+        entry_slippage_bps,
+        exit_slippage_bps,
+    ) = accounting_contract(setup_context, side=side)
+    stored_context = {
+        **setup_context,
+        "accounting_version": accounting_version,
+    }
+    await cur.execute(
+        _UPSERT_STRATEGY,
+        (strategy_name, strategy_version, f"Auto-registered strategy: {strategy_name}"),
+    )
+    row = await cur.fetchone()
+    if row is None:
+        return None
+    strategy_id = row[0]
+
+    await cur.execute(
+        _INSERT_TRADE,
+        (
+            strategy_id,
+            symbol,
+            exchange,
+            side,
+            order_id,
+            size_usd,
+            leverage,
+            entry_price,
+            entry_at or datetime.now(tz=UTC),
+            entry_slippage_bps,
+            exit_slippage_bps,
+            accounting_version,
+            accounting_status,
+            json.dumps(stored_context),
+        ),
+    )
+    row = await cur.fetchone()
+    if row is not None:
+        return int(row[0])
+    if order_id is None:
+        # DO NOTHING only fires via the partial unique index, which
+        # never matches a NULL entry_order_id -- a NULL row getting
+        # no RETURNING row back is some other, unexpected failure.
+        return None
+    # ON CONFLICT (exchange, entry_order_id) DO NOTHING fired: this
+    # exact exchange order was already journaled by a previous call
+    # (a crash-recovery retry, incident_worker re-processing) --
+    # idempotent by design, so look the existing row up instead of
+    # creating a second one for the same real position (colleague
+    # review).
+    await cur.execute(_SELECT_TRADE_BY_ORDER, (exchange, order_id))
+    existing = await cur.fetchone()
+    if existing is None:
+        # The conflicting row must exist (that's what DO NOTHING
+        # just fired against) -- a concurrent transaction inserted
+        # then rolled back between our INSERT and this SELECT is
+        # the only way this branch is reachable, vanishingly rare.
+        log.error(
+            "journal.open_trade.conflict_row_vanished",
+            symbol=symbol,
+            exchange=exchange,
+            order_id=order_id,
+        )
+        return None
+    existing_id, existing_symbol, existing_side, existing_strategy_id = existing
+    mismatched = (
+        existing_symbol != symbol or existing_side != side or existing_strategy_id != strategy_id
+    )
+    if mismatched:
+        # A genuine (exchange, order_id) collision that is NOT the
+        # same attempt at the same trade -- returning it anyway
+        # would silently attach this open to the wrong row. Fail
+        # loud instead; this needs a human, not a guess.
+        log.critical(
+            "journal.open_trade.conflict_mismatch",
+            symbol=symbol,
+            exchange=exchange,
+            order_id=order_id,
+            existing_trade_id=existing_id,
+            existing_symbol=existing_symbol,
+            existing_side=existing_side,
+        )
+        return None
+    return int(existing_id)
 
 
 async def complete_open(
@@ -1155,174 +1265,215 @@ async def close_trade(
     try:
         aconn = await psycopg.AsyncConnection.connect(db_url)
         async with aconn, aconn.cursor() as cur:
-            await cur.execute(_SELECT_TRADE_FOR_CLOSE, (trade_id,))
-            row = await cur.fetchone()
-            if row is None:
-                log.error("journal.close_trade.trade_not_found", trade_id=trade_id)
-                return CloseOutcome(committed=False)
-            (
-                size_usd_raw,
-                entry_price_raw,
-                side,
-                status,
-                entry_at,
-                entry_slippage_raw,
-                accounting_version,
-                saved_gross_pnl_usd,
-                saved_gross_pnl_pct,
-                saved_net_pnl_usd,
-                saved_net_pnl_pct,
-                saved_fees_usd,
-                saved_funding_usd,
-                saved_slippage_usd,
-                saved_accounting_status,
-            ) = row
-            size_usd = float(size_usd_raw)
-            entry_price = float(entry_price_raw)
-            if status == "closed":
-                # Idempotent retry: an earlier attempt's transaction actually
-                # committed server-side even though we (or a prior caller)
-                # never got the ack. Treat as success without touching the
-                # row again — re-running the UPDATE would overwrite exit_at
-                # with this retry's timestamp and could shift the trade into
-                # a different UTC day for realized_pnl_today() purposes.
-                # Return the row's own saved accounting verbatim (never
-                # recomputed against this retry's exit_price, which may be a
-                # later, different ticker read) so a caller can still report
-                # the close accurately — newly_closed=False only means "not
-                # freshly closed by this call," not "already notified."
-                log.info("journal.close_trade.already_closed", trade_id=trade_id)
-                return CloseOutcome(
-                    committed=True,
-                    newly_closed=False,
-                    gross_pnl_usd=(
-                        float(saved_gross_pnl_usd) if saved_gross_pnl_usd is not None else None
-                    ),
-                    gross_pnl_pct=(
-                        float(saved_gross_pnl_pct) if saved_gross_pnl_pct is not None else None
-                    ),
-                    net_pnl_usd=float(saved_net_pnl_usd) if saved_net_pnl_usd is not None else None,
-                    net_pnl_pct=float(saved_net_pnl_pct) if saved_net_pnl_pct is not None else None,
-                    fees_usd=float(saved_fees_usd) if saved_fees_usd is not None else None,
-                    funding_usd=float(saved_funding_usd) if saved_funding_usd is not None else None,
-                    slippage_usd=(
-                        float(saved_slippage_usd) if saved_slippage_usd is not None else None
-                    ),
-                    accounting_status=saved_accounting_status,
-                )
-
-            closed_at = executed_at or datetime.now(tz=UTC)
-            if executed_at is None:
-                log.warning(
-                    "journal.close_trade.execution_time_missing",
-                    trade_id=trade_id,
-                    fallback="journal_observed_at",
-                )
-            if accounting_version == PAPER_ACCOUNTING_VERSION:
-                duration_minutes = max(0.0, (closed_at - entry_at).total_seconds() / 60)
-                accounting = calculate_performance(
-                    position_usd=size_usd,
-                    entry_price=entry_price,
-                    exit_price=exit_price,
-                    side=side,
-                    duration_minutes=duration_minutes,
-                    entry_slippage_bps=(
-                        float(entry_slippage_raw) if entry_slippage_raw is not None else None
-                    ),
-                    exit_slippage_bps=fresh_exit_slippage_bps,
-                )
-                gross_pnl_usd = round(accounting.gross_pnl_usd, 4)
-                gross_pnl_pct = round(accounting.gross_return_pct, 4)
-                net_pnl_usd = (
-                    round(accounting.net_pnl_usd, 4) if accounting.net_pnl_usd is not None else None
-                )
-                net_pnl_pct = (
-                    round(accounting.net_return_pct, 4)
-                    if accounting.net_return_pct is not None
-                    else None
-                )
-                fees_usd = round(accounting.fees_usd, 4)
-                funding_usd = round(accounting.funding_usd, 4)
-                slippage_usd = (
-                    round(accounting.slippage_usd, 4)
-                    if accounting.slippage_usd is not None
-                    else None
-                )
-                pnl_usd = net_pnl_usd
-                pnl_pct = net_pnl_pct
-                accounting_status = accounting.status
-                accounting_error = accounting.error
-            else:
-                gross_pnl_pct = (
-                    (entry_price - exit_price) / entry_price * 100
-                    if side == "short"
-                    else (exit_price - entry_price) / entry_price * 100
-                )
-                gross_pnl_usd = round(size_usd * gross_pnl_pct / 100, 4)
-                gross_pnl_pct = round(gross_pnl_pct, 4)
-                net_pnl_usd = None
-                net_pnl_pct = None
-                fees_usd = 0.0
-                funding_usd = 0.0
-                slippage_usd = None
-                pnl_usd = gross_pnl_usd
-                pnl_pct = gross_pnl_pct
-                accounting_status = "legacy"
-                accounting_error = None
-
-            outcome_value = net_pnl_pct if net_pnl_pct is not None else gross_pnl_pct
-            outcome = "win" if outcome_value > 0 else ("loss" if outcome_value < 0 else "breakeven")
-
-            await cur.execute(
-                _CLOSE_TRADE,
-                (
-                    exit_order_id,
-                    exit_price,
-                    closed_at,
-                    gross_pnl_usd,
-                    gross_pnl_pct,
-                    net_pnl_usd,
-                    net_pnl_pct,
-                    fees_usd,
-                    funding_usd,
-                    slippage_usd,
-                    fresh_exit_slippage_bps,
-                    pnl_usd,
-                    pnl_pct,
-                    outcome,
-                    accounting_status,
-                    accounting_error,
-                    reason,
-                    trade_id,
-                ),
-            )
-            updated = await cur.fetchone()
-            if updated is None:
-                return CloseOutcome(committed=False)
-
-            if exit_observation is not None:
-                # Same connection, same not-yet-committed transaction as the
-                # UPDATE above — both land together on `async with aconn`'s
-                # clean exit, or neither does on an exception.
-                await cur.execute(
-                    _INSERT_EXIT_LIQUIDITY,
-                    _exit_liquidity_params(trade_id, exit_observation),
-                )
-
-            return CloseOutcome(
-                committed=True,
-                gross_pnl_usd=gross_pnl_usd,
-                gross_pnl_pct=gross_pnl_pct,
-                net_pnl_usd=net_pnl_usd,
-                net_pnl_pct=net_pnl_pct,
-                fees_usd=fees_usd,
-                funding_usd=funding_usd,
-                slippage_usd=slippage_usd,
-                accounting_status=accounting_status,
+            return await close_trade_in(
+                cur,
+                trade_id=trade_id,
+                exit_order_id=exit_order_id,
+                exit_price=exit_price,
+                reason=reason,
+                executed_at=executed_at,
+                fresh_exit_slippage_bps=fresh_exit_slippage_bps,
+                exit_observation=exit_observation,
             )
     except Exception as exc:
         log.error("journal.close_trade.failed", trade_id=trade_id, err=str(exc))
         return CloseOutcome(committed=False)
+
+
+async def close_trade_in(
+    cur: psycopg.AsyncCursor[Any],
+    *,
+    trade_id: int,
+    exit_order_id: str | None,
+    exit_price: float,
+    reason: str,
+    executed_at: datetime | None = None,
+    fresh_exit_slippage_bps: float | None = None,
+    exit_observation: dict[str, Any] | None = None,
+) -> CloseOutcome:
+    """close_trade on the caller's cursor, inside the caller's transaction."""
+    await cur.execute(_SELECT_TRADE_FOR_CLOSE, (trade_id,))
+    row = await cur.fetchone()
+    if row is None:
+        log.error("journal.close_trade.trade_not_found", trade_id=trade_id)
+        return CloseOutcome(committed=False)
+    (
+        size_usd_raw,
+        entry_price_raw,
+        side,
+        status,
+        entry_at,
+        entry_slippage_raw,
+        accounting_version,
+        saved_gross_pnl_usd,
+        saved_gross_pnl_pct,
+        saved_net_pnl_usd,
+        saved_net_pnl_pct,
+        saved_fees_usd,
+        saved_funding_usd,
+        saved_slippage_usd,
+        saved_accounting_status,
+    ) = row
+    size_usd = float(size_usd_raw)
+    entry_price = float(entry_price_raw)
+    if status == "closed":
+        # Idempotent retry: an earlier attempt's transaction actually
+        # committed server-side even though we (or a prior caller)
+        # never got the ack. Treat as success without touching the
+        # row again — re-running the UPDATE would overwrite exit_at
+        # with this retry's timestamp and could shift the trade into
+        # a different UTC day for pnl_snapshot() purposes.
+        # Return the row's own saved accounting verbatim (never
+        # recomputed against this retry's exit_price, which may be a
+        # later, different ticker read) so a caller can still report
+        # the close accurately — newly_closed=False only means "not
+        # freshly closed by this call," not "already notified."
+        log.info("journal.close_trade.already_closed", trade_id=trade_id)
+        return CloseOutcome(
+            committed=True,
+            newly_closed=False,
+            gross_pnl_usd=(float(saved_gross_pnl_usd) if saved_gross_pnl_usd is not None else None),
+            gross_pnl_pct=(float(saved_gross_pnl_pct) if saved_gross_pnl_pct is not None else None),
+            net_pnl_usd=float(saved_net_pnl_usd) if saved_net_pnl_usd is not None else None,
+            net_pnl_pct=float(saved_net_pnl_pct) if saved_net_pnl_pct is not None else None,
+            fees_usd=float(saved_fees_usd) if saved_fees_usd is not None else None,
+            funding_usd=float(saved_funding_usd) if saved_funding_usd is not None else None,
+            slippage_usd=(float(saved_slippage_usd) if saved_slippage_usd is not None else None),
+            accounting_status=saved_accounting_status,
+        )
+
+    closed_at = executed_at or datetime.now(tz=UTC)
+    if executed_at is None:
+        log.warning(
+            "journal.close_trade.execution_time_missing",
+            trade_id=trade_id,
+            fallback="journal_observed_at",
+        )
+    if accounting_version == PAPER_ACCOUNTING_VERSION:
+        duration_minutes = max(0.0, (closed_at - entry_at).total_seconds() / 60)
+        accounting = calculate_performance(
+            position_usd=size_usd,
+            entry_price=entry_price,
+            exit_price=exit_price,
+            side=side,
+            duration_minutes=duration_minutes,
+            entry_slippage_bps=(
+                float(entry_slippage_raw) if entry_slippage_raw is not None else None
+            ),
+            exit_slippage_bps=fresh_exit_slippage_bps,
+        )
+        gross_pnl_usd = round(accounting.gross_pnl_usd, 4)
+        gross_pnl_pct = round(accounting.gross_return_pct, 4)
+        net_pnl_usd = (
+            round(accounting.net_pnl_usd, 4) if accounting.net_pnl_usd is not None else None
+        )
+        net_pnl_pct = (
+            round(accounting.net_return_pct, 4) if accounting.net_return_pct is not None else None
+        )
+        fees_usd = round(accounting.fees_usd, 4)
+        funding_usd = round(accounting.funding_usd, 4)
+        slippage_usd = (
+            round(accounting.slippage_usd, 4) if accounting.slippage_usd is not None else None
+        )
+        pnl_usd = net_pnl_usd
+        pnl_pct = net_pnl_pct
+        accounting_status = accounting.status
+        accounting_error = accounting.error
+    elif accounting_version == LIVE_EXCHANGE_COSTS_ACCOUNTING_VERSION:
+        # Provisional until the cost worker reads the exchange's executions: the
+        # paper model's fees and funding, for display only. It is not an upper
+        # bound (one funding settlement can cost more), so the trade stays
+        # `pending` and blocks entries until the real costs replace it. Spread and
+        # slippage are in the fill prices, so none is deducted.
+        duration_minutes = max(0.0, (closed_at - entry_at).total_seconds() / 60)
+        estimate = calculate_performance(
+            position_usd=size_usd,
+            entry_price=entry_price,
+            exit_price=exit_price,
+            side=side,
+            duration_minutes=duration_minutes,
+            entry_slippage_bps=0.0,
+            exit_slippage_bps=0.0,
+        )
+        gross_pnl_usd = round(estimate.gross_pnl_usd, 4)
+        gross_pnl_pct = round(estimate.gross_return_pct, 4)
+        net_pnl_usd = None
+        net_pnl_pct = None
+        fees_usd = round(estimate.fees_usd, 4)
+        funding_usd = round(estimate.funding_usd, 4)
+        slippage_usd = None
+        pnl_usd = round(gross_pnl_usd - fees_usd - funding_usd, 4)
+        pnl_pct = round(pnl_usd / size_usd * 100, 4)
+        accounting_status = "pending"
+        accounting_error = "estimated costs until the exchange executions are read"
+    else:
+        gross_pnl_pct = (
+            (entry_price - exit_price) / entry_price * 100
+            if side == "short"
+            else (exit_price - entry_price) / entry_price * 100
+        )
+        gross_pnl_usd = round(size_usd * gross_pnl_pct / 100, 4)
+        gross_pnl_pct = round(gross_pnl_pct, 4)
+        net_pnl_usd = None
+        net_pnl_pct = None
+        fees_usd = 0.0
+        funding_usd = 0.0
+        slippage_usd = None
+        pnl_usd = gross_pnl_usd
+        pnl_pct = gross_pnl_pct
+        accounting_status = "legacy"
+        accounting_error = None
+
+    outcome_value = net_pnl_pct if net_pnl_pct is not None else gross_pnl_pct
+    outcome = "win" if outcome_value > 0 else ("loss" if outcome_value < 0 else "breakeven")
+
+    await cur.execute(
+        _CLOSE_TRADE,
+        (
+            exit_order_id,
+            exit_price,
+            closed_at,
+            gross_pnl_usd,
+            gross_pnl_pct,
+            net_pnl_usd,
+            net_pnl_pct,
+            fees_usd,
+            funding_usd,
+            slippage_usd,
+            fresh_exit_slippage_bps,
+            pnl_usd,
+            pnl_pct,
+            outcome,
+            accounting_status,
+            accounting_error,
+            reason,
+            trade_id,
+        ),
+    )
+    updated = await cur.fetchone()
+    if updated is None:
+        return CloseOutcome(committed=False)
+
+    if exit_observation is not None:
+        # Same connection, same not-yet-committed transaction as the
+        # UPDATE above — both land together on `async with aconn`'s
+        # clean exit, or neither does on an exception.
+        await cur.execute(
+            _INSERT_EXIT_LIQUIDITY,
+            _exit_liquidity_params(trade_id, exit_observation),
+        )
+
+    return CloseOutcome(
+        committed=True,
+        gross_pnl_usd=gross_pnl_usd,
+        gross_pnl_pct=gross_pnl_pct,
+        net_pnl_usd=net_pnl_usd,
+        net_pnl_pct=net_pnl_pct,
+        fees_usd=fees_usd,
+        funding_usd=funding_usd,
+        slippage_usd=slippage_usd,
+        accounting_status=accounting_status,
+    )
 
 
 async def record_exit_liquidity(
@@ -1478,23 +1629,85 @@ async def find_open_episode_trades(db_url: str) -> list[OpenEpisodeTrade]:
     ]
 
 
-async def realized_pnl_today(db_url: str) -> float | None:
-    """Sum of pnl_usd for real (non-paper) trades closed since UTC midnight today.
+@dataclass(frozen=True)
+class PnlSnapshot:
+    """The tracker's journal inputs, read in one snapshot.
 
-    Returns None on any DB error. This must NOT be treated as "$0 realized" —
-    callers need to distinguish "no loss today" from "couldn't check" and skip
-    updating any cached daily-loss figure in the latter case, or a transient
-    DB outage would silently reset the daily loss circuit breaker to zero.
+    ``generation`` is ``app.pnl_generation`` in that same snapshot (migration 0062):
+    every transaction that changes one of these inputs increments it before it
+    commits, so an entry admitted only while the number is unchanged never trades on
+    figures older than the journal.
+    """
+
+    realized: float
+    generation: int
+    blocker: str | None
+
+
+async def pnl_snapshot(db_url: str) -> PnlSnapshot | None:
+    """Realized PnL of real (non-paper) trades closed since UTC midnight, what still
+    blocks it, and the accounting generation, all in one read-only snapshot.
+
+    Returns None on any DB error. This must NOT be treated as "$0 realized" --
+    callers need to distinguish "no loss today" from "couldn't check", or a
+    transient DB outage would silently reset the daily loss circuit breaker.
+
+    ``blocker`` names the first outstanding condition that keeps the figure from
+    being final, in the tracker's order:
+
+      * ``partial_close_outstanding``: a reduce-only order realized part of a
+        still-open trade, which the realized sum misses until the final close;
+      * ``fill_incident_outstanding``: a fill's price is not confirmed at all
+        (fill_price.py), so its PnL impact is unknown, not zero;
+      * ``live_costs_unsettled``: a closed live trade's fees and funding are not
+        read from the exchange yet (cost_worker.py), so its PnL is an estimate.
     """
     start_of_day = datetime.now(tz=UTC).replace(hour=0, minute=0, second=0, microsecond=0)
     try:
         aconn = await psycopg.AsyncConnection.connect(db_url)
-        async with aconn, aconn.cursor() as cur:
-            await cur.execute(_REALIZED_PNL_TODAY, (start_of_day,))
-            row = await cur.fetchone()
-            return float(row[0]) if row else 0.0
+        async with aconn:
+            await aconn.set_isolation_level(psycopg.IsolationLevel.REPEATABLE_READ)
+            await aconn.set_read_only(True)
+            async with aconn.transaction(), aconn.cursor() as cur:
+                await cur.execute(_PNL_GENERATION)
+                generation_row = await cur.fetchone()
+                if generation_row is None:
+                    raise RuntimeError("app.pnl_generation has no row")
+                await cur.execute(_REALIZED_PNL_TODAY, (start_of_day,))
+                realized_row = await cur.fetchone()
+                blocker = None
+                for name, query, params in (
+                    ("partial_close_outstanding", _ANY_OPEN_TRADE_CLOSE_FILLS, ()),
+                    ("fill_incident_outstanding", incidents.ANY_OPEN_INCIDENTS_SQL, ()),
+                    (
+                        "live_costs_unsettled",
+                        _ANY_UNSETTLED_LIVE_COSTS,
+                        (LIVE_EXCHANGE_COSTS_ACCOUNTING_VERSION,),
+                    ),
+                ):
+                    await cur.execute(query, params)
+                    if await cur.fetchone() is not None:
+                        blocker = name
+                        break
+        return PnlSnapshot(
+            realized=float(realized_row[0]) if realized_row else 0.0,
+            generation=int(generation_row[0]),
+            blocker=blocker,
+        )
     except Exception as exc:
-        log.error("journal.realized_pnl_today.failed", err=str(exc))
+        log.error("journal.pnl_snapshot.failed", err=str(exc))
+        return None
+
+
+async def pnl_generation(db_url: str) -> int | None:
+    """The accounting generation now, or None when it cannot be read."""
+    try:
+        async with await psycopg.AsyncConnection.connect(db_url) as aconn, aconn.cursor() as cur:
+            await cur.execute(_PNL_GENERATION)
+            row = await cur.fetchone()
+            return int(row[0]) if row else None
+    except Exception as exc:
+        log.error("journal.pnl_generation.failed", err=str(exc))
         return None
 
 
@@ -1643,7 +1856,7 @@ async def delete_trade_id_if_matches(rdb: Any, key: str, expected_trade_id: int)
 async def any_pending_closes(rdb: Any) -> bool:
     """True if at least one close is still waiting to be committed to the
     journal. The tracker must not declare daily PnL fresh/ready while this
-    is true — a pending close's loss isn't reflected in realized_pnl_today()
+    is true: a pending close's loss isn't reflected in pnl_snapshot()
     yet, since its trades row is still 'open' in the DB."""
     async for _ in rdb.scan_iter(match=pending_close_key_pattern()):
         return True

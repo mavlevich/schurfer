@@ -12,6 +12,7 @@ import uvicorn
 from fastapi import FastAPI
 
 from .config import Config
+from .cost_worker import LiveCostWorker, PostgresCostStore
 from .decisions import _REDIS_SOCKET_TIMEOUT_SECONDS, run_decision_writer
 from .early_momentum import (
     CONTRACT_SHA256 as EARLY_MOMENTUM_CONTRACT_SHA256,
@@ -24,6 +25,12 @@ from .early_momentum import (
     validate_prospective_runtime_policy,
 )
 from .early_momentum_prospective_cohort import register_prospective_cohort
+from .emergency_accounting import EmergencyCloseAccountant, PostgresAccountingStore
+from .emergency_close import (
+    EmergencyCloseExecutor,
+    EmergencyCloseWorker,
+    PostgresEmergencyCloseStore,
+)
 from .exchanges import build_exchange_clients, close_exchange_clients
 from .execution_intent import (
     STRATEGY_EARLY_MOMENTUM,
@@ -36,9 +43,13 @@ from .execution_intent import (
 )
 from .incident_worker import run_incident_worker
 from .liquidation_cascade import run_liquidation_cascade_scanner
+from .live_costs import BybitCostSource
 from .market_refresh import MarketRefresher, run_market_refresher
 from .monitor import run_position_monitor
+from .notify import credentials as notify_credentials
 from .paper import run_paper_monitor
+from .probe_close import ProbeRecoveryWorker
+from .probe_evaluator import PostgresProbeStore, ProbeLossEvaluator
 from .reconciliation import STARTUP_BLOCKER
 from .reconciliation_worker import ReconciliationWorker
 from .routers import account, control, health, orders
@@ -167,6 +178,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     liquidation_cascade_broker: Broker
     source_lead_broker: Broker
     reconciliation_worker: ReconciliationWorker
+    emergency_close_worker: EmergencyCloseWorker
+    emergency_accountant: EmergencyCloseAccountant
+    live_cost_worker: LiveCostWorker
+    probe_recovery_worker: ProbeRecoveryWorker
+    probe_loss_evaluator: ProbeLossEvaluator
 
     reconciliation_enabled = bool(cfg.db_url and trading_exchanges)
 
@@ -213,6 +229,59 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             restart_budget=5,
             restart_window_seconds=120.0,
             stale_timeout_seconds=120.0,
+            enabled=reconciliation_enabled,
+        ),
+        WorkerSpec(
+            name="emergency_closer",
+            factory=lambda tr: emergency_close_worker(tr),
+            # A worker that flattens unprotected positions keeps retrying
+            # rather than taking the service down; while it fails, the gate
+            # stays closed to entries.
+            policy=WorkerRestartPolicy.ALWAYS,
+            is_critical=True,
+            stale_timeout_seconds=120.0,
+            enabled=reconciliation_enabled,
+        ),
+        WorkerSpec(
+            name="emergency_accountant",
+            factory=lambda tr: emergency_accountant(tr),
+            # Apart from emergency_closer, so accounting never delays a close. Not
+            # critical: a task it cannot account keeps its incident, which already
+            # blocks entries.
+            policy=WorkerRestartPolicy.ALWAYS,
+            is_critical=False,
+            stale_timeout_seconds=180.0,
+            enabled=reconciliation_enabled,
+        ),
+        WorkerSpec(
+            name="live_probe_recovery",
+            factory=lambda tr: probe_recovery_worker(tr),
+            # Every start suspends active LIVE_PROBE records and closes any probe
+            # position before anything of the probe runs. Critical: until it has
+            # succeeded once, the gate refuses entries.
+            policy=WorkerRestartPolicy.ALWAYS,
+            is_critical=True,
+            stale_timeout_seconds=120.0,
+            enabled=reconciliation_enabled,
+        ),
+        WorkerSpec(
+            name="live_probe_loss",
+            factory=lambda tr: probe_loss_evaluator(tr),
+            # Isolate cost-source failures from protective monitoring. Its own
+            # failed health closes the entry gate; it retries without losing L.
+            policy=WorkerRestartPolicy.ALWAYS,
+            is_critical=True,
+            stale_timeout_seconds=120.0,
+            enabled=reconciliation_enabled,
+        ),
+        WorkerSpec(
+            name="live_cost_worker",
+            factory=lambda tr: live_cost_worker(tr),
+            # Not critical: while it is down, closed live trades stay `pending`,
+            # which already keeps entries blocked through PnL readiness.
+            policy=WorkerRestartPolicy.ALWAYS,
+            is_critical=False,
+            stale_timeout_seconds=300.0,
             enabled=reconciliation_enabled,
         ),
         WorkerSpec(
@@ -334,6 +403,45 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
             typing.cast("str", cfg.db_url),
             rdb,
             worker_gate,
+            alert_credentials=notify_credentials(cfg),
+        )
+        emergency_close_store = PostgresEmergencyCloseStore(typing.cast("str", cfg.db_url))
+        emergency_close_worker = EmergencyCloseWorker(
+            EmergencyCloseExecutor(
+                trading_exchanges,
+                emergency_close_store,
+                rdb,
+                alert_credentials=notify_credentials(cfg),
+            ),
+            emergency_close_store,
+        )
+        emergency_accountant = EmergencyCloseAccountant(
+            trading_exchanges,
+            PostgresAccountingStore(typing.cast("str", cfg.db_url)),
+            rdb,
+            alert_credentials=notify_credentials(cfg),
+        )
+        live_cost_worker = LiveCostWorker(
+            {
+                name: BybitCostSource(exchange)
+                for name, exchange in trading_exchanges.items()
+                if name == "bybit"
+            },
+            PostgresCostStore(typing.cast("str", cfg.db_url)),
+            rdb,
+            alert_credentials=notify_credentials(cfg),
+        )
+        probe_recovery_worker = ProbeRecoveryWorker(
+            typing.cast("str", cfg.db_url), rdb, alert_credentials=notify_credentials(cfg)
+        )
+        probe_loss_evaluator = ProbeLossEvaluator(
+            typing.cast("str", cfg.db_url),
+            trading_exchanges,
+            PostgresProbeStore(typing.cast("str", cfg.db_url)),
+            rdb,
+            worker_gate,
+            probe_recovery_worker.recovered,
+            alert_credentials=notify_credentials(cfg),
         )
     pump_short_broker = build_broker(
         pump_short_mode, exchanges=strategy_exchanges, gate=worker_gate

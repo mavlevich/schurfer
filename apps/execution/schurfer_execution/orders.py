@@ -5,8 +5,18 @@ from typing import Any
 import ccxt
 import structlog
 
+from . import (
+    emergency_close,
+    entry_recovery,
+    exchange_orders,
+    incidents,
+    journal,
+    notify,
+    order_attempts,
+    order_ids,
+    protective_stop,
+)
 from . import exit as exit_module
-from . import incidents, journal, notify, order_attempts
 from .account import fetch_margin_balance, fetch_positions
 from .fill_price import (
     FILL_NONE,
@@ -18,12 +28,16 @@ from .fill_price import (
 from .journal import revoke_pnl_readiness
 from .order_lock import OrderLockLease
 from .risk import (
-    DAILY_PNL_KEY,
     PNL_READY_KEY,
+    RiskCheck,
+    check_daily_loss,
     check_liquidation_distance,
     check_max_position_size,
+    check_pnl_data_available,
     check_sufficient_margin,
     check_trading_enabled,
+    decode_pnl_lease,
+    pnl_lease_flag,
     read_trading_enabled_flag,
     run_all_checks,
 )
@@ -200,6 +214,104 @@ async def _handle_unresolved_close(
     }
 
 
+async def _recover_unknown_entry(
+    *,
+    ex: Any,
+    symbol: str,
+    exchange: str,
+    base: str,
+    guard: entry_recovery.FillGuard,
+    entry_client_order_id: str,
+    db_url: str | None,
+    attempt_id: int | None,
+    worker_gate: WorkerReadinessGate,
+    error: str,
+    reason: str,
+    alert_credentials: tuple[str, str] | None,
+) -> tuple[dict[str, Any] | None, bool, dict[str, Any] | None]:
+    """The entry request ended without a determinable answer (design section 3).
+
+    Returns ``(order, flatten, result)``. A ``result`` ends ``place_order``.
+    Otherwise ``order`` is the entry found terminal: with ``flatten`` it was found
+    still active and filled, and is flattened; without, the normal path continues.
+    """
+    # Durable first, then the block, then the lookup: a crash during the lookup
+    # leaves an attempt that reconciliation resolves.
+    if db_url and attempt_id is not None:
+        await order_attempts.mark_submission_unknown(db_url, attempt_id, error=error)
+    worker_gate.set_safety_blocker(SUBMISSION_UNKNOWN_BLOCKER)
+
+    found = await entry_recovery.find_entry(ex, symbol, entry_client_order_id)
+    if found is None:
+        return (
+            None,
+            False,
+            {
+                "allowed": False,
+                "reason": (
+                    f"submission_unknown: {reason}; entry {entry_client_order_id} not found, "
+                    "reconciliation continues the lookup"
+                ),
+            },
+        )
+    flatten = False
+    if not exchange_orders.is_terminal(found):
+        settled, latest = await entry_recovery.settle_active_entry(
+            ex, symbol, found, on_active=guard.cover
+        )
+        if settled is None:
+            if db_url and attempt_id is not None:
+                await order_attempts.mark_accepted(db_url, attempt_id, order_id=str(latest["id"]))
+            detail = (
+                f"entry {entry_client_order_id} on {exchange}:{base} is still active and its "
+                f"cancel is not confirmed; as last seen, {guard.report}"
+            )
+            await _alert(alert_credentials, f"Entry submission unknown, then found: {detail}.")
+            return None, False, {"allowed": False, "reason": f"submission_unknown: {detail}"}
+        found = settled
+        # An entry found active is not kept: its signal is stale, its size is not
+        # the one decided, and its fills may be split across several stops.
+        # A stop placed meanwhile also sends it there, even when the terminal
+        # order omits its filled amount: the flatten then asks an operator.
+        final = exchange_orders.decimal_or_none(found.get("filled"))
+        flatten = (final is not None and final > 0) or guard.next_sequence > 1
+    log.warning(
+        "execution.order.found_after_unknown",
+        base=base,
+        exchange=exchange,
+        client_order_id=entry_client_order_id,
+        status=found.get("status"),
+        filled=found.get("filled"),
+        flatten=flatten,
+    )
+    return found, flatten, None
+
+
+async def _alert(credentials: tuple[str, str] | None, text: str) -> None:
+    if credentials is None:
+        return
+    delivered = False
+    try:
+        delivered = await notify.notify_alert(*credentials, text=text)
+    except Exception as exc:
+        log.error("execution.order.alert_delivery_failed", err=str(exc))
+    if not delivered:
+        log.error("execution.order.alert_not_delivered", text=text)
+
+
+async def _pnl_admits_entry(rdb: Any, db_url: str | None, daily_loss_limit_usd: float) -> RiskCheck:
+    """The PnL lease as it stands now: present, of the journal's current accounting
+    generation, and within the daily loss limit."""
+    pnl_lease = decode_pnl_lease(await rdb.get(PNL_READY_KEY))
+    current_generation = await journal.pnl_generation(db_url) if db_url else None
+    ready = check_pnl_data_available(
+        pnl_lease_flag(pnl_lease, current_generation, database=bool(db_url))
+    )
+    if not ready.allowed or pnl_lease is None:
+        return ready
+    return check_daily_loss(pnl_lease.daily_pnl, daily_loss_limit_usd)
+
+
 async def place_order(
     *,
     base: str,
@@ -253,13 +365,17 @@ async def place_order(
         # The default now lives in check_trading_enabled itself, not in this
         # read -- see its docstring.
         trading_flag = await read_trading_enabled_flag(rdb)
-        # trading:daily_pnl is maintained by the pnl tracker (tracker.py), which
-        # also refreshes PNL_READY_KEY below only after a fully successful tick.
-        daily_pnl = float(await rdb.get(DAILY_PNL_KEY) or 0)
-        pnl_ready_raw = await rdb.get(PNL_READY_KEY)
-        pnl_ready_flag = (
-            pnl_ready_raw.decode() if isinstance(pnl_ready_raw, bytes) else pnl_ready_raw
-        )
+        # The pnl tracker (tracker.py) publishes PNL_READY_KEY only after a fully
+        # successful tick, with the daily PnL and the accounting generation it read.
+        # The daily PnL checked is the lease's own, so the figure and its generation
+        # are never read apart; the generation must still be the journal's now, or a
+        # change committed after the tracker's snapshot makes the figure stale
+        # (docs/engineering/live-net-accounting-design-v1.md, section 5).
+        pnl_lease = decode_pnl_lease(await rdb.get(PNL_READY_KEY))
+        db_url = getattr(cfg, "db_url", None) if cfg is not None else None
+        current_generation = await journal.pnl_generation(db_url) if db_url else None
+        pnl_ready_flag = pnl_lease_flag(pnl_lease, current_generation, database=bool(db_url))
+        daily_pnl = pnl_lease.daily_pnl if pnl_lease is not None else 0.0
         positions, failed_exchanges = await fetch_positions(exchanges)
         balances = await fetch_margin_balance(exchanges, exchange)
 
@@ -348,8 +464,7 @@ async def place_order(
         # and back on every subsequent fetch of this order, so it survives
         # even a total local crash that loses order_id itself (never
         # captured, or captured but never persisted).
-        entry_client_order_id = str(uuid.uuid4())
-        db_url = getattr(cfg, "db_url", None) if cfg is not None else None
+        entry_client_order_id = order_ids.new_entry_client_order_id()
 
         # Durable record written BEFORE the exchange is ever called (see
         # order_attempts.py's own docstring) -- if this fails while a
@@ -398,9 +513,25 @@ async def place_order(
                 }
             attempt_id = reservation
 
-        is_open, current_token = worker_gate.is_open()
-        if not is_open or current_token != gate_token:
-            reason = "worker readiness gate closed or generation changed during checks"
+        # Final checks before the entry is sent, slowest first, so nothing awaited
+        # stands between the last of them and the order: the PnL lease (Redis and
+        # the database), then the trading switch (Redis), then the local worker
+        # gate and its generation.
+        #
+        # During the slow pre-flight (positions, balances, load_markets,
+        # set_leverage, fetch_ticker) another trade can close with costs not yet
+        # known, moving the accounting generation and revoking the lease. Admit
+        # only on the lease and generation as they stand now, and against the
+        # daily loss limit with the lease's own figure.
+        pnl_recheck = await _pnl_admits_entry(rdb, db_url, daily_loss_limit_usd)
+        if not pnl_recheck.allowed:
+            reason = f"{pnl_recheck.reason} during pre-flight"
+            log.warning(
+                "execution.order.pnl_changed_during_preflight",
+                base=base,
+                exchange=exchange,
+                reason=pnl_recheck.reason,
+            )
             if db_url and attempt_id is not None:
                 await order_attempts.mark_failed(db_url, attempt_id, error=reason)
             return {"allowed": False, "reason": reason}
@@ -428,28 +559,90 @@ async def place_order(
                 await order_attempts.mark_failed(db_url, attempt_id, error=reason)
             return {"allowed": False, "reason": reason}
 
+        # Last, and with no await before the order: a critical worker can fail
+        # while the reads above wait.
+        is_open, current_token = worker_gate.is_open()
+        if not is_open or current_token != gate_token:
+            reason = "worker readiness gate closed or generation changed during checks"
+            if db_url and attempt_id is not None:
+                await order_attempts.mark_failed(db_url, attempt_id, error=reason)
+            return {"allowed": False, "reason": reason}
+
+        order: dict[str, Any] | None = None
+        unknown_error: Exception | None = None
+        unknown_reason = ""
         try:
             order = await ex.create_market_order(
                 symbol, ccxt_side, amount, params={"clientOrderId": entry_client_order_id}
             )
         except ccxt.NetworkError as exc:
-            if db_url and attempt_id is not None:
-                await order_attempts.mark_submission_unknown(db_url, attempt_id, error=str(exc))
-            worker_gate.set_safety_blocker(SUBMISSION_UNKNOWN_BLOCKER)
-            return {
-                "allowed": False,
-                "reason": f"submission_unknown: network timeout or error {exc}",
-            }
+            unknown_error, unknown_reason = exc, f"network timeout or error {exc}"
         except ccxt.ExchangeError as exc:
             # Explicit exchange rejection (e.g. InsufficientFunds, InvalidOrder)
             if db_url and attempt_id is not None:
                 await order_attempts.mark_failed(db_url, attempt_id, error=str(exc))
             return {"allowed": False, "reason": f"exchange_rejection: {exc}"}
         except Exception as exc:
-            if db_url and attempt_id is not None:
-                await order_attempts.mark_submission_unknown(db_url, attempt_id, error=str(exc))
-            worker_gate.set_safety_blocker(SUBMISSION_UNKNOWN_BLOCKER)
-            return {"allowed": False, "reason": f"submission_unknown: unexpected error {exc}"}
+            unknown_error, unknown_reason = exc, f"unexpected error {exc}"
+
+        stop_side = "buy" if ccxt_side == "sell" else "sell"
+        if order is None:
+            alert_credentials = notify.credentials(cfg) if cfg is not None else None
+            order, flatten, unknown_result = await _recover_unknown_entry(
+                ex=ex,
+                symbol=symbol,
+                exchange=exchange,
+                base=base,
+                guard=entry_recovery.FillGuard(
+                    ex,
+                    symbol=symbol,
+                    side=side,
+                    stop_side=stop_side,
+                    reference_price=price,
+                    initial_sl_pct=initial_sl_pct,
+                    entry_client_order_id=entry_client_order_id,
+                ),
+                entry_client_order_id=entry_client_order_id,
+                db_url=db_url,
+                attempt_id=attempt_id,
+                worker_gate=worker_gate,
+                error=str(unknown_error),
+                reason=unknown_reason,
+                alert_credentials=alert_credentials,
+            )
+            if unknown_result is not None:
+                return unknown_result
+            assert order is not None
+            if flatten:
+                if db_url and attempt_id is not None:
+                    await order_attempts.mark_accepted(
+                        db_url, attempt_id, order_id=str(order.get("id"))
+                    )
+                return await protective_stop.flatten_after_stop_failure(
+                    ex=ex,
+                    exchanges=exchanges,
+                    rdb=rdb,
+                    db_url=db_url,
+                    alert_credentials=alert_credentials,
+                    lease=lease,
+                    worker_gate=worker_gate,
+                    context=protective_stop.StopFailureContext(
+                        exchange=exchange,
+                        base=base,
+                        symbol=symbol,
+                        native_market_id=market.get("id"),
+                        market_type=market.get("type"),
+                        side=side,
+                        entry_client_order_id=entry_client_order_id,
+                        attempt_id=attempt_id,
+                        requested_amount=amount,
+                        filled_amount=(
+                            float(order["filled"]) if order.get("filled") is not None else None
+                        ),
+                        stop_error="entry found still active after an unknown submission",
+                        task_reason=emergency_close.REASON_LATE_FILL_FLATTENED,
+                    ),
+                )
 
         entry_observed_at = datetime.now(tz=UTC)
 
@@ -516,86 +709,78 @@ async def place_order(
             if resolution.filled_amount is not None and resolution.filled_amount > 0
             else amount
         )
-        stop_side = "buy" if ccxt_side == "sell" else "sell"
-        trigger_price = (
-            sl_reference_price * (1 + initial_sl_pct / 100)
-            if side == "short"
-            else sl_reference_price * (1 - initial_sl_pct / 100)
+        trigger_price = entry_recovery.stop_trigger(
+            ex, symbol, side, sl_reference_price, initial_sl_pct
         )
-        trigger_price = float(ex.price_to_precision(symbol, trigger_price))
 
-        try:
-            sl_client_order_id = str(uuid.uuid4())
-            sl_order = await ex.create_stop_market_order(
-                symbol,
-                stop_side,
-                sl_amount,
-                trigger_price,
-                params={"reduceOnly": True, "clientOrderId": sl_client_order_id},
-            )
-            await rdb.set(
-                SL_ORDER_ID_KEY.format(exchange=exchange, base=base.upper()),
-                str(sl_order.get("id")),
-                ex=86400,
-            )
-            log.info(
-                "execution.stop_loss.placed",
-                base=base,
-                exchange=exchange,
-                trigger_price=trigger_price,
-                order_id=sl_order.get("id"),
-            )
-        except Exception as sl_exc:
+        stop = await protective_stop.place_protective_stop(
+            ex,
+            symbol=symbol,
+            stop_side=stop_side,
+            amount=sl_amount,
+            trigger_price=trigger_price,
+            entry_client_order_id=entry_client_order_id,
+        )
+        if stop.order is None:
             # Fail-safe: a position without a stop-loss must not be left open.
-            # close_position() is not used here — it re-acquires this same lock
+            # close_position() is not used here: it re-acquires this same lock
             # and would deadlock while we still hold it.
             log.error(
                 "execution.stop_loss.failed",
                 base=base,
                 exchange=exchange,
-                err=str(sl_exc),
+                requests=stop.requests,
+                err=stop.error,
             )
-            alert_text = (
-                f"Stop-loss placement FAILED for {base} on {exchange}: {sl_exc}\n"
-                f"Force-closing position immediately."
-            )
-            force_closed = False
-            try:
-                close_order = await ex.create_market_order(
-                    symbol, stop_side, amount, params={"reduceOnly": True}
-                )
-                await rdb.delete(f"position:opened_at:{exchange}:{base.upper()}")
-                log.warning(
-                    "execution.stop_loss.emergency_close",
-                    base=base,
+            return await protective_stop.flatten_after_stop_failure(
+                ex=ex,
+                exchanges=exchanges,
+                rdb=rdb,
+                db_url=db_url,
+                alert_credentials=notify.credentials(cfg) if cfg is not None else None,
+                lease=lease,
+                worker_gate=worker_gate,
+                context=protective_stop.StopFailureContext(
                     exchange=exchange,
-                    order_id=close_order.get("id"),
-                )
-                alert_text += "\nPosition force-closed successfully."
-                force_closed = True
-            except Exception as close_exc:
-                log.critical(
-                    "execution.stop_loss.emergency_close_failed",
                     base=base,
-                    exchange=exchange,
-                    err=str(close_exc),
-                )
-                alert_text += (
-                    f"\nCRITICAL: emergency close ALSO failed ({close_exc}) — "
-                    f"position is UNPROTECTED. Manual intervention required."
-                )
-            creds = notify.credentials(cfg) if cfg is not None else None
-            if creds:
-                await notify.notify_alert(*creds, text=alert_text)
-            reason = (
-                f"stop-loss placement failed, position force-closed: {sl_exc}"
-                if force_closed
-                else (
-                    f"stop-loss placement failed AND emergency close failed — "
-                    f"position UNPROTECTED on {exchange}:{base}: {sl_exc}"
-                )
+                    symbol=symbol,
+                    native_market_id=market.get("id"),
+                    market_type=market.get("type"),
+                    side=side,
+                    entry_client_order_id=entry_client_order_id,
+                    attempt_id=attempt_id,
+                    requested_amount=amount,
+                    filled_amount=resolution.filled_amount,
+                    stop_error=stop.error,
+                ),
             )
-            return {"allowed": False, "reason": reason, "force_closed": force_closed}
+        sl_order = stop.order
+        try:
+            await rdb.set(
+                SL_ORDER_ID_KEY.format(exchange=exchange, base=base.upper()),
+                str(sl_order.get("id")),
+                ex=86400,
+            )
+        except Exception as exc:
+            # The stop rests on the exchange either way. A lost key must not
+            # stop the real entry from being journalled below; the stop stays
+            # findable by its derived id <entry>s<n>.
+            log.error(
+                "execution.stop_loss.key_write_failed",
+                base=base,
+                exchange=exchange,
+                client_order_id=stop.client_order_id,
+                err=str(exc),
+            )
+        log.info(
+            "execution.stop_loss.placed",
+            base=base,
+            exchange=exchange,
+            trigger_price=trigger_price,
+            order_id=sl_order.get("id"),
+            client_order_id=stop.client_order_id,
+            requests=stop.requests,
+        )
 
         if resolution.status == FILL_UNRESOLVED:
             # Exchanges are expected to always return an id for a placed order;
@@ -868,6 +1053,30 @@ async def close_position(
         ex = exchanges.get(exchange)
         if not ex:
             return {"closed": False, "reason": f"exchange {exchange!r} not configured"}
+
+        # An active emergency close task owns this instrument's closes: its
+        # executor checks the owned remainder before every send, and a close
+        # from here would make that check fail. With the database down this
+        # protective exit proceeds, since the executor cannot run then either.
+        task_db_url = getattr(cfg, "db_url", None) if cfg is not None else None
+        if task_db_url:
+            try:
+                task_active = await emergency_close.has_active_task(
+                    task_db_url, exchange=exchange, base=base
+                )
+            except Exception as exc:
+                log.error(
+                    "execution.close.emergency_task_check_failed",
+                    base=base,
+                    exchange=exchange,
+                    err=str(exc),
+                )
+                task_active = False
+            if task_active:
+                return {
+                    "closed": False,
+                    "reason": f"emergency close task active for {base} on {exchange}",
+                }
 
         # symbol passed explicitly
         all_positions = await ex.fetch_positions()

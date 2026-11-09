@@ -232,8 +232,13 @@ def test_main_refuses_before_the_boundary_and_never_calls_the_exchange(
     ]  # fmt: skip
     with pytest.raises(cp.StageARefused, match="before"):
         cp.main(argv, now=lambda: datetime(2026, 10, 9, tzinfo=UTC))
-    with pytest.raises(SystemExit):
-        cp.main([*argv[:1], str(tmp_path / "missing.json"), *argv[2:]])
+    # Pinned after the boundary: on the real clock this passed only until 10-31
+    # by refusing on the date, never reaching the missing file.
+    with pytest.raises(cp.StageARefused, match="cannot be read"):
+        cp.main(
+            [*argv[:1], str(tmp_path / "missing.json"), *argv[2:]],
+            now=lambda: datetime(2026, 11, 1, tzinfo=UTC),
+        )
     assert called == []
 
 

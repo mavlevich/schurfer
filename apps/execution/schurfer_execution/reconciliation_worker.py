@@ -6,7 +6,7 @@ import asyncio
 import hashlib
 import json
 from dataclasses import replace
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 from typing import Any
 
 import psycopg
@@ -14,7 +14,11 @@ import structlog
 from psycopg.rows import dict_row
 
 from . import exit as exit_module
+from . import late_fill, notify
 from . import reconciliation as rec
+from .exchange_orders import attempt_state_from_order as _attempt_state_from_order
+from .exchange_orders import client_order_id as _client_order_id
+from .exchange_orders import decimal_or_none as _decimal
 from .supervisor import SUBMISSION_UNKNOWN_BLOCKER, WorkerReadinessGate
 
 log = structlog.get_logger()
@@ -25,7 +29,6 @@ _ACTIVE_ATTEMPT_STATUSES = {
     "submission_unknown",
     "manual_required",
 }
-_NO_FILL_STATUSES = {"canceled", "cancelled", "rejected", "expired"}
 _POSITION_KEY_TTL_NAMES = (
     "position:opened_at:{exchange}:{base}",
     "position:sl_order_id:{exchange}:{base}",
@@ -88,6 +91,16 @@ SET status = %s,
 WHERE id = %s
 """
 
+# The upsert runs in one transaction behind a per-key advisory lock and a row
+# lock, so concurrent scans of the same incident see each other's committed
+# status: exactly one of them reads a first sighting (no row) or a reopened
+# incident ('resolved') and alerts, never on a repeat scan of an open one.
+_LOCK_INCIDENT_SQL = "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))"
+
+_PREVIOUS_INCIDENT_STATUS_SQL = """
+SELECT status FROM app.live_reconciliation_incidents WHERE incident_key = %s FOR UPDATE
+"""
+
 _UPSERT_INCIDENT_SQL = """
 INSERT INTO app.live_reconciliation_incidents (
     incident_key, exchange, symbol, native_market_id, market_type, side,
@@ -106,31 +119,10 @@ SET last_seen_at = now(),
 """
 
 
-def _decimal(value: Any) -> Decimal | None:
-    if value is None:
-        return None
-    try:
-        return Decimal(str(value))
-    except (InvalidOperation, ValueError):
-        return None
-
-
 def _text(value: Any) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8")
     return str(value)
-
-
-def _client_order_id(order: dict[str, Any]) -> str | None:
-    info = order.get("info")
-    info_dict = info if isinstance(info, dict) else {}
-    value = (
-        order.get("clientOrderId")
-        or info_dict.get("clientOrderId")
-        or info_dict.get("clientOid")
-        or info_dict.get("orderLinkId")
-    )
-    return str(value) if value is not None else None
 
 
 def _incident_key(
@@ -153,26 +145,13 @@ def _incident_key(
     return hashlib.sha256(material.encode()).hexdigest()
 
 
-def _attempt_state_from_order(
-    order: dict[str, Any],
-) -> tuple[str, Decimal | None, str | None]:
-    filled = _decimal(order.get("filled"))
-    exchange_status = str(order.get("status") or "").lower()
-    if filled is not None and filled > 0:
-        return "completed", filled, None
-    if exchange_status in _NO_FILL_STATUSES | {"closed"} and filled == 0:
-        return "no_fill", filled, None
-    if exchange_status in _NO_FILL_STATUSES | {"closed"}:
-        return "manual_required", filled, "terminal exchange order omitted filled amount"
-    return "accepted", filled, None
-
-
 class ReconciliationWorker:
     """Audit exact ownership across exchange, Postgres, and Redis.
 
-    The only automatic mutation is resolving an order attempt from an exact
-    exchange order/client-order-id match. Position state is never adopted,
-    closed, reconstructed, or deleted by v1.
+    The automatic mutations are resolving an order attempt from an exact
+    exchange order/client-order-id match and, for an entry fill found late, the
+    emergency close task that flattens it (late_fill.py). Any other position state
+    is never adopted, closed, reconstructed, or deleted.
     """
 
     def __init__(
@@ -182,12 +161,17 @@ class ReconciliationWorker:
         rdb: Any,
         gate: WorkerReadinessGate,
         scan_interval_seconds: float = 30.0,
+        alert_credentials: tuple[str, str] | None = None,
     ) -> None:
         self.exchanges = exchanges
         self.db_url = db_url
+        self.alert_credentials = alert_credentials
         self.rdb = rdb
         self.gate = gate
         self.scan_interval = scan_interval_seconds
+        self.late_fills = late_fill.LateFillRecovery(
+            exchanges, db_url, rdb, alert_credentials=alert_credentials
+        )
 
     async def _fetch_exchange_snapshots(
         self,
@@ -452,6 +436,14 @@ class ReconciliationWorker:
                 )
                 if not needs_resolution:
                     continue
+                if late_fill.is_candidate(attempt):
+                    # Under the order lock, so never while the entry path runs.
+                    resolved = await self.late_fills.resolve(
+                        attempt, self._update_attempt_from_order
+                    )
+                    if resolved is not None:
+                        identity_attempts[index] = resolved
+                    continue
                 order = await self._find_exact_order(exchange, attempt)
                 if order is not None:
                     identity_attempts[index] = await self._update_attempt_from_order(attempt, order)
@@ -488,6 +480,10 @@ class ReconciliationWorker:
             await psycopg.AsyncConnection.connect(self.db_url) as connection,
             connection.cursor() as cursor,
         ):
+            await cursor.execute(_LOCK_INCIDENT_SQL, (incident_key,))
+            await cursor.execute(_PREVIOUS_INCIDENT_STATUS_SQL, (incident_key,))
+            row = await cursor.fetchone()
+            previous_status = row[0] if row is not None else None
             await cursor.execute(
                 _UPSERT_INCIDENT_SQL,
                 (
@@ -503,7 +499,42 @@ class ReconciliationWorker:
                     json.dumps(evidence),
                 ),
             )
+        # The alert goes out after commit, so a slow delivery holds no locks.
+        if previous_status is None or previous_status == "resolved":
+            await self._alert_incident(decision, identity, contracts, reopened=previous_status)
         return incident_key
+
+    async def _alert_incident(
+        self,
+        decision: rec.ReconciliationDecision,
+        identity: rec.FullIdentity,
+        contracts: Decimal | None,
+        *,
+        reopened: str | None,
+    ) -> None:
+        """Alert once per new or reopened incident, never on a repeat scan of an
+        open one. A failed delivery is logged as an error and not retried: the
+        incident row and the entry blocker stand regardless."""
+        if self.alert_credentials is None:
+            return
+        text = (
+            f"Reconciliation {'reopened' if reopened else 'new'} incident: "
+            f"{decision.discrepancy.value} on {identity.exchange} {identity.symbol} "
+            f"{identity.side} (contracts {contracts}). New entries are blocked.\n"
+            f"{decision.reason}"
+        )
+        delivered = False
+        try:
+            delivered = await notify.notify_alert(*self.alert_credentials, text=text)
+        except Exception as exc:
+            log.error("reconciliation.alert_delivery_failed", err=str(exc))
+        if not delivered:
+            log.error(
+                "reconciliation.alert_not_delivered",
+                exchange=identity.exchange,
+                symbol=identity.symbol,
+                discrepancy=decision.discrepancy.value,
+            )
 
     async def _resolve_absent_incidents(self, active_keys: set[str]) -> int:
         scanned_exchanges = sorted(self.exchanges)
@@ -565,6 +596,9 @@ class ReconciliationWorker:
                     redis_snap,
                 )
                 if decision.incident_required:
+                    # Block entries before the incident is persisted or alerted:
+                    # neither may delay the block.
+                    self.gate.set_safety_blocker(rec.INCIDENT_BLOCKER)
                     active_incident_keys.add(
                         await self._upsert_incident(
                             decision,

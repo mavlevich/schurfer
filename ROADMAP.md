@@ -8,10 +8,10 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: preserve the HYP-012 v2 cohort (administrative-stop checkpoint 2026-10-31) and the HYP-015 cohort 2026-10-05..11-02 (single formal read from 2026-11-04 12:00Z, runbook + rehearsal #509); the HYP-015 confirmation is designed (#510, executable reader #513, order-rule capture #511/#512) and freezes only after v2 is terminal
-State: DRY_RUN, AUTO_TRADE off, no trading credentials; Bybit is the only confirmed execution venue; no after-cost edge established; disk growth measured (docs/research/disk-growth-budget-v1.md): registry-44 Gate collection fits only at the central rate, and fits conservatively without the pump-short decision stream
-Next: the 2026-10-31 direction decision (brief #506: v2 checkpoint, fresh disk reading, Bybit spot-perp carry canary from 2026-10-31), then the HYP-015 read on 2026-11-04
-User decision required: whether to stop the closed pump-short decision writer (about 43 MiB/day), with the colleague; confirm accessible futures venues before designing a source-native execution route
+Current primary: preserve the HYP-012 v2 cohort (administrative-stop checkpoint 2026-10-31) and the HYP-015 cohort 2026-10-05..11-02 (single formal read from 2026-11-04 12:00Z; readiness checked 2026-10-28: analytics image matches the checkout digest, first preliminary input set restore-checked); HYP-031 post-funding minute is registered (#523, code #526) and fetched only on the owner's go
+State: DRY_RUN, AUTO_TRADE off, no trading credentials; Bybit is the only confirmed execution venue; no after-cost edge established; carry closed for its tested configuration, USD 50 a leg with isolated +300% collateral (#522, 2026-10-25); the closed pump-short decision writer is off in prod (#528, 2026-10-26)
+Next: the 2026-10-31 direction decision as brief #506 sets it (v2 checkpoint, fresh disk reading, A Gate collector or B carry; queue item 3), then the HYP-015 final input set and read on 2026-11-04. Opening HYP-031 instead is only a proposal: the program review draft (not merged) proposes it under the brief's rule 4, since B's economics already failed; the queue changes only if the owner accepts that review
+User decision required on 2026-10-31: A or B per the brief; whether to accept the program review and open HYP-031; its stop rule (proposed: 2027-01-31)
 ```
 
 ### Open-ended margin boundary closed (2026-10-07)
@@ -77,6 +77,22 @@ any live entry, with fault/restart tests in the LIVE_PROBE path. These are not c
 that every external audit scenario has been reproduced. Preserve the one-primary /
 one-support limit. CI flakes that block these changes take precedence over optional
 SQL/API refactoring; ENG-014/032/033/034/007 retain their measured activation gates.
+
+**Status 2026-10-28:** ENG-004 incident publication (#514), the ENG-037/036
+assessment (#520) and the API paper-contract and leverage fix (#525) are merged and
+deployed; the closed-position MFE/MAE fix (#527) waits until the HYP-015 inputs are
+frozen; paper outcomes of the HYP-015 cohort are hidden in the trades API until its
+read (#532). Already done elsewhere, not open work: the Research `Readiness()`
+concurrency (2026-08-31), the `/pumps/<TOKEN>` non-pump fallback, the blocking Go
+dead-code gate and cold-bar file mode (#500). Liquidation-writer queue semantics
+([record](docs/engineering/audits/2026-10-28/liquidation-heartbeat-queue-flag.md):
+window 2026-10-14..10-28 UTC, query and result): Binance 267 and Bybit 99 of 20,160
+minutes are flagged as data loss; 265 and 45 of them have no disconnect, reconnect,
+invalid event or queue drop and fall in bursts (about 247 and 406 events a minute
+against 23 and 10 otherwise); 0 queue drops, one process session each, backlog 0 at
+the window end. They are events still queued at the heartbeat, not lost. No reader
+uses the flag today, so the fix (count only real loss, or write a minute's heartbeat once its
+backlog is persisted) waits for the first liquidation study that needs it.
 
 The [engineering register](docs/engineering/findings-register.md#october-tooling-intake--2026-10-02)
 owns the idea cards, measurements and rejection reasons. `IDEAS.md` remains the

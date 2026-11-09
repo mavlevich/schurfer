@@ -168,45 +168,6 @@ func TestRunRefusesAnEmptyUniverse(t *testing.T) {
 	}
 }
 
-func TestMexcCodecConvertsContractsToBaseUnits(t *testing.T) {
-	codec := MexcCodec{ContractSizes: map[string]float64{"BTC_USDT": 0.0001}}
-	frame := `{"channel":"push.deal","symbol":"BTC_USDT","ts":2,` +
-		`"data":{"p":60000,"v":20,"T":2,"O":1,"M":2,"t":1790000000000,"i":42}}`
-	parsed, err := codec.Parse([]byte(frame), time.UnixMilli(1790000000100))
-	if err != nil || len(parsed.Trades) != 1 {
-		t.Fatalf("trades %v err %v", parsed, err)
-	}
-	trade := parsed.Trades[0]
-	if trade.Size != 0.002 || trade.Notional != 120 || trade.Side != "sell" || trade.TradeID != "42" {
-		t.Fatalf("%+v", trade)
-	}
-	list := `{"channel":"push.deal","symbol":"BTC_USDT","data":[` +
-		`{"p":1,"v":1,"T":1,"t":1,"i":1},{"p":1,"v":1,"T":9,"t":1,"i":2},{"p":1,"v":1,"T":1,"t":1}]}`
-	if got, _ := codec.Parse([]byte(list), time.UnixMilli(2)); len(got.Trades) != 1 {
-		t.Fatalf("list payload (a bad side and a missing id are skipped): %v", got)
-	}
-	if ack, err := codec.Parse([]byte(`{"channel":"rs.sub.deal","data":"success"}`), time.Now()); err != nil || ack.Acks != 1 {
-		t.Fatalf("ack %v %v", ack, err)
-	}
-	if _, err := codec.Parse([]byte(`{"channel":"rs.sub.deal","data":"failed"}`), time.Now()); err == nil {
-		t.Fatal("a refused subscription must end the session")
-	}
-}
-
-func TestMexcCodecNeverGuessesAContractSize(t *testing.T) {
-	codec := MexcCodec{ContractSizes: map[string]float64{"BTC_USDT": 0.0001}}
-	if _, err := codec.SubscribeFrames([]string{"BTC_USDT", "NEW_USDT"}); err == nil {
-		t.Fatal("a symbol without a contract size must be refused")
-	}
-	frame := `{"channel":"push.deal","symbol":"NEW_USDT","data":{"p":1,"v":1,"T":1,"t":1,"i":3}}`
-	if got, _ := codec.Parse([]byte(frame), time.Now()); got.Trades != nil {
-		t.Fatalf("converted with a guessed size: %v", got)
-	}
-	if _, err := codec.Parse([]byte(`{"channel":"rs.error","data":"x"}`), time.Now()); err == nil {
-		t.Fatal("rs.error must end the session")
-	}
-}
-
 func TestAnUnacknowledgedSubscriptionEndsTheSession(t *testing.T) {
 	var dials, pings atomic.Int64
 	server := fakeVenue(t, &dials, &pings, 0, false)

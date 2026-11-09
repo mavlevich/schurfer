@@ -16,6 +16,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+
+	"github.com/mavlevich/schurfer/api-gateway/internal/trades"
 )
 
 // newTestUUID generates a random UUIDv4 string without pulling in a UUID
@@ -46,12 +48,17 @@ func randomTestBase(t *testing.T) string {
 	return "T" + strings.ToUpper(hex.EncodeToString(b))
 }
 
+// insertOtherStrategyPaperRun stores a contract shaped like the worker's own
+// PaperContract.canonical_json() (leverage and side since #203). An empty contract
+// made the trades package's concurrent CombinedTradesCTE test read a NULL leverage
+// and fail with 500 when both packages shared the CI database.
 func insertOtherStrategyPaperRun(t *testing.T, pool *pgxpool.Pool, paperVersion string) {
 	t.Helper()
 	_, err := pool.Exec(context.Background(), `
 		INSERT INTO app.momentum_flow_paper_runs
 			(paper_version, contract_sha256, contract_json, cohort_started_at)
-		VALUES ($1, repeat('c', 64), '{}'::jsonb, now())
+		VALUES ($1::text, repeat('c', 64),
+			jsonb_build_object('paper_version', $1::text, 'side', 'long', 'leverage', 1), now())
 		ON CONFLICT (paper_version) DO NOTHING`,
 		paperVersion,
 	)
@@ -162,5 +169,34 @@ func TestTokenFindsMomentumFlowActivityAgainstRealPostgres(t *testing.T) {
 	// A paper probe's strategy_key is its own paper_version (trades.CombinedTradesCTE).
 	if resp.OtherStrategyKey != paperVersion {
 		t.Errorf("other_strategy_key = %q, want %q", resp.OtherStrategyKey, paperVersion)
+	}
+}
+
+// TestOtherStrategyFixtureReadsInTheTradesCTE pins the fixture to what the trades
+// handler scans (colleague review of #529): the CTE takes side and leverage from the
+// run's contract_json, and List scans both into non-NULL fields. An empty contract
+// gave NULL in both, which failed the concurrent trades tests with 500 only when
+// they happened to read this package's probe; this reads it directly.
+func TestOtherStrategyFixtureReadsInTheTradesCTE(t *testing.T) {
+	pool := connectTestPool(t)
+	defer pool.Close()
+
+	paperVersion := "test_other_strategy_v1_" + newTestUUID()
+	base := randomTestBase(t)
+	defer cleanupOtherStrategyPaperTestRows(pool, paperVersion)
+	insertOtherStrategyPaperRun(t, pool, paperVersion)
+	insertOpenedPaperProbe(t, pool, paperVersion, base+"USDT", base+"/USDT:USDT")
+
+	var side string
+	var leverage float64
+	err := pool.QueryRow(context.Background(),
+		trades.CombinedTradesCTE+"SELECT side, leverage FROM combined WHERE strategy_version = $1",
+		paperVersion,
+	).Scan(&side, &leverage)
+	if err != nil {
+		t.Fatalf("scan the fixture's trade as the trades handler does: %v", err)
+	}
+	if side != "long" || leverage != 1 {
+		t.Errorf("side, leverage = %q, %v; want long, 1", side, leverage)
 	}
 }

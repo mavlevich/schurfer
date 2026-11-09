@@ -17,6 +17,8 @@ STARTUP_BLOCKER = "startup_reconciliation_pending"
 SOURCE_BLOCKER = "reconciliation_source_unavailable"
 INCIDENT_BLOCKER = "unresolved_reconciliation_incident"
 
+_NO_POSITION_STATUSES = frozenset({"no_fill", "failed"})
+
 
 class DiscrepancyType(enum.Enum):
     HEALTHY = "healthy"
@@ -124,6 +126,19 @@ def _same_contracts(left: Decimal | None, right: Decimal | None) -> bool:
     return abs(left - right) <= Decimal("0.00000001")
 
 
+def _attempts_filled(attempts: list[OrderAttemptSnapshot]) -> Decimal | None:
+    """Total filled amount of the attempts that can hold a position, or None if
+    any of those amounts is unknown. Terminal no-position attempts add nothing."""
+    total = Decimal(0)
+    for attempt in attempts:
+        if attempt.status in _NO_POSITION_STATUSES:
+            continue
+        if attempt.filled_amount is None:
+            return None
+        total += attempt.filled_amount
+    return total
+
+
 def _quarantine(
     discrepancy: DiscrepancyType,
     reason: str,
@@ -171,7 +186,7 @@ def classify_position_state(
         and not db_trade
         and not redis_snap
         and db_attempts
-        and all(attempt.status in {"no_fill", "failed"} for attempt in db_attempts)
+        and all(attempt.status in _NO_POSITION_STATUSES for attempt in db_attempts)
     ):
         return ReconciliationDecision(
             discrepancy=DiscrepancyType.HEALTHY,
@@ -206,6 +221,15 @@ def classify_position_state(
         )
 
     if exchange_snap and not db_trade and db_attempts:
+        # An exact clientOrderId match proves the attempt is ours, not that the
+        # whole exchange position is: a 1-contract fill against a 10-contract
+        # position must not be read as an owned, untracked position.
+        if not _same_contracts(exchange_snap.contracts, _attempts_filled(db_attempts)):
+            return _quarantine(
+                DiscrepancyType.POSITION_SIZE_MISMATCH,
+                "Exchange contracts do not equal the filled amount of the exact attempts.",
+                manual_required=True,
+            )
         return _quarantine(
             DiscrepancyType.MISSING_TRADE_EXACT_ATTEMPT,
             "An exact order attempt exists, but its exchange position has no journal trade.",

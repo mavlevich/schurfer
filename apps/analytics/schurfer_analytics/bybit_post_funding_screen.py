@@ -83,6 +83,13 @@ FUNDING_PAGE_LIMIT: Final = 200
 KLINE_PAGE_LIMIT: Final = 1000
 MAX_PAGES: Final = 2000
 CONCURRENCY: Final = 4
+# Bybit sometimes answers a public request with a transient server error (retCode
+# 10016, "svc error: Get kline failed", about 1% of requests in a 2026-10-26 live
+# check). A lost request drops a whole instrument from the read (floor
+# fetch_complete), so every request gets bounded retries with growing pauses.
+RETRY_DELAYS_SECONDS: Final = (1.0, 2.0, 4.0, 8.0, 16.0)
+_sleep = asyncio.sleep  # replaced in tests
+recovered: Counter[str] = Counter()  # requests that succeeded after a retry, by kind, per fetch
 
 
 # ---------------------------------------------------------------- fetching
@@ -91,6 +98,23 @@ CONCURRENCY: Final = 4
 def require_boundary(until_ms: int) -> None:
     if until_ms > DATA_UNTIL_MS:
         raise SystemExit(f"refusing a request ending after {DATA_UNTIL_MS} ms")
+
+
+async def _retrying(call: Any, params: dict[str, Any], what: str) -> Any:
+    """One public request with bounded retries; the last error is raised."""
+    for attempt, delay in enumerate((*RETRY_DELAYS_SECONDS, None)):
+        try:
+            response = await call(dict(params))
+            _ok_list(response, what)
+        except Exception:
+            if delay is None:
+                raise
+            await _sleep(delay)
+        else:
+            if attempt:
+                recovered[what.split(" ")[0]] += 1
+            return response
+    raise AssertionError("unreachable")
 
 
 def _ok_list(response: Any, what: str) -> list[Any]:
@@ -118,7 +142,7 @@ async def _pages(
     start_key = "startTime" if "startTime" in params else "start"
     require_boundary(int(params[end_key]))
     for _ in range(MAX_PAGES):
-        response = await call(dict(params))
+        response = await _retrying(call, params, what)
         items = _ok_list(response, what)
         record(dict(params), response)
         if len(items) < limit:
@@ -139,8 +163,9 @@ async def fetch_linear_catalog(client: Any, status: str | None) -> list[dict[str
             params["status"] = status
         if cursor:
             params["cursor"] = cursor
-        page = await client.public_get_v5_market_instruments_info(params)
-        rows.extend(_ok_list(page, f"catalog {status or 'live'}"))
+        what = f"catalog {status or 'live'}"
+        page = await _retrying(client.public_get_v5_market_instruments_info, params, what)
+        rows.extend(_ok_list(page, what))
         cursor = page["result"].get("nextPageCursor") or ""
         if not cursor:
             return rows
@@ -181,6 +206,7 @@ class SnapshotWriter:
 
 
 async def fetch_index(client: Any, path: Path, stage: str) -> dict[str, Any]:
+    recovered.clear()
     first = STAGES[stage][0]
     live = await fetch_linear_catalog(client, None)
     closed = await fetch_linear_catalog(client, "Closed")
@@ -232,7 +258,13 @@ async def fetch_index(client: Any, path: Path, stage: str) -> dict[str, Any]:
         await asyncio.gather(*(one(s, end) for s, end in sorted(symbols.items())))
     finally:
         writer.close()
-    return {"stage": stage, "symbols": len(symbols), "errors": errors, "responses": writer.written}
+    return {
+        "stage": stage,
+        "symbols": len(symbols),
+        "errors": errors,
+        "responses": writer.written,
+        "recovered_requests": dict(recovered),
+    }
 
 
 def file_sha256(path: Path) -> str:
@@ -411,6 +443,7 @@ def plan(index: Index) -> Plan:
 async def fetch_windows(
     client: Any, index_path: Path, index_sha256: str, path: Path
 ) -> dict[str, Any]:
+    recovered.clear()
     index = load_index(verified(index_path, index_sha256))
     todo = plan(index)
     stage_last = STAGES[index.stage][1]
@@ -437,8 +470,9 @@ async def fetch_windows(
         async with semaphore:
             try:
                 require_boundary(end)
-                response = await client.public_get_v5_market_kline(dict(params))
-                _ok_list(response, f"window {symbol} {t}")
+                response = await _retrying(
+                    client.public_get_v5_market_kline, params, f"window {symbol} {t}"
+                )
                 writer.record("window", symbol, params | {"t": t}, response)
             except Exception as exc:
                 errors[f"{symbol}@{t}"] = str(exc)[:300]
@@ -454,6 +488,7 @@ async def fetch_windows(
         "windows": len(todo.windows),
         "errors": len(errors),
         "responses": writer.written,
+        "recovered_requests": dict(recovered),
     }
 
 

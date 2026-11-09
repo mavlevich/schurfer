@@ -8,6 +8,9 @@ from dataclasses import dataclass
 COST_MODEL_VERSION = "conservative_costs_v1"
 LEGACY_ACCOUNTING_VERSION = "legacy_price_only_v1"
 PAPER_ACCOUNTING_VERSION = "paper_conservative_costs_v1"
+# Live trades: fees and funding from the exchange's own executions
+# (docs/engineering/live-net-accounting-design-v1.md).
+LIVE_EXCHANGE_COSTS_ACCOUNTING_VERSION = "live_exchange_costs_v1"
 
 
 def _finite_non_negative(name: str, value: float) -> None:

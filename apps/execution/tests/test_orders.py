@@ -1,16 +1,38 @@
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import ccxt
 import pytest
 from fastapi import HTTPException
 from pydantic import ValidationError
+from schurfer_execution import entry_recovery, order_attempts, protective_stop
 from schurfer_execution import exit as exit_module
-from schurfer_execution import order_attempts
+from schurfer_execution import reconciliation as rec
 from schurfer_execution.orders import close_position, place_order
-from schurfer_execution.risk import PNL_READY_KEY, TRADING_ENABLED_KEY
+from schurfer_execution.risk import PNL_READY_KEY, TRADING_ENABLED_KEY, encode_pnl_lease
 from schurfer_execution.routers.orders import OrderRequest, post_order
 from schurfer_execution.supervisor import WorkerReadinessGate
+
+# The tracker's lease and the journal's accounting generation agree: entries are
+# admitted unless a test says otherwise.
+_GENERATION = 7
+_LEASE = encode_pnl_lease(generation=_GENERATION, daily_pnl=0.0).encode()
+
+
+@pytest.fixture(autouse=True)
+def _current_generation(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "schurfer_execution.orders.journal.pnl_generation", AsyncMock(return_value=_GENERATION)
+    )
+
+
+@pytest.fixture(autouse=True)
+def _no_stop_retry_waits(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Stop retries keep their order and count, without real seconds of waiting."""
+    monkeypatch.setattr(protective_stop, "STOP_RETRY_DELAYS_SECONDS", (0.0, 0.0, 0.0))
+    monkeypatch.setattr(entry_recovery, "ENTRY_LOOKUP_AT_SECONDS", (0.0, 0.0, 0.0, 0.0))
+    monkeypatch.setattr(entry_recovery, "CANCEL_CONFIRM_AT_SECONDS", (0.0, 0.0, 0.0, 0.0))
 
 
 async def _default_get(key: str) -> bytes | None:
@@ -19,7 +41,7 @@ async def _default_get(key: str) -> bytes | None:
     if key == TRADING_ENABLED_KEY:
         return b"1"
     if key == PNL_READY_KEY:
-        return b"1"
+        return _LEASE
     return None  # daily pnl = 0, etc.
 
 
@@ -698,20 +720,32 @@ class TestExchangeStopLoss:
         # Second create_market_order call is the emergency reduce-only close.
         ex.create_market_order = AsyncMock(
             side_effect=[
-                {"id": "entry-1", "status": "closed"},
-                {"id": "emergency-close-1", "status": "closed"},
+                {"id": "entry-1", "status": "closed", "average": 1.0, "filled": 100.0},
+                {"id": "emergency-close-1", "status": "closed", "filled": 100.0},
             ]
         )
+        gate = _open_gate()
 
-        result = await place_order(**_kwargs(side="short", exchanges={"bingx": ex}))
+        result = await place_order(
+            **_kwargs(side="short", exchanges={"bingx": ex}, worker_gate=gate)
+        )
 
         assert not result["allowed"]
         assert result["force_closed"] is True
+        assert result["close_sent"] is True
+        # Entries are blocked by the failure path itself, not a later scan.
+        assert rec.INCIDENT_BLOCKER in gate.get_reasons()
         assert "force-closed" in result["reason"]
         assert ex.create_market_order.call_count == 2
         emergency_call = ex.create_market_order.call_args_list[1]
         assert emergency_call.args == ("BEAT/USDT:USDT", "buy", 100.0)
-        assert emergency_call.kwargs["params"] == {"reduceOnly": True}
+        # Without a database: one reduce-only close under the derived id
+        # <entry>c1, so the emergency worker can find it once the database is back.
+        entry_id = ex.create_market_order.call_args_list[0].kwargs["params"]["clientOrderId"]
+        assert emergency_call.kwargs["params"] == {
+            "reduceOnly": True,
+            "clientOrderId": f"{entry_id}c1",
+        }
 
     @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
     @patch(
@@ -727,7 +761,7 @@ class TestExchangeStopLoss:
         ex.create_stop_market_order = AsyncMock(side_effect=RuntimeError("exchange rejected"))
         ex.create_market_order = AsyncMock(
             side_effect=[
-                {"id": "entry-1", "status": "closed"},
+                {"id": "entry-1", "status": "closed", "average": 1.0, "filled": 100.0},
                 RuntimeError("close also rejected"),
             ]
         )
@@ -737,6 +771,71 @@ class TestExchangeStopLoss:
         assert not result["allowed"]
         assert result["force_closed"] is False
         assert "UNPROTECTED" in result["reason"]
+
+    @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+    @patch(
+        "schurfer_execution.orders.fetch_margin_balance",
+        return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
+    )
+    async def test_close_accepted_but_not_filled_is_not_force_closed(
+        self, _mock_bal: MagicMock, _mock_pos: MagicMock
+    ) -> None:
+        ex = self._entry_exchange()
+        ex.create_stop_market_order = AsyncMock(side_effect=RuntimeError("exchange rejected"))
+        ex.create_market_order = AsyncMock(
+            side_effect=[
+                {"id": "entry-1", "status": "closed", "average": 1.0, "filled": 100.0},
+                {"id": "emergency-close-1", "status": "canceled", "filled": 0.0},
+            ]
+        )
+        kwargs = _kwargs(side="short", exchanges={"bingx": ex})
+
+        result = await place_order(**kwargs)
+
+        assert result["close_sent"] is True
+        assert result["force_closed"] is False
+        assert "UNPROTECTED" in result["reason"]
+        kwargs["rdb"].delete.assert_not_awaited()
+
+    @patch("schurfer_execution.orders.fetch_positions", return_value=([], set()))
+    @patch(
+        "schurfer_execution.orders.fetch_margin_balance",
+        return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}],
+    )
+    async def test_lost_stop_key_write_does_not_stop_the_journal(
+        self, _mock_bal: MagicMock, _mock_pos: MagicMock
+    ) -> None:
+        ex = self._entry_exchange()
+        ex.create_stop_market_order = AsyncMock(return_value={"id": "sl-1"})
+        rdb = MagicMock()
+
+        async def set_key(key: str, *args: object, **kwargs: object) -> bool:
+            if key.startswith("position:sl_order_id:"):
+                raise ConnectionError("redis down")
+            return True
+
+        rdb.set = AsyncMock(side_effect=set_key)
+        rdb.get = AsyncMock(side_effect=_default_get)
+        rdb.eval = AsyncMock(return_value=1)
+        rdb.delete = AsyncMock(return_value=1)
+        with (
+            patch(
+                "schurfer_execution.orders.journal.complete_open",
+                AsyncMock(return_value=77),
+            ) as complete_open,
+            patch(
+                "schurfer_execution.orders.order_attempts.create_attempt",
+                AsyncMock(return_value=1),
+            ),
+            patch("schurfer_execution.orders.order_attempts.mark_accepted", AsyncMock()),
+            patch("schurfer_execution.orders.order_attempts.mark_completed", AsyncMock()),
+        ):
+            result = await place_order(
+                **_kwargs(exchanges={"bingx": ex}, rdb=rdb, cfg=MagicMock(db_url="postgresql://x"))
+            )
+
+        assert result["allowed"]
+        complete_open.assert_awaited_once()
 
 
 class TestFillEvidenceGovernsTheLedger:
@@ -768,7 +867,7 @@ class TestFillEvidenceGovernsTheLedger:
             if key == TRADING_ENABLED_KEY:
                 return b"1"
             if key == PNL_READY_KEY:
-                return b"1"
+                return _LEASE
             return stored.get(key)
 
         async def _set(key: str, value: object, **_kw: object) -> bool:
@@ -1068,7 +1167,7 @@ class TestEmergencyStopDuringPreFlight:
                     return b"0"
                 return b"1"
             if key == PNL_READY_KEY:
-                return b"1"
+                return _LEASE
             return None
 
         rdb = MagicMock()
@@ -1136,6 +1235,174 @@ class TestEmergencyStopDuringPreFlight:
         assert result["allowed"]
         ex.create_market_order.assert_awaited_once()
         ex.create_stop_market_order.assert_awaited_once()
+
+
+class TestPnlLeaseDuringPreFlight:
+    """Colleague review of the net accounting code (P1): the lease and the
+    accounting generation were read once, before the slow pre-flight. Another
+    trade closing in that window, with costs not yet known, moves the generation
+    and revokes the lease; the entry must not go out on the old reading."""
+
+    @staticmethod
+    def _rdb(lease: dict[str, bytes | None]) -> MagicMock:
+        async def _get(key: str) -> bytes | None:
+            if key == TRADING_ENABLED_KEY:
+                return b"1"
+            if key == PNL_READY_KEY:
+                return lease["value"]
+            return None
+
+        rdb = MagicMock()
+        rdb.set = AsyncMock(return_value=True)
+        rdb.get = AsyncMock(side_effect=_get)
+        rdb.eval = AsyncMock(return_value=1)
+        rdb.delete = AsyncMock(return_value=1)
+        return rdb
+
+    @staticmethod
+    def _exchange() -> MagicMock:
+        return TestEmergencyStopDuringPreFlight()._confirmed_exchange()
+
+    async def _place(
+        self, rdb: MagicMock, ex: MagicMock, generations: list[int]
+    ) -> tuple[dict[str, Any], AsyncMock]:
+        with (
+            patch("schurfer_execution.orders.fetch_positions", AsyncMock(return_value=([], set()))),
+            patch(
+                "schurfer_execution.orders.fetch_margin_balance",
+                AsyncMock(
+                    return_value=[
+                        {"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}
+                    ]
+                ),
+            ),
+            patch(
+                "schurfer_execution.orders.journal.pnl_generation",
+                AsyncMock(side_effect=generations),
+            ),
+            patch(
+                "schurfer_execution.orders.order_attempts.create_attempt",
+                AsyncMock(return_value=7),
+            ),
+            patch(
+                "schurfer_execution.orders.order_attempts.mark_failed", AsyncMock()
+            ) as mock_failed,
+        ):
+            result = await place_order(
+                **_kwargs(rdb=rdb, exchanges={"bingx": ex}, cfg=MagicMock(db_url="postgresql://x"))
+            )
+        return result, mock_failed
+
+    async def test_generation_moved_during_preflight_blocks_submission(self) -> None:
+        ex = self._exchange()
+        result, mock_failed = await self._place(
+            self._rdb({"value": _LEASE}), ex, [_GENERATION, _GENERATION + 1]
+        )
+
+        assert not result["allowed"]
+        assert "pre-flight" in result["reason"]
+        ex.create_market_order.assert_not_called()
+        mock_failed.assert_awaited_once()
+
+    async def test_lease_revoked_during_preflight_blocks_submission(self) -> None:
+        lease: dict[str, bytes | None] = {"value": _LEASE}
+        ex = self._exchange()
+
+        async def _revoke(*_args: object, **_kwargs: object) -> None:
+            lease["value"] = None
+
+        ex.set_leverage = AsyncMock(side_effect=_revoke)
+        result, mock_failed = await self._place(self._rdb(lease), ex, [_GENERATION, _GENERATION])
+
+        assert not result["allowed"]
+        ex.create_market_order.assert_not_called()
+        mock_failed.assert_awaited_once()
+
+    async def test_new_lease_beyond_the_loss_limit_blocks_submission(self) -> None:
+        lease: dict[str, bytes | None] = {"value": _LEASE}
+        ex = self._exchange()
+
+        async def _republish(*_args: object, **_kwargs: object) -> None:
+            lease["value"] = encode_pnl_lease(
+                generation=_GENERATION + 1, daily_pnl=-10_000.0
+            ).encode()
+
+        ex.set_leverage = AsyncMock(side_effect=_republish)
+        result, _ = await self._place(self._rdb(lease), ex, [_GENERATION, _GENERATION + 1])
+
+        assert not result["allowed"]
+        assert "loss" in result["reason"].lower()
+        ex.create_market_order.assert_not_called()
+
+    @pytest.mark.parametrize("change", ["trading_switch", "worker_gate"])
+    async def test_switch_or_gate_closing_during_the_pnl_reads_blocks_submission(
+        self, change: str
+    ) -> None:
+        """Colleague review (P1, second round): the PnL recheck awaits Redis and the
+        database. A stop pressed, or a critical worker failing, while it waits must
+        still keep the entry from going out: the switch and the gate are checked
+        after it, the gate last."""
+        state = {"stopped": False, "generation_reads": 0}
+        gate = _open_gate()
+
+        async def _get(key: str) -> bytes | None:
+            if key == TRADING_ENABLED_KEY:
+                return b"0" if state["stopped"] else b"1"
+            if key == PNL_READY_KEY:
+                return _LEASE
+            return None
+
+        async def _generation(_db_url: str) -> int:
+            state["generation_reads"] += 1
+            if state["generation_reads"] == 2:  # the final PnL recheck
+                if change == "trading_switch":
+                    state["stopped"] = True
+                else:
+                    gate.set_safety_blocker("critical-worker-failed")
+            return _GENERATION
+
+        rdb = self._rdb({"value": _LEASE})
+        rdb.get = AsyncMock(side_effect=_get)
+        ex = self._exchange()
+        ex.create_market_order = AsyncMock(side_effect=ccxt.InvalidOrder("must not be sent"))
+        with (
+            patch("schurfer_execution.orders.fetch_positions", AsyncMock(return_value=([], set()))),
+            patch(
+                "schurfer_execution.orders.fetch_margin_balance",
+                AsyncMock(return_value=[{"exchange": "bingx", "free": 1000.0}]),
+            ),
+            patch(
+                "schurfer_execution.orders.journal.pnl_generation",
+                AsyncMock(side_effect=_generation),
+            ),
+            patch(
+                "schurfer_execution.orders.order_attempts.create_attempt",
+                AsyncMock(return_value=7),
+            ),
+            patch(
+                "schurfer_execution.orders.order_attempts.mark_failed", AsyncMock()
+            ) as mock_failed,
+        ):
+            result = await place_order(
+                **_kwargs(
+                    rdb=rdb,
+                    exchanges={"bingx": ex},
+                    worker_gate=gate,
+                    cfg=MagicMock(db_url="postgresql://x"),
+                )
+            )
+
+        assert not result["allowed"]
+        ex.create_market_order.assert_not_awaited()
+        mock_failed.assert_awaited_once()
+
+    async def test_unchanged_lease_and_generation_submit(self) -> None:
+        ex = self._exchange()
+        # Rejected by the venue so the test stops at the submission it checks.
+        ex.create_market_order = AsyncMock(side_effect=ccxt.InvalidOrder("test stop"))
+        await self._place(self._rdb({"value": _LEASE}), ex, [_GENERATION, _GENERATION])
+
+        ex.create_market_order.assert_called_once()
 
 
 class TestPreFlightDurability:
@@ -1440,6 +1707,10 @@ class TestClosePositionCancelsStopLoss:
         with (
             patch("schurfer_execution.orders._tracked_trade_id", AsyncMock(return_value=42)),
             patch(
+                "schurfer_execution.orders.emergency_close.has_active_task",
+                AsyncMock(return_value=False),
+            ),
+            patch(
                 "schurfer_execution.orders.order_attempts.create_close_attempt",
                 AsyncMock(return_value=7),
             ),
@@ -1494,6 +1765,10 @@ class TestClosePositionCancelsStopLoss:
         with (
             patch("schurfer_execution.orders._tracked_trade_id", AsyncMock(return_value=42)),
             patch(
+                "schurfer_execution.orders.emergency_close.has_active_task",
+                AsyncMock(return_value=False),
+            ),
+            patch(
                 "schurfer_execution.orders.order_attempts.create_close_attempt",
                 AsyncMock(side_effect=_create_attempt),
             ) as mock_create_attempt,
@@ -1542,6 +1817,10 @@ class TestClosePositionCancelsStopLoss:
         with (
             patch("schurfer_execution.orders._tracked_trade_id", AsyncMock(return_value=42)),
             patch(
+                "schurfer_execution.orders.emergency_close.has_active_task",
+                AsyncMock(return_value=False),
+            ),
+            patch(
                 "schurfer_execution.orders.order_attempts.create_close_attempt",
                 AsyncMock(return_value=7),
             ),
@@ -1565,3 +1844,362 @@ class TestClosePositionCancelsStopLoss:
         assert "submission_unknown" in result["reason"]
         mock_unknown.assert_awaited_once()
         ex.cancel_order.assert_not_awaited()
+
+
+class _UnknownEntryVenue:
+    """A venue whose entry request times out. ``entry`` is what the venue really
+    did with it (None: nothing), ``after_cancel`` what the entry becomes once its
+    rest is cancelled."""
+
+    def __init__(
+        self,
+        entry: dict | None,  # type: ignore[type-arg]
+        *,
+        after_cancel: dict | None = None,  # type: ignore[type-arg]
+        stop_fails: bool = False,
+    ) -> None:
+        self.markets = {"BEAT/USDT:USDT": {"contractSize": 1.0, "id": "BEATUSDT", "type": "swap"}}
+        self.has = {"fetchOpenOrders": True, "fetchClosedOrders": True}
+        self.entry_template = entry
+        self.after_cancel = after_cancel
+        self.stop_fails = stop_fails
+        self.entry: dict | None = None  # type: ignore[type-arg]
+        self.stops: list[dict] = []  # type: ignore[type-arg]
+        self.cancelled: list[tuple[str, dict]] = []  # type: ignore[type-arg]
+        self.lookups = 0
+
+    async def set_leverage(self, leverage: int, symbol: str) -> None:
+        return None
+
+    async def fetch_ticker(self, symbol: str) -> dict:  # type: ignore[type-arg]
+        return {"last": 1.0}
+
+    def amount_to_precision(self, symbol: str, amount: float) -> str:
+        return "100.0"
+
+    def price_to_precision(self, symbol: str, price: float) -> str:
+        return f"{price:.6f}"
+
+    async def create_market_order(
+        self,
+        symbol: str,
+        side: str,
+        amount: float,
+        params: dict,  # type: ignore[type-arg]
+    ) -> dict:  # type: ignore[type-arg]
+        if self.entry_template is not None:
+            self.entry = {
+                "id": "entry-1",
+                "clientOrderId": params["clientOrderId"],
+                "amount": 100.0,
+                **self.entry_template,
+            }
+        raise ccxt.RequestTimeout("timed out")
+
+    async def create_stop_market_order(
+        self,
+        symbol: str,
+        side: str,
+        amount: float,
+        trigger_price: float,
+        params: dict,  # type: ignore[type-arg]
+    ) -> dict:  # type: ignore[type-arg]
+        if self.stop_fails:
+            raise ccxt.ExchangeError("stop rejected")
+        stop = {
+            "id": f"stop-{len(self.stops) + 1}",
+            "clientOrderId": params["clientOrderId"],
+            "status": "open",
+            "filled": 0.0,
+            "amount": amount,
+            "triggerPrice": trigger_price,
+        }
+        self.stops.append(stop)
+        return dict(stop)
+
+    async def cancel_order(
+        self,
+        order_id: str,
+        symbol: str,
+        params: dict | None = None,  # type: ignore[type-arg]
+    ) -> None:
+        self.cancelled.append((order_id, params or {}))
+        if self.entry is not None and order_id == self.entry["id"] and self.after_cancel:
+            self.entry.update(self.after_cancel)
+        for stop in self.stops:
+            if stop["id"] == order_id:
+                stop["status"] = "canceled"
+
+    def _orders(self, params: dict) -> list[dict]:  # type: ignore[type-arg]
+        if params.get("trigger"):
+            return self.stops
+        self.lookups += 1
+        return [self.entry] if self.entry is not None else []
+
+    async def fetch_open_orders(self, symbol: str, params: dict) -> list[dict]:  # type: ignore[type-arg]
+        return [dict(order) for order in self._orders(params) if order["status"] == "open"]
+
+    async def fetch_closed_orders(self, symbol: str, params: dict) -> list[dict]:  # type: ignore[type-arg]
+        return [dict(order) for order in self._orders(params) if order["status"] != "open"]
+
+    async def fetch_order(self, order_id: str, symbol: str) -> dict:  # type: ignore[type-arg]
+        assert self.entry is not None
+        return dict(self.entry)
+
+    async def fetch_my_trades(self, symbol: str, **kwargs: object) -> list:  # type: ignore[type-arg]
+        return []
+
+
+@patch("schurfer_execution.orders.fetch_positions", AsyncMock(return_value=([], set())))
+@patch(
+    "schurfer_execution.orders.fetch_margin_balance",
+    AsyncMock(return_value=[{"exchange": "bingx", "free": 1000.0, "used": 0.0, "total": 1000.0}]),
+)
+class TestUnknownEntrySubmission:
+    """docs/engineering/live-entry-failure-paths-design-v1.md, section 3."""
+
+    async def _place(
+        self, venue: _UnknownEntryVenue, **patches: AsyncMock
+    ) -> tuple[dict, dict[str, AsyncMock], WorkerReadinessGate]:  # type: ignore[type-arg]
+        events: list[str] = []
+        unknown = AsyncMock(side_effect=lambda *a, **k: events.append("unknown"))
+        mocks = {
+            "create_attempt": AsyncMock(return_value=5),
+            "mark_submission_unknown": unknown,
+            "mark_accepted": AsyncMock(),
+            "mark_completed": AsyncMock(),
+            "mark_failed": AsyncMock(),
+            "complete_open": AsyncMock(return_value=77),
+            "notify_alert": AsyncMock(return_value=True),
+            **patches,
+        }
+        original_orders = venue._orders
+
+        def orders(params: dict) -> list[dict]:  # type: ignore[type-arg]
+            events.append("lookup")
+            return original_orders(params)
+
+        venue._orders = orders  # type: ignore[method-assign]
+        gate = _open_gate()
+        with (
+            patch(
+                "schurfer_execution.orders.order_attempts.create_attempt", mocks["create_attempt"]
+            ),
+            patch(
+                "schurfer_execution.orders.order_attempts.mark_submission_unknown",
+                mocks["mark_submission_unknown"],
+            ),
+            patch("schurfer_execution.orders.order_attempts.mark_accepted", mocks["mark_accepted"]),
+            patch(
+                "schurfer_execution.orders.order_attempts.mark_completed", mocks["mark_completed"]
+            ),
+            patch("schurfer_execution.orders.order_attempts.mark_failed", mocks["mark_failed"]),
+            patch("schurfer_execution.orders.journal.complete_open", mocks["complete_open"]),
+            patch("schurfer_execution.orders.notify.notify_alert", mocks["notify_alert"]),
+            patch(
+                "schurfer_execution.orders.notify.credentials", MagicMock(return_value=("t", "c"))
+            ),
+        ):
+            result = await place_order(
+                **_kwargs(
+                    exchanges={"bingx": venue},
+                    cfg=MagicMock(db_url="postgresql://x"),
+                    worker_gate=gate,
+                )
+            )
+        mocks["events"] = events  # type: ignore[assignment]
+        return result, mocks, gate
+
+    async def test_found_filled_continues_with_stop_and_journal(self) -> None:
+        venue = _UnknownEntryVenue({"status": "closed", "filled": 100.0, "average": 1.5})
+
+        result, mocks, gate = await self._place(venue)
+
+        assert result["allowed"] and result["trade_id"] == 77
+        assert mocks["events"][0] == "unknown"  # durable before the first lookup
+        mocks["mark_accepted"].assert_awaited_with("postgresql://x", 5, order_id="entry-1")
+        ((stop),) = venue.stops
+        assert stop["clientOrderId"].endswith("s1") and stop["amount"] == 100.0
+        assert mocks["complete_open"].await_args.kwargs["entry_price"] == 1.5
+        # The attempt is resolved; reconciliation's next scan lifts this block.
+        assert gate.get_reasons() == ["submission_unknown"]
+
+    async def test_nothing_found_stays_unknown_after_every_lookup(self) -> None:
+        venue = _UnknownEntryVenue(None)
+
+        result, mocks, gate = await self._place(venue)
+
+        assert not result["allowed"]
+        assert "submission_unknown" in result["reason"] and "not found" in result["reason"]
+        assert mocks["events"][0] == "unknown"
+        assert venue.lookups == len(entry_recovery.ENTRY_LOOKUP_AT_SECONDS) * 2
+        mocks["mark_submission_unknown"].assert_awaited_once()
+        assert venue.stops == [] and not mocks["complete_open"].await_count
+        assert gate.get_reasons() == ["submission_unknown"]
+
+    async def test_found_with_no_fill_is_no_position(self) -> None:
+        venue = _UnknownEntryVenue({"status": "canceled", "filled": 0.0, "average": None})
+
+        result, mocks, _gate = await self._place(venue)
+
+        assert not result["allowed"]
+        assert "no fill" in result["reason"]
+        mocks["mark_failed"].assert_awaited_once()
+        assert venue.stops == [] and not mocks["complete_open"].await_count
+
+    async def _place_and_flatten(
+        self, venue: _UnknownEntryVenue
+    ) -> tuple[dict, dict[str, AsyncMock], AsyncMock]:  # type: ignore[type-arg]
+        flatten = AsyncMock(return_value={"allowed": False, "reason": "flattened"})
+        with patch("schurfer_execution.orders.protective_stop.flatten_after_stop_failure", flatten):
+            result, mocks, _gate = await self._place(venue)
+        return result, mocks, flatten
+
+    async def test_partial_fill_on_an_active_entry_is_protected_then_flattened(self) -> None:
+        venue = _UnknownEntryVenue(
+            {"status": "open", "filled": 40.0, "average": 1.5},
+            after_cancel={"status": "canceled"},
+        )
+
+        result, mocks, flatten = await self._place_and_flatten(venue)
+
+        assert result == {"allowed": False, "reason": "flattened"}
+        ((stop),) = venue.stops
+        assert stop["clientOrderId"].endswith("s1") and stop["amount"] == 40.0
+        context = flatten.await_args.kwargs["context"]
+        assert context.filled_amount == 40.0
+        assert context.task_reason == "late_fill_flattened"
+        # Only the entry is cancelled here; the task cancels every stop it knows.
+        assert venue.cancelled == [("entry-1", {})]
+        mocks["mark_accepted"].assert_awaited_with("postgresql://x", 5, order_id="entry-1")
+        assert not mocks["complete_open"].await_count
+
+    async def test_rest_filled_after_the_cancel_is_flattened_at_the_final_amount(self) -> None:
+        venue = _UnknownEntryVenue(
+            {"status": "open", "filled": 40.0, "average": 1.5},
+            after_cancel={"status": "closed", "filled": 100.0},
+        )
+
+        result, mocks, flatten = await self._place_and_flatten(venue)
+
+        assert result["reason"] == "flattened"
+        assert flatten.await_args.kwargs["context"].filled_amount == 100.0
+        assert [stop["amount"] for stop in venue.stops] == [40.0]
+        assert not mocks["complete_open"].await_count
+
+    async def test_a_stop_that_fired_while_the_rest_was_cancelled_is_never_protection(
+        self,
+    ) -> None:
+        """Review: the stop closed 20 of the 40 and ended. Nothing is journalled as
+        a protected open; the task counts the stop's fill and closes the rest."""
+        venue = _UnknownEntryVenue(
+            {"status": "open", "filled": 40.0, "average": 1.5},
+            after_cancel={"status": "canceled"},
+        )
+        cancel = venue.cancel_order
+
+        async def cancel_and_fire(order_id: str, symbol: str, params: dict | None = None) -> None:  # type: ignore[type-arg]
+            await cancel(order_id, symbol, params)
+            venue.stops[0].update(status="canceled", filled=20.0)
+
+        venue.cancel_order = cancel_and_fire  # type: ignore[method-assign]
+
+        result, mocks, flatten = await self._place_and_flatten(venue)
+
+        assert result["reason"] == "flattened"
+        assert flatten.await_args.kwargs["context"].filled_amount == 40.0
+        assert not mocks["complete_open"].await_count
+
+    async def test_fill_growing_while_the_cancel_is_unconfirmed_is_covered_as_it_grows(
+        self,
+    ) -> None:
+        """Review: 40 filled, then 100, and the order stays active. Each increment
+        gets its own stop, and the report states the coverage of the latest view."""
+        venue = _UnknownEntryVenue(
+            {"status": "open", "filled": 40.0, "average": 1.5},
+            after_cancel={"filled": 100.0},
+        )
+
+        result, mocks, _gate = await self._place(venue)
+
+        assert not result["allowed"]
+        assert [stop["amount"] for stop in venue.stops] == [40.0, 60.0]
+        assert [stop["clientOrderId"][-2:] for stop in venue.stops] == ["s1", "s2"]
+        assert "100.0 of the 100.0 filled is still held, all of it covered" in result["reason"]
+        mocks["mark_accepted"].assert_awaited_once_with("postgresql://x", 5, order_id="entry-1")
+        mocks["notify_alert"].assert_awaited_once()
+        assert not mocks["complete_open"].await_count
+
+    async def test_a_stop_that_fired_while_the_cancel_is_unconfirmed_is_replaced(
+        self,
+    ) -> None:
+        """Review of 3630996: 40 filled and its stop placed; the cancel is not
+        confirmed, the stop closes 20 and ends. The 20 still held get a stop of
+        their own, and the report counts only the resting one."""
+        venue = _UnknownEntryVenue({"status": "open", "filled": 40.0, "average": 1.5})
+        cancel = venue.cancel_order
+
+        async def cancel_and_fire(order_id: str, symbol: str, params: dict | None = None) -> None:  # type: ignore[type-arg]
+            await cancel(order_id, symbol, params)
+            venue.stops[0].update(status="canceled", filled=20.0)
+
+        venue.cancel_order = cancel_and_fire  # type: ignore[method-assign]
+
+        result, mocks, gate = await self._place(venue)
+
+        assert not result["allowed"]
+        assert [stop["amount"] for stop in venue.stops] == [40.0, 20.0]
+        assert [stop["status"] for stop in venue.stops] == ["canceled", "open"]
+        assert "20.0 of the 40.0 filled is still held, all of it covered" in result["reason"]
+        mocks["mark_accepted"].assert_awaited_once_with("postgresql://x", 5, order_id="entry-1")
+        assert not mocks["complete_open"].await_count
+        assert gate.get_reasons() == ["submission_unknown"]
+
+    async def test_stops_that_cannot_be_read_leave_the_coverage_unknown(self) -> None:
+        """A stop placed but missing from the listing proves nothing: only the fill
+        beyond the last look gets a new stop, and the report says it is unknown."""
+        venue = _UnknownEntryVenue(
+            {"status": "open", "filled": 40.0, "average": 1.5},
+            after_cancel={"filled": 100.0},
+        )
+        orders = venue._orders
+
+        def without_stops(params: dict) -> list[dict]:  # type: ignore[type-arg]
+            return [] if params.get("trigger") else orders(params)
+
+        venue._orders = without_stops  # type: ignore[method-assign]
+
+        result, _mocks, _gate = await self._place(venue)
+
+        assert [stop["amount"] for stop in venue.stops] == [40.0, 60.0]
+        assert "could not be read" in result["reason"]
+        assert "UNPROTECTED is unknown" in result["reason"]
+
+    async def test_unconfirmed_cancel_reports_the_uncovered_part(self) -> None:
+        venue = _UnknownEntryVenue(
+            {"status": "open", "filled": 40.0, "average": 1.5},
+            after_cancel={"filled": 100.0},
+            stop_fails=True,
+        )
+
+        result, _mocks, gate = await self._place(venue)
+
+        assert "100.0 UNPROTECTED: 100.0 of the 100.0 filled is still held" in result["reason"]
+        assert venue.stops == []
+        assert gate.get_reasons() == ["submission_unknown"]
+
+    async def test_partial_fill_that_cannot_be_protected_is_flattened_once_settled(
+        self,
+    ) -> None:
+        venue = _UnknownEntryVenue(
+            {"status": "open", "filled": 40.0, "average": 1.5},
+            after_cancel={"status": "canceled"},
+            stop_fails=True,
+        )
+
+        result, mocks, flatten = await self._place_and_flatten(venue)
+
+        assert result == {"allowed": False, "reason": "flattened"}
+        assert flatten.await_args.kwargs["context"].filled_amount == 40.0
+        assert venue.cancelled == [("entry-1", {})]
+        assert not mocks["complete_open"].await_count
