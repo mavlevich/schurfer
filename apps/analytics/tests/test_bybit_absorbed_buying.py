@@ -4,6 +4,8 @@ import gzip
 import hashlib
 import json
 import math
+import os
+from collections import Counter
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -378,7 +380,7 @@ TARGET_SCOPE: dict[str, Any] = {"version": TAPE_VERSION, "study": ab.VERSION, "m
 def test_seed_imports_only_verified_ok_parts_and_seal_keeps_their_origin(tmp_path: Path) -> None:
     manifest, digest = _source(tmp_path, tape_binding("pilot-scope"))
     out = tmp_path / "full"
-    done = seed(manifest, digest, SOURCE_SCOPE, TARGET_SCOPE, "full-scope", out)
+    done = seed(manifest, digest, SOURCE_SCOPE, "pilot-scope", TARGET_SCOPE, "full-scope", out)
     assert done["imported_parts"] == 1 and done["imported_file_bytes"] == 5
     assert done["skipped"] == {"not_ok": 1, "outside_scope": 1, "sha256_differs": 1}
     assert json.loads((out / "run.json").read_bytes()) == tape_binding("full-scope")
@@ -402,10 +404,11 @@ def test_seed_imports_only_verified_ok_parts_and_seal_keeps_their_origin(tmp_pat
 @pytest.mark.parametrize(
     ("binding", "scopes", "message"),
     [
-        (tape_binding("p") | {"features_sha256": "other"}, None, "other inputs or rules"),
-        (tape_binding("p") | {"rules": "tape-v2"}, None, "other inputs or rules"),
-        (tape_binding("p") | {"hyp031_index_sha256": "x"}, None, "other inputs or rules"),
-        (tape_binding("p") | {"pilot": 30}, None, "other inputs or rules"),
+        (tape_binding("p") | {"features_sha256": "other"}, None, "other inputs, rules or scope"),
+        (tape_binding("p") | {"rules": "tape-v2"}, None, "other inputs, rules or scope"),
+        (tape_binding("p") | {"hyp031_index_sha256": "x"}, None, "other inputs, rules or scope"),
+        (tape_binding("p") | {"pilot": 30}, None, "other inputs, rules or scope"),
+        (tape_binding("other"), None, "other inputs, rules or scope"),
         (tape_binding("p"), (TARGET_SCOPE, TARGET_SCOPE), "pilot blocks"),
         (tape_binding("p"), (SOURCE_SCOPE, SOURCE_SCOPE), "full scope"),
         (tape_binding("p"), (SOURCE_SCOPE, TARGET_SCOPE | {"version": "x"}), "full scope"),
@@ -418,8 +421,9 @@ def test_seed_refuses_incompatible_inputs_before_writing(
     source, target = scopes or (SOURCE_SCOPE, TARGET_SCOPE)
     out = tmp_path / "full"
     with pytest.raises(SystemExit, match=message):
-        seed(manifest, digest, source, target, "full-scope", out)
+        seed(manifest, digest, source, "p", target, "full-scope", out)
     assert not out.exists()
+    assert list(tmp_path.iterdir()) == [tmp_path / "pilot"]
 
 
 def test_seed_refuses_a_used_directory(tmp_path: Path) -> None:
@@ -428,6 +432,84 @@ def test_seed_refuses_a_used_directory(tmp_path: Path) -> None:
     out.mkdir()
     (out / "run.json").write_text("{}")
     with pytest.raises(SystemExit, match="not empty"):
-        seed(manifest, digest, SOURCE_SCOPE, TARGET_SCOPE, "full-scope", out)
+        seed(manifest, digest, SOURCE_SCOPE, "p", TARGET_SCOPE, "full-scope", out)
     with pytest.raises(SystemExit, match="does not match"):
-        seed(manifest, "0" * 64, SOURCE_SCOPE, TARGET_SCOPE, "full-scope", tmp_path / "new")
+        seed(manifest, "0" * 64, SOURCE_SCOPE, "p", TARGET_SCOPE, "full-scope", tmp_path / "new")
+
+
+def test_an_interrupted_seed_leaves_nothing_and_can_be_run_again(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest, digest = _source(tmp_path, tape_binding("p"))
+    out = tmp_path / "full"
+
+    def crash(fd: int) -> None:
+        raise OSError("disk full")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "fsync", crash)
+        with pytest.raises(OSError, match="disk full"):
+            seed(manifest, digest, SOURCE_SCOPE, "p", TARGET_SCOPE, "full-scope", out)
+    assert sorted(tmp_path.iterdir()) == [tmp_path / "pilot"]
+    done = seed(manifest, digest, SOURCE_SCOPE, "p", TARGET_SCOPE, "full-scope", out)
+    assert done["imported_parts"] == 1
+    assert sorted(p.name for p in out.iterdir()) == ["parts", "run.json", "seed.json"]
+
+
+# ---------------------------------------------------------------- counts input binding
+
+
+def _tape_run(tmp_path: Path, features: Features, binding: dict[str, Any] | None = None,
+              drop: int = 0) -> tuple[Path, str, dict[str, Any], str]:  # fmt: skip
+    primary = scope_days(features, "blocks")
+    scope: dict[str, Any] = {"version": TAPE_VERSION, "study": ab.VERSION, "mode": "blocks",
+                             "primary": primary}  # fmt: skip
+    scope_sha = _json(tmp_path / "scope.json", scope)
+    parts = [{"symbol": s, "day": d, "status": "missing", "part_sha256": "0" * 64}
+             for s, days in primary.items() for d in days]  # fmt: skip
+    body = {"version": TAPE_VERSION, "binding": binding or tape_binding(scope_sha),
+            "parts": parts[drop:]}  # fmt: skip
+    manifest = tmp_path / "run" / "manifest.json"
+    return manifest, _json(manifest, body), scope, scope_sha
+
+
+BOUND_FEATURES = Features({"BTCUSDT": series(), "S0": series(), "S1": series(phase=1)}, ())
+
+
+def test_counts_accepts_the_tape_sealed_for_its_scope(tmp_path: Path) -> None:
+    manifest, digest, scope, scope_sha = _tape_run(tmp_path, BOUND_FEATURES)
+    ab.bound_tape(manifest, digest, scope, scope_sha, BOUND_FEATURES, "blocks")
+
+
+@pytest.mark.parametrize(
+    ("binding", "drop", "edit", "mode", "message"),
+    [
+        (tape_binding("x") | {"pilot": 30, "rules": "tape-v2"}, 0, {}, "blocks", "bound to other"),
+        (tape_binding("x"), 0, {}, "blocks", "bound to other"),
+        (None, 1, {}, "blocks", "not exactly the scope"),
+        (None, 0, {"mode": "full"}, "blocks", "blocks scope"),
+        (None, 0, {}, "full", "full scope"),
+        (None, 0, {"primary": {"S0": ["2025-01-01"]}}, "blocks", "days the protocol fixes"),
+    ],
+)  # fmt: skip
+def test_counts_refuses_a_tape_from_another_run(
+    tmp_path: Path, binding: dict[str, Any] | None, drop: int, edit: dict[str, Any], mode: str,
+    message: str,
+) -> None:  # fmt: skip
+    manifest, digest, scope, scope_sha = _tape_run(tmp_path, BOUND_FEATURES, binding, drop)
+    with pytest.raises(SystemExit, match=message):
+        ab.bound_tape(manifest, digest, scope | edit, scope_sha, BOUND_FEATURES, mode)
+
+
+def test_counts_needs_the_scope_on_the_command_line() -> None:
+    args = ["counts", "--mode", "full", "--manifest", "x", "--manifest-sha256", "0" * 64,
+            "--features", "x", "--features-sha256", ab.FEATURES_SHA256, "--output-dir", "out",
+            "--code-revision", "abc", "--no-working-tree-dirty"]  # fmt: skip
+    with pytest.raises(SystemExit):
+        ab.main(args)
+
+
+def test_an_event_hour_with_an_unknown_episode_is_not_determined() -> None:
+    funnel = Counter(qualifies_true=20, qualifies_false=80, first_true=5, first_false=3,
+                     first_tape_missing=12)  # fmt: skip
+    assert ab.determined_hours(funnel) == 88

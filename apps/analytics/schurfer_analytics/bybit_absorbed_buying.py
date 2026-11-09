@@ -1,10 +1,12 @@
 """HYP-036: absorbed taker buying, short; scope, feature check, pilot and counts.
 
-Implements the outcome-blind steps of docs/research/bybit-absorbed-buying-v1.md. No
-request is made here and nothing after any decision time t is read: the outputs hold
-counts, the frozen event-control pairs and minimum detectable effects computed from data
-before each t. The tape is fetched by HYP-032's fetcher (``bybit-compressed-spring-tape``)
-with a scope written by ``scope``.
+Implements the outcome-blind steps of docs/research/bybit-absorbed-buying-v1.md. Apart
+from ``check-raw`` no request is made here, and no trade return is computed: each event,
+control and feature uses data before its own t only. The power estimate's hourly scales
+and rho use the window's hourly prices, which for a later decision include hours after
+earlier ones. The tape is fetched by HYP-032's fetcher (``bybit-compressed-spring-tape``)
+with a scope written by ``scope``; ``counts`` reads only a tape sealed for exactly that
+scope.
 
 - ``scope``: the tape scope of the pilot blocks or of the full window, with its size
   estimated from HYP-032's archive-size record (no request).
@@ -27,7 +29,10 @@ import hashlib
 import json
 import math
 import multiprocessing
+import os
+import shutil
 import sys
+import tempfile
 from collections import Counter, defaultdict, deque
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -696,6 +701,13 @@ def decide(
     return events, candidates, funnel
 
 
+def determined_hours(funnel: Counter[str]) -> int:
+    """Member-hours whose decision is known: not an event, or an event-qualifying hour
+    whose "first in its episode" is true or false. A qualifying hour with an undefined
+    hour among the 8 before it is undetermined, not a non-event."""
+    return funnel["qualifies_false"] + funnel["first_true"] + funnel["first_false"]
+
+
 def build(
     features: Features, tapes: dict[str, Tape], mode: str
 ) -> tuple[dict[str, Any], dict[str, Any]]:
@@ -718,11 +730,11 @@ def build(
     events_shape = shape(cast("Sequence[Any]", events))
     controls = control_shape(cast("Sequence[Any]", events), cast("dict[Any, Any]", pairs))
     planned = planned_member_hours(features, pools, mode)
-    determined = funnel["qualifies_true"] + funnel["qualifies_false"]
+    determined = determined_hours(funnel)
     report: dict[str, Any] = {
         "version": VERSION,
         "mode": mode,
-        "step": "outcome-blind: counts, pairs and power, nothing after any t",
+        "step": "outcome-blind: counts, pairs and power, no trade return",
         "features_sha256": FEATURES_SHA256,
         "spans": [[_iso(a), _iso(b)] for a, b in spans(mode)],
         "decision_days": days,
@@ -959,17 +971,51 @@ def tape_binding(scope_sha256: str) -> dict[str, Any]:
     }
 
 
+def bound_tape(
+    manifest_path: Path,
+    manifest_sha256: str,
+    scope: dict[str, Any],
+    scope_sha256: str,
+    features: Features,
+    mode: str,
+) -> None:
+    """Refuses, before any part is read, a tape that is not this study's sealed run of
+    exactly the scope the protocol fixes for ``mode``: the scope's days are recomputed,
+    the run binding must be the one ``tape_binding`` gives for that scope (rules, inputs,
+    no pilot subset), and the manifest must hold exactly the scope's symbol-days."""
+    if (scope.get("version"), scope.get("study"), scope.get("mode")) != (
+        TAPE_VERSION,
+        VERSION,
+        mode,
+    ):
+        raise SystemExit(f"the scope is not this study's {mode} scope")
+    if scope.get("primary") != scope_days(features, mode):
+        raise SystemExit(f"the scope's days are not the {mode} days the protocol fixes")
+    manifest = json.loads(verified(manifest_path, manifest_sha256).read_bytes())
+    if manifest.get("version") != TAPE_VERSION or manifest.get("binding") != tape_binding(
+        scope_sha256
+    ):
+        raise SystemExit("the tape is bound to other inputs, rules or scope")
+    held = sorted((p["symbol"], p["day"]) for p in manifest["parts"])
+    wanted = sorted((s, d) for s, days in scope["primary"].items() for d in days)
+    if held != wanted:
+        raise SystemExit("the tape's symbol-days are not exactly the scope's")
+
+
 def seed(
     source_manifest: Path,
     source_manifest_sha256: str,
     source_scope: dict[str, Any],
+    source_scope_sha256: str,
     target_scope: dict[str, Any],
     target_scope_sha256: str,
     out_dir: Path,
 ) -> dict[str, Any]:
     """A new run bound to the full scope, holding the pilot's ok parts that are in it.
     Every input must match before anything is written; a part that fails its own checks
-    is left for the fetch. seed.json keeps each imported part's origin."""
+    is left for the fetch. seed.json keeps each imported part's origin. The run is built
+    in a staging directory beside ``out_dir`` and published by one rename, so an
+    interrupted seed leaves no ``out_dir`` (at most a hidden staging directory)."""
     manifest = json.loads(verified(source_manifest, source_manifest_sha256).read_bytes())
     if source_scope.get("study") != VERSION or source_scope.get("mode") != "blocks":
         raise SystemExit("the source scope is not this study's pilot blocks")
@@ -981,9 +1027,9 @@ def seed(
         raise SystemExit("the target scope is not this study's full scope")
     source_binding = manifest.get("binding", {})
     if manifest.get("version") != TAPE_VERSION or source_binding != tape_binding(
-        str(source_binding.get("scope_sha256"))
+        source_scope_sha256
     ):
-        raise SystemExit("the source run is bound to other inputs or rules")
+        raise SystemExit("the source run is bound to other inputs, rules or scope")
     if out_dir.exists() and any(out_dir.iterdir()):
         raise SystemExit(f"{out_dir} is not empty; seed only into a new directory")
     wanted = {(s, d) for s, days in target_scope["primary"].items() for d in days}
@@ -1016,8 +1062,6 @@ def seed(
                   "file_bytes": int(part.get("file_bytes", 0))}  # fmt: skip
         imports.append((record, payload))
     binding = tape_binding(target_scope_sha256)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    bind_run(out_dir, binding, create=True)
     body = {
         "version": SEED_VERSION,
         "binding": binding,
@@ -1028,11 +1072,24 @@ def seed(
         "skipped": dict(sorted(skipped.items())),
         "parts": [r for r, _ in imports],
     }
-    digest = publish_once(out_dir / "seed.json", body)
-    for record, payload in imports:
-        target = part_path(out_dir, record["symbol"], record["day"])
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(payload)
+    out_dir.parent.mkdir(parents=True, exist_ok=True)
+    staging = Path(tempfile.mkdtemp(prefix=f".{out_dir.name}.seed-", dir=out_dir.parent))
+    try:
+        bind_run(staging, binding, create=True)
+        digest = publish_once(staging / "seed.json", body)
+        for record, payload in imports:
+            target = part_path(staging, record["symbol"], record["day"])
+            target.parent.mkdir(parents=True, exist_ok=True)
+            with target.open("wb") as stream:
+                stream.write(payload)
+                stream.flush()
+                os.fsync(stream.fileno())
+        if out_dir.exists():
+            out_dir.rmdir()  # empty, checked above; fails if anything appeared since
+        staging.rename(out_dir)
+    except BaseException:
+        shutil.rmtree(staging, ignore_errors=True)
+        raise
     return body | {"seed_sha256": digest}
 
 
@@ -1107,6 +1164,8 @@ def build_parser() -> argparse.ArgumentParser:
     counts.add_argument("--mode", choices=("blocks", "full"), required=True)
     counts.add_argument("--manifest", type=Path, required=True)
     counts.add_argument("--manifest-sha256", required=True)
+    counts.add_argument("--scope", type=Path, required=True)
+    counts.add_argument("--scope-sha256", required=True)
     raw = sub.add_parser("check-raw", help="step 1's recount from 20 raw files (fetches)")
     raw.add_argument("--manifest", type=Path, required=True)
     raw.add_argument("--manifest-sha256", required=True)
@@ -1146,7 +1205,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         )
         target_scope = json.loads(verified(args.scope, args.scope_sha256).read_bytes())
         done = seed(args.source_manifest, args.source_manifest_sha256, source_scope,
-                    target_scope, args.scope_sha256, args.output_dir)  # fmt: skip
+                    args.source_scope_sha256, target_scope, args.scope_sha256,
+                    args.output_dir)  # fmt: skip
         summary = {k: v for k, v in done.items() if k != "parts"} | provenance
         sys.stdout.write(json.dumps(summary, indent=2) + "\n")
         return
@@ -1161,6 +1221,10 @@ def main(argv: Sequence[str] | None = None) -> None:
         publish_once(args.output_dir / "scope-size.json", size | provenance)
         sys.stdout.write(json.dumps(size, indent=2) + "\n")
         return
+    if args.command == "counts":
+        scope = json.loads(verified(args.scope, args.scope_sha256).read_bytes())
+        bound_tape(args.manifest, args.manifest_sha256, scope, args.scope_sha256, features,
+                   args.mode)  # fmt: skip
     tapes, meta = load_tape(args.manifest, args.manifest_sha256)
     if args.command == "check-raw":
         report = build_check_raw(features, tapes, args.manifest.parent / "parts",
@@ -1177,6 +1241,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     else:
         report, frozen = build(features, tapes, args.mode)
         report["manifest"] = meta
+        report["scope_sha256"] = args.scope_sha256
     render_markdown(report)  # fail before anything is published, not after
     if frozen is not None:
         report["pairs_sha256"] = publish_once(args.output_dir / "pairs.json", frozen)

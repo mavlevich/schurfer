@@ -1,8 +1,9 @@
 # HYP-036: absorbed taker buying, short (protocol v1)
 
 Status: **stopped 2026-11-09 at the pilot gate (step 2), before the full fetch (below);
-no return of any event or control was read, and nothing after any decision time was
-used.** Step 1 passed. Drafted for the design touchpoint 2026-11-08 and revised the same day after the
+no trade return of any event or control was computed or read.** Each decision used
+data before its own t only; the power estimate's hourly scales and rho, for a later
+decision, include hours after earlier ones. Step 1 passed. Drafted for the design touchpoint 2026-11-08 and revised the same day after the
 first review (variance by hourly blocks, the fetch admitted by fixed calendar blocks with
 the full pool, one more warm-up day in the scope) and after the second (rho of a block
 known at the earliest decision covering it, step 1 recomputed from raw files, the two
@@ -131,7 +132,9 @@ before t. This is the independence rule: a hold ends at t + 4 h + 1 min, so hold
 instrument never overlap. "First" is undefined when any of those 8 hours is undefined.
 
 **Determinability.** Each item is `true`, `false` or `undefined` with a reason.
-Undefined decisions are counted, never treated as false.
+Undefined decisions are counted, never treated as false. A member-hour is determined when
+it does not qualify, or when it qualifies and its "first" is `true` or `false`; a
+qualifying hour whose "first" is undefined is not determined.
 
 **Entry:** short at the open of the 1-minute bar starting t + 1 min (taker). **Exit:** at
 the close of the 1-minute bar ending t + 1 min + 4 h. **H = 4 h is fixed**, as in
@@ -243,7 +246,10 @@ it is seeded with the pilot's parts by importing only the `ok` parts whose symbo
 in the full scope, each checked for its SHA-256, its symbol-day, the same features and
 HYP-031 index snapshots, the same mask version and the same rules (`tape-v3`); a part
 failing any check is fetched again, and an incompatible input refuses the seeding as a
-whole. The new manifest keeps each part's origin and reports imported bytes apart from
+whole. The seeded run is written in a staging directory and published by one rename,
+so an interrupted seeding leaves no run to resume. Counts read only a tape whose
+manifest is bound to exactly the scope the protocol fixes for that mode (rules, inputs,
+no pilot subset) and holds exactly its symbol-days. The new manifest keeps each part's origin and reports imported bytes apart from
 the full fetch's own traffic. Then on the full tape report:
 
 - the funnel, events by ISO week and month;
@@ -361,7 +367,7 @@ HYP-032's tape (manifest `21bdf619...`), no return computed:
   go): 143,169,461 bytes read under a 200 MB cap. All 20 raw files have the SHA-256 their
   parts recorded; buy and sell USD summed from the trades agree with the stored values
   on all 480 hours (so B and V, and the sign of B); the plain ranks agree with the
-  rolling ranks on all 199 hours where both are defined (9 of the days; the other 11
+  rolling ranks on all 211 hours where both are defined (9 of the days; the other 11
   lack the 336 hours of history on this tape, and both counts call them undefined).
 
 ## Pilot result (2026-11-09): stop
@@ -386,8 +392,15 @@ from 0564134 (`counts.json`
 
 Reported only: qV SMD -0.067, ln V -0.164; 194 symbols, top-5 symbols 6.8% of clusters;
 rho (a) 0.39 to 0.57 by month, (b) 0.21 to 0.44. **The pilot gate fails on coverage and
-balance, so v1 stops before the full fetch, as fixed above.** Nothing after any decision
-time was read; the 526 GB full fetch is not proposed.
+balance, so v1 stops before the full fetch, as fixed above.** No trade return was
+computed; the 526 GB full fetch is not proposed.
+
+Review 3 (2026-11-09) confirmed the stop and the artifacts' SHA-256 values, and fixed
+three code paths that did not touch this result: counts now refuse a tape bound to
+another scope, rules or pilot subset; a qualifying hour whose "first" is undefined is no
+longer counted as determined (the pilot had none: 99,241 not qualifying + 784 first +
+103 not first = 100,128, still 100%); and seeding is published whole and checks the
+source run's scope.
 
 **Diagnostic of the failure (pre-t features of the frozen blocks only; decides nothing).**
 The idea has many events and ample power; the control is what fails:
