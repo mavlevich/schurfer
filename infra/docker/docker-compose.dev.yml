@@ -30,7 +30,8 @@ services:
       retries: 5
 
   redis:
-    image: redis:7-alpine
+    # Redis 7.4.9, the image production runs; pinned like postgres above.
+    image: redis@sha256:6ab0b6e7381779332f97b8ca76193e45b0756f38d4c0dcda72dbb3c32061ab99
     container_name: schurfer-redis
     ports:
       - '6379:6379'
@@ -46,7 +47,8 @@ services:
       retries: 5
 
   nats:
-    image: nats:2-alpine
+    # NATS 2.14.3, the image production runs; pinned like postgres above.
+    image: nats@sha256:c11af972c99ae542de8925e6a7d9c533aa1eb039660420d2074beed6089b3bf0
     container_name: schurfer-nats
     ports:
       - '4222:4222'
