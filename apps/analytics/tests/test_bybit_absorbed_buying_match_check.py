@@ -64,3 +64,15 @@ def test_build_runs_both_rules_on_blocks() -> None:
     assert len(frozen["events"]) == report["events"]
     turnover = mc.turnovers(features, v1.pools_of(features))
     assert all(math.isfinite(v) and v > 0 for v in turnover.values())
+
+
+def test_different_means_with_no_spread_never_pass_the_balance_gate() -> None:
+    e, c = member("E", z1=0.4), member("A", qb=0.5, z1=0.0)
+    weights = {e.key: 1.0, c.key: -1.0}
+    assert mc.smd(weights, lambda k: 0.4 if k == e.key else 0.0) is None
+    assert mc.smd(weights, lambda k: 0.2) == 0.0
+    out = v1.balance(weights, {e.key: e, c.key: c})
+    assert out["z1"]["smd"] is None and not v1.balance_passes(out)
+    turnover = {(v1.month_of(e.d), "E"): 1e6, (v1.month_of(c.d), "A"): 1e6}
+    bal = mc.balance(weights, {e.key: e, c.key: c}, turnover)
+    assert bal is not None and bal["z1"] is None and bal["passes"] is False

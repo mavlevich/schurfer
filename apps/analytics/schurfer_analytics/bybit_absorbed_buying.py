@@ -37,6 +37,7 @@ from collections import Counter, defaultdict, deque
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from decimal import Decimal
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, cast
 
@@ -394,12 +395,31 @@ def match(
     return pairs
 
 
+def smd_of(
+    weights: dict[tuple[str, int], float], value: Callable[[tuple[str, int]], float]
+) -> float | None:
+    """Weighted SMD on leg (b)'s weights: events carry their positive weights, controls
+    the absolute value of their negative ones; the pooled sd is the root of the mean of
+    the two weighted variances (HYP-034 Amendment 1). With no spread on either side it is
+    0 for equal means and None (never balanced) for different ones."""
+    sides = []
+    for sign in (1, -1):
+        items = [(abs(w), value(k)) for k, w in weights.items() if w * sign > 0]
+        total = math.fsum(a for a, _ in items)
+        mean = math.fsum(a * v for a, v in items) / total
+        var = math.fsum(a * (v - mean) ** 2 for a, v in items) / total
+        sides.append((mean, var))
+    (me, ve), (mc, vc) = sides
+    pooled = math.sqrt((ve + vc) / 2)
+    if pooled > 0:
+        return (me - mc) / pooled
+    return 0.0 if me == mc else None
+
+
 def balance(
     weights: dict[tuple[str, int], float], members: dict[tuple[str, int], Member]
 ) -> dict[str, Any]:
-    """Weighted SMD on leg (b)'s weights: events carry their positive weights, controls
-    the absolute value of their negative ones; the pooled sd is the root of the mean of
-    the two weighted variances (HYP-034 Amendment 1)."""
+    """``smd_of`` for each balance item, with the two weighted means."""
 
     def value(m: Member, name: str) -> float:
         s = m.state
@@ -410,23 +430,31 @@ def balance(
 
     out: dict[str, Any] = {}
     for name in (*BALANCED, "qv", "ln_v"):
-        sides = []
+        means = []
         for sign in (1, -1):
             items = [(abs(w), value(members[k], name)) for k, w in weights.items() if w * sign > 0]
-            total = math.fsum(a for a, _ in items)
-            mean = math.fsum(a * v for a, v in items) / total
-            var = math.fsum(a * (v - mean) ** 2 for a, v in items) / total
-            sides.append((mean, var))
-        (me, ve), (mc, vc) = sides
-        pooled = math.sqrt((ve + vc) / 2)
-        smd = (me - mc) / pooled if pooled > 0 else 0.0
-        out[name] = {"event_mean": round(me, 4), "control_mean": round(mc, 4),
-                     "smd": round(smd, 4), "smd_unrounded": smd}  # fmt: skip
+            means.append(math.fsum(a * x for a, x in items) / math.fsum(a for a, _ in items))
+        smd = smd_of(weights, partial(_member_value, members, value, name))
+        out[name] = {"event_mean": round(means[0], 4), "control_mean": round(means[1], 4),
+                     "smd": round(smd, 4) if smd is not None else None,
+                     "smd_unrounded": smd}  # fmt: skip
     return out
 
 
+def _member_value(
+    members: dict[tuple[str, int], Member],
+    value: Callable[[Member, str], float],
+    name: str,
+    key: tuple[str, int],
+) -> float:
+    return value(members[key], name)
+
+
 def balance_passes(bal: dict[str, Any]) -> bool:
-    return all(abs(bal[name]["smd_unrounded"]) <= SMD_MAX for name in BALANCED)
+    return all(
+        bal[name]["smd_unrounded"] is not None and abs(bal[name]["smd_unrounded"]) <= SMD_MAX
+        for name in BALANCED
+    )
 
 
 # ---------------------------------------------------------------- power

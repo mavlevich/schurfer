@@ -237,7 +237,9 @@ def family5_power(
     uses = Counter((c.symbol, c.t) for v in pairs.values() for c in v)
     return {
         "mde_bps": {k: v["mde_bps"] if v else None for k, v in mdes.items()},
-        "balance_smd": {n: round(mc.smd(weights, f), 4) for n, f in values.items()}
+        "balance_smd": {
+            n: None if (x := mc.smd(weights, f)) is None else round(x, 4) for n, f in values.items()
+        }
         if weights
         else None,
         "max_events_per_control": max(uses.values(), default=0),
