@@ -369,13 +369,19 @@ func (c *StreamConsumer) reclaimOnce(ctx context.Context) {
 	}
 }
 
-// moveToDLQScript moves one outbox entry to the dead-letter stream in a single atomic
-// step: the dead letter is added once per source ID (a marker key guards repeats), and
-// only then is the source acknowledged and deleted. A crash cannot leave a dead letter
-// whose source is still pending, and a repeated move adds nothing.
+// moveToDLQScript moves one outbox entry to the dead-letter stream: the dead letter is
+// added once per source ID, and only then is the source acknowledged and deleted.
+//
+// A Lua script is not rolled back when a command inside it fails: writes made before
+// the error stay. So the marker is written only after XADD has succeeded, and it means
+// "the dead letter exists". If XADD fails, the script stops with no marker and the
+// source still pending, and the next attempt adds the dead letter. If the marker write
+// itself fails after XADD, the next attempt adds a second dead letter (a duplicate,
+// never a loss). A repeated move after success adds nothing.
 var moveToDLQScript = redis.NewScript(`
-if redis.call('SET', KEYS[3], ARGV[2], 'NX', 'PX', ARGV[5]) then
+if redis.call('EXISTS', KEYS[3]) == 0 then
     redis.call('XADD', KEYS[2], '*', 'data', ARGV[3], 'reason', ARGV[4], 'source_id', ARGV[2])
+    redis.call('SET', KEYS[3], ARGV[2], 'PX', ARGV[5])
 end
 local acked = redis.call('XACK', KEYS[1], ARGV[1], ARGV[2])
 redis.call('XDEL', KEYS[1], ARGV[2])
