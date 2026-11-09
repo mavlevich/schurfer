@@ -43,8 +43,13 @@ cohorts are slow; pre-registration worked). Three more:
 - **HYP-031's discovery read** is in local commit fa13ae5 (report SHA-256 matched); the
   registry in `main` still says "registered, not opened".
 - **HYP-015's evidence** is in local commit 2d1c582 on `codex/hyp015-formal-evidence`.
-- **HYP-012 v2:** its 2026-10-31 administrative-stop checkpoint result is not recorded in
-  the repository.
+- **HYP-012 v2's 2026-10-31 checkpoint** (checked read-only on production 2026-11-09,
+  after the decision below): `runtime/research/hyp012-v2-administrative-stop/checkpoint-2026-10-31.json`,
+  SHA-256 `91dbc1f41cad107e162abf7e969870fd309d6550f75ed1b6cfc3a82787b963f3` matching its
+  sidecar, evaluated 2026-11-05 13:31 UTC from d87b3a2 (clean tree): **decision
+  `continue`**, 20 matured tradable qualified episodes against a minimum of 12, nothing
+  closed. `app.formal_read_claims` holds no row: no stop and no formal claim. Counts
+  only; no episode, price or return was read.
 - **The 10-31 stop rule** (date 2027-01-31, about 4 owner hours a week, a success bar,
   and an early stop if HYP-015 fails, HYP-031 fails discovery and the reserve fails) was
   proposed; whether the owner adopted it is not recorded.
@@ -61,9 +66,9 @@ What the stop means, as proposed on 10-31: no new research line or stage opens;
 collectors that no registered cohort needs move to maintenance (backups and health
 kept, closed-line writers stopped); the program resumes only on the criterion below.
 
-- **HYP-012 v2** runs under its registered rules: first its 2026-10-31 checkpoint status
-  is restored, then it continues to its deadline, 2027-03-31, or to its own
-  administrative stop. Before any closed-line writer is turned off, the sources this
+- **HYP-012 v2** runs under its registered rules: it passed its 2026-10-31 checkpoint
+  (`continue`, 20 against 12) and continues to its deadline, 2027-03-31, or to its own
+  administrative stop; the next checkpoint, 2026-11-30, needs 28. Before any closed-line writer is turned off, the sources this
   cohort still needs are checked.
 - **HYP-031's seconds-level variant** stays in reserve. The minute failure does not answer
   the question of the first seconds; the variant opens when the rate's publication delay
@@ -100,8 +105,8 @@ The owner adopted the stop, with the colleague's agreement:
 1. **The program stops now.** No new research line or stage opens; it resumes only on the
    criterion above.
 2. **HYP-031's seconds-level variant stays in reserve** under the condition above.
-3. **HYP-012 v2** continues under its registered rules, starting with restoring its
-   2026-10-31 checkpoint status.
+3. **HYP-012 v2** continues under its registered rules (its 2026-10-31 checkpoint said
+   `continue`).
 4. **The four records** (HYP-015's formal result, HYP-031's minute discovery, HYP-035,
    the execution inventory) are brought into `main`.
 5. Closed-line writers are turned off only after checking which sources HYP-012 v2 still
