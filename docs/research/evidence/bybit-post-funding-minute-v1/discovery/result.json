@@ -1,0 +1,321 @@
+{
+  "coverage": {
+    "fetch_failed_or_mismatched": [],
+    "instruments": 672,
+    "windows": 39737
+  },
+  "protocol": "docs/research/bybit-post-funding-minute-v1.md",
+  "result": {
+    "bounds_ms": {
+      "first": 1727740800000,
+      "last": 1759276799999,
+      "second_half_from": 1743465600000
+    },
+    "clusters": 2161,
+    "complete": 4928,
+    "complete_share": 1.0,
+    "conditions": {
+      "both_halves": false,
+      "control_share": true,
+      "excess_over_control": false,
+      "size": false,
+      "uncertainty": false,
+      "without_top_symbols": false
+    },
+    "control_share": 0.994724025974026,
+    "diagnostics": {
+      "adverse_p99_bps": 1683.1683168316824,
+      "btc_adjusted_short_gross": {
+        "clusters": 2161,
+        "events": 4928,
+        "mean_bps": 17.370863674320873,
+        "symbols": 357,
+        "weeks": 53
+      },
+      "by_interval": {
+        "1h": {
+          "clusters": 208,
+          "events": 1049,
+          "mean_bps": -11.652472793087785,
+          "symbols": 37,
+          "weeks": 34
+        },
+        "2h": {
+          "clusters": 156,
+          "events": 459,
+          "mean_bps": -22.671652222663994,
+          "symbols": 31,
+          "weeks": 33
+        },
+        "3h": {
+          "clusters": 5,
+          "events": 5,
+          "mean_bps": 95.02695070353954,
+          "symbols": 5,
+          "weeks": 5
+        },
+        "4h": {
+          "clusters": 912,
+          "events": 1955,
+          "mean_bps": -22.962375549297946,
+          "symbols": 195,
+          "weeks": 49
+        },
+        "5h": {
+          "clusters": 1,
+          "events": 1,
+          "mean_bps": 729.3688362919127,
+          "symbols": 1,
+          "weeks": 1
+        },
+        "8h": {
+          "clusters": 961,
+          "events": 1459,
+          "mean_bps": -8.52822711059604,
+          "symbols": 197,
+          "weeks": 53
+        }
+      },
+      "by_month": {
+        "2024-10": {
+          "clusters": 62,
+          "events": 89,
+          "mean_bps": 48.18589506011292,
+          "symbols": 29,
+          "weeks": 5
+        },
+        "2024-11": {
+          "clusters": 100,
+          "events": 154,
+          "mean_bps": 15.991774124861244,
+          "symbols": 40,
+          "weeks": 5
+        },
+        "2024-12": {
+          "clusters": 175,
+          "events": 292,
+          "mean_bps": 2.5946916582740065,
+          "symbols": 66,
+          "weeks": 6
+        },
+        "2025-01": {
+          "clusters": 214,
+          "events": 440,
+          "mean_bps": 5.990723626791359,
+          "symbols": 76,
+          "weeks": 5
+        },
+        "2025-02": {
+          "clusters": 271,
+          "events": 561,
+          "mean_bps": -37.47314296822017,
+          "symbols": 100,
+          "weeks": 5
+        },
+        "2025-03": {
+          "clusters": 261,
+          "events": 578,
+          "mean_bps": -44.371614016939084,
+          "symbols": 90,
+          "weeks": 6
+        },
+        "2025-04": {
+          "clusters": 332,
+          "events": 768,
+          "mean_bps": -46.166210957871044,
+          "symbols": 118,
+          "weeks": 5
+        },
+        "2025-05": {
+          "clusters": 126,
+          "events": 318,
+          "mean_bps": -33.17590908250206,
+          "symbols": 54,
+          "weeks": 5
+        },
+        "2025-06": {
+          "clusters": 212,
+          "events": 593,
+          "mean_bps": 3.702884074504025,
+          "symbols": 77,
+          "weeks": 6
+        },
+        "2025-07": {
+          "clusters": 156,
+          "events": 473,
+          "mean_bps": 16.164995063425927,
+          "symbols": 72,
+          "weeks": 5
+        },
+        "2025-08": {
+          "clusters": 136,
+          "events": 320,
+          "mean_bps": 51.26808929246619,
+          "symbols": 66,
+          "weeks": 5
+        },
+        "2025-09": {
+          "clusters": 116,
+          "events": 342,
+          "mean_bps": -29.853128764501275,
+          "symbols": 50,
+          "weeks": 5
+        }
+      },
+      "excess_by_hour_type": {
+        "four_hour_boundary": {
+          "clusters": 2065,
+          "events": 3899,
+          "mean_bps": 17.30470476977139,
+          "symbols": 352,
+          "weeks": 53
+        },
+        "other_hours": {
+          "clusters": 304,
+          "events": 1003,
+          "mean_bps": 12.139769755121586,
+          "symbols": 57,
+          "weeks": 36
+        }
+      },
+      "first_minute_short_gross": {
+        "clusters": 2161,
+        "events": 4928,
+        "mean_bps": 68.56918482380517,
+        "symbols": 357,
+        "weeks": 53
+      },
+      "hold_10_min": {
+        "clusters": 2161,
+        "eligible": 4928,
+        "events": 4928,
+        "mean_bps": -24.56725004517575,
+        "symbols": 357,
+        "weeks": 53
+      },
+      "hold_5_min": {
+        "clusters": 2161,
+        "eligible": 4928,
+        "events": 4928,
+        "mean_bps": -26.42230440433653,
+        "symbols": 357,
+        "weeks": 53
+      },
+      "hold_60_min": {
+        "clusters": 1971,
+        "eligible": 3848,
+        "events": 3843,
+        "mean_bps": 5.264656926916729,
+        "symbols": 343,
+        "weeks": 53
+      },
+      "one_position": {
+        "by_month_usd": {
+          "2024-10": 16.348647531109247,
+          "2024-11": -10.459825932233903,
+          "2024-12": 27.74136059330132,
+          "2025-01": -40.12874247777722,
+          "2025-02": -6.569390922692197,
+          "2025-03": -41.35779006677483,
+          "2025-04": -43.48847812892005,
+          "2025-05": -0.5136783545838048,
+          "2025-06": -22.030675121572735,
+          "2025-07": -71.85771823136005,
+          "2025-08": 6.251574177940836,
+          "2025-09": -72.03255809303738
+        },
+        "chosen": 2413,
+        "net_usd": -258.09727502660076,
+        "net_usd_per_month": -21.50810625221673,
+        "trades": 2413,
+        "trades_per_month": 201.08333333333334,
+        "unresolved": 0
+      },
+      "positive_side_long": {
+        "clusters": 55,
+        "eligible": 79,
+        "events": 79,
+        "mean_bps": 65.6073809989677,
+        "symbols": 30,
+        "weeks": 16
+      },
+      "pre_settlement_drift_long_gross": {
+        "clusters": 2161,
+        "events": 4928,
+        "mean_bps": 35.491098015641114,
+        "symbols": 357,
+        "weeks": 53
+      },
+      "trigger_-0.100%": {
+        "clusters": 5203,
+        "eligible": 13120,
+        "events": 13120,
+        "mean_bps": -23.265988026178302,
+        "symbols": 458,
+        "weeks": 53
+      },
+      "trigger_-0.500%": {
+        "clusters": 1323,
+        "eligible": 2930,
+        "events": 2930,
+        "mean_bps": -8.68277716404947,
+        "symbols": 291,
+        "weeks": 53
+      },
+      "trigger_r_prev_-0.300%": {
+        "clusters": 2177,
+        "eligible": 4970,
+        "events": 4970,
+        "mean_bps": -13.88143517291507,
+        "symbols": 358,
+        "weeks": 53
+      }
+    },
+    "eligible": 4928,
+    "excess_over_control_bps": 19.085722911174873,
+    "exit_delayed": 0,
+    "floor": {
+      "clusters": true,
+      "complete_share": true,
+      "fetch_complete": true,
+      "symbols": true,
+      "weeks": true
+    },
+    "halves": {
+      "first_half": -14.232155309570029,
+      "second_half": -11.772818851229957
+    },
+    "incomplete": {},
+    "mean_gross_bps_break_even": 16.994667782558892,
+    "mean_net_bps": -13.005332217441108,
+    "mean_net_bps_at_sensitivity": -33.00533221744111,
+    "mean_net_without_top_symbols": -18.253155464010835,
+    "net_lower_bound_90": -25.71382889235348,
+    "seconds_variant_permitted": true,
+    "stage": "discovery",
+    "symbols": 357,
+    "triggered": {
+      "below_turnover": 447,
+      "liquid_eligible": 4928,
+      "settlements": 5609,
+      "turnover_unknown": 234
+    },
+    "verdict": "fail",
+    "weeks": 53
+  },
+  "run": {
+    "code_revision": "d87b3a23c9aa1b4d7e00879f67723b15025a54b2",
+    "working_tree_dirty": false
+  },
+  "snapshots": {
+    "index": {
+      "file": "index-d87b3a2.jsonl.gz",
+      "sha256": "f48fe09f7023a476e524cf70c6ec1b629eee30a9a07cff41c9d149dfb59e0cf5"
+    },
+    "windows": {
+      "file": "windows-d87b3a2.jsonl.gz",
+      "sha256": "b20a5428e031b1764deea40dc605cc0be3659591296cb05ef6d4b39f267c0cd4"
+    }
+  },
+  "version": "bybit_post_funding_minute_v1_a3"
+}
