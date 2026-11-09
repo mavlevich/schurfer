@@ -107,7 +107,7 @@ team should decide the fallback's direction instead:
 
 The colleague recomputed the table, confirmed the 5.53% weekly spread on full Monday
 weeks and the 7.70% funding sum in the snapshot, and agreed to stop before a protocol;
-the power and cost wording above was made precise at his request. The fallback's
+the power and cost wording above was made precise at the colleague's request. The fallback's
 direction is option 4: an **execution edge**, whether a limit entry with a fixed wait
 lowers the full cost of execution against an immediate taker entry on the same fixed
 decisions (partial fills, misses kept in the denominator, the move after a fill, fees).
