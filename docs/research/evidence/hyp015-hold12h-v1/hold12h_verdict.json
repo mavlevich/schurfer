@@ -1,0 +1,47 @@
+{
+  "analyzable_pairs": 3575,
+  "code_revision": "d87b3a23c9aa1b4d7e00879f67723b15025a54b2",
+  "cohort_start": "2026-10-05T00:00:00+00:00",
+  "contract_sha256": "b7878c673867fa7bcb32a7a8ab53ef9a801a9daa598cb8b4fcdd84d090bdf406",
+  "decision_prefix_end": "2026-11-02T00:00:00+00:00",
+  "fingerprint": "adcb3243b6531376320cd06c25bef2035532948f7c3b56e579f54ac92a508e5f",
+  "funnel": {
+    "accounting_incomplete": 0,
+    "analyzable": 3575,
+    "identity_unresolved": 0,
+    "integrity_failure": 0,
+    "rejected_stale": 0,
+    "unresolved": 0
+  },
+  "gate": "B",
+  "mode": "formal",
+  "portfolio": {
+    "240m": {
+      "adverse_from_entry_usd_diagnostic": 31.50553362774368,
+      "incomplete_taken": 0,
+      "incomplete_taken_fraction": 0.0,
+      "longest_losing_streak": 20,
+      "occupancy_fraction": 0.8874851968138228,
+      "skipped_slots_full": 2651,
+      "slot_hours": 3578.3403135533335,
+      "taken": 924,
+      "window_pnl_usd": -228.986326580552,
+      "window_pnl_zero_funding_sensitivity_usd": -228.986326580552
+    },
+    "720m": {
+      "adverse_from_entry_usd_diagnostic": 31.19966553313171,
+      "incomplete_taken": 0,
+      "incomplete_taken_fraction": 0.0,
+      "longest_losing_streak": 14,
+      "occupancy_fraction": 0.9558747896008323,
+      "skipped_slots_full": 3221,
+      "slot_hours": 3854.0871516705556,
+      "taken": 354,
+      "window_pnl_usd": -131.5260010784046,
+      "window_pnl_zero_funding_sensitivity_usd": -131.5260010784046
+    }
+  },
+  "reason": "mature standalone 720m mean net -0.643699 <= 0",
+  "verdict": "reject_hold12h",
+  "working_tree_dirty": false
+}

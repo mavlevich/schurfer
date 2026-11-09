@@ -42,14 +42,14 @@ that uses the same inputs. A coverage-only window stays usable for confirmation.
 
 ## Own capture (Schurfer collectors and cohorts)
 
-| Window                          | What                                                                     | Level                       |
-| ------------------------------- | ------------------------------------------------------------------------ | --------------------------- |
-| 2026-07-22 to 2026-09-28        | Pump, source-lead, momentum-flow and radar studies (HYP-011 to HYP-030)  | outcomes                    |
-| 2026-08-10 to 2026-09-14        | Monster-precursor work                                                   | outcomes                    |
-| 2026-08-24T11:10Z to 2026-09-28 | Pump-short maker-entry prospective cohort: episode and venue counts only | coverage (2026-10-30)       |
-| 2026-08-25 to 2026-09-28        | Liquidation cascade episode counts only (read 2026-09-06 on 12 days)     | coverage, outcomes to 09-06 |
-| 2026-08-14 onward               | HYP-015 paper probes                                                     | sealed until 2026-11-04     |
-| From 2026-09-29                 | Every venue, every source                                                | HYP-012 v2 blind window     |
+| Window                          | What                                                                     | Level                                             |
+| ------------------------------- | ------------------------------------------------------------------------ | ------------------------------------------------- |
+| 2026-07-22 to 2026-09-28        | Pump, source-lead, momentum-flow and radar studies (HYP-011 to HYP-030)  | outcomes                                          |
+| 2026-08-10 to 2026-09-14        | Monster-precursor work                                                   | outcomes                                          |
+| 2026-08-24T11:10Z to 2026-09-28 | Pump-short maker-entry prospective cohort: episode and venue counts only | coverage (2026-10-30)                             |
+| 2026-08-25 to 2026-09-28        | Liquidation cascade episode counts only (read 2026-09-06 on 12 days)     | coverage, outcomes to 09-06                       |
+| 2026-08-14 onward               | HYP-015 paper probes                                                     | outcomes (formal read 2026-11-05, reject_hold12h) |
+| From 2026-09-29                 | Every venue, every source                                                | HYP-012 v2 blind window                           |
 
 The 2026-07 to 2026-09 own-capture period is the most reused data the program has.
 Nothing new is confirmed on it.
