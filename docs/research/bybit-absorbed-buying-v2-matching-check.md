@@ -1,6 +1,6 @@
 # HYP-036: can a control be matched without changing the signal? (one diagnostic run)
 
-Status: **rule fixed 2026-11-09, before the run; registers no hypothesis.** One
+Status: **rule fixed 2026-11-09 (e11f40f) before the run; run the same day: fail (below). Registers no hypothesis.** One
 diagnostic run on the sealed pilot tape of [HYP-036 v1](bybit-absorbed-buying-v1.md)
 (manifest `3885a196...`, scope `315a343b...`), agreed by the owner and the colleague
 after v1 stopped at the pilot gate. No fetch and no trade return. The pilot blocks'
@@ -54,3 +54,40 @@ give v1's 784 events, 442 with a control and z1 SMD 0.175.
 the seen pilot features and checking it on other blocks before reading any return.
 **If it fails:** this HYP-036 design on Bybit stops and the next candidate is taken;
 the family (flow against price response) is not closed by one failed matching rule.
+
+## Result (2026-11-09): fail
+
+From ea99793 (clean tree) on the pilot tape (manifest `3885a196...`, scope `315a343b...`,
+both checked by `bound_tape`): `match-check.json`
+`50d07db30205fcc0ca790bc8f71d44e155f01ce2544d459d1594b66e3d58fc2c`, `pairs-check.json`
+`91432959647cfdc4b854db7ec26d1941a584422d70a1d01499def95f15b3398d`. The v1 rule was
+reproduced by the same code (784 events, 442 with a control, z1 SMD 0.175).
+
+| Item                           | v1 rule             | This rule           | Limit          | Holds |
+| ------------------------------ | ------------------- | ------------------- | -------------- | ----- |
+| Candidates (member-hours)      | 18,663              | 24,564              |                |       |
+| Events with a control, overall | 56.4% (442)         | **73.2%** (574)     | >= 85%         | no    |
+| Block 2025-01-13 / 2025-07-07  | 59.6% / 52.9%       | **75.3% / 71.0%**   | >= 85% each    | no    |
+| abs SMD z1, z4, ln sigma1      | 0.175, 0.014, 0.060 | 0.055, 0.025, 0.021 | <= 0.10        | yes   |
+| abs SMD ln turnover            | 0.086               | **0.124**           | <= 0.10        | no    |
+| Scaled MDE (a), (b)            | 19.9, 11.7 bps      | 19.9, 10.1 bps      | <= 45 bps each | yes   |
+
+Reported only: ln V SMD -0.20 (v1 -0.16); median controls per event 2 (v1 1); 1,591
+distinct controls for 1,804 pair slots (1.13 each), the largest control 0.45% of leg
+(b)'s control weight, so reuse does not erode power. Block balance of ln turnover:
+-0.253 and -0.026.
+
+**Reading.** The rule as a whole lowers the price imbalance (z1 SMD 0.175 to 0.055) and
+lifts coverage by 16.8 points (56.4% to 73.2%), but not to 85% in either block. The pool,
+the qB band and the z1 caliper changed together, so the share of each change is not
+known from this run. The controls now come from more liquid names than the events (ln
+turnover SMD -0.12, -0.25 in January); dropping the tercile is the likely source, since
+the tercile kept turnover close, but that too is not separated here. **As fixed above, this HYP-036 design on Bybit
+stops; no v2 protocol is written and no return was computed.** The family (flow against
+price response) is not closed by it.
+
+**Next (owner and colleague, 2026-11-09).** No further combination of calipers on these
+two blocks. The next candidate is chosen by comparing a majors-only study with family 5
+(post-pump short on an open-interest turn) on three items before any return: independent
+observations in the window, the comparison that can actually be built, and the MDE;
+starting with whichever can be checked on data already held.
