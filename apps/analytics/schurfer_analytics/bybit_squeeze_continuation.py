@@ -20,7 +20,7 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, Protocol
 
 from .bybit_carry_feasibility import publish_once
 from .bybit_compressed_spring import (
@@ -40,7 +40,7 @@ from .bybit_post_funding_screen import verified
 from .reporting import markdown_table, normalize_code_revision
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Iterable, Mapping, Sequence
 
 VERSION: Final = "bybit_squeeze_continuation_v1"
 FEATURES_SHA256: Final = "a3b54d6ce092a73afbd4911e8ea72862a707846b45fbb23d05ec1d91f71ebab6"
@@ -206,6 +206,19 @@ class Instrument:
 # ---------------------------------------------------------------- decisions
 
 
+class Unit(Protocol):
+    """What the shape, control and weight functions read from an event or a control."""
+
+    @property
+    def d(self) -> int: ...
+
+    @property
+    def key(self) -> tuple[str, int]: ...
+
+    @property
+    def cluster(self) -> tuple[str, str]: ...
+
+
 @dataclass(frozen=True)
 class Impulse:
     """A liquid first impulse with its waiting bar; d is the decision time t + 1 h."""
@@ -357,14 +370,14 @@ def match(
 # ---------------------------------------------------------------- power
 
 
-def weights_net(events: Sequence[Impulse]) -> dict[tuple[str, int], float]:
+def weights_net(events: Sequence[Unit]) -> dict[tuple[str, int], float]:
     """Unit weights of the cluster mean over the events."""
     clusters = Counter(e.cluster for e in events)
     return {e.key: 1 / (len(clusters) * clusters[e.cluster]) for e in events}
 
 
 def weights_excess(
-    events: Sequence[Impulse], pairs: dict[tuple[str, int], list[Impulse]]
+    events: Sequence[Unit], pairs: Mapping[tuple[str, int], Sequence[Unit]]
 ) -> dict[tuple[str, int], float]:
     """Unit weights of the cluster mean excess; a control's weight sums over its pairs."""
     paired = [e for e in events if pairs.get(e.key)]
@@ -434,7 +447,7 @@ def power(
 # ---------------------------------------------------------------- report
 
 
-def shape(impulses: Sequence[Impulse]) -> dict[str, Any]:
+def shape(impulses: Sequence[Unit]) -> dict[str, Any]:
     clusters = Counter(i.cluster for i in impulses)
     per_symbol = Counter(s for s, _ in clusters)
     per_week = Counter(_week(i.d) for i in {i.cluster: i for i in impulses}.values())
@@ -454,7 +467,7 @@ def shape(impulses: Sequence[Impulse]) -> dict[str, Any]:
 
 
 def control_shape(
-    events: Sequence[Impulse], pairs: dict[tuple[str, int], list[Impulse]]
+    events: Sequence[Unit], pairs: Mapping[tuple[str, int], Sequence[Unit]]
 ) -> dict[str, Any]:
     counts = sorted(len(pairs.get(e.key, [])) for e in events)
     uses = Counter(c.key for e in events for c in pairs.get(e.key, []))
