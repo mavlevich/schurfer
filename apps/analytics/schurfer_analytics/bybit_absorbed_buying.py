@@ -73,7 +73,7 @@ from .bybit_squeeze_continuation import _day, _iso, _week, control_shape, filled
 from .reporting import markdown_table, normalize_code_revision
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable, Sequence
+    from collections.abc import Callable, Iterable, Sequence
 
 VERSION: Final = "bybit_absorbed_buying_v1"
 FEATURES_SHA256: Final = "a3b54d6ce092a73afbd4911e8ea72862a707846b45fbb23d05ec1d91f71ebab6"
@@ -361,26 +361,32 @@ class Member:
 
 
 def match(
-    events: Sequence[Member], candidates: Sequence[Member]
+    events: Sequence[Member],
+    candidates: Sequence[Member],
+    *,
+    z1_caliper: float = Z_CALIPER,
+    by_tercile: bool = True,
 ) -> dict[tuple[str, int], list[Member]]:
     """Same t and tercile, another instrument, the sigma1 ratio and z1, z4 calipers; the
-    5 nearest by (z1, z4), ties by the log sigma1 ratio, then by symbol."""
+    5 nearest by (z1, z4), ties by the log sigma1 ratio, then by symbol. The keywords
+    exist for the matching check (bybit_absorbed_buying_match_check); v1 uses the
+    defaults."""
     by_key: dict[tuple[int, int], list[Member]] = defaultdict(list)
     for c in candidates:
-        by_key[(c.d, c.tercile)].append(c)
+        by_key[(c.d, c.tercile if by_tercile else 0)].append(c)
     pairs: dict[tuple[str, int], list[Member]] = {}
     for e in events:
         es = e.state
         assert es.z1 is not None and es.z4 is not None and es.sigma1 is not None
         ranked = []
-        for c in by_key[(e.d, e.tercile)]:
+        for c in by_key[(e.d, e.tercile if by_tercile else 0)]:
             cs = c.state
             assert cs.z1 is not None and cs.z4 is not None and cs.sigma1 is not None
             if c.symbol == e.symbol:
                 continue
             ratio = abs(math.log(cs.sigma1 / es.sigma1))
             dz1, dz4 = cs.z1 - es.z1, cs.z4 - es.z4
-            if ratio > SIGMA_RATIO_MAX or abs(dz1) > Z_CALIPER or abs(dz4) > Z_CALIPER:
+            if ratio > SIGMA_RATIO_MAX or abs(dz1) > z1_caliper or abs(dz4) > Z_CALIPER:
                 continue
             ranked.append((math.hypot(dz1, dz4), ratio, c.symbol, c))
         ranked.sort(key=lambda r: r[:3])
@@ -670,9 +676,14 @@ def planned_member_hours(features: Features, pools: dict[int, list[str]], mode: 
 
 
 def decide(
-    features: Features, tapes: dict[str, Tape], pools: dict[int, list[str]], mode: str
+    features: Features,
+    tapes: dict[str, Tape],
+    pools: dict[int, list[str]],
+    mode: str,
+    is_candidate: Callable[[State], bool] | None = None,
 ) -> tuple[list[Member], list[Member], Counter[str]]:
-    """Events (first in their episode) and control candidates over the decision spans."""
+    """Events (first in their episode) and control candidates over the decision spans;
+    the candidate rule is v1's unless the matching check passes its own."""
     funnel: Counter[str] = Counter()
     events: list[Member] = []
     candidates: list[Member] = []
@@ -690,7 +701,11 @@ def decide(
                 funnel["member_hours"] += 1
                 status = member.state.qualifies
                 funnel[f"qualifies_{status}"] += 1
-                if member.state.is_control_candidate:
+                if (
+                    is_candidate(member.state)
+                    if is_candidate
+                    else member.state.is_control_candidate
+                ):
                     candidates.append(member)
                 if status != "true":
                     continue
