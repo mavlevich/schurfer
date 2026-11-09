@@ -25,7 +25,7 @@ from .bybit_squeeze_continuation import _iso, control_shape
 from .reporting import normalize_code_revision
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Sequence
 
     from .bybit_compressed_spring import Features
 
@@ -80,32 +80,20 @@ def turnovers(features: Features, pools: dict[int, list[str]]) -> dict[tuple[int
     return out
 
 
-def smd(weights: dict[tuple[str, int], float], value: Callable[[tuple[str, int]], float]) -> float:
-    """v1's weighted SMD on leg (b) weights (absolute control weights, pooled sd the root
-    of the mean of the two weighted variances)."""
-    sides = []
-    for sign in (1, -1):
-        items = [(abs(w), value(k)) for k, w in weights.items() if w * sign > 0]
-        total = math.fsum(a for a, _ in items)
-        mean = math.fsum(a * x for a, x in items) / total
-        var = math.fsum(a * (x - mean) ** 2 for a, x in items) / total
-        sides.append((mean, var))
-    (me, ve), (mc, vc) = sides
-    pooled = math.sqrt((ve + vc) / 2)
-    return (me - mc) / pooled if pooled > 0 else 0.0
+smd = v1.smd_of  # v1's weighted SMD, None for different means with no spread
 
 
 def balance(
     weights: dict[tuple[str, int], float],
     members: dict[tuple[str, int], v1.Member],
     turnover: dict[tuple[int, str], float],
-) -> dict[str, float] | None:
+) -> dict[str, Any] | None:
     if not weights:
         return None
     out = {k: v["smd_unrounded"] for k, v in v1.balance(weights, members).items()}
     out["ln_turnover"] = smd(weights, lambda key: math.log(turnover[(v1.month_of(key[1]), key[0])]))
-    return {k: round(v, 4) for k, v in out.items()} | {
-        "passes": all(abs(out[name]) <= SMD_MAX for name in BALANCED)
+    return {k: round(v, 4) if v is not None else None for k, v in out.items()} | {
+        "passes": all(out[n] is not None and abs(out[n]) <= SMD_MAX for n in BALANCED)
     }
 
 
