@@ -52,8 +52,8 @@ written by the `analytics` scanner (which fetches venue tickers itself) and by
 | source-lead-exit-capture                   | source-lead exit observations                          | **HYP-012 v2**                                              | keep                            |
 | execution                                  | trade decisions (source-lead shadow), live path tables | HYP-012 v2 shadow; LIVE_PROBE idle                          | keep                            |
 | api-gateway, web, notifier                 | UI, alerts                                             | owner                                                       | keep                            |
-| collector                                  | market data on NATS                                    | to check (prices for execution and UI)                      | keep until checked              |
-| outcome-resolver                           | `trade_decision_outcomes`                              | to check (not read by HYP-012 v2's code)                    | keep until checked              |
+| collector                                  | market data on NATS                                    | group 1 and 2 services only (see below)                     | stop with group 2               |
+| outcome-resolver                           | `trade_decision_outcomes`                              | research reports of closed lines only (see below)           | stop with group 2               |
 | momentum-capture, momentum-capture-binance | `bybit_momentum_bars_1m` and flow                      | HYP-015 (rejected); disabled early-momentum code; UI panels | **stop first** (largest growth) |
 | momentum-watch                             | `momentum_flow_watch_evaluations_1m`                   | HYP-015 (rejected); UI and WATCH alerts                     | **stop first**                  |
 | momentum-paper, momentum-paper-hold12h     | `momentum_flow_paper_probes`                           | HYP-015 (rejected); UI and trades page                      | **stop first**                  |
@@ -75,9 +75,35 @@ momentum-paper-binance, momentum-paper-lev3.
 - **Not touched:** anything HYP-012 v2 needs, until it is terminal (deadline 2027-03-31,
   next checkpoint 2026-11-30).
 
-## Open checks before the second group
+## Stopping group 1 in two steps
 
-1. What `collector`'s NATS prices feed (execution's shadow path, UI), so it is never
-   stopped by mistake.
-2. Whether `outcome-resolver`'s outcomes are read by anything still running.
-3. The disk saving from the first group, measured a week after the stop.
+On 2026-11-09 the paper contracts still held open probes: 19 for
+`momentum_flow_paper_v1` and 63 for `momentum_flow_paper_v1_hold12h`, the latest opened
+at 20:50 UTC. Stopping all five services at once would leave them open for ever. So:
+
+1. Stop `momentum-watch` first: no new WATCH decision, so no new probe.
+2. After the longest hold (720 minutes), check that no probe is open, then stop
+   `momentum-paper`, `momentum-paper-hold12h`, `momentum-capture` and
+   `momentum-capture-binance`, and record the time.
+3. After the next routine cycles, check that `analytics`, `source-lead-exit-capture` and
+   `execution` stay fresh and healthy; if not, start the stopped services again and
+   find the dependency. A week later, compare the tables' growth.
+
+A plain `docker compose up -d` (for example a deploy, or #531's three containers)
+starts every stopped service that has no profile again. Until the stopped services
+move under a compose profile (its own PR), deploys and #531 restart only the services
+they need, by name.
+
+## Checks for the second group (done 2026-11-09, read only)
+
+- **collector** publishes only `market.bybit.ticker.*` and `binance.lsr.*` on NATS. Their
+  subscribers are `momentum-capture` (group 1), `market-hotset` and `lsr-subscriber`;
+  `api-gateway` connects to NATS for its health check only. HYP-012 v2's scanner fetches
+  venue tickers itself. So `collector` has no consumer once groups 1 and 2 stop.
+- **outcome-resolver** writes `app.trade_decision_outcomes`, read only by research
+  reports of closed lines (episode selection, HYP-024 order flow) and not by HYP-012 v2's
+  code or any running service.
+
+Group 2 is therefore `liquidation-capture-bybit`, `liquidation-capture-binance`,
+`market-hotset`, `lsr-subscriber`, `collector` and `outcome-resolver`, each on the owner's
+go, after group 1 has run a week without trouble.
