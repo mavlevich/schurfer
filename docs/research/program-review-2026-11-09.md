@@ -51,39 +51,51 @@ cohorts are slow; pre-registration worked). Three more:
 
 ## Where that leaves the program
 
-**All three conditions of the 10-31 early stop now hold:** HYP-015 failed its read,
-HYP-031's minute protocol failed discovery, and the reserve (relative strength, HYP-035)
-stopped. The minute discovery needs no second read.
+**All three conditions of the 10-31 early stop now hold.** Two lines gave negative
+results on their own reads: HYP-015 and HYP-031's minute protocol (no second read
+needed). The reserve, HYP-035, and several other candidates stopped at counts before any
+return was read, so their effect sizes stay unknown. That is enough for a program
+decision; it is not a finding about those effects.
 
 What the stop means, as proposed on 10-31: no new research line or stage opens;
 collectors that no registered cohort needs move to maintenance (backups and health
-kept, closed-line writers stopped); HYP-012 v2 runs to its own terminal (deadline
-2027-03-31); the program resumes only for a new external reason the owner states in
-writing.
+kept, closed-line writers stopped); the program resumes only on the criterion below.
 
-The one conditional opening the 10-31 review kept is **HYP-031's seconds-level
-variant**, under the rule fixed in its protocol; HYP-031's report allows it as a separate
-protocol. Opening it is a separate decision, not a consequence of the stop.
+- **HYP-012 v2** runs under its registered rules: first its 2026-10-31 checkpoint status
+  is restored, then it continues to its deadline, 2027-03-31, or to its own
+  administrative stop. Before any closed-line writer is turned off, the sources this
+  cohort still needs are checked.
+- **HYP-031's seconds-level variant** stays in reserve. The minute failure does not answer
+  the question of the first seconds; the variant opens when the rate's publication delay
+  and the executable price right after it can be measured. Today the spread at that
+  moment is only an assumption.
+- **Records into `main`:** HYP-015's formal result (2d1c582), HYP-031's minute discovery
+  (fa13ae5), the HYP-035 record (#565) and the execution inventory (#571); then the
+  owner's decision is written into this review.
+
+## Resuming
+
+The program resumes only when one of these appears, and the resuming record names
+which gate it now has grounds to pass:
+
+- a **new independent window** of data (for example forward data after HYP-012 v2 is
+  terminal) for a line whose stop was power or data;
+- a **measurable change in execution costs** (fees, spreads or fill quality at the
+  program's size) that moves a stopped line's cost assumption;
+- a **data source that removes the cause** of an earlier stop (for example a measurable
+  publication delay and executable price for HYP-031's seconds-level variant, or
+  controls a stopped design lacked).
 
 ## Position
 
-Mine: **apply the stop now** and do not open another strategy v2 family or a new idea.
+Mine, and the colleague's: **apply the stop now** and open no other family or idea.
 The record since 10-31 is consistent: the cheap public-history screens work and fail
 fast, and what they keep finding is that the edges within reach at USD 50 are smaller
-than the noise or the costs. Continuing to open families would spend owner time against
-that evidence.
-
-On the seconds-level variant, my position is **not to open it now**: the minute protocol
-lost 13 bps a trade at 30 bps of costs, a faster entry at a settlement pays the widest
-spreads of the hour, and its next stage (a live measurement of settlement-time spreads)
-waits for HYP-012 v2 to be terminal anyway. It stays a documented option for that time.
-The alternative is to open it under its own rule now, as the last line before the stop.
+than the noise or the costs.
 
 ## Owner decisions needed
 
-1. Adopt the 10-31 stop rule now (its early stop has met all three conditions), or set
-   another.
-2. Open HYP-031's seconds-level variant now, or keep it for after HYP-012 v2.
-3. State HYP-012 v2's 10-31 checkpoint result.
-4. Bring the pending records into `main`: HYP-031's discovery (fa13ae5), HYP-015's
-   evidence (2d1c582), #565, #571.
+1. Adopt the stop now.
+2. Keep HYP-031's seconds-level variant in reserve under the condition above.
+3. Restore HYP-012 v2's 10-31 checkpoint status.
+4. Bring the four records into `main`.
