@@ -165,7 +165,7 @@ func (c *StreamConsumer) Run(ctx context.Context) {
 			})
 
 			for _, msg := range msgs {
-				c.processMessage(ctx, msg)
+				c.processMessage(ctx, msg, false)
 			}
 		}
 	}
@@ -183,7 +183,9 @@ func (c *StreamConsumer) parseEnvelope(msg redis.XMessage) *Envelope {
 	return &env
 }
 
-func (c *StreamConsumer) processMessage(ctx context.Context, msg redis.XMessage) {
+// processMessage handles one message; reclaimed is true when it came back through
+// XAUTOCLAIM rather than as a new entry.
+func (c *StreamConsumer) processMessage(ctx context.Context, msg redis.XMessage, reclaimed bool) {
 	env := c.parseEnvelope(msg)
 	if env == nil {
 		slog.Warn("consumer.invalid_envelope", "id", msg.ID)
@@ -256,7 +258,10 @@ func (c *StreamConsumer) processMessage(ctx context.Context, msg redis.XMessage)
 		c.fail(ctx, tx, msg, env, "retry limit reached before this attempt")
 		return
 	}
-	if attemptCount > 0 && !env.CreatedAt.IsZero() && c.now().Sub(env.CreatedAt) > retryMaxAge {
+	// The age limit applies to every reclaimed message, even one whose first attempt
+	// never reached PostgreSQL (attempt count still 0), and to any recorded retry.
+	if (reclaimed || attemptCount > 0) && !env.CreatedAt.IsZero() &&
+		c.now().Sub(env.CreatedAt) > retryMaxAge {
 		c.fail(ctx, tx, msg, env, fmt.Sprintf("retry expired: created %s, older than %s",
 			env.CreatedAt.UTC().Format(time.RFC3339), retryMaxAge))
 		return
@@ -360,27 +365,50 @@ func (c *StreamConsumer) reclaimOnce(ctx context.Context) {
 	}
 	c.reclaimCursor = next
 	for _, msg := range msgs {
-		c.processMessage(ctx, msg)
+		c.processMessage(ctx, msg, true)
 	}
+}
+
+// moveToDLQScript moves one outbox entry to the dead-letter stream in a single atomic
+// step: the dead letter is added once per source ID (a marker key guards repeats), and
+// only then is the source acknowledged and deleted. A crash cannot leave a dead letter
+// whose source is still pending, and a repeated move adds nothing.
+var moveToDLQScript = redis.NewScript(`
+if redis.call('SET', KEYS[3], ARGV[2], 'NX', 'PX', ARGV[5]) then
+    redis.call('XADD', KEYS[2], '*', 'data', ARGV[3], 'reason', ARGV[4], 'source_id', ARGV[2])
+end
+local acked = redis.call('XACK', KEYS[1], ARGV[1], ARGV[2])
+redis.call('XDEL', KEYS[1], ARGV[2])
+return acked
+`)
+
+// dlqMarkerTTL keeps a moved source ID's marker for longer than any retry can live.
+const dlqMarkerTTL = 30 * 24 * time.Hour
+
+func dlqMarkerKey(sourceID string) string {
+	return StreamDLQV1 + ":source:" + sourceID
 }
 
 func (c *StreamConsumer) moveToDLQ(ctx context.Context, msg redis.XMessage, reason string) {
 	dataRaw, _ := msg.Values["data"].(string)
-	err := c.rdb.XAdd(ctx, &redis.XAddArgs{
-		Stream: StreamDLQV1,
-		Values: map[string]interface{}{
-			"data":   dataRaw,
-			"reason": reason,
-		},
-	}).Err()
+	err := moveToDLQScript.Run(ctx, c.rdb,
+		[]string{StreamOutboxV1, StreamDLQV1, dlqMarkerKey(msg.ID)},
+		ConsumerGroup, msg.ID, dataRaw, reason, dlqMarkerTTL.Milliseconds(),
+	).Err()
 	if err != nil {
-		slog.Error("consumer.dlq_add_failed", "error", err)
-		return
+		// Nothing was changed: the message stays pending and is claimed again.
+		slog.Error("consumer.dlq_move_failed", "error", err)
 	}
-	c.ackAndDel(ctx, msg.ID)
 }
 
+// ackAndDel deletes the source entry only once it is acknowledged; after a failed
+// XACK the entry stays, so it is claimed again rather than lost.
 func (c *StreamConsumer) ackAndDel(ctx context.Context, id string) {
-	c.rdb.XAck(ctx, StreamOutboxV1, ConsumerGroup, id)
-	c.rdb.XDel(ctx, StreamOutboxV1, id)
+	if err := c.rdb.XAck(ctx, StreamOutboxV1, ConsumerGroup, id).Err(); err != nil {
+		slog.Error("consumer.ack_failed", "error", err)
+		return
+	}
+	if err := c.rdb.XDel(ctx, StreamOutboxV1, id).Err(); err != nil {
+		slog.Error("consumer.delete_failed", "error", err)
+	}
 }

@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"net/http"
+	neturl "net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -31,17 +33,17 @@ func sendMessage(ctx context.Context, text, botToken, chatID, parseMode string) 
 func postMessage(ctx context.Context, botToken string, fields map[string]string) error {
 	body, _ := json.Marshal(fields)
 
-	url := fmt.Sprintf(_telegramAPI, botToken)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	endpoint := fmt.Sprintf(_telegramAPI, botToken)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(body))
 	if err != nil {
-		return err
+		return redactedError("request", err, botToken)
 	}
 	req.Header.Set("Content-Type", "application/json")
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {
-		return err
+		return redactedError("send", err, botToken)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -49,6 +51,22 @@ func postMessage(ctx context.Context, botToken string, fields map[string]string)
 		return fmt.Errorf("telegram: status %d", resp.StatusCode)
 	}
 	return nil
+}
+
+// redactedError keeps the bot token out of what callers log and store: the request
+// URL holds it in its path, and a transport error (*url.Error) quotes that URL. The
+// URL is dropped, any remaining copy of the token is masked, and the original error
+// is not wrapped, so nothing downstream can print it.
+func redactedError(op string, err error, botToken string) error {
+	detail := err.Error()
+	var urlErr *neturl.Error
+	if errors.As(err, &urlErr) {
+		detail = urlErr.Op + ": " + urlErr.Err.Error()
+	}
+	if botToken != "" {
+		detail = strings.ReplaceAll(detail, botToken, "<redacted>")
+	}
+	return fmt.Errorf("telegram %s: %s", op, detail)
 }
 
 var mdv2Special = regexp.MustCompile(`[_*\[\]()~` + "`" + `>#+=|{}.!\\-]`)
