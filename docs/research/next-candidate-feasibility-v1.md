@@ -9,8 +9,8 @@ protocol.
 
 Inputs: the features snapshot (`a3b54d6c...`), HYP-036's sealed pilot tape (manifest
 `3885a196...`, scope `315a343b...`) and HYP-032's archive-size record (`22e7c119...`).
-Code `bybit-next-candidate-feasibility` from ed0b184 (clean tree): [`result.json`](evidence/next-candidate-feasibility-v1/result.json),
-SHA-256 `76ba70cde9123fec882e53dd202ea154bc8f8d50633aad11e9b97cb28bfbfe9c`.
+Code `bybit-next-candidate-feasibility` from f0b8b72 (clean tree): [`result.json`](evidence/next-candidate-feasibility-v1/result.json),
+SHA-256 `bdbf932995b0edb3ec655603babfa7e3306640061d55294423bb58b400d7961c`.
 
 ## The two candidates as estimated
 
@@ -84,3 +84,13 @@ edge.
 Alternatives: write the majors protocol now on these numbers (faster, but rests on 52
 events in seen blocks), or skip majors and take the fallback now (gives up the only
 candidate that passes power on paper).
+
+## Review (2026-11-09)
+
+The colleague agreed with both readings. Family 5 is paused on power and balance: no new
+thresholds on this grid; it returns only with a mechanism that gives a reason to expect
+a smaller spread. The second candidate is named the **liquid top 10** (it is not a set
+of classic majors), and the next step is a counts pilot on two new blocks with the
+matching rule, activity included, fixed before the fetch:
+[liquid top-10 pilot](bybit-liquid-top10-pilot-v1.md). The result above was first run
+from ed0b184 and repinned to f0b8b72 after a rebase; every number is identical.
