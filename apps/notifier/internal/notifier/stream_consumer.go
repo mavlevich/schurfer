@@ -10,6 +10,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/time/rate"
@@ -22,6 +23,18 @@ const (
 	ConsumerName   = "notifier-worker-1" // Normally hostname or UUID
 
 	MaxRetries = 3
+
+	// Retries. A message whose send fails stays in this consumer's pending list (it is
+	// not acknowledged), and the loop claims it back with XAUTOCLAIM once it has been
+	// idle for reclaimMinIdle, a small batch every reclaimInterval, between reads of new
+	// messages. Each claim is one more attempt, counted in PostgreSQL against MaxRetries.
+	reclaimInterval = 30 * time.Second
+	reclaimMinIdle  = 60 * time.Second
+	reclaimBatch    = 10
+	// A retry of an envelope older than this is not sent: it is recorded as failed and
+	// moved to the dead-letter stream. A stale alert is noise, and this keeps a backlog
+	// left by the old consumer (which never retried) from being sent on rollout.
+	retryMaxAge = 24 * time.Hour
 )
 
 // Envelope represents the notification-envelope-v1.schema.json
@@ -72,17 +85,24 @@ type StreamConsumer struct {
 	botToken    string
 	chatID      string
 	rateLimiter *rate.Limiter
+
+	minIdle       time.Duration // reclaimMinIdle; tests shorten it
+	reclaimCursor string
+	now           func() time.Time
 }
 
 func NewStreamConsumer(rdb *redis.Client, db *pgxpool.Pool, botToken, chatID string) *StreamConsumer {
 	// 20 messages per minute rate limiting
 	limit := rate.Every(time.Minute / 20)
 	return &StreamConsumer{
-		rdb:         rdb,
-		db:          db,
-		botToken:    botToken,
-		chatID:      chatID,
-		rateLimiter: rate.NewLimiter(limit, 1),
+		rdb:           rdb,
+		db:            db,
+		botToken:      botToken,
+		chatID:        chatID,
+		rateLimiter:   rate.NewLimiter(limit, 1),
+		minIdle:       reclaimMinIdle,
+		reclaimCursor: "0-0",
+		now:           time.Now,
 	}
 }
 
@@ -100,11 +120,18 @@ func (c *StreamConsumer) Run(ctx context.Context) {
 		return
 	}
 
+	lastReclaim := time.Time{}
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
+		}
+
+		// One small batch of retries per interval, then back to new messages.
+		if c.now().Sub(lastReclaim) >= reclaimInterval {
+			c.reclaimOnce(ctx)
+			lastReclaim = c.now()
 		}
 
 		// Read up to 50 messages
@@ -202,15 +229,36 @@ func (c *StreamConsumer) processMessage(ctx context.Context, msg redis.XMessage)
 	// 2. Treat mismatched payload hash as conflict
 	if string(storedHash) != string(hash) {
 		slog.Warn("consumer.hash_conflict", "dedup_key", env.DedupKey)
-		_ = tx.Commit(ctx)
+		if !c.commit(ctx, tx) {
+			return
+		}
 		c.moveToDLQ(ctx, msg, "mismatched payload hash for same dedup_key")
 		return
 	}
 
-	// 3. Skip if already delivered
-	if status == "delivered" {
-		_ = tx.Commit(ctx)
-		c.ackAndDel(ctx, msg.ID)
+	// 3. Terminal rows: finish what is left in Redis, never send again. A failed row
+	// whose move to the dead-letter stream did not complete is finished here.
+	switch status {
+	case "delivered":
+		if c.commit(ctx, tx) {
+			c.ackAndDel(ctx, msg.ID)
+		}
+		return
+	case "failed":
+		if c.commit(ctx, tx) {
+			c.moveToDLQ(ctx, msg, "already failed; finishing the dead-letter move")
+		}
+		return
+	}
+
+	// 4. A retry that is out of attempts or too old is recorded as failed, not sent.
+	if attemptCount >= MaxRetries {
+		c.fail(ctx, tx, msg, env, "retry limit reached before this attempt")
+		return
+	}
+	if attemptCount > 0 && !env.CreatedAt.IsZero() && c.now().Sub(env.CreatedAt) > retryMaxAge {
+		c.fail(ctx, tx, msg, env, fmt.Sprintf("retry expired: created %s, older than %s",
+			env.CreatedAt.UTC().Format(time.RFC3339), retryMaxAge))
 		return
 	}
 
@@ -220,7 +268,7 @@ func (c *StreamConsumer) processMessage(ctx context.Context, msg redis.XMessage)
 		return
 	}
 
-	// 4. Bounded retries (update attempt_count)
+	// 5. Bounded retries (update attempt_count)
 	attemptCount++
 	_, err = tx.Exec(ctx, `
 		UPDATE app.notification_deliveries
@@ -238,14 +286,21 @@ func (c *StreamConsumer) processMessage(ctx context.Context, msg redis.XMessage)
 	sendErr := sendMessage(ctx, env.Payload.Text, c.botToken, c.chatID, parseMode)
 
 	if sendErr == nil {
-		// 5. On success, mark delivered in PG, XACK + XDEL
-		_, _ = tx.Exec(ctx, `
+		// 6. On success, mark delivered in PG; acknowledge only once that is committed.
+		// If the commit fails the message stays pending and a later claim sends it again
+		// (at least once, never silently lost).
+		_, err = tx.Exec(ctx, `
 			UPDATE app.notification_deliveries
 			SET status = 'delivered', delivered_at = now()
 			WHERE producer = $1 AND dedup_key = $2
 		`, env.Producer, env.DedupKey)
-		_ = tx.Commit(ctx)
-		c.ackAndDel(ctx, msg.ID)
+		if err != nil {
+			slog.Error("consumer.db_mark_delivered_failed", "error", err)
+			return
+		}
+		if c.commit(ctx, tx) {
+			c.ackAndDel(ctx, msg.ID)
+		}
 		return
 	}
 
@@ -253,16 +308,59 @@ func (c *StreamConsumer) processMessage(ctx context.Context, msg redis.XMessage)
 	slog.Warn("consumer.delivery_failed", "error", sendErr, "attempt", attemptCount)
 
 	if attemptCount >= MaxRetries {
-		// 6. On fail out of retries, mark failed in PG, move to DLQ, XACK + XDEL
-		_, _ = tx.Exec(ctx, `
-			UPDATE app.notification_deliveries
-			SET status = 'failed', last_error = $1
-			WHERE producer = $2 AND dedup_key = $3
-		`, sendErr.Error(), env.Producer, env.DedupKey)
-		_ = tx.Commit(ctx)
-		c.moveToDLQ(ctx, msg, sendErr.Error())
-	} else {
-		_ = tx.Commit(ctx)
+		// 7. Out of retries: record failed, then move to the dead-letter stream.
+		c.fail(ctx, tx, msg, env, sendErr.Error())
+		return
+	}
+	// Not acknowledged: the message stays pending and is claimed back later.
+	c.commit(ctx, tx)
+}
+
+// commit reports whether the transaction committed; on failure the caller leaves the
+// message unacknowledged, so it is claimed again later.
+func (c *StreamConsumer) commit(ctx context.Context, tx pgx.Tx) bool {
+	if err := tx.Commit(ctx); err != nil {
+		slog.Error("consumer.db_commit_failed", "error", err)
+		return false
+	}
+	return true
+}
+
+// fail records the final failure and only then moves the message to the dead-letter
+// stream (which acknowledges it). If the record does not commit, nothing is acknowledged.
+func (c *StreamConsumer) fail(ctx context.Context, tx pgx.Tx, msg redis.XMessage, env *Envelope, reason string) {
+	_, err := tx.Exec(ctx, `
+		UPDATE app.notification_deliveries
+		SET status = 'failed', last_error = $1
+		WHERE producer = $2 AND dedup_key = $3
+	`, reason, env.Producer, env.DedupKey)
+	if err != nil {
+		slog.Error("consumer.db_mark_failed_failed", "error", err)
+		return
+	}
+	if c.commit(ctx, tx) {
+		c.moveToDLQ(ctx, msg, reason)
+	}
+}
+
+// reclaimOnce claims one batch of this group's messages idle for at least minIdle and
+// processes each as one more attempt.
+func (c *StreamConsumer) reclaimOnce(ctx context.Context) {
+	msgs, next, err := c.rdb.XAutoClaim(ctx, &redis.XAutoClaimArgs{
+		Stream:   StreamOutboxV1,
+		Group:    ConsumerGroup,
+		Consumer: ConsumerName,
+		MinIdle:  c.minIdle,
+		Start:    c.reclaimCursor,
+		Count:    reclaimBatch,
+	}).Result()
+	if err != nil {
+		slog.Error("consumer.reclaim_failed", "error", err)
+		return
+	}
+	c.reclaimCursor = next
+	for _, msg := range msgs {
+		c.processMessage(ctx, msg)
 	}
 }
 
