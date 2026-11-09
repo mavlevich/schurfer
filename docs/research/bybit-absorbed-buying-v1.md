@@ -1,12 +1,13 @@
-# HYP-036: absorbed taker buying, short (protocol v1, draft)
+# HYP-036: absorbed taker buying, short (protocol v1)
 
-Status: **draft for the design touchpoint, 2026-11-08,** revised the same day after the
+Status: **stopped 2026-11-09 at the pilot gate (step 2), before the full fetch (below);
+no trade return of any event or control was computed or read.** Each decision used
+data before its own t only; the power estimate's hourly scales and rho, for a later
+decision, include hours after earlier ones. Step 1 passed. Drafted for the design touchpoint 2026-11-08 and revised the same day after the
 first review (variance by hourly blocks, the fetch admitted by fixed calendar blocks with
 the full pool, one more warm-up day in the scope) and after the second (rho of a block
 known at the earliest decision covering it, step 1 recomputed from raw files, the two
-scales stated exactly, seeding of the full fetch from the pilot parts). Nothing has been counted or read
-for this question: no flow value has been computed for it, and no return of its events
-or controls has been seen. It registers nothing until committed after review; any later
+scales stated exactly, seeding of the full fetch from the pilot parts). It registers nothing until committed after review; any later
 change needs a dated amendment before the step it changes runs. It is family 2 of the
 [research strategy v2](research-strategy-v2.md) list ("pressure against price
 response"), chosen in the [discovery power budget](discovery-power-budget-v1.md) because
@@ -131,7 +132,9 @@ before t. This is the independence rule: a hold ends at t + 4 h + 1 min, so hold
 instrument never overlap. "First" is undefined when any of those 8 hours is undefined.
 
 **Determinability.** Each item is `true`, `false` or `undefined` with a reason.
-Undefined decisions are counted, never treated as false.
+Undefined decisions are counted, never treated as false. A member-hour is determined when
+it does not qualify, or when it qualifies and its "first" is `true` or `false`; a
+qualifying hour whose "first" is undefined is not determined.
 
 **Entry:** short at the open of the 1-minute bar starting t + 1 min (taker). **Exit:** at
 the close of the 1-minute bar ending t + 1 min + 4 h. **H = 4 h is fixed**, as in
@@ -243,7 +246,10 @@ it is seeded with the pilot's parts by importing only the `ok` parts whose symbo
 in the full scope, each checked for its SHA-256, its symbol-day, the same features and
 HYP-031 index snapshots, the same mask version and the same rules (`tape-v3`); a part
 failing any check is fetched again, and an incompatible input refuses the seeding as a
-whole. The new manifest keeps each part's origin and reports imported bytes apart from
+whole. The seeded run is written in a staging directory and published by one rename,
+so an interrupted seeding leaves no run to resume. Counts read only a tape whose
+manifest is bound to exactly the scope the protocol fixes for that mode (rules, inputs,
+no pilot subset) and holds exactly its symbol-days. The new manifest keeps each part's origin and reports imported bytes apart from
 the full fetch's own traffic. Then on the full tape report:
 
 - the funnel, events by ISO week and month;
@@ -345,3 +351,75 @@ Feature check: one module reusing HYP-032's tape reader, about half a day. Pilot
 the matching, power and floor code (reusing HYP-033 to HYP-035's), about a day with
 tests, plus a few hours of fetch. Full fetch: unattended, about 13 to 15 hours. Counts on
 the full tape: hours. Reading: about a day. Stop at any failed gate.
+
+## Step 1 result (2026-11-08): passed
+
+From 0564134 (branch `research/hyp036-absorbed-buying-code`, PR #567, clean tree) on
+HYP-032's tape (manifest `21bdf619...`), no return computed:
+
+- `check` (`check.json` SHA-256
+  `db7e9203cd46a1f033229d06ce45545bc5e043cbbf2135adfe5adf83d63f64f3`, no traffic): of
+  24,275,327 kept minutes read, **0** fall inside the mask. Hour statuses: 208,283
+  defined, 163,283 `rank_history_short`, 465,121 `tape_missing` (the tape's days are
+  scattered, chosen for HYP-032), 1 `tape_mismatch`, 3 `span_short`.
+- `check-raw` (`check-raw.json`
+  `6f64153854a9e94ff2ca0099a8e2821c0ee82365f54cca61ae992e56b2dd276b`, on the owner's
+  go): 143,169,461 bytes read under a 200 MB cap. All 20 raw files have the SHA-256 their
+  parts recorded; buy and sell USD summed from the trades agree with the stored values
+  on all 480 hours (so B and V, and the sign of B); the plain ranks agree with the
+  rolling ranks on all 211 hours where both are defined (9 of the days; the other 11
+  lack the 336 hours of history on this tape, and both counts call them undefined).
+
+## Pilot result (2026-11-09): stop
+
+On the owner's go. Scope from 0564134 (`scope.json`
+`315a343bfc148aad082c50eda1fc7e817fe820cb9b80fcf00ec2c45540baaa45`, 8,652 symbol-days,
+estimate 82.5 GB); HYP-032's fetcher, rules `tape-v3`: all 8,652 parts `ok`,
+79,960,032,178 bytes read under the 100 GB cap in 1 h 23 min, every checkable hour
+matched its kline (85,531, none mismatched). Manifest
+`3885a1965a4ce2238cd26a5df37139c40bc67f5d09c485ecf12fd1f1054fcf9e`. `counts --mode blocks`
+from 0564134 (`counts.json`
+`db24fde0daa8c148cf64a2e7597bca5e7cce5c414e58e4a6b9632c83734ba86b`, `pairs.json`
+`338b6e3811bbeb95312e4bb17dd0ff5b1f6b8acfbd3dff8cd7a090fe07a5cba4`):
+
+| Pilot gate item                        | Value                                                | Limit          | Holds |
+| -------------------------------------- | ---------------------------------------------------- | -------------- | ----- |
+| Determinable, all planned member-hours | 100% of 100,128                                      | >= 90%         | yes   |
+| Projected events after independence    | 9,312 (784 in the blocks: 408 and 376; 750 clusters) | >= 1,500       | yes   |
+| Events with a control                  | 56.4% (442 of 784)                                   | >= 85%         | no    |
+| Balance, abs SMD                       | z1 **0.175**, z4 0.014, ln sigma1 0.060              | <= 0.10        | no    |
+| Scaled MDE (a) net, (b) excess         | 19.9 and 11.7 bps                                    | <= 45 bps each | yes   |
+
+Reported only: qV SMD -0.067, ln V -0.164; 194 symbols, top-5 symbols 6.8% of clusters;
+rho (a) 0.39 to 0.57 by month, (b) 0.21 to 0.44. **The pilot gate fails on coverage and
+balance, so v1 stops before the full fetch, as fixed above.** No trade return was
+computed; the 526 GB full fetch is not proposed.
+
+Review 3 (2026-11-09) confirmed the stop and the artifacts' SHA-256 values, and fixed
+three code paths that did not touch this result: counts now refuse a tape bound to
+another scope, rules or pilot subset; a qualifying hour whose "first" is undefined is no
+longer counted as determined (the pilot had none: 99,241 not qualifying + 784 first +
+103 not first = 100,128, still 100%); and seeding is published whole and checks the
+source run's scope.
+
+**Diagnostic of the failure (pre-t features of the frozen blocks only; decides nothing).**
+The idea has many events and ample power; the control is what fails:
+
+- A median event has only **7** control candidates at its hour in its tercile (qB 0.25 to
+  0.75, qV >= 0.5, |z1| <= 1 among about 50 members). The share with any candidate left
+  falls from 98.0% (tercile) to 82.8% (sigma1 ratio), 72.6% (z1 caliper) and 56.4% (z4
+  caliper); without the tercile it would be 77.6%. The first filter that empties: z4 for
+  127 events, sigma1 for 119, z1 for 80, an empty tercile for 16.
+- Unlike HYP-034, the events that lose their control look like those that keep one (z1
+  mean 0.358 against 0.348, |z4| 0.651 against 0.660, ln sigma1 -4.516 against -4.525,
+  B 0.391 against 0.372): the loss is scarcity of candidates, not a different kind of
+  event.
+- The imbalance is the mechanism's own correlation: net buying comes with up hours.
+  Events average z1 0.35 (sd 0.43) against 0.03 (sd 0.54) for all candidates, and a
+  caliper of 0.5 is about one standard deviation, so the nearest controls stay lower.
+
+**For any later design (none is proposed here).** A v2 would need its own protocol and
+registry row, and these blocks' features are now seen (their returns are not). The
+diagnostic points to a wider same-hour candidate pool (the whole top 150, a wider qB
+band for controls) with a tighter z1 match, and the blocks' parts can seed a fetch under
+the same rules. Whether that reaches 85% coverage with balance is not known from here.

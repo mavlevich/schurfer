@@ -605,6 +605,7 @@ def seal(
     tasks: Sequence[Task], out_dir: Path, binding: dict[str, Any]
 ) -> tuple[dict[str, Any], str]:
     bind_run(out_dir, binding, create=False)
+    seeded = seeded_parts(out_dir, binding)
     missing = [f"{t.symbol} {t.day}" for t in tasks if not t.part.exists()]
     if missing:
         raise SystemExit(f"{len(missing)} scope days have no part yet, e.g. {missing[:3]}")
@@ -624,14 +625,18 @@ def seal(
             hours.update(part.get("reconciliation", {}).get("counts", {}))
             gaps.update(part.get("reconciliation", {}).get("gap_bins", {}))
         file_bytes += int(part.get("file_bytes", 0))
-        parts.append(
-            {
-                "symbol": task.symbol,
-                "day": task.day,
-                "status": part["status"],
-                "part_sha256": file_sha256(task.part),
-            }
-        )
+        entry = {
+            "symbol": task.symbol,
+            "day": task.day,
+            "status": part["status"],
+            "part_sha256": file_sha256(task.part),
+        }
+        if seeded is not None:
+            origin = seeded[1].get((task.symbol, task.day))
+            if origin is not None and origin != entry["part_sha256"]:
+                raise SystemExit(f"{task.part} is not the part seed.json imported")
+            entry["origin"] = "seeded" if origin is not None else "fetched"
+        parts.append(entry)
     manifest = {
         "version": VERSION,
         "binding": binding,
@@ -648,8 +653,30 @@ def seal(
         "bytes_reserved": ledger_spent(out_dir / "budget-ledger.jsonl"),
         "parts": parts,
     }
+    if seeded is not None:  # imported bytes apart from this run's own traffic
+        manifest["seed"] = seeded[0]
     digest = publish_once(out_dir / "manifest.json", manifest)
     return manifest, digest
+
+
+def seeded_parts(
+    out_dir: Path, binding: dict[str, Any]
+) -> tuple[dict[str, Any], dict[tuple[str, str], str]] | None:
+    """The seed record of a run seeded from earlier verified parts (HYP-036), or None."""
+    path = out_dir / "seed.json"
+    if not path.exists():
+        return None
+    record = json.loads(path.read_bytes())
+    if record.get("binding") != binding:
+        raise SystemExit(f"{path} was written for other inputs or rules")
+    origins = {(p["symbol"], p["day"]): p["part_sha256"] for p in record["parts"]}
+    summary = {
+        "seed_sha256": file_sha256(path),
+        "source_manifest_sha256": record["source_manifest_sha256"],
+        "imported_parts": record["imported_parts"],
+        "imported_file_bytes": record["imported_file_bytes"],
+    }
+    return summary, origins
 
 
 # ---------------------------------------------------------------- command line
