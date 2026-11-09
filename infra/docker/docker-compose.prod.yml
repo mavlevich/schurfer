@@ -170,6 +170,10 @@ services:
         max-file: '3'
 
   collector:
+    # Maintenance mode (docs/engineering/maintenance-inventory-2026-11-09.md): behind a
+    # profile, so a plain deploy (`up -d`) does not start it again once it is stopped.
+    # Start it by name with `make prod-collector-start`.
+    profiles: ['collector']
     build:
       context: ../../
       dockerfile: apps/collector/Dockerfile
@@ -189,6 +193,8 @@ services:
         max-file: '3'
 
   market-hotset:
+    # Maintenance mode: behind a profile like collector; `make prod-market-hotset-start`.
+    profiles: ['market-hotset']
     build:
       context: ../../
       dockerfile: apps/collector/Dockerfile
@@ -766,6 +772,8 @@ services:
         max-file: '3'
 
   outcome-resolver:
+    # Maintenance mode: behind a profile like collector; `make prod-outcome-resolver-start`.
+    profiles: ['outcome-resolver']
     build:
       context: ../../
       dockerfile: apps/analytics/Dockerfile
@@ -939,6 +947,8 @@ services:
         max-file: '3'
 
   lsr-subscriber:
+    # Maintenance mode: behind a profile like collector; `make prod-lsr-subscriber-start`.
+    profiles: ['lsr-subscriber']
     build:
       context: ../../
       dockerfile: apps/market-hotset/Dockerfile
