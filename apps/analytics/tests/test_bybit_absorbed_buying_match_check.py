@@ -76,3 +76,9 @@ def test_different_means_with_no_spread_never_pass_the_balance_gate() -> None:
     turnover = {(v1.month_of(e.d), "E"): 1e6, (v1.month_of(c.d), "A"): 1e6}
     bal = mc.balance(weights, {e.key: e, c.key: c}, turnover)
     assert bal is not None and bal["z1"] is None and bal["passes"] is False
+
+
+def test_two_constant_groups_are_decided_before_weighting() -> None:
+    weights = {("E", 1): 0.1, ("F", 1): 0.9, ("A", 1): -0.2, ("B", 1): -0.8}
+    assert mc.smd(weights, lambda k: 0.1) == 0.0
+    assert mc.smd(weights, lambda k: 0.1 if k[0] in "EF" else 0.2) is None

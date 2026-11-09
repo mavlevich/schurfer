@@ -400,20 +400,23 @@ def smd_of(
 ) -> float | None:
     """Weighted SMD on leg (b)'s weights: events carry their positive weights, controls
     the absolute value of their negative ones; the pooled sd is the root of the mean of
-    the two weighted variances (HYP-034 Amendment 1). With no spread on either side it is
-    0 for equal means and None (never balanced) for different ones."""
+    the two weighted variances (HYP-034 Amendment 1). When both sides are constant it is
+    0 for equal values and None (never balanced) for different ones, decided on the raw
+    values before any weighting, so rounding in the weighted means cannot create a spread."""
+    items = {
+        sign: [(abs(w), value(k)) for k, w in weights.items() if w * sign > 0] for sign in (1, -1)
+    }
+    constants = [{v for _, v in side} for side in items.values()]
+    if all(len(c) == 1 for c in constants):
+        return 0.0 if constants[0] == constants[1] else None
     sides = []
-    for sign in (1, -1):
-        items = [(abs(w), value(k)) for k, w in weights.items() if w * sign > 0]
-        total = math.fsum(a for a, _ in items)
-        mean = math.fsum(a * v for a, v in items) / total
-        var = math.fsum(a * (v - mean) ** 2 for a, v in items) / total
+    for side in items.values():
+        total = math.fsum(a for a, _ in side)
+        mean = math.fsum(a * v for a, v in side) / total
+        var = math.fsum(a * (v - mean) ** 2 for a, v in side) / total
         sides.append((mean, var))
     (me, ve), (mc, vc) = sides
-    pooled = math.sqrt((ve + vc) / 2)
-    if pooled > 0:
-        return (me - mc) / pooled
-    return 0.0 if me == mc else None
+    return (me - mc) / math.sqrt((ve + vc) / 2)
 
 
 def balance(
