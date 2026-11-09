@@ -1,11 +1,10 @@
 # HYP-031: Bybit post-funding reaction, minute variant (protocol v1, draft)
 
-Status: **protocol v1 with Amendments 1 to 3, 2026-10-26.** Nothing is fetched, no price
-after any settlement has been read, and this changes no registered rule, cohort or
-roadmap order. It binds as committed before the first fetch; any later change needs
-its own amendment before any return is read. The roadmap parks "funding-only short baskets"; this is a different object
-(an intraday timing effect around one settlement, flat before the next one), and
-opening it is the owner's decision after the 2026-10-31 review, not this document's.
+Status: **protocol v1 with Amendments 1 to 3, 2026-10-26; discovery read 2026-11-05:
+`fail` (below); the minute variant closes with its test year unread.** It bound as
+committed before the first fetch. The roadmap parks "funding-only short baskets"; this is
+a different object (an intraday timing effect around one settlement, flat before the
+next one).
 
 ## Question
 
