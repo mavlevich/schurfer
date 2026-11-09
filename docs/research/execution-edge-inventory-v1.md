@@ -1,7 +1,8 @@
 # Execution edge: limit entry with a fixed wait against a taker entry (inventory v1)
 
 Status: **planning note, 2026-11-09; decides nothing, registers nothing, reads no new
-data.** The colleague's direction for the strategy's fallback after the
+data. Paused the same day: HYP-015 was rejected (below), so no signal on record pays
+for a cheaper entry.** The colleague's direction for the strategy's fallback after the
 [BTC trend note](btc-trend-feasibility-v1.md): does a limit entry with a fixed wait lower
 the full cost of execution against an immediate taker entry, on the same decisions fixed
 in advance? This note is the first step the colleague asked for: which recorded decisions,
@@ -105,3 +106,18 @@ HYP-015 and wait on its 11-04 read. Next, in order, each small:
 Alternative: a signal-free calibration on random liquid-symbol times first (fill rates,
 queue model, cost spread), which needs no decision source but does not measure adverse
 selection, the effect that decides the question.
+
+## Outcome (2026-11-09): paused with HYP-015
+
+The owner reports that HYP-015's formal read ran on 2026-11-05 at 08:41:09 UTC:
+verdict **reject_hold12h** on Gate B, all 3,575 pairs analysable, mean net of the 12-hour
+policy **-0.643699%** after costs and funding, production run completed without
+override, result JSON checksum matched (record in local commit 2d1c582 on branch
+`codex/hyp015-formal-evidence`, not yet in main). A cheaper entry worth a few to about
+10 bps a decision cannot turn -64 bps into a profit, and the read closed the contract.
+
+So, as fixed in step 1 above, this direction pauses: **no archive is fetched to optimise
+HYP-015's entry.** The WATCH flow of 2026-08-14 to 09-28 stays available as a historical
+decision stream for checking a cost method (fill model, cost spread, adverse selection)
+when a signal that pays exists; the protocol above would then be written for that
+signal's own decisions.
