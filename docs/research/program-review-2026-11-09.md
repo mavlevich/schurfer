@@ -1,9 +1,9 @@
 # Research program review, 2026-11-09 (draft)
 
-Status: **draft for the owner and the colleague, 2026-11-09.** It follows the
-[2026-10-31 review](program-review-2026-10-31.md) and decides nothing; it reads nothing
-new. Its purpose: after the strategy v2 families and HYP-015 all stopped, decide whether
-the program opens anything more, and what.
+Status: **adopted by the owner on 2026-11-09: the program stops now** (decision below).
+It follows the [2026-10-31 review](program-review-2026-10-31.md) and reads nothing new.
+Its purpose: after the strategy v2 families, HYP-015 and HYP-031's minute protocol all
+stopped, decide whether the program opens anything more.
 
 ## What ran since 2026-10-31
 
@@ -93,9 +93,16 @@ The record since 10-31 is consistent: the cheap public-history screens work and 
 fast, and what they keep finding is that the edges within reach at USD 50 are smaller
 than the noise or the costs.
 
-## Owner decisions needed
+## Decision (2026-11-09)
 
-1. Adopt the stop now.
-2. Keep HYP-031's seconds-level variant in reserve under the condition above.
-3. Restore HYP-012 v2's 10-31 checkpoint status.
-4. Bring the four records into `main`.
+The owner adopted the stop, with the colleague's agreement:
+
+1. **The program stops now.** No new research line or stage opens; it resumes only on the
+   criterion above.
+2. **HYP-031's seconds-level variant stays in reserve** under the condition above.
+3. **HYP-012 v2** continues under its registered rules, starting with restoring its
+   2026-10-31 checkpoint status.
+4. **The four records** (HYP-015's formal result, HYP-031's minute discovery, HYP-035,
+   the execution inventory) are brought into `main`.
+5. Closed-line writers are turned off only after checking which sources HYP-012 v2 still
+   needs; each production step keeps its own go.
