@@ -32,9 +32,10 @@ cohorts are slow; pre-registration worked). Three more:
    HYP-034 and three HYP-036 designs failed on coverage or on z1 balance, whatever the
    pool: net buying and impulses come with up hours, against other coins and against
    the same coin's own hours alike.
-5. **On this data and at this size, only large effects are testable.** A 4-hour alt
-   trade needs about 1,000 to 1,500 independent events for an MDE near 50 bps; daily
-   books and whole-strategy BTC tests cannot get there on the clean windows.
+5. **On this data, only large effects are testable.** A 4-hour alt trade needs about
+   1,000 to 1,500 independent events for an MDE near 50 bps; daily books and
+   whole-strategy BTC tests cannot get there on the clean windows. This is a limit of
+   the data and the noise, not of the account size.
 6. **Cheaper execution is worth something only for a signal that pays.** The execution
    test is the first one that is powered, and it has nothing to apply to.
 
@@ -95,8 +96,16 @@ which gate it now has grounds to pass:
 
 Mine, and the colleague's: **apply the stop now** and open no other family or idea.
 The record since 10-31 is consistent: the cheap public-history screens work and fail
-fast, and what they keep finding is that the edges within reach at USD 50 are smaller
-than the noise or the costs.
+fast, and what they keep finding is that the edges within reach are smaller than
+retail costs or the noise. Every verdict above is in basis points: HYP-015 and HYP-031's
+minute protocol were negative per trade, and the other lines stopped on power or on the
+quality of the comparison. More capital does not change any of them.
+
+**Capital (owner, 2026-11-09).** USD 50 is the first test of execution, not a ceiling:
+the owner will add USD 300, 1,000 and more once a result supports it. More capital can
+remove measured execution limits (minimum order size, the step of position sizing, the
+number of simultaneous positions); topping up the account is not by itself a reason to
+resume.
 
 ## Decision (2026-11-09)
 
