@@ -56,9 +56,16 @@ Nothing new is confirmed on it.
 
 ## Exposures inside the HYP-012 v2 blind window
 
-| When (UTC)              | What was seen                                                                                                                                                               | By                                                     | Level                                |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------ |
-| 2026-11-10, about 14:00 | Bybit `/v5/market/tickers` last price of BTCUSDT, SOLUSDT and DOGEUSDT, one instant each; the rest of the responses was not printed and the saved files were deleted unread | [Venue cost check](venue-cost-check-v1.md), by mistake | features (three prices, one instant) |
+One row per check or incident in which a market value from the window (a price, rate,
+spread or return) actually reached the output. Values are not copied here. Routine
+health checks (service states, connection errors, lag, counters, time of the last write)
+are not rows. Routine checks print only the fields they need and filter market values
+out before printing; old logs are not reopened to rebuild this list.
+
+| When (UTC)              | What was seen                                                                                                                                                               | By                                                     | Level                                     |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------- |
+| 2026-11-10, about 14:00 | Bybit `/v5/market/tickers` last price of BTCUSDT, SOLUSDT and DOGEUSDT, one instant each; the rest of the responses was not printed and the saved files were deleted unread | [Venue cost check](venue-cost-check-v1.md), by mistake | features (three prices, one instant)      |
+| 2026-11-10, about 13:35 | `analytics` log tail during the post-recreate health check: one `snapshot.recorded` line, one instrument, with a price and a percentage change at the +1h offset            | Maintenance health check, Redis recreate               | features (one value pair, one instrument) |
 
 ## Still clean for confirmation
 
