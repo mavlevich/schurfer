@@ -92,8 +92,8 @@ func TestHealthIncidentsDeliveredAgainstRealPostgres(t *testing.T) {
 			for _, message := range stream.Messages {
 				envelope := consumer.parseEnvelope(message)
 				notificationIDs = append(notificationIDs, envelope.NotificationID)
-				consumer.processMessage(ctx, message)
-				consumer.processMessage(ctx, message) // duplicate stream delivery
+				consumer.processMessage(ctx, message, false)
+				consumer.processMessage(ctx, message, false) // duplicate stream delivery
 			}
 		}
 	}
