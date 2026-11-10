@@ -54,6 +54,12 @@ that uses the same inputs. A coverage-only window stays usable for confirmation.
 The 2026-07 to 2026-09 own-capture period is the most reused data the program has.
 Nothing new is confirmed on it.
 
+## Exposures inside the HYP-012 v2 blind window
+
+| When (UTC)              | What was seen                                                                                                                                                               | By                                                     | Level                                |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | ------------------------------------ |
+| 2026-11-10, about 14:00 | Bybit `/v5/market/tickers` last price of BTCUSDT, SOLUSDT and DOGEUSDT, one instant each; the rest of the responses was not printed and the saved files were deleted unread | [Venue cost check](venue-cost-check-v1.md), by mistake | features (three prices, one instant) |
+
 ## Still clean for confirmation
 
 - **Bybit public history before 2024-09-16,** for any hypothesis: nothing beyond
