@@ -112,3 +112,24 @@ Counts only, no values read.
 
   So it is used per event window and reduced to top-of-book and depth features, never
   stored whole.
+
+## HYP-037 registered preflight scope, 2026-11-11
+
+Registered before the first local snapshot read. See the
+[preflight contract](hyp037-impulse-policy-preflight-v1.md). Status at registration
+is registered, not yet read. The run's hashes and completion are recorded after it.
+
+| Window                        | Data and allowed output                                                                                                                                                                                                                                                                                         | Level                                               |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| 2024-10-01 through 2025-09-30 | Existing HYP-032 features snapshot a3b54d6c...: hourly first impulses, F/G membership, counts, concurrency and pre-impulse 4-hour volatility for planning MDE. Two candidates A/B. No minute entry/exit prices, setup means or net returns. Earlier setup paths may occur in later pre-entry dispersion windows | features and pre-entry dispersion, reused discovery |
+
+The snapshot is hash-pinned. HYP-031's reserved year, the backward holdout and
+HYP-012 v2's blind window are outside this scope. No new download is registered.
+
+Completed the registered HYP-037 local preflight on 2026-11-11, run binding created
+at 21:29:59.716972 UTC. Source snapshot SHA-256 matched before parsing and before
+sealing. The scope above was seen at features/pre-entry-dispersion level. Counts
+SHA-256 is `a9ef438e49c8bbf64a2c1c634b0f213f129ae3fc439bd9f3d591e562e5e16169`.
+The old HYP-033 counts and frozen event IDs were hash-verified and compared, with
+all 986 filtered identities equal. See [result](hyp037-impulse-policy-preflight-result-v1.md).
+No setup mean or net, minute outcome bars or blind-window data were read.
