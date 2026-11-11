@@ -470,3 +470,54 @@ def test_existing_output_is_refused_even_when_empty(
             output_dir=output,
         )
     assert list(output.iterdir()) == []
+
+
+@pytest.mark.parametrize("diversity", ["symbols", "weeks", "top5_symbols"])
+def test_mature_negative_net_is_not_masked_by_poor_diversity(diversity: str) -> None:
+    if diversity == "symbols":
+        first = population()[0]
+        events = tuple(
+            replace(first, d=FIRST_DECISION_MS + i * 25 * HOUR_MS, f="true") for i in range(160)
+        )
+    elif diversity == "weeks":
+        events = tuple(replace(e, f="true") for e in population()[:160])
+    else:
+        events = tuple(
+            replace(e, f="true")
+            for e in population()
+            if e.symbol < "S05USDT" or e.d < FIRST_DECISION_MS + 2 * DAY_MS
+        )
+    outcomes = {e.key: policy.EventOutcome(0.0, 0.0) for e in events}
+    report = policy.evaluate_events(events, outcomes, iterations=100)
+    for name in ("A", "B"):
+        candidate = report["candidates"][name]
+        assert candidate["complete"] >= 150
+        assert candidate["data_checks"]["complete"] is True
+        assert candidate["data_checks"][diversity] is False
+        assert candidate["mean_net"] < 0
+        assert candidate["verdict"] == "fail"
+
+
+def test_missingness_still_blocks_negative_mean_verdict() -> None:
+    events = population()
+    outcomes = {e.key: policy.EventOutcome(0.0, 0.0) for e in events[200:]}
+    report = policy.evaluate_events(events, outcomes, iterations=100)
+    assert report["candidates"]["A"]["mean_net"] < 0
+    assert report["candidates"]["A"]["verdict"] == "insufficient_data"
+
+
+def test_one_negative_observation_is_not_a_mature_failure() -> None:
+    event = population()[0]
+    report = policy.evaluate_events(
+        [event],
+        {event.key: policy.EventOutcome(0.0, 0.0)},
+        iterations=100,
+    )
+    assert report["candidates"]["A"]["verdict"] == "insufficient_data"
+
+
+def test_assumed_design_effect_is_not_a_clustered_power_pass() -> None:
+    report, _ = policy.build_preflight(synthetic_features(), first_d=D, last_d=D)
+    power = report["candidates"]["B"]["power"]
+    assert power["readiness"] == "cluster_calibration_required"
+    assert "within_50_bps" not in power

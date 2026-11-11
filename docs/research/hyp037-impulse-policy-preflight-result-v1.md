@@ -7,16 +7,16 @@ returns, test-year data, backward holdout or production data were read.
 
 ## Counts and planning power
 
-| Measure                                             |    Plain impulse A | Funding/OI-filtered B |
-| --------------------------------------------------- | -----------------: | --------------------: |
-| Events and symbol-day clusters                      |             12,278 |                   986 |
-| Symbols                                             |                629 |                   361 |
-| ISO weeks                                           |                 51 |                    51 |
-| Top-five symbol share                               |              2.18% |                 5.17% |
-| First-half clusters                                 |              6,309 |                   383 |
-| Peak simultaneous unrestricted 4-hour holds         |                334 |                    17 |
-| Planning MDE with the two-candidate correction, bps | 12.791905864541443 |     49.22851894642323 |
-| Registered 50 bps planning limit                    |             within |                within |
+| Measure                                             | Plain impulse A | Funding/OI-filtered B |
+| --------------------------------------------------- | --------------: | --------------------: |
+| Events and symbol-day clusters                      |          12,278 |                   986 |
+| Symbols                                             |             629 |                   361 |
+| ISO weeks                                           |              51 |                    51 |
+| Top-five symbol share                               |           2.18% |                 5.17% |
+| First-half clusters                                 |           6,309 |                   383 |
+| Peak simultaneous unrestricted 4-hour holds         |             334 |                    17 |
+| Planning MDE with the two-candidate correction, bps |           12.79 |                 49.23 |
+| 50 bps comparison under the assumed design effect   |          within |                within |
 
 The loader produced 671 instrument series, with no failed instruments. F and G
 were determinable at 12,277 of 12,278 baseline events. Both candidates pass the
@@ -76,3 +76,24 @@ The next step is review and freeze of the empirical-read contract and minute-dat
 scope for HYP-037. Both A and B remain candidates for that read. Their net signs
 are unknown. A discovery survivor still needs the registered capital-constrained
 replay and independent confirmation before forward or live stages.
+
+## Correction after preflight review, 2026-11-11
+
+The count checks and frozen event identity comparison stand. The MDE comparison
+above is conditional on an assumed design effect 1.2. It does not establish
+readiness for the planned week-cluster inference. Clustered power is pending the
+[calibration amendment](hyp037-power-calibration-amendment-v1.md), which has not
+been run. No outcome read follows from the old conditional comparison.
+
+The exact original code, registration and evidence are now preserved in local
+commit `b1ef6c7`. That commit does not retroactively prove the uncommitted
+registration preceded the run. The first report remains a dirty-tree local
+record. Compare its seven source fingerprints to that commit when reviewing later
+changes. Future historical registration and code must be committed before the
+read and executed from the clean recorded revision.
+
+The corrected evaluator passed 97 focused tests. Three new cases reproduce a
+mature negative mean masked by symbol, week or concentration checks in the original
+code. A fourth reproduces the unconditional interpretation of assumed power.
+They failed on the preserved original source and pass after the corrections.
+Missingness and immature negative samples retain explicit insufficient-data tests.

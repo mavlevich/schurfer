@@ -126,14 +126,21 @@ dollar-hour and BTC-relative returns. A tradable BTC hedge would require its own
 two-leg contract.
 
 The old B MDE of 43.7 bps is a planning estimate under v1's uncertainty assumptions.
-Recompute for the two-candidate correction. A's 12,278 events do not make it
-noise-free: synchronized market moves and repeated symbols can dominate its
-variance. The B-minus-A variance includes their covariance, so its power cannot be
-declared from B's MDE alone. Freeze any pre-entry scale assumptions before the read
-and report sensitivity. Diagnostic power does not become an extra promotion gate.
+The two-candidate recalculation gave 49.23 bps, but still used the assumed design
+effect 1.2. Clustered readiness remains pending the
+[calibration amendment](hyp037-power-calibration-amendment-v1.md). A's 12,278 events
+do not make it noise-free: synchronized market moves and repeated symbols can
+dominate its variance. The B-minus-A variance includes their covariance, so its
+power cannot be declared from B's MDE alone. Freeze the additional pre-entry
+dispersion/dependence read before it runs. Diagnostic power does not become an
+extra promotion gate.
 
-Report negative complete net as `fail`; positive but uncertain absolute economics
-as `inconclusive`; and deficient evidence as its explicit incomplete verdict.
+With at least 150 resolved symbol-days, at least 95% outcome completeness and
+valid feature determinability, negative mean net is `fail` even if symbol/week
+diversity or concentration fails. Keep those failed checks in the report. Smaller
+or incomplete samples retain `insufficient_data`. Positive candidates still need
+all diversity and robustness checks. Positive but uncertain absolute economics
+are `inconclusive`.
 If both pass, both enter the frozen batch as separate candidates. If neither
 passes, record both results before discussing a new variant.
 
@@ -244,3 +251,9 @@ closed families.
   tests plus Ruff and mypy. This local run records its dirty tree explicitly.
   No trade returns were read. Next is the empirical-read contract and scoped
   minute reader, reviewed before the first outcome fetch.
+- 2026-11-11, preflight review response: preserved the original source/evidence in
+  local commit `b1ef6c7`; corrected negative-net verdict precedence and added
+  regressions that fail on that source. The current preflight reports assumed
+  power as requiring cluster calibration. A separate calibration amendment is
+  proposed before any new historical dependence calculation. Original sealed
+  artifacts remain the record of the first run.

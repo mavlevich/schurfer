@@ -117,6 +117,7 @@ def _source_binding() -> dict[str, Any]:
     return {
         "code_revision": revision,
         "working_tree_dirty": bool(status),
+        "working_tree_status": status.splitlines(),
         "source_sha256": {name: file_sha256(package / name) for name in source_files},
     }
 
@@ -264,7 +265,8 @@ def _planning_power(
         "tail": ABSOLUTE_TAIL,
         "inflation": sq.INFLATION,
         "design_effect": sq.DESIGN_EFFECT,
-        "within_50_bps": corrected <= sq.MDE_MAX,
+        "within_50_bps_under_assumptions": corrected <= sq.MDE_MAX,
+        "readiness": "cluster_calibration_required",
         "assumptions": "v1 pre-entry scales and assumed dependence, not observed event power",
     }
 
@@ -459,10 +461,15 @@ def evaluate_events(
         mean = fmean(net for _, net in resolved) if resolved else None
         lower = _bound(samples[name], iterations, ABSOLUTE_TAIL)
         guards = _robustness(resolved)
-        if not all(checks.values()):
+        reliable_sample = checks["complete"] and len(resolved) >= sq.FLOOR_CLUSTERS
+        if name == "B":
+            reliable_sample = reliable_sample and checks["fg_determinable"]
+        if not reliable_sample:
             verdict = "insufficient_data"
         elif mean is not None and mean < 0:
             verdict = "fail"
+        elif not all(checks.values()):
+            verdict = "insufficient_data"
         elif (
             mean is not None
             and mean >= MIN_NET
