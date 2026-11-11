@@ -1,0 +1,341 @@
+{
+  "candidates": {
+    "A": {
+      "calibrated_design_effect": 110.99574006613598,
+      "limitation": "Conditional planning estimate transferring pre-entry dependence to a four-hour hold; post-entry dependence can differ and 51-week dependence estimates remain noisy.",
+      "mde": 0.0123026250287307,
+      "mde_bps": 123.026250287307,
+      "next_action": "stop_candidate_without_outcomes",
+      "normal_approximation_power": {
+        "at_30_bps": {
+          "detect_zero": 0.10083708320623969,
+          "pass_both_net_conditions": 0.10083708320623974
+        },
+        "at_50_bps": {
+          "detect_zero": 0.20572312469175302,
+          "pass_both_net_conditions": 0.20572312469175302
+        }
+      },
+      "proxy_effect_max": 110.99574006613598,
+      "proxy_effect_min": 7.450437494852263,
+      "verdict": "insufficient_power"
+    },
+    "B": {
+      "calibrated_design_effect": 2.6551474872564826,
+      "limitation": "Conditional planning estimate transferring pre-entry dependence to a four-hour hold; post-entry dependence can differ and 51-week dependence estimates remain noisy.",
+      "mde": 0.007322687017495489,
+      "mde_bps": 73.2268701749549,
+      "next_action": "stop_candidate_without_outcomes",
+      "normal_approximation_power": {
+        "at_30_bps": {
+          "detect_zero": 0.20833997638780266,
+          "pass_both_net_conditions": 0.20833997638780266
+        },
+        "at_50_bps": {
+          "detect_zero": 0.4812506033876692,
+          "pass_both_net_conditions": 0.48125060338766923
+        }
+      },
+      "proxy_effect_max": 2.6551474872564826,
+      "proxy_effect_min": 0.6981501701370469,
+      "verdict": "insufficient_power"
+    }
+  },
+  "hypothesis_id": "HYP-037",
+  "iterations": 10000,
+  "protocol_sha256": "442e55814bb941b9314464570b7c6d0b1ba90ae6f9ad12bcadf3f97f4f671c04",
+  "proxies": {
+    "pre_0h": {
+      "A": {
+        "checks": {
+          "complete": true,
+          "draws": true,
+          "finite_variance": true,
+          "mature": true,
+          "weeks": true
+        },
+        "defined": 12278,
+        "design_effect": 110.99574006613598,
+        "intended": 12278,
+        "missing_weeks": [],
+        "status": "estimable",
+        "valid_draws": 10000
+      },
+      "B": {
+        "checks": {
+          "complete": true,
+          "draws": true,
+          "finite_variance": true,
+          "mature": true,
+          "weeks": true
+        },
+        "defined": 986,
+        "design_effect": 2.6551474872564826,
+        "intended": 986,
+        "missing_weeks": [],
+        "status": "estimable",
+        "valid_draws": 10000
+      },
+      "end_offset_hours": 2,
+      "span_hours": 4
+    },
+    "pre_120h": {
+      "A": {
+        "checks": {
+          "complete": true,
+          "draws": true,
+          "finite_variance": true,
+          "mature": true,
+          "weeks": true
+        },
+        "defined": 12278,
+        "design_effect": 14.95347505483538,
+        "intended": 12278,
+        "missing_weeks": [],
+        "status": "estimable",
+        "valid_draws": 10000
+      },
+      "B": {
+        "checks": {
+          "complete": true,
+          "draws": true,
+          "finite_variance": true,
+          "mature": true,
+          "weeks": true
+        },
+        "defined": 986,
+        "design_effect": 1.6476405545888,
+        "intended": 986,
+        "missing_weeks": [],
+        "status": "estimable",
+        "valid_draws": 10000
+      },
+      "end_offset_hours": 122,
+      "span_hours": 4
+    },
+    "pre_144h": {
+      "A": {
+        "checks": {
+          "complete": true,
+          "draws": true,
+          "finite_variance": true,
+          "mature": true,
+          "weeks": true
+        },
+        "defined": 12278,
+        "design_effect": 13.46509539018286,
+        "intended": 12278,
+        "missing_weeks": [],
+        "status": "estimable",
+        "valid_draws": 10000
+      },
+      "B": {
+        "checks": {
+          "complete": true,
+          "draws": true,
+          "finite_variance": true,
+          "mature": true,
+          "weeks": true
+        },
+        "defined": 986,
+        "design_effect": 1.3561858078513598,
+        "intended": 986,
+        "missing_weeks": [],
+        "status": "estimable",
+        "valid_draws": 10000
+      },
+      "end_offset_hours": 146,
+      "span_hours": 4
+    },
+    "pre_24h": {
+      "A": {
+        "checks": {
+          "complete": true,
+          "draws": true,
+          "finite_variance": true,
+          "mature": true,
+          "weeks": true
+        },
+        "defined": 12278,
+        "design_effect": 19.440012817487396,
+        "intended": 12278,
+        "missing_weeks": [],
+        "status": "estimable",
+        "valid_draws": 10000
+      },
+      "B": {
+        "checks": {
+          "complete": true,
+          "draws": true,
+          "finite_variance": true,
+          "mature": true,
+          "weeks": true
+        },
+        "defined": 986,
+        "design_effect": 1.8306068519204508,
+        "intended": 986,
+        "missing_weeks": [],
+        "status": "estimable",
+        "valid_draws": 10000
+      },
+      "end_offset_hours": 26,
+      "span_hours": 4
+    },
+    "pre_48h": {
+      "A": {
+        "checks": {
+          "complete": true,
+          "draws": true,
+          "finite_variance": true,
+          "mature": true,
+          "weeks": true
+        },
+        "defined": 12278,
+        "design_effect": 21.668680102981924,
+        "intended": 12278,
+        "missing_weeks": [],
+        "status": "estimable",
+        "valid_draws": 10000
+      },
+      "B": {
+        "checks": {
+          "complete": true,
+          "draws": true,
+          "finite_variance": true,
+          "mature": true,
+          "weeks": true
+        },
+        "defined": 986,
+        "design_effect": 0.6981501701370469,
+        "intended": 986,
+        "missing_weeks": [],
+        "status": "estimable",
+        "valid_draws": 10000
+      },
+      "end_offset_hours": 50,
+      "span_hours": 4
+    },
+    "pre_72h": {
+      "A": {
+        "checks": {
+          "complete": true,
+          "draws": true,
+          "finite_variance": true,
+          "mature": true,
+          "weeks": true
+        },
+        "defined": 12278,
+        "design_effect": 17.715262613753143,
+        "intended": 12278,
+        "missing_weeks": [],
+        "status": "estimable",
+        "valid_draws": 10000
+      },
+      "B": {
+        "checks": {
+          "complete": true,
+          "draws": true,
+          "finite_variance": true,
+          "mature": true,
+          "weeks": true
+        },
+        "defined": 986,
+        "design_effect": 1.4557152735569558,
+        "intended": 986,
+        "missing_weeks": [],
+        "status": "estimable",
+        "valid_draws": 10000
+      },
+      "end_offset_hours": 74,
+      "span_hours": 4
+    },
+    "pre_96h": {
+      "A": {
+        "checks": {
+          "complete": true,
+          "draws": true,
+          "finite_variance": true,
+          "mature": true,
+          "weeks": true
+        },
+        "defined": 12278,
+        "design_effect": 25.276015573570024,
+        "intended": 12278,
+        "missing_weeks": [],
+        "status": "estimable",
+        "valid_draws": 10000
+      },
+      "B": {
+        "checks": {
+          "complete": true,
+          "draws": true,
+          "finite_variance": true,
+          "mature": true,
+          "weeks": true
+        },
+        "defined": 986,
+        "design_effect": 2.2370353965812195,
+        "intended": 986,
+        "missing_weeks": [],
+        "status": "estimable",
+        "valid_draws": 10000
+      },
+      "end_offset_hours": 98,
+      "span_hours": 4
+    },
+    "waiting_bar": {
+      "A": {
+        "checks": {
+          "complete": true,
+          "draws": true,
+          "finite_variance": true,
+          "mature": true,
+          "weeks": true
+        },
+        "defined": 12278,
+        "design_effect": 7.450437494852263,
+        "intended": 12278,
+        "missing_weeks": [],
+        "status": "estimable",
+        "valid_draws": 10000
+      },
+      "B": {
+        "checks": {
+          "complete": true,
+          "draws": true,
+          "finite_variance": true,
+          "mature": true,
+          "weeks": true
+        },
+        "defined": 986,
+        "design_effect": 0.7667231249052345,
+        "intended": 986,
+        "missing_weeks": [],
+        "status": "estimable",
+        "valid_draws": 10000
+      },
+      "end_offset_hours": 0,
+      "span_hours": 1
+    }
+  },
+  "registration_sha256": "f91ef6f3f98b54eaeb5aeeec37cae924c2707b9352b1ad23b6c6605006ddcc0a",
+  "run_sha256": "5d4b2c4c210c3c54bf491b9b18f1c46b8202701d1447b0568b988edab608b188",
+  "seed": 961847221238157998,
+  "sources": {
+    "code_revision": "538abdc00f9de06cc9973d55141a37a163cfddd1",
+    "source_sha256": {
+      "bybit_carry_feasibility.py": "685dac395ebfe30d650ea89a08e50609550dbf0eb9542b4a1582aa5acb0a4961",
+      "bybit_compressed_spring.py": "53d986820dc0777d431d21dd99210fc3c7cca4e03c8fae5f0f0adf7a1f107115",
+      "bybit_post_funding_screen.py": "4d58764c5a2342020a6bb872155bb6aad8a398dada183c25af0141707e71981e",
+      "bybit_squeeze_continuation.py": "daa7206fb277ef608dd980219d316be4cadc7813a7b2e9f2a3c764d482570180",
+      "bybit_squeeze_policy.py": "9e9b8e7e161d8a9d6a74511227b2509518d8f9b03c00f84147741b121d656c3b",
+      "bybit_squeeze_power_calibration.py": "1ba07430659f4a50f0de9cc233c41cb01555e99c3576aff2d274790d421a8cb9",
+      "clustered_inference.py": "b0d07fdb17b828d6c9bf451512be89e3231a022fce1bb08fb587132fa6c66384",
+      "reporting.py": "98f445f4b8190373826cc693c7a5d18aea2afab57f258ccc6315ec0cc4ecb005"
+    },
+    "working_tree_dirty": false,
+    "working_tree_status": []
+  },
+  "stage": "preentry_dependence_only",
+  "version": "hyp037_power_calibration_v1"
+}

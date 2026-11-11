@@ -257,3 +257,13 @@ closed families.
   power as requiring cluster calibration. A separate calibration amendment is
   proposed before any new historical dependence calculation. Original sealed
   artifacts remain the record of the first run.
+
+- 2026-11-11, second review and calibration: fixed the per-candidate stop rule,
+  added the one-hour waiting-bar dependence proxy, and registered all eight proxies
+  before reading. Committed registration and tested code as `538abdc`, then ran
+  from that clean revision. All proxies were estimable. The
+  [calibration result](hyp037-power-calibration-result-v1.md) gives MDE 123.03 bps
+  for A and 73.23 bps for B. Both stop at the registered power gate; no empirical
+  trade-return reader or outcome fetch follows under this experiment. The signs
+  of A/B net remain unknown. The original preflight and review corrections remain
+  preserved. Later alternatives require their own explicit design decision.

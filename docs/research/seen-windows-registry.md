@@ -150,3 +150,11 @@ must remain represented. One candidate stops without outcome reading if its
 unrounded calibrated MDE exceeds 50 bps; an unestimable calibration blocks that
 candidate. The other proceeds independently. First invocation must follow a clean
 committed registration and code revision.
+
+HYP-037 dependence calibration completed 2026-11-11 from clean `538abdc`, run
+binding created 22:21:19.989253 UTC. Scope is the eight registered proxies above;
+level recorded conservatively as outcomes (proxy dispersion/dependence only).
+Earlier setup paths may overlap a later proxy. No individual proxy, proxy mean,
+setup mean, trade net or minute outcome was emitted or read as a trading result.
+Calibration SHA-256 is `65197f39aef5bb2164be67bfc9360bfdce81cc552b66639937efca0960900775`.
+Both candidates stop on calibrated power. See [result](hyp037-power-calibration-result-v1.md).
