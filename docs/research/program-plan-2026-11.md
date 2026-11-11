@@ -54,7 +54,7 @@ whether to close the project or make one different attempt.
 
 Track A's HYP-033 is the **first practical run**. Track B's first step, B1, runs **in
 parallel as a feasibility study**: B2 and later start only if B1 rebuilds the signal
-without future information. Track C waits in the queue. The first week therefore aims at
+without future information. The first week therefore aims at
 two concrete answers: a checked calculation for HYP-033, and whether the data supports a
 pre-settlement funding signal at all.
 
@@ -73,15 +73,20 @@ and 30 minutes means no latency race.
 
 **What can kill it, in order:**
 
-1. **The signal at decision time (B1, a short study of its own).** The rate known at
-   t - 30 min must be rebuilt from data available then: the historical formula
-   parameters, the settlement interval and the rate caps of each instrument at that
-   date, and premium index data up to the decision. Bybit's public premium index
-   endpoint returns OHLC klines, so whether they suffice to rebuild the interval's
-   average is itself part of B1. Agreement of a model with the final settled rate does
-   not prove it reproduces the rate available at t - 30 min. If B1 passes, the event
-   list is rebuilt from scratch on the rebuilt rate; nothing of the old 4,928 events or
-   of +35.5 bps is reused as a result.
+1. **The signal at decision time (B1, a short study of its own,
+   [design](bybit-presettlement-feasibility-v1.md)).** The signal is the **uncapped rate
+   implied by the premium** observed by t - d, computed with the published formula, plus
+   a filter of the strategy's own: **extreme funding in the past week** (a settlement at
+   or below -0.30% within the 7 days before t - d). Historical caps are not published and
+   a past settlement does not prove the cap in force, so B1 does not claim to rebuild the
+   capped rate, nor the rate Bybit displayed; the displayed rate is a live check for the
+   shadow stage. Forecasts are rebuilt at each decision time from the settlements known
+   then. S1 first checks that the formula reproduces settled rates (2 bps, and the -0.30%
+   classification on each side of the trigger), with minimum counts and coverage. The
+   event list is rebuilt from scratch; nothing of the old 4,928 events or of +35.5 bps is
+   reused as a result. **B2 starts only on B1's verdict `pass`;** `insufficient_validation`,
+   `not_reconstructible` and `insufficient_events` stop the track or send it back to
+   design.
 2. **Costs.** At a 30 bps taker round trip about +5 bps would remain, which does not
    trade. The case rests on a **maker entry** (0.02% fee, no spread paid), simulated with
    the strategy's **order book fill model** (`ob500` from 2023-01-18, volume-limited
@@ -96,51 +101,61 @@ and 30 minutes means no latency race.
 
 **Steps.**
 
-| Step | What                                                                                                    | Needs                      |
-| ---- | ------------------------------------------------------------------------------------------------------- | -------------------------- |
-| B1   | Feasibility: the rate known at t - 30 min rebuilt from data available then; event list rebuilt          | fetch go (discovery year)  |
-| B2   | Maker fill model on the order book archive for the events' minutes, discovery year (only after B1)      | fetch go                   |
-| B3   | Laboratory read: net of the taker and maker versions, both exits, with the portfolio report             | owner go to read returns   |
-| B4   | Protocol frozen (trigger, entry, exit, costs, fill model), then **one exam read on the test year**      | colleague review, owner go |
-| B5   | Shadow run: the order path without sending orders (placement, cancel, timeout, partial fills, recovery) | deploy go                  |
-| B6   | LIVE_PROBE at USD 50 for real fills, under the scaling rule (section 6)                                 | owner go                   |
+| Step | What                                                                                                      | Needs                      |
+| ---- | --------------------------------------------------------------------------------------------------------- | -------------------------- |
+| B1   | Feasibility: uncapped premium-implied rate at t - d plus the past-week filter; S1; event list by interval | fetch go (discovery year)  |
+| B2   | Maker fill model on the order book archive for the events' minutes, discovery year (only on B1 `pass`)    | fetch go                   |
+| B3   | Laboratory read: net of taker and maker versions, both exits, portfolio report, by settlement interval    | owner go to read returns   |
+| B4   | Protocol frozen (trigger, entry, exit, costs, fill model), then **one exam read on the test year**        | colleague review, owner go |
+| B5   | Shadow run: the order path without sending orders (placement, cancel, timeout, partial fills, recovery)   | deploy go                  |
+| B6   | LIVE_PROBE at USD 50 for real fills, under the scaling rule (section 6)                                   | owner go                   |
 
 **The test year is read once, as one frozen batch.** Every candidate that goes to it, and
 its criteria, is frozen before the read, with the batch's multiplicity counted, and the
-results come back together, so the first cannot steer the choice of a second. My
-position: send only the pre-settlement long. The seconds-level short after settlement
-needs the archive check (trade classes, RPI and block flags; a missing flag is
-`unknown`) and a publication delay measured after v2's terminal state; if it ever gets
-there, its confirmation is a forward quarter, not this year.
+results come back together, so the first cannot steer the choice of a second. Only the pre-settlement long goes to it.
 
-## 4. Track A: HYP-033, then HYP-034 and HYP-032
+**The seconds-level short after settlement is out of this plan** (2026-11-11). Bybit's
+help center warns that whether a position takes part in funding is uncertain within
++-5 seconds of the settlement timestamp, and the settled rate was published 0.4 to 3.6 s
+after t in the one live check. So an entry would come after t + 5 s. That warning does
+not show that the price move is gone by then, nor that a later entry is safe; how much of
+the first-minute move remains was never measured. It is recorded in the ledger as
+parked, untested, with that reason.
 
-Their discovery year is **reused discovery with setup outcomes unread**: features,
-counts and power were seen, no return of these setups was. A short
-amendment per family makes net primary (rule 2), keeps everything else of its protocol,
-and is fixed before the read. HYP-033 first (MDE (a) 43.7 bps, 986 events, minute klines
-of a few MB). Both the filtered rule and the plain impulse rule (about 12,000 first
-impulses) are candidates on their own net, with the two tests counted. The filter's
-increment is estimated per event (mean net of filtered events minus mean net of all
-impulses, week-block bootstrap), where the plain rule's large sample keeps its power
-close to the filtered rule's own; it is reported and does not gate. A one-slot daily
+## 4. Track A: HYP-033 only, as a successor protocol
+
+Its discovery year is **reused discovery with setup outcomes unread**: features, counts
+and power were seen, no return of the setup was. The successor gets its own unused id
+(working label HYP-037) and a short protocol that makes net primary (rule 2) and keeps
+the rest of HYP-033, fixed before the read (minute klines of a few MB). **Three
+candidates, declared now and counted together:**
+
+- **A:** every liquid first impulse (about 12,000);
+- **B:** F < 0 and G at or above its 80th percentile (HYP-033's event, 986);
+- **C:** F < 0 alone, whatever G (funding only; B is the part of C with G at or above
+  its 80th percentile). Chosen before any return is read.
+
+Each is a candidate on its own net. The increments of B over A and of B over C (the
+value of G given negative funding) are estimated per event (difference of mean nets,
+week-block bootstrap), where A's large sample keeps
+its power close to B's own; it is reported and does not gate. A one-slot daily
 comparison is part of the portfolio report, not the primary: with one slot and a 4-hour
-hold the plain rule could take at most 6 of its about 34 daily impulses, so which ones it
-takes would depend on tie order, not on the signal. A survivor goes into the holdout
-batch; HYP-036 (526 GB fetch) and HYP-035 (MDE 88.7) are not in this plan.
+hold, A could take at most 6 of its about 34 daily impulses, so which ones it takes
+would depend on tie order, not on the signal. A survivor goes into the holdout batch.
+HYP-034, HYP-032, HYP-035 and HYP-036 are not in this plan, to keep the budget on one
+read.
 
-## 5. Track C, cheap screens only
+## 5. Screens excluded from this plan
 
-No trading and no new venue. Public history before 2026-09-29 only.
-
-1. **Bybit against Hyperliquid funding spread:** how often and how long the two rates
-   differ by more than both venues' costs, on shared contracts. Untested so far (the
-   carry screen was spot against perpetual on Bybit, +0.3% a year). Access to
-   Hyperliquid from Poland stays `unknown` until confirmed.
-2. **Hyperliquid positions as a feature,** later: can position changes be rebuilt as of a
-   decision time, how many independent episodes, against what base.
-
-A screen that passes becomes a candidate for its own protocol; it does not trade.
+- **Bybit against Hyperliquid funding spread:** excluded from the current plan
+  (2026-11-11); the results of the check are awaited. Its ledger entry needs the period,
+  instruments, holding rule, accumulated funding spread, the four fees and other costs,
+  and the data source with its fingerprint (the check used Hyperliquid history no later
+  than 2025-10-01, clear of the blind window). Until that report exists, no economic
+  conclusion is drawn: four fills alone do not prove a loss.
+- **Hyperliquid positions as a feature:** closed for now. The public API returns current
+  positions, not their history for 2024 and 2025, so a decision-time feature cannot be
+  rebuilt on history.
 
 ## 6. Capital: the registered scaling rule
 
