@@ -39,7 +39,7 @@ whether to close the project or make one different attempt.
    | Exam window                                   | Assigned to                           | Read                                       |
    | --------------------------------------------- | ------------------------------------- | ------------------------------------------ |
    | HYP-031's test year, 2025-10-01 to 2026-09-28 | track B (HYP-031 family) only         | once, as one frozen batch (below)          |
-   | Backward holdout, 2023-02-01 to 2024-09-15    | track A, one frozen batch             | once for the whole batch                   |
+   | Backward holdout, 2023-02-01 to 2024-09-15    | unassigned (track A closed)           | once for a future frozen batch             |
    | Forward data after v2's terminal state        | renewable: one fresh quarter per exam | from the quarter after v2's terminal state |
 
 5. **One signal code** for history, paper and live: the laboratory, the exam and the
@@ -50,13 +50,26 @@ whether to close the project or make one different attempt.
    seen-windows registry row before every fetch, Bybit USDT perpetuals as the only
    execution venue, per-action approvals (below).
 
-## 2. How the tracks run
+## 2. How the tracks run (revised 2026-11-12)
 
-Track A's HYP-033 is the **first practical run**. Track B's first step, B1, runs **in
-parallel as a feasibility study**: B2 and later start only if B1 rebuilds the signal
-without future information. The first week therefore aims at
-two concrete answers: a checked calculation for HYP-033, and whether the data supports a
-pre-settlement funding signal at all.
+On 2026-11-11 another agent read the returns of HYP-032, HYP-033, HYP-034, HYP-031
+before settlement and a Bybit against Hyperliquid screen on the discovery year, 68
+variants in scratch, with no protocol fixed before the read. The test year, the holdout
+and the v2 blind window were confirmed untouched. The reads are recorded in the
+[seen-windows registry](seen-windows-registry.md) and the
+[discovery ledger](discovery-ledger.md); they decide the plan as follows:
+
+- **Track A is closed.** HYP-033 cannot be registered as a successor after 33 variants of
+  its returns were seen; its best cell (F < 0 without high G, +81 bps) is carried by 19
+  market-wide hours, isolated impulses lose, and a one-slot book loses 61 bps per trade.
+  HYP-034 and HYP-032 are closed too. The holdout batch is not spent on any of them.
+- **Track B is the only track, on 4-hour contracts.** With a decision-time signal
+  (F_hat at t - 1 h from hourly premium) the long into settlement made +55.3 bps gross on
+  4-hour contracts (1,026 clusters, 206 symbols), +25.3 +- 19.8 after a 30 bps taker
+  round trip, but -2.0 without the top 5 symbols; on 8-hour contracts it lost before
+  costs (-4.7 gross). B1 runs as designed for every interval, and B2 onward is planned
+  for 4-hour contracts; 1-hour and 2-hour contracts go on only if B1 shows them on its
+  own minute data.
 
 ## 3. Track B: HYP-031 family, entry before settlement
 
@@ -122,37 +135,22 @@ not show that the price move is gone by then, nor that a later entry is safe; ho
 the first-minute move remains was never measured. It is recorded in the ledger as
 parked, untested, with that reason.
 
-## 4. Track A: HYP-033 only, as a successor protocol
+## 4. Track A: closed
 
-Its discovery year is **reused discovery with setup outcomes unread**: features, counts
-and power were seen, no return of the setup was. The successor gets its own unused id
-(working label HYP-037) and a short protocol that makes net primary (rule 2) and keeps
-the rest of HYP-033, fixed before the read (minute klines of a few MB). **Three
-candidates, declared now and counted together:**
-
-- **A:** every liquid first impulse (about 12,000);
-- **B:** F < 0 and G at or above its 80th percentile (HYP-033's event, 986);
-- **C:** F < 0 alone, whatever G (funding only; B is the part of C with G at or above
-  its 80th percentile). Chosen before any return is read.
-
-Each is a candidate on its own net. The increments of B over A and of B over C (the
-value of G given negative funding) are estimated per event (difference of mean nets,
-week-block bootstrap), where A's large sample keeps
-its power close to B's own; it is reported and does not gate. A one-slot daily
-comparison is part of the portfolio report, not the primary: with one slot and a 4-hour
-hold, A could take at most 6 of its about 34 daily impulses, so which ones it takes
-would depend on tie order, not on the signal. A survivor goes into the holdout batch.
-HYP-034, HYP-032, HYP-035 and HYP-036 are not in this plan, to keep the budget on one
-read.
+See section 2. HYP-037 is withdrawn before registration; the three candidates declared
+on 2026-11-11 (all impulses, F < 0 with high G, F < 0 alone) were read in the
+exploratory session, and their results are in the ledger.
 
 ## 5. Screens excluded from this plan
 
-- **Bybit against Hyperliquid funding spread:** excluded from the current plan
-  (2026-11-11); the results of the check are awaited. Its ledger entry needs the period,
-  instruments, holding rule, accumulated funding spread, the four fees and other costs,
-  and the data source with its fingerprint (the check used Hyperliquid history no later
-  than 2025-10-01, clear of the blind window). Until that report exists, no economic
-  conclusion is drawn: four fills alone do not prove a loss.
+- **Bybit against Hyperliquid funding and basis:** excluded from the plan. The 2026-11-11
+  screen (817 settlements, 68 shared coins) found the funding difference at t (+44.6 bps)
+  mostly gone over the next 4 hours (+11.8). Its best regime (8-hour Bybit contracts,
+  short Bybit and long Hyperliquid for 4 hours, +51.2 gross) gets half of it from a basis
+  that converges in the first minute after settlement, where Bybit's +-5 second funding
+  rule makes the entry unsafe; after t + 1 min about +22.7 bps remains for four fills on
+  two venues. The 1-hour regime is carried by five pumped coins. Venue access from Poland
+  is still `unknown`. Ledger: "Bybit vs Hyperliquid (exploratory)".
 - **Hyperliquid positions as a feature:** closed for now. The public API returns current
   positions, not their history for 2024 and 2025, so a decision-time feature cannot be
   rebuilt on history.
@@ -173,9 +171,9 @@ checkpoints mostly test costs and risk, so the first steps are slow by design.
 | When           | What                                                                                                   |
 | -------------- | ------------------------------------------------------------------------------------------------------ |
 | 11-11 to 11-17 | this plan reviewed and decided; 11-15 restore drill; ~11-17 disk growth reading                        |
-| 11-18 to 12-01 | HYP-033 amendment, synthetic check and laboratory read prepared; B1 feasibility in parallel            |
+| 11-12 to 12-01 | B1 fetches and report; B2 maker fill model for 4-hour contracts if B1 passes                           |
 | 11-30 00:00    | HYP-012 v2 checkpoint; evaluated from 12-01 as that cut, with the registered command on the owner's go |
-| 12-01 to 12-15 | HYP-033 laboratory read; B2 and B3 only if B1 passed; B4 protocol frozen                               |
+| 12-01 to 12-15 | B3 laboratory read (maker and taker, 4-hour contracts); B4 protocol frozen                             |
 | 12-15 to 01-15 | B4 exam read; a pass goes to the shadow run, then LIVE_PROBE at USD 50                                 |
 | by 2027-02-11  | gate: a candidate in paper or live, or maintenance until March                                         |
 
