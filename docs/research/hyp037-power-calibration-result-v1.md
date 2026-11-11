@@ -47,6 +47,34 @@ calibration does not support. Historical pre-entry dependence can still differ
 from dependence after entry, and the 51-week estimate is noisy. These limits are
 carried with both machine verdicts.
 
+## Sensitivity across the registered proxies
+
+For each proxy separately, retain the original design-effect floor 1.2 and
+four-hour planning scale. The following MDE values are derived from the sealed
+report, with no new market-data read.
+
+| Proxy       | A MDE, bps | B MDE, bps |
+| ----------- | ---------: | ---------: |
+| pre_0h      |      123.0 |       73.2 |
+| pre_24h     |       51.5 |       60.8 |
+| pre_48h     |       54.4 |       49.2 |
+| pre_72h     |       49.1 |       54.2 |
+| pre_96h     |       58.7 |       67.2 |
+| pre_120h    |       45.2 |       57.7 |
+| pre_144h    |       42.8 |       52.3 |
+| waiting_bar |       31.9 |       49.2 |
+
+B exceeds 50 bps under six of the eight proxies. A meets 50 bps under four of
+eight, and stops under the registered conservative maximum rule, whose largest
+effect comes from pre_0h. This does not establish that A is underpowered under
+every reasonable proxy. The maximum rule was committed before the calibration
+and remains the rule for this result.
+
+A common market factor is a plausible explanation for A's strong dependence;
+this calibration does not identify its cause. A tradable market hedge would
+change the strategy, costs and variance and requires its own registration and
+selection history. No hedged A outcome or net was evaluated here.
+
 ## Provenance
 
 Run binding created 2026-11-11T22:21:19.989253Z, from clean local commit
@@ -84,4 +112,11 @@ The code passed 109 focused tests, Ruff, focused mypy and the normal pre-commit
 checks before registration commit. Tests cover waiting-bar dependence, exact
 50/50.1 bps boundaries, one-candidate failure, missing weeks, degenerate proxies,
 future-price exclusion, joint economic power and the real registered snapshot
-reader. Full `make verify` remains a pre-PR gate.
+reader.
+
+Full `make verify` passed on 2026-11-11 after merging `origin/main` at `263ad23`
+into branch revision `235f36e`, with the documentation-only proxy-sensitivity
+addition in the working tree. The command used the normal disposable PostgreSQL
+database and completed all-files lint, lock validation, Python type checks and
+tests, Go tests/vet/deadcode, web lint/typecheck/tests/build and Compose validation.
+This verification did not rerun the calibration or read setup outcomes.
