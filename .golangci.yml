@@ -1,7 +1,7 @@
 version: '2'
 
 run:
-  go: '1.26.10'
+  go: '1.26.11'
   timeout: 5m
 
 linters:
