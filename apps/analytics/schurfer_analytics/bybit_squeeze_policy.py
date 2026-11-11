@@ -87,7 +87,7 @@ def preflight_contract() -> dict[str, Any]:
     }
 
 
-def _source_binding() -> dict[str, Any]:
+def _source_binding(*, extra_source_names: Sequence[str] = ()) -> dict[str, Any]:
     root = Path(__file__).resolve().parents[3]
     executable = shutil.which("git")
     if executable is None:
@@ -112,6 +112,7 @@ def _source_binding() -> dict[str, Any]:
         "bybit_post_funding_screen.py",
         "bybit_carry_feasibility.py",
         "reporting.py",
+        *extra_source_names,
     )
     package = Path(__file__).resolve().parent
     return {

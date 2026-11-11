@@ -133,3 +133,20 @@ SHA-256 is `a9ef438e49c8bbf64a2c1c634b0f213f129ae3fc439bd9f3d591e562e5e16169`.
 The old HYP-033 counts and frozen event IDs were hash-verified and compared, with
 all 986 filtered identities equal. See [result](hyp037-impulse-policy-preflight-result-v1.md).
 No setup mean or net, minute outcome bars or blind-window data were read.
+
+## HYP-037 dependence calibration registration, 2026-11-11
+
+Registered before the additional read, following the second preflight review and
+its required fixed failure rule. See [amendment](hyp037-power-calibration-amendment-v1.md)
+and its machine registration. Reuse the identical snapshot and frozen A/B IDs.
+
+| Window                        | Registered scope                                                                                                                                                                                                                                                                                                                                                 | Level                                                 |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| 2024-10-01 through 2025-09-30 | Seven 4-hour pre-impulse return proxies ending 0/24/48/72/96/120/144 hours before each impulse starts, plus the 1-hour waiting bar ending at decision d. Output only defined counts, week-bootstrap and independent variances, dependence ratios, calibrated planning MDE and assumed-effect power. No individual proxies, proxy means, trade net or setup means | pre-entry dispersion and dependence, reused discovery |
+
+Every proxy ends before entry at d+1 minute. Some later events' proxies can overlap
+earlier events' hold paths; that exposure is acknowledged. Full original weeks
+must remain represented. One candidate stops without outcome reading if its
+unrounded calibrated MDE exceeds 50 bps; an unestimable calibration blocks that
+candidate. The other proceeds independently. First invocation must follow a clean
+committed registration and code revision.

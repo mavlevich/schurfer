@@ -129,3 +129,16 @@ outcome completeness and valid feature determinability is `fail` even when
 symbol/week diversity or concentration fails. An incomplete or immature sample
 retains its explicit insufficient-data result. This fixes verdict ordering in
 the future outcome evaluator; it changes no historical trading result.
+
+### HYP-037 dependence calibration registered, 2026-11-11
+
+Before reading additional historical dispersion/dependence, fix the
+[amendment](hyp037-power-calibration-amendment-v1.md) and machine registration.
+A and B remain the two candidates. Eight proxies are required, including the
+waiting bar; report each design effect and their range, and use their maximum
+with the original 1.2 floor. Calibrated MDE above 50 bps stops that candidate
+without trade-return reading. Unestimable calibration blocks that candidate;
+the other candidate may continue. No threshold or lag is changed after the result.
+The historical source and frozen event hashes are those of the first preflight.
+The hourly waiting return affects only the dependence ratio; 4-hour scale remains
+unchanged. Status at registration is awaiting the first clean-commit invocation.
