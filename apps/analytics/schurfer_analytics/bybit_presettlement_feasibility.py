@@ -57,7 +57,10 @@ FIRST_MS, LAST_MS, _ = STAGES[STAGE]
 # The minute discovery index, pinned in docs/research/evidence/bybit-post-funding-minute-v1.
 INDEX_SHA256: Final = "f48fe09f7023a476e524cf70c6ec1b629eee30a9a07cff41c9d149dfb59e0cf5"
 # Pinned by a commit after each fetch and before any report; None refuses the next step.
-HOURLY_SHA256: Final[str | None] = None
+# Hourly premium fetched 2026-11-12 from main at 551b676: 672 symbols, 4,620 responses.
+HOURLY_SHA256: Final[str | None] = (
+    "8c3d81a765e993cfbc67444f5ac39f10be79e11567346b66e08c38e861e93919"
+)
 MINUTES_SHA256: Final[str | None] = None
 
 TRIGGER: Final = -0.003  # F_hat at most -0.30%
