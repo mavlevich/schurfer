@@ -52,24 +52,20 @@ whether to close the project or make one different attempt.
 
 ## 2. How the tracks run (revised 2026-11-12)
 
-On 2026-11-11 another agent read the returns of HYP-032, HYP-033, HYP-034, HYP-031
-before settlement and a Bybit against Hyperliquid screen on the discovery year, 68
-variants in scratch, with no protocol fixed before the read. The test year, the holdout
-and the v2 blind window were confirmed untouched. The reads are recorded in the
+On 2026-11-11 another agent read the returns of HYP-032, HYP-033, HYP-034, HYP-031 before settlement and a Bybit against Hyperliquid screen on the discovery year, in scratch, with no protocol fixed before the read. The per-line counts it reported (6, 33, 16, 10 and 5) add to 70, plus a seconds block on 8 settlements; its own total said 68. These counts mix rules and diagnostic cuts, and the split into rules, cuts and events cannot be rebuilt, so 70 is a lower bound for the variants seen. Its scripts were deleted; its command output survives in the session's logs on the owner's machine, indexed with digests in the [evidence index](exploratory-reads-2026-11-11-evidence.md). The figures below are reconstructed from that output, except the Bybit first-minute move, found only in the agent's prose. The agent's statement that the test year, the holdout and the v2 blind window are untouched is recorded as its own; the logs cannot prove a negative.
+
+A second series followed the same night: 54 configurations of pump long, post-pump short and maker entry, scripts and results kept and their digests rechecked, no network request. The maximum t was 0.97 and nothing goes to a holdout. Its maker cells measured adverse selection: the signals whose limit order never filled in the model were the best ones. With both series, at least 124 variants of the discovery year have been seen outside a protocol. The reads are recorded in the
 [seen-windows registry](seen-windows-registry.md) and the
 [discovery ledger](discovery-ledger.md); they decide the plan as follows:
 
-- **Track A is closed.** HYP-033 cannot be registered as a successor after 33 variants of
-  its returns were seen; its best cell (F < 0 without high G, +81 bps) is carried by 19
+- **Track A is closed, as a priority decision.** No HYP-033 successor is registered on the discovery year after 33 variants of its returns were seen; its best cell (F < 0 without high G, +81 bps) is carried by 19
   market-wide hours, isolated impulses lose, and a one-slot book loses 61 bps per trade.
-  HYP-034 and HYP-032 are closed too. The holdout batch is not spent on any of them.
+  HYP-034 and HYP-032 are closed too. The holdout batch is not spent on any of them. These reads do not by themselves rule out a future protocol on a clean, unseen window; the budget simply goes to track B.
 - **Track B is the only track, on 4-hour contracts.** With a decision-time signal
   (F_hat at t - 1 h from hourly premium) the long into settlement made +55.3 bps gross on
   4-hour contracts (1,026 clusters, 206 symbols), +25.3 +- 19.8 after a 30 bps taker
   round trip, but -2.0 without the top 5 symbols; on 8-hour contracts it lost before
-  costs (-4.7 gross). B1 runs as designed for every interval, and B2 onward is planned
-  for 4-hour contracts; 1-hour and 2-hour contracts go on only if B1 shows them on its
-  own minute data.
+  costs (-4.7 gross). **4-hour contracts were chosen after seeing these returns;** that choice is part of the selection history and is counted in any later confirmation. B1 fetches and reports every interval, but B2 for 4-hour contracts starts only when the 4-hour group passes on its own: S1 on the 4-hour settlements with the same thresholds and minimum counts, and the 4-hour group's own event floor at the chosen d. A pooled `pass` is not enough. 1-hour and 2-hour contracts go on only if B1 shows the same for their own group.
 
 ## 3. Track B: HYP-031 family, entry before settlement
 
@@ -97,7 +93,7 @@ and 30 minutes means no latency race.
    then. S1 first checks that the formula reproduces settled rates (2 bps, and the -0.30%
    classification on each side of the trigger), with minimum counts and coverage. The
    event list is rebuilt from scratch; nothing of the old 4,928 events or of +35.5 bps is
-   reused as a result. **B2 starts only on B1's verdict `pass`;** `insufficient_validation`,
+   reused as a result. **B2 starts only on B1's verdict `pass` for the 4-hour group on its own (section 2);** `insufficient_validation`,
    `not_reconstructible` and `insufficient_events` stop the track or send it back to
    design.
 2. **Costs.** At a 30 bps taker round trip about +5 bps would remain, which does not
@@ -105,9 +101,7 @@ and 30 minutes means no latency race.
    the strategy's **order book fill model** (`ob500` from 2023-01-18, volume-limited
    primary, looser model as sensitivity). The protocol fixes the maximum wait of the
    limit order, what happens to an unfilled or partly filled remainder, and counts every
-   missed signal: a result on filled orders only is not a result. Limit orders fill most
-   often when the price moves against them; the fill model must show the edge survives
-   that.
+   missed signal: a result on filled orders only is not a result. Limit orders fill most often when the price moves against them; the fill model must show the edge survives that. The 2026-11-11 pump-short lab measured exactly this, with fills decided by its bar model. In its 16 hourly configurations 15.9 to 35.6% of signals never filled; the taker Net30 of the unfilled group was +82.1 to +239.9 bps and of the filled group -151.0 to -8.4. In its 2 minute configurations 7.0 to 15.5% never filled, at +200.1 to +253.1 against -86.3 to -64.1. B2 therefore reports, for every configuration, the modelled fill share, the taker net of the filled and of the unfilled group, and the maker result over all signals.
 3. **Exit and funding.** Exiting before t forfeits the payment; holding through t
    collects it but meets the first-minute fall. Both are fixed exits, declared before
    the read; no exit is tuned on the year.
@@ -144,13 +138,7 @@ exploratory session, and their results are in the ledger.
 
 ## 5. Screens excluded from this plan
 
-- **Bybit against Hyperliquid funding and basis:** excluded from the plan. The 2026-11-11
-  screen (817 settlements, 68 shared coins) found the funding difference at t (+44.6 bps)
-  mostly gone over the next 4 hours (+11.8). Its best regime (8-hour Bybit contracts,
-  short Bybit and long Hyperliquid for 4 hours, +51.2 gross) gets half of it from a basis
-  that converges in the first minute after settlement, where Bybit's +-5 second funding
-  rule makes the entry unsafe; after t + 1 min about +22.7 bps remains for four fills on
-  two venues. The 1-hour regime is carried by five pumped coins. Venue access from Poland
+- **Bybit against Hyperliquid funding and basis:** excluded from the current budget, as a priority decision; the screen does not show the trade loses. The 2026-11-11 screen (817 settlements, 68 shared coins) found the funding difference at t (+44.6 bps) mostly gone over the next 4 hours (+11.8). Its best regime (8-hour Bybit contracts, short Bybit and long Hyperliquid for 4 hours, +51.2 gross) gets +28.5 of it from the basis. The agent's prose, not confirmed by any saved command output, mentions a sharp Bybit move in the first minute after settlement; Hyperliquid's price for that minute was not fetched (4-hour candles only), so whether the basis converges in the first minute, and how much would remain after t + 1 min, are unverified assumptions. Bybit's +-5 second funding warning concerns the seconds around t, not the whole first minute. The 1-hour regime is carried by five pumped coins. Venue access from Poland
   is still `unknown`. Ledger: "Bybit vs Hyperliquid (exploratory)".
 - **Hyperliquid positions as a feature:** closed for now. The public API returns current
   positions, not their history for 2024 and 2025, so a decision-time feature cannot be
