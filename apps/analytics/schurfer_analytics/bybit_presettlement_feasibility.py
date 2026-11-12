@@ -85,6 +85,8 @@ S1_MIN_EACH_SIDE: Final = 50  # scored settlements on each side of the -0.30% tr
 MIN_CLUSTERS: Final = 150
 MIN_SYMBOLS: Final = 40
 MIN_WEEKS: Final = 26
+# Standard Bybit funding cap values, for an S1 diagnostic count only (no gate uses it).
+STANDARD_CAPS: Final = (-0.005, -0.0075, -0.01, -0.015, -0.02, -0.025, -0.03)
 # B2 for an interval class needs that class to pass on its own (S1 and the S3 floor);
 # a pooled pass is not enough. 4 h is the class the program plan carries forward.
 GATED_INTERVALS: Final = ("1h", "2h", "4h", "8h")
@@ -409,7 +411,7 @@ def s1(
     few on either side of the trigger, is insufficient_data, never a pass."""
     caps = possible_caps(index)
     scheduled = complete = pinned = relevant = within = strict = agree = below = above = 0
-    hit = correct_reject = 0
+    hit = correct_reject = at_standard_cap = 0
     errors: list[float] = []
     for iv in pool:
         settled = _settled(index, iv)
@@ -426,6 +428,7 @@ def s1(
             pinned += 1
             continue
         relevant += 1
+        at_standard_cap += any(abs(settled - c) < 1e-9 for c in STANDARD_CAPS)
         below += settled <= TRIGGER
         above += settled > TRIGGER
         errors.append(abs(rebuilt - settled))
@@ -435,11 +438,13 @@ def s1(
         hit += settled <= TRIGGER and rebuilt <= TRIGGER
         correct_reject += settled > TRIGGER and rebuilt > TRIGGER
     out_of_hour = total_minutes = 0
-    for symbol, closes in minutes.closes.items():
-        lows, highs = hourly.low.get(symbol, {}), hourly.high.get(symbol, {})
-        for m, v in closes.items():
+    for iv in pool:  # only this pool's minutes, so a class reports its own share
+        closes = minutes.closes.get(iv.symbol, {})
+        lows, highs = hourly.low.get(iv.symbol, {}), hourly.high.get(iv.symbol, {})
+        for m in range(iv.s1, iv.predicted, MINUTE_MS):
+            v = closes.get(m)
             h = (m // HOUR_MS) * HOUR_MS
-            if h in lows and h in highs:
+            if v is not None and h in lows and h in highs:
                 total_minutes += 1
                 out_of_hour += not lows[h] <= v <= highs[h]
     coverage = complete / scheduled if scheduled else None
@@ -479,6 +484,9 @@ def s1(
         "relevant_above_trigger": above,
         "at_possible_cap": pinned,
         "at_possible_cap_share": pinned / (pinned + relevant) if pinned + relevant else None,
+        # diagnostic only: scored settlements equal to a standard Bybit cap value that the
+        # repeated-minimum rule did not pin (a cap may have changed during the year)
+        "scored_at_standard_cap_value": at_standard_cap,
         "within_tolerance_share": within_share,
         "within_strict_share": strict / relevant if relevant else None,
         "class_agreement_share": agree_share,

@@ -302,6 +302,30 @@ def test_class_inherits_a_failed_pooled_formula_check() -> None:
     assert gates["1h"]["verdict"] == "not_reconstructible"
 
 
+def test_review_repro_minute_check_counts_only_the_pool() -> None:
+    """Review (2026-11-12): the minute-against-hour check ran over every fetched minute,
+    so a class reported the global count. Each pool now counts its own minutes."""
+    index, pool, _, minutes = s1_world(200, 200)
+    hours = {(m // HOUR_MS) * HOUR_MS for m in minutes.closes["AAAUSDT"]}
+    hourly = HourlyPremium(
+        {"AAAUSDT": dict.fromkeys(hours, -1.0)}, {"AAAUSDT": dict.fromkeys(hours, 1.0)}, ()
+    )
+    whole = b1.s1(index, pool, hourly, minutes)
+    half = b1.s1(index, pool[:200], hourly, minutes)
+    assert whole["minutes_checked_against_hour"] == 400 * 60
+    assert half["minutes_checked_against_hour"] == 200 * 60
+    assert b1.s1(index, [], hourly, minutes)["minutes_checked_against_hour"] == 0
+
+
+def test_standard_cap_values_are_counted_not_excluded() -> None:
+    index, pool, hourly, minutes = s1_world(200, 200)
+    first = pool[0]
+    index.instruments["AAAUSDT"].funding[first.predicted] = -0.005
+    report = b1.s1(index, pool, hourly, minutes)
+    assert report["scored_at_standard_cap_value"] == 1
+    assert report["relevant"] == 400
+
+
 class FakeBybit:
     """Answers premium index kline requests like Bybit: newest first, capped at limit."""
 
