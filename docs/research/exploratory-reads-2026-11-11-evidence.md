@@ -18,27 +18,26 @@ command output in the session's task logs and step outputs. The figures in the l
 are reconstructed from that output and from the agent's report. Rerunning them needs new
 scripts.
 
-| File (under `.system_generated/`) | SHA-256                                                            | Figures found in it                                                      |
-| --------------------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------------ |
-| `tasks/task-406.log`              | `7a0c7f8e36b75937d158b4c7402d2d407b0dc502044c304533cbf842d501c8ac` | Bybit vs Hyperliquid funding difference +44.6, next 4 h +11.8, 8 h +25.4 |
-| `tasks/task-535.log`              | `7f1407779be09494e271edc405fe8ae15dcb517366747133c7cd60e92b043e45` | HYP-031 before settlement, false triggers                                |
-| `tasks/task-550.log`              | `7d8452fdb9248e1823009a9914bbe69c70ea576a3ea5b956af3f64e9b0f12b94` | HYP-033 cells, HYP-034                                                   |
-| `tasks/task-563.log`              | `c76bfad330f038ed0882fc890eeca9eb4c15c5959794bb1ea2123017d5203eb7` | HYP-031 4 h +55.3 gross, Net30 +25.3, 8 h -4.7; HYP-032 -23.1            |
-| `tasks/task-585.log`              | `e23f048e9075647c857595f83ff722503bc202f4cd1645dcfa4d5161cbd91f2d` | HYP-033 f_only, HYP-032                                                  |
-| `tasks/task-597.log`              | `9c7de18419fae7ee4715d93c04a57b746654e4f132b2db77928896ced17f4d3f` | HYP-033 f_only one-slot portfolio -61.1                                  |
-| `tasks/task-601.log`              | `037b653876ce640718c7e4191ec91b727d985d2ad7cbae61d53d0ddcfe90134e` | HYP-033 market-wide hours +236.7                                         |
-| `tasks/task-626.log`              | `85c735a137e09773532c0332399dedac0f3014268a794a0cae80f020de95d6f3` | Bybit vs Hyperliquid regime A, funding +22.7                             |
-| `tasks/task-686.log`              | `7de688e861d1d32479eeff5620eac56828f6c5c55556afe207c7d5bcc68860da` | Bybit vs Hyperliquid regime A gross +51.2                                |
-| `tasks/task-692.log`              | `7840e51a8f938bb817b873a13770fe5b10e3c1d128cb33e6baecbf623a9fb760` | HYP-033 portfolios, HYP-034                                              |
-| `tasks/task-798.log`              | `b005b5e3c6e9186f7c1c964a90de59e66ad88e4273719644e910ce9f9bbc8946` | HYP-031 before settlement, repeat run                                    |
-| `steps/418/output.txt`            | `0067dc83790c3edca866204a4ae9c5f4694fa58574ae7d22a2d9e8cbdda82385` | Bybit vs Hyperliquid regime B +74.9 (median +32.1)                       |
-| `steps/424/output.txt`            | `2b0df5b1b0171c9377b4c12ab1d99573249325975bea25d0dd38c3a8e1948c54` | Bybit vs Hyperliquid regimes, repeat                                     |
-| `steps/434/output.txt`            | `dc4a252fd53608f16a014d7a6a1458a5eba68439a8bc52f052c30077cefc1d1b` | Bybit vs Hyperliquid regimes, repeat                                     |
-| `steps/763/output.txt`            | `e756c511054deb24dd81f0184910dfba7618f3e55965c996a679aff4ebac60a1` | Bybit vs Hyperliquid summary                                             |
-| `logs/transcript.jsonl`           | `05db0492e76a844fe6ae26ff2ce9ed3324721d63b7443ead9c882fc29b4cc5f1` | whole session (snapshot, still open)                                     |
+| File (under `.system_generated/`) | SHA-256                                                            | Figures found in it                                                                                                                       |
+| --------------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `tasks/task-406.log`              | `7a0c7f8e36b75937d158b4c7402d2d407b0dc502044c304533cbf842d501c8ac` | Bybit vs Hyperliquid funding difference +44.6, next 4 h +11.8, 8 h +25.4                                                                  |
+| `tasks/task-535.log`              | `7f1407779be09494e271edc405fe8ae15dcb517366747133c7cd60e92b043e45` | HYP-031 before settlement, false triggers                                                                                                 |
+| `tasks/task-550.log`              | `7d8452fdb9248e1823009a9914bbe69c70ea576a3ea5b956af3f64e9b0f12b94` | HYP-033 cells, HYP-034                                                                                                                    |
+| `tasks/task-563.log`              | `c76bfad330f038ed0882fc890eeca9eb4c15c5959794bb1ea2123017d5203eb7` | HYP-031 4 h +55.3 gross, Net30 +25.3, 8 h -4.7; HYP-032 -23.1                                                                             |
+| `tasks/task-585.log`              | `e23f048e9075647c857595f83ff722503bc202f4cd1645dcfa4d5161cbd91f2d` | HYP-033 f_only, HYP-032                                                                                                                   |
+| `tasks/task-597.log`              | `9c7de18419fae7ee4715d93c04a57b746654e4f132b2db77928896ced17f4d3f` | HYP-033 f_only one-slot portfolio -61.1                                                                                                   |
+| `tasks/task-601.log`              | `037b653876ce640718c7e4191ec91b727d985d2ad7cbae61d53d0ddcfe90134e` | HYP-033 market-wide hours +236.7                                                                                                          |
+| `tasks/task-626.log`              | `85c735a137e09773532c0332399dedac0f3014268a794a0cae80f020de95d6f3` | Bybit vs Hyperliquid regime A, funding +22.7                                                                                              |
+| `tasks/task-686.log`              | `7de688e861d1d32479eeff5620eac56828f6c5c55556afe207c7d5bcc68860da` | Bybit vs Hyperliquid regime A gross +51.2                                                                                                 |
+| `tasks/task-692.log`              | `7840e51a8f938bb817b873a13770fe5b10e3c1d128cb33e6baecbf623a9fb760` | HYP-033 portfolios, HYP-034                                                                                                               |
+| `tasks/task-798.log`              | `b005b5e3c6e9186f7c1c964a90de59e66ad88e4273719644e910ce9f9bbc8946` | HYP-031 before settlement, repeat run                                                                                                     |
+| `steps/418/output.txt`            | `0067dc83790c3edca866204a4ae9c5f4694fa58574ae7d22a2d9e8cbdda82385` | Bybit vs Hyperliquid regime B +74.9 (median +32.1)                                                                                        |
+| `steps/424/output.txt`            | `2b0df5b1b0171c9377b4c12ab1d99573249325975bea25d0dd38c3a8e1948c54` | Bybit vs Hyperliquid regimes, repeat                                                                                                      |
+| `steps/434/output.txt`            | `dc4a252fd53608f16a014d7a6a1458a5eba68439a8bc52f052c30077cefc1d1b` | Bybit vs Hyperliquid regimes; Bybit short return in [t, t + 1 m] +54.0 bps mean, median +44.9, 95 of 97 regime A events (lines 43 and 44) |
+| `steps/763/output.txt`            | `e756c511054deb24dd81f0184910dfba7618f3e55965c996a679aff4ebac60a1` | Bybit vs Hyperliquid summary                                                                                                              |
+| `logs/transcript.jsonl`           | `05db0492e76a844fe6ae26ff2ce9ed3324721d63b7443ead9c882fc29b4cc5f1` | whole session (snapshot, still open)                                                                                                      |
 
-**Not found in any command output.** The Bybit first-minute move after settlement appears only in the agent's prose, so its figure is not repeated here and is not used as evidence. The ledger
-treats first-minute basis convergence as an unverified assumption.
+**First-minute move.** A first search missed the Bybit first-minute figure because the output prints it as a short's return (+54.0), not as a price change (-54.0); a colleague located it in `steps/434/output.txt`. Only the Bybit leg is measured: Hyperliquid's price for that minute was not fetched, so first-minute basis convergence stays an unverified assumption.
 
 **Untouched windows.** The agent states that the test year, the holdout and the v2
 blind window were not read. These files do not prove a negative. The statement is
