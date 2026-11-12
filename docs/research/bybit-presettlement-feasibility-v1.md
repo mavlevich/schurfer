@@ -104,7 +104,11 @@ are reported apart.
 **Coverage and counts come first.** The S1 pool is the superset plus the validation
 sample. Among its intervals whose schedule held (the settlement came at the predicted
 time), at least **95%** must have complete minute data; a fetch error or a gap stays in
-that denominator. At least **300** settlements at most -0.10% must be scored, with at
+that denominator. Premium OHLC values must be finite: snapshot loaders reject `NaN`
+and positive or negative infinity. A non-finite observation passed directly to the
+calculation makes that interval undefined, so it cannot count as complete or produce
+an admitted signal. A non-finite formula result is rejected.
+At least **300** settlements at most -0.10% must be scored, with at
 least **50** on each side of -0.30%. Settlements at a possible cap are excluded from the
 score and reported with their own count and share. If any of these fails, S1 is
 `insufficient_data` and B1 ends `insufficient_validation`: never a pass on what is left.
@@ -172,6 +176,23 @@ weeks, top-5 symbols at most 30%**) on the pooled admitted events. The values of
 pass go to B2 (the maker fill model) and B3 (the laboratory read), and nothing else does;
 an interval class that misses the floor on its own is read in B3 as a diagnostic only. If none passes, B1 ends
 `insufficient_events`.
+
+**Gate for each interval class (amendment, 2026-11-12, before any fetch).** The program
+plan carries 4-hour contracts forward, and that choice was made after seeing exploratory
+returns. A pooled `pass` therefore does not open B2 for a class. Each class (1 h, 2 h,
+4 h, 8 h) gets its own verdict in the report's `by_interval`, with the same names:
+
+- S1 run on that class's settlements in the pool alone, with the same thresholds and
+  minimum counts (coverage 95%, 300 scored, 50 on each side, 2 bps for 95%, sensitivity
+  and specificity 95%, agreement 98%). Too few is `insufficient_validation` for the class.
+- The class's own S3 floor at some d. Without it the class is `insufficient_events`.
+- A class never passes where the pooled formula check does not: a pooled
+  `insufficient_validation`, `not_reconstructible` or `superset_rebuild_needed` is
+  inherited.
+
+B2 for 4-hour contracts starts only on `by_interval["4h"]` = `pass`, at the values of d
+in that class's own `passing_decision_offsets`. The other classes are fetched and
+reported as diagnostics.
 
 ## What B1 does not decide
 

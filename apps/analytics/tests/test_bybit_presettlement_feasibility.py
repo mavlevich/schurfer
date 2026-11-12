@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 from typing import TYPE_CHECKING
 
 import pytest
@@ -11,6 +12,7 @@ from schurfer_analytics.bybit_post_funding_screen import (
     MINUTE_MS,
     Index,
     Instrument,
+    SnapshotWriter,
 )
 from schurfer_analytics.bybit_presettlement_feasibility import (
     HourlyPremium,
@@ -234,9 +236,12 @@ def test_validation_sample_is_deterministic_and_rate_free() -> None:
     assert len(first) == b1.VALIDATION_SAMPLE
 
 
-def test_snapshots_are_unpinned_until_fetched() -> None:
-    assert b1.HOURLY_SHA256 is None
-    assert b1.MINUTES_SHA256 is None
+def test_snapshots_are_pinned_after_their_fetches() -> None:
+    """Both fetches ran on 2026-11-12; each pin is a full SHA-256 of its snapshot."""
+    for pin in (b1.HOURLY_SHA256, b1.MINUTES_SHA256):
+        assert pin is not None
+        assert len(pin) == 64
+        assert set(pin) <= set("0123456789abcdef")
 
 
 def test_s1_tolerance_is_two_bps_with_a_strict_diagnostic() -> None:
@@ -271,6 +276,59 @@ def test_s3_reports_each_settlement_interval_apart() -> None:
     assert report["by_interval"]["1h"]["admitted"]["events"] == 1
     assert report["by_interval"]["4h"]["admitted"]["events"] == 1
     assert report["admitted"]["events"] == 2
+
+
+def test_review_repro_pooled_pass_does_not_open_a_class_without_its_own_data() -> None:
+    """Review P1 (2026-11-12): a pooled pass made of 1 h settlements must not open B2
+    for 4 h contracts. The 4 h class has no settlement of its own, so it cannot pass."""
+    index, pool, hourly, minutes = s1_world(200, 200)
+    decision = {"d30": {"floor": True, "by_interval": {"1h": {"floor": True}}}}
+    gates = b1.interval_gates(index, pool, hourly, minutes, decision, "pass")
+    assert gates["1h"]["verdict"] == "pass"
+    assert gates["1h"]["passing_decision_offsets"] == ["d30"]
+    assert gates["4h"]["s1"]["status"] == "insufficient_data"
+    assert gates["4h"]["verdict"] == "insufficient_validation"
+
+
+def test_class_needs_its_own_floor() -> None:
+    index, pool, hourly, minutes = s1_world(200, 200)
+    decision = {
+        "d30": {"floor": True, "by_interval": {"1h": {"floor": False}, "4h": {"floor": True}}}
+    }
+    gates = b1.interval_gates(index, pool, hourly, minutes, decision, "pass")
+    assert gates["1h"]["verdict"] == "insufficient_events"
+
+
+def test_class_inherits_a_failed_pooled_formula_check() -> None:
+    index, pool, hourly, minutes = s1_world(200, 200)
+    decision = {"d30": {"floor": True, "by_interval": {"1h": {"floor": True}}}}
+    gates = b1.interval_gates(index, pool, hourly, minutes, decision, "not_reconstructible")
+    assert gates["1h"]["s1"]["status"] == "pass"
+    assert gates["1h"]["verdict"] == "not_reconstructible"
+
+
+def test_review_repro_minute_check_counts_only_the_pool() -> None:
+    """Review (2026-11-12): the minute-against-hour check ran over every fetched minute,
+    so a class reported the global count. Each pool now counts its own minutes."""
+    index, pool, _, minutes = s1_world(200, 200)
+    hours = {(m // HOUR_MS) * HOUR_MS for m in minutes.closes["AAAUSDT"]}
+    hourly = HourlyPremium(
+        {"AAAUSDT": dict.fromkeys(hours, -1.0)}, {"AAAUSDT": dict.fromkeys(hours, 1.0)}, ()
+    )
+    whole = b1.s1(index, pool, hourly, minutes)
+    half = b1.s1(index, pool[:200], hourly, minutes)
+    assert whole["minutes_checked_against_hour"] == 400 * 60
+    assert half["minutes_checked_against_hour"] == 200 * 60
+    assert b1.s1(index, [], hourly, minutes)["minutes_checked_against_hour"] == 0
+
+
+def test_standard_cap_values_are_counted_not_excluded() -> None:
+    index, pool, hourly, minutes = s1_world(200, 200)
+    first = pool[0]
+    index.instruments["AAAUSDT"].funding[first.predicted] = -0.005
+    report = b1.s1(index, pool, hourly, minutes)
+    assert report["scored_at_standard_cap_value"] == 1
+    assert report["relevant"] == 400
 
 
 class FakeBybit:
@@ -329,6 +387,7 @@ def test_api_to_snapshot_to_report(tmp_path: Path) -> None:
     assert d30["status"].get("admitted", 0) >= 1
     assert report["s1"]["status"] == "insufficient_data"  # four settlements cannot validate
     assert report["verdict"] == "insufficient_validation"
+    assert report["by_interval"]["4h"]["verdict"] == "insufficient_validation"
 
 
 def test_s1_review_repro_extreme_side_cannot_hide_behind_the_ordinary_side() -> None:
@@ -357,3 +416,62 @@ def test_s1_review_repro_extreme_side_cannot_hide_behind_the_ordinary_side() -> 
     assert report["within_tolerance_share"] == 1.0
     assert report["sensitivity_at_trigger"] == 0.0
     assert report["status"] == "fail"
+
+
+@pytest.mark.parametrize("interval", ["60", "1"])
+@pytest.mark.parametrize("field", [1, 2, 3, 4])
+@pytest.mark.parametrize("bad", ["NaN", "Infinity", "-Infinity"])
+def test_premium_snapshots_refuse_nonfinite_ohlc(
+    tmp_path: Path, interval: str, field: int, bad: str
+) -> None:
+    path = tmp_path / "premium.jsonl.gz"
+    item = [str(T0), "-0.004", "-0.0039", "-0.0041", "-0.004"]
+    item[field] = bad
+    writer = SnapshotWriter(path)
+    try:
+        writer.record("version", None, {}, {"version": b1.VERSION})
+        writer.record(
+            f"premium_{interval}",
+            "AAAUSDT",
+            {},
+            {"result": {"symbol": "AAAUSDT", "list": [item]}},
+        )
+    finally:
+        writer.close()
+    loader = b1.load_hourly if interval == "60" else b1.load_minutes
+    with pytest.raises(ValueError, match="finite"):
+        loader(path)
+
+
+@pytest.mark.parametrize("bad", [math.nan, math.inf, -math.inf])
+def test_nonfinite_premium_never_becomes_an_admitted_signal(bad: float) -> None:
+    iv = hour_interval()
+    closes = closes_for(iv, 0.0, 0.0)
+    closes[iv.s1 + 5 * MINUTE_MS] = bad
+    turnover = {T0 - (k + 1) * HOUR_MS: 200_000.0 for k in range(40)}
+    index = _index_with({T0 - DAY_MS: -0.004, T0: -0.001}, turnover)
+
+    assert b1.full_rate(iv, closes) is None
+    assert b1.decision_rate(iv, closes, 30) is None
+    assert b1.classify(index, iv, closes, 30) == ("premium_gap", None)
+    assert b1.in_superset(iv, {T0: bad})  # unknown data cannot exclude a candidate
+    with pytest.raises(ValueError, match="finite"):
+        b1.funding_from([(1, bad)], 60)
+
+
+@pytest.mark.parametrize("bad", [math.nan, math.inf, -math.inf])
+def test_s1_does_not_count_a_nonfinite_interval_as_complete(bad: float) -> None:
+    index, pool, hourly, minutes = s1_world(200, 200)
+    first = pool[0]
+    minutes.closes[first.symbol][first.s1 + 5 * MINUTE_MS] = bad
+
+    report = b1.s1(index, pool, hourly, minutes)
+    assert report["complete"] == 399
+    assert report["coverage"] == pytest.approx(399 / 400)
+    assert report["relevant"] == 399
+
+
+def test_funding_formula_refuses_a_nonfinite_computed_result() -> None:
+    # Each observation is finite, but the weighted sum overflows.
+    with pytest.raises(ValueError, match="finite"):
+        b1.funding_from([(1, 1e308), (2, 1e308)], 60)

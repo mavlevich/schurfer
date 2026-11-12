@@ -22,6 +22,7 @@ import asyncio
 import bisect
 import gzip
 import json
+import math
 import random
 import sys
 from collections import Counter, defaultdict
@@ -56,8 +57,14 @@ FIRST_MS, LAST_MS, _ = STAGES[STAGE]
 # The minute discovery index, pinned in docs/research/evidence/bybit-post-funding-minute-v1.
 INDEX_SHA256: Final = "f48fe09f7023a476e524cf70c6ec1b629eee30a9a07cff41c9d149dfb59e0cf5"
 # Pinned by a commit after each fetch and before any report; None refuses the next step.
-HOURLY_SHA256: Final[str | None] = None
-MINUTES_SHA256: Final[str | None] = None
+# Hourly premium fetched 2026-11-12 from main at 551b676: 672 symbols, 4,620 responses.
+HOURLY_SHA256: Final[str | None] = (
+    "8c3d81a765e993cfbc67444f5ac39f10be79e11567346b66e08c38e861e93919"
+)
+# Minute premium fetched 2026-11-12 at 7260e55: 54,909 intervals, no errors, 4 retried.
+MINUTES_SHA256: Final[str | None] = (
+    "5d638d68d40a13e2ad10573ae7d6446a193a66b0db8dc4d1d12e20c0e9a58b15"
+)
 
 TRIGGER: Final = -0.003  # F_hat at most -0.30%
 S1_RELEVANT: Final = -0.001  # S1 gates settlements at most -0.10%
@@ -85,6 +92,11 @@ S1_MIN_EACH_SIDE: Final = 50  # scored settlements on each side of the -0.30% tr
 MIN_CLUSTERS: Final = 150
 MIN_SYMBOLS: Final = 40
 MIN_WEEKS: Final = 26
+# Standard Bybit funding cap values, for an S1 diagnostic count only (no gate uses it).
+STANDARD_CAPS: Final = (-0.005, -0.0075, -0.01, -0.015, -0.02, -0.025, -0.03)
+# B2 for an interval class needs that class to pass on its own (S1 and the S3 floor);
+# a pooled pass is not enough. 4 h is the class the program plan carries forward.
+GATED_INTERVALS: Final = ("1h", "2h", "4h", "8h")
 MAX_TOP5_SHARE: Final = 0.30
 KLINE_PAGE_LIMIT: Final = 1000
 CONCURRENCY: Final = 4
@@ -99,11 +111,16 @@ def interest(n_min: int) -> float:
 
 def funding_from(weighted: Sequence[tuple[int, float]], n_min: int) -> float:
     """F = P + clamp(I - P, -0.05%, +0.05%), with P the weight-renormalized average."""
+    if any(not math.isfinite(v) for _, v in weighted):
+        raise ValueError("premium index values must be finite")
     total = sum(w for w, _ in weighted)
     if total <= 0:
         raise ValueError("no weight")
     p = sum(w * v for w, v in weighted) / total
-    return p + max(-CLAMP, min(CLAMP, interest(n_min) - p))
+    rate = p + max(-CLAMP, min(CLAMP, interest(n_min) - p))
+    if not math.isfinite(rate):
+        raise ValueError("computed funding rate must be finite")
+    return rate
 
 
 def observed_weight_share(n_min: int, d_min: int) -> float:
@@ -135,7 +152,7 @@ def minute_starts(iv: Interval) -> list[int]:
 def full_rate(iv: Interval, closes: Mapping[int, float]) -> float | None:
     """S1: the rate rebuilt from every minute of the interval, None on any gap."""
     values = [closes.get(m) for m in minute_starts(iv)]
-    if any(v is None for v in values):
+    if any(v is None or not math.isfinite(v) for v in values):
         return None
     return funding_from([(k + 1, v) for k, v in enumerate(values) if v is not None], iv.n_min)
 
@@ -147,7 +164,7 @@ def decision_rate(iv: Interval, closes: Mapping[int, float], d_min: int) -> floa
     if not known:
         return None
     values = [(w, closes.get(m)) for w, m in known]
-    if any(v is None for _, v in values):
+    if any(v is None or not math.isfinite(v) for _, v in values):
         return None
     return funding_from([(w, v) for w, v in values if v is not None], iv.n_min)
 
@@ -208,7 +225,7 @@ def in_superset(iv: Interval, lows: Mapping[int, float]) -> bool:
     start = (iv.s1 // HOUR_MS) * HOUR_MS
     hours = range(start, iv.predicted, HOUR_MS)
     values = [lows.get(h) for h in hours]
-    return any(v is None or v <= SUPERSET_LOW for v in values)
+    return any(v is None or not math.isfinite(v) or v <= SUPERSET_LOW for v in values)
 
 
 def validation_sample(all_intervals: Sequence[Interval]) -> list[Interval]:
@@ -248,6 +265,13 @@ def _lines(path: Path, kind_version: str) -> Iterable[dict[str, Any]]:
             yield line
 
 
+def _premium_ohlc(item: Sequence[Any]) -> tuple[float, float, float, float]:
+    values = (float(item[1]), float(item[2]), float(item[3]), float(item[4]))
+    if not all(math.isfinite(v) for v in values):
+        raise ValueError("premium index OHLC values must be finite")
+    return values
+
+
 def load_hourly(path: Path) -> HourlyPremium:
     low: dict[str, dict[int, float]] = defaultdict(dict)
     high: dict[str, dict[int, float]] = defaultdict(dict)
@@ -262,8 +286,9 @@ def load_hourly(path: Path) -> HourlyPremium:
                 failed.add(symbol)
                 continue
             for item in result["list"]:
-                low[symbol][int(item[0])] = float(item[3])
-                high[symbol][int(item[0])] = float(item[2])
+                _, high_value, low_value, _ = _premium_ohlc(item)
+                low[symbol][int(item[0])] = low_value
+                high[symbol][int(item[0])] = high_value
     keep = {s for s in low if s not in failed}
     return HourlyPremium(
         {s: low[s] for s in keep}, {s: high[s] for s in keep}, tuple(sorted(failed))
@@ -282,7 +307,8 @@ def load_minutes(path: Path) -> MinutePremium:
             if result.get("symbol") not in (None, symbol):
                 continue
             for item in result["list"]:
-                closes[symbol][int(item[0])] = float(item[4])
+                _, _, _, close = _premium_ohlc(item)
+                closes[symbol][int(item[0])] = close
     return MinutePremium(dict(closes), tuple(sorted(failed)))
 
 
@@ -406,7 +432,7 @@ def s1(
     few on either side of the trigger, is insufficient_data, never a pass."""
     caps = possible_caps(index)
     scheduled = complete = pinned = relevant = within = strict = agree = below = above = 0
-    hit = correct_reject = 0
+    hit = correct_reject = at_standard_cap = 0
     errors: list[float] = []
     for iv in pool:
         settled = _settled(index, iv)
@@ -423,6 +449,7 @@ def s1(
             pinned += 1
             continue
         relevant += 1
+        at_standard_cap += any(abs(settled - c) < 1e-9 for c in STANDARD_CAPS)
         below += settled <= TRIGGER
         above += settled > TRIGGER
         errors.append(abs(rebuilt - settled))
@@ -432,11 +459,13 @@ def s1(
         hit += settled <= TRIGGER and rebuilt <= TRIGGER
         correct_reject += settled > TRIGGER and rebuilt > TRIGGER
     out_of_hour = total_minutes = 0
-    for symbol, closes in minutes.closes.items():
-        lows, highs = hourly.low.get(symbol, {}), hourly.high.get(symbol, {})
-        for m, v in closes.items():
+    for iv in pool:  # only this pool's minutes, so a class reports its own share
+        closes = minutes.closes.get(iv.symbol, {})
+        lows, highs = hourly.low.get(iv.symbol, {}), hourly.high.get(iv.symbol, {})
+        for m in range(iv.s1, iv.predicted, MINUTE_MS):
+            v = closes.get(m)
             h = (m // HOUR_MS) * HOUR_MS
-            if h in lows and h in highs:
+            if v is not None and h in lows and h in highs:
                 total_minutes += 1
                 out_of_hour += not lows[h] <= v <= highs[h]
     coverage = complete / scheduled if scheduled else None
@@ -476,6 +505,9 @@ def s1(
         "relevant_above_trigger": above,
         "at_possible_cap": pinned,
         "at_possible_cap_share": pinned / (pinned + relevant) if pinned + relevant else None,
+        # diagnostic only: scored settlements equal to a standard Bybit cap value that the
+        # repeated-minimum rule did not pin (a cap may have changed during the year)
+        "scored_at_standard_cap_value": at_standard_cap,
         "within_tolerance_share": within_share,
         "within_strict_share": strict / relevant if relevant else None,
         "class_agreement_share": agree_share,
@@ -504,7 +536,7 @@ def classify(
     if superseded(known, iv, cut):
         return "superseded", None
     rate = decision_rate(iv, closes, d_min)
-    if rate is None:
+    if rate is None or not math.isfinite(rate):
         return "premium_gap", None
     if rate > TRIGGER:
         return "no_trigger", rate
@@ -598,19 +630,12 @@ def build_report(index: Index, hourly: HourlyPremium, minutes: MinutePremium) ->
     every = intervals(index)
     superset = [iv for iv in every if in_superset(iv, hourly.low.get(iv.symbol, {}))]
     pool = {iv.key: iv for iv in (*superset, *validation_sample(every))}
-    check = s1(index, [pool[k] for k in sorted(pool)], hourly, minutes)
+    pooled_ivs = [pool[k] for k in sorted(pool)]
+    check = s1(index, pooled_ivs, hourly, minutes)
     decision = s3(index, superset, minutes)
     passing = [d for d, row in decision.items() if row["floor"]]
-    if check["status"] == "insufficient_data":
-        verdict = "insufficient_validation"
-    elif check["status"] != "pass":
-        verdict = "not_reconstructible"
-    elif check["superset_needs_rebuild"]:
-        verdict = "superset_rebuild_needed"
-    elif not passing:
-        verdict = "insufficient_events"
-    else:
-        verdict = "pass"
+    verdict = _verdict(check, passing)
+    by_interval = interval_gates(index, pooled_ivs, hourly, minutes, decision, verdict)
     return {
         "version": VERSION,
         "intervals": len(every),
@@ -621,7 +646,49 @@ def build_report(index: Index, hourly: HourlyPremium, minutes: MinutePremium) ->
         "s3": decision,
         "passing_decision_offsets": passing,
         "verdict": verdict,
+        "by_interval": by_interval,
     }
+
+
+def interval_gates(
+    index: Index,
+    pool: Sequence[Interval],
+    hourly: HourlyPremium,
+    minutes: MinutePremium,
+    decision: Mapping[str, Any],
+    pooled_verdict: str,
+) -> dict[str, Any]:
+    """Each gated interval class on its own: S1 on that class's settlements with the
+    same thresholds and minimum counts, and that class's own S3 floor. A class never
+    passes where the pooled formula check does not."""
+    inherited = pooled_verdict in (
+        "insufficient_validation", "not_reconstructible", "superset_rebuild_needed"
+    )  # fmt: skip
+    out: dict[str, Any] = {}
+    for name in GATED_INTERVALS:
+        group = [iv for iv in pool if interval_class(iv.n_min) == name]
+        check = s1(index, group, hourly, minutes)
+        passing = [
+            d for d, row in decision.items() if row["by_interval"].get(name, {}).get("floor")
+        ]
+        out[name] = {
+            "s1": check,
+            "passing_decision_offsets": passing,
+            "verdict": pooled_verdict if inherited else _verdict(check, passing),
+        }
+    return out
+
+
+def _verdict(check: Mapping[str, Any], passing: Sequence[str]) -> str:
+    if check["status"] == "insufficient_data":
+        return "insufficient_validation"
+    if check["status"] != "pass":
+        return "not_reconstructible"
+    if check["superset_needs_rebuild"]:
+        return "superset_rebuild_needed"
+    if not passing:
+        return "insufficient_events"
+    return "pass"
 
 
 # ---------------------------------------------------------------- CLI
@@ -687,4 +754,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "working_tree_dirty": args.working_tree_dirty,
     }
     digest = publish_once(args.output_dir / "result.json", report)
-    sys.stdout.write(json.dumps({"verdict": report["verdict"], "sha256": digest}) + "\n")
+    by_class = {name: row["verdict"] for name, row in report["by_interval"].items()}
+    sys.stdout.write(
+        json.dumps({"verdict": report["verdict"], "by_interval": by_class, "sha256": digest}) + "\n"
+    )
