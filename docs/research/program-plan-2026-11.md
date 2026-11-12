@@ -137,7 +137,8 @@ parked, untested, with that reason.
 
 ## 4. Track A: closed
 
-See section 2. HYP-037 is withdrawn before registration; the three candidates declared
+See section 2. HYP-037 stopped at its calibrated power gate (#584, MDE 123 and 73 bps)
+before any return was read, and it is not reopened; the three candidates declared
 on 2026-11-11 (all impulses, F < 0 with high G, F < 0 alone) were read in the
 exploratory session, and their results are in the ledger.
 

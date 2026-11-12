@@ -1,0 +1,54 @@
+{
+  "contract": {
+    "candidates": [
+      "A",
+      "B"
+    ],
+    "entry_delay_ms": 60000,
+    "features_sha256": "a3b54d6ce092a73afbd4911e8ea72862a707846b45fbb23d05ec1d91f71ebab6",
+    "fg_determinable_min": 0.9,
+    "first_decision_ms": 1729036800000,
+    "first_lookback_hours": 24,
+    "floor_clusters": 150,
+    "floor_symbols": 40,
+    "floor_weeks": 26,
+    "g_min_percentile": 0.8,
+    "hold_hours": 4,
+    "hypothesis_id": "HYP-037",
+    "impulse_min_return": 0.02,
+    "impulse_min_z": 3.0,
+    "last_decision_ms": 1759258800000,
+    "min_turnover_usd": 2000000.0,
+    "planning_absolute_tail": 0.025,
+    "planning_design_effect": 1.2,
+    "planning_inflation": 1.5,
+    "planning_mde_max": 0.005,
+    "planning_power": 0.8,
+    "rank_hours": 336,
+    "rank_min_defined": 269,
+    "rules_version": "hyp033_policy_preflight_v1",
+    "scale_substitution_percentile": 0.9,
+    "stage": "preflight_only",
+    "top5_symbol_share_max": 0.3,
+    "window_end_exclusive_ms": 1759276800000,
+    "window_first_ms": 1727740800000
+  },
+  "generated_at": "2026-11-11T21:29:59.716972+00:00",
+  "hypothesis_id": "HYP-037",
+  "protocol_sha256": "22e04e98d37576441bf158dfbee531f56d2e7d15b574ae94ae33b85cd3fefb1a",
+  "registration_sha256": "4ca9ed7117951b140aa64ef318cd47d9e24c2c3defc06093d5a840beba0511dc",
+  "sources": {
+    "code_revision": "25207f4fc210c24a34a9f07fc8fa9f8a8c09f279",
+    "source_sha256": {
+      "bybit_carry_feasibility.py": "685dac395ebfe30d650ea89a08e50609550dbf0eb9542b4a1582aa5acb0a4961",
+      "bybit_compressed_spring.py": "53d986820dc0777d431d21dd99210fc3c7cca4e03c8fae5f0f0adf7a1f107115",
+      "bybit_post_funding_screen.py": "4d58764c5a2342020a6bb872155bb6aad8a398dada183c25af0141707e71981e",
+      "bybit_squeeze_continuation.py": "daa7206fb277ef608dd980219d316be4cadc7813a7b2e9f2a3c764d482570180",
+      "bybit_squeeze_policy.py": "f38d84a570df5456ac8c9e6249f66c908e3bbf0c4a98a847f7cefe1aaa3d5bdf",
+      "clustered_inference.py": "b0d07fdb17b828d6c9bf451512be89e3231a022fce1bb08fb587132fa6c66384",
+      "reporting.py": "98f445f4b8190373826cc693c7a5d18aea2afab57f258ccc6315ec0cc4ecb005"
+    },
+    "working_tree_dirty": true
+  },
+  "stage": "preflight_only"
+}

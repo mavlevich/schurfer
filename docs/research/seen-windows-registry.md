@@ -124,3 +124,49 @@ Counts only, no values read.
 
   So it is used per event window and reduced to top-of-book and depth features, never
   stored whole.
+
+## HYP-037 registered preflight scope, 2026-11-11
+
+Registered before the first local snapshot read. See the
+[preflight contract](hyp037-impulse-policy-preflight-v1.md). Status at registration
+is registered, not yet read. The run's hashes and completion are recorded after it.
+
+| Window                        | Data and allowed output                                                                                                                                                                                                                                                                                         | Level                                               |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| 2024-10-01 through 2025-09-30 | Existing HYP-032 features snapshot a3b54d6c...: hourly first impulses, F/G membership, counts, concurrency and pre-impulse 4-hour volatility for planning MDE. Two candidates A/B. No minute entry/exit prices, setup means or net returns. Earlier setup paths may occur in later pre-entry dispersion windows | features and pre-entry dispersion, reused discovery |
+
+The snapshot is hash-pinned. HYP-031's reserved year, the backward holdout and
+HYP-012 v2's blind window are outside this scope. No new download is registered.
+
+Completed the registered HYP-037 local preflight on 2026-11-11, run binding created
+at 21:29:59.716972 UTC. Source snapshot SHA-256 matched before parsing and before
+sealing. The scope above was seen at features/pre-entry-dispersion level. Counts
+SHA-256 is `a9ef438e49c8bbf64a2c1c634b0f213f129ae3fc439bd9f3d591e562e5e16169`.
+The old HYP-033 counts and frozen event IDs were hash-verified and compared, with
+all 986 filtered identities equal. See [result](hyp037-impulse-policy-preflight-result-v1.md).
+No setup mean or net, minute outcome bars or blind-window data were read.
+
+## HYP-037 dependence calibration registration, 2026-11-11
+
+Registered before the additional read, following the second preflight review and
+its required fixed failure rule. See [amendment](hyp037-power-calibration-amendment-v1.md)
+and its machine registration. Reuse the identical snapshot and frozen A/B IDs.
+
+| Window                        | Registered scope                                                                                                                                                                                                                                                                                                                                                 | Level                                                 |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| 2024-10-01 through 2025-09-30 | Seven 4-hour pre-impulse return proxies ending 0/24/48/72/96/120/144 hours before each impulse starts, plus the 1-hour waiting bar ending at decision d. Output only defined counts, week-bootstrap and independent variances, dependence ratios, calibrated planning MDE and assumed-effect power. No individual proxies, proxy means, trade net or setup means | pre-entry dispersion and dependence, reused discovery |
+
+Every proxy ends before entry at d+1 minute. Some later events' proxies can overlap
+earlier events' hold paths; that exposure is acknowledged. Full original weeks
+must remain represented. One candidate stops without outcome reading if its
+unrounded calibrated MDE exceeds 50 bps; an unestimable calibration blocks that
+candidate. The other proceeds independently. First invocation must follow a clean
+committed registration and code revision.
+
+HYP-037 dependence calibration completed 2026-11-11 from clean `538abdc`, run
+binding created 22:21:19.989253 UTC. Scope is the eight registered proxies above;
+level recorded conservatively as outcomes (proxy dispersion/dependence only).
+Earlier setup paths may overlap a later proxy. No individual proxy, proxy mean,
+setup mean, trade net or minute outcome was emitted or read as a trading result.
+Calibration SHA-256 is `65197f39aef5bb2164be67bfc9360bfdce81cc552b66639937efca0960900775`.
+Both candidates stop on calibrated power. See [result](hyp037-power-calibration-result-v1.md).
