@@ -1,0 +1,20 @@
+import collections,gzip,hashlib,json
+from pathlib import Path
+from schurfer_analytics import bybit_presettlement_feasibility as b1
+from schurfer_analytics.bybit_post_funding_screen import load_index,verified
+base=Path('/Users/mavlevich/Desktop/Projects/schurfer')
+root=Path('runtime/research/b1-verified-report/scope-repair')
+minutes=base/'runtime/research/b1/minutes-7260e55.jsonl.gz'
+previous={};totals=collections.Counter();counts=collections.Counter()
+with gzip.open(minutes,'rb') as stream:
+ for raw in stream:
+  row=json.loads(raw.split(b',"response":',1)[0]+b'}')
+  if row['kind']!='premium_1':continue
+  p=row['params'];start=int(p['start']);end=int(p['end'])+1;n=(end-start)//60000
+  previous[(p['symbol'],start)]=end;totals[n]+=len(raw);counts[n]+=1
+scope=json.loads(gzip.decompress((root/'proposed-scope.json.gz').read_bytes()))
+selected=[r for r in scope if r['validation_sample'] or (r['interval_minutes']==240 and r['candidate_decision_offsets'])]
+missing=[r for r in selected if not r['previously_requested_same_bounds']]
+summary={'selection':'previously prioritised 4-hour candidates plus the unchanged original independent 2000-interval sample across all classes','scope_intervals':len(selected),'four_hour_candidate_intervals':sum(r['interval_minutes']==240 and bool(r['candidate_decision_offsets']) for r in selected),'validation_intervals':sum(r['validation_sample'] for r in selected),'previously_requested_same_bounds':len(selected)-len(missing),'additional_requests_before_gap_repairs':len(missing),'additional_requested_minute_bars':sum(r['interval_minutes'] for r in missing),'additional_by_interval_minutes':dict(sorted(collections.Counter(r['interval_minutes'] for r in missing).items())),'observed_record_bytes_by_interval':{n:round(totals[n]/counts[n],2) for n in sorted(counts)},'estimated_additional_raw_snapshot_bytes':round(sum(totals[r['interval_minutes']]/counts[r['interval_minutes']] for r in missing)),'time_at_3_requests_per_second_hours':round(len(missing)/3/3600,2),'limitations':['Bytes are extrapolated uncompressed snapshot records, not network bytes or a hard cap.','Previously requested means matching bounds, not a completed usable interval. Existing gaps need a separate bounded repair.','No network fetch, strategy return, test year or production mutation.','4-hour selection predates the observed B1 counts in the adopted main program plan. Other classes remain diagnostics, not implicitly passed.']}
+raw=(json.dumps(selected,sort_keys=True,separators=(',',':'))+'\n').encode();(root/'four-hour-scope.json.gz').write_bytes(gzip.compress(raw,mtime=0));summary['scope_decompressed_sha256']=hashlib.sha256(raw).hexdigest();summary['scope_gzip_sha256']=hashlib.sha256((root/'four-hour-scope.json.gz').read_bytes()).hexdigest()
+(root/'four-hour-budget.json').write_text(json.dumps(summary,indent=2)+'\n');print(json.dumps(summary,indent=2))

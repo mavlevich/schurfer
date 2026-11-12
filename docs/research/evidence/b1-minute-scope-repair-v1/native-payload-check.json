@@ -1,0 +1,30 @@
+{
+  "symbol": "0GUSDT",
+  "hour_start_ms": 1758538800000,
+  "request_response_checks": [
+    {
+      "kind": "premium_60",
+      "params_interval_matches": true,
+      "params_symbol_matches": true,
+      "response_symbol_matches": true,
+      "ret_code_success": true
+    },
+    {
+      "kind": "premium_1",
+      "params_interval_matches": true,
+      "params_symbol_matches": true,
+      "response_symbol_matches": true,
+      "ret_code_success": true
+    }
+  ],
+  "native_hour_open_outside_hilo": true,
+  "roundtrip_hour_low_matches_native": true,
+  "roundtrip_hour_high_matches_native": true,
+  "minute_rows": 60,
+  "minute_native_ohlc_invalid": 0,
+  "minute_closes_below_hour_low": 53,
+  "minute_closes_above_hour_high": 3,
+  "payload_subset_sha256": "87d93452be0a73e6bd282b75e4e0a4f178cbee5f979c363be7983a452002ab69",
+  "no_new_market_request": true,
+  "perpetual_price_or_return_read": false
+}

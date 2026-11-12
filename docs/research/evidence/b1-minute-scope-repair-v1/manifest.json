@@ -1,0 +1,65 @@
+{
+  "status": "proposal_not_a_fetch_authorization",
+  "revision": "f8deb360411768079d7cab2d8ec72a263b58f732",
+  "scope": "same Bybit discovery index and existing premium snapshots; no perpetual returns or market requests",
+  "pilot_rule": "smallest 64 SHA256(b1-minute-scope-repair-pilot-v1:symbol:start_ms) among missing four-hour intervals",
+  "pilot_size": 64,
+  "files": {
+    "four-hour-budget.json": {
+      "sha256": "fb1f8f9d8e216af8fb38380d46e4f3bc80cf29a8c0376bdcc946fd5f2a6ba1c0",
+      "bytes": 1374
+    },
+    "four-hour-scope.json.gz": {
+      "sha256": "0b11db40c505452e05620c22d1aa9aa3038cd95c6ae3ce2e524f232d8168ab6a",
+      "bytes": 159873
+    },
+    "four_hour_budget.py.txt": {
+      "sha256": "d336e5ef2934f9ccfad62f52be1da378dd58d1f2a6a74374ac721d953c928d1d",
+      "bytes": 2886
+    },
+    "native-payload-check.json": {
+      "sha256": "702ed23a6463c9c13eccd3f43b4d8c20cc753bdcce888f880a5639ef990162a7",
+      "bytes": 902
+    },
+    "native-payload-lines.jsonl.gz": {
+      "sha256": "87d93452be0a73e6bd282b75e4e0a4f178cbee5f979c363be7983a452002ab69",
+      "bytes": 4863
+    },
+    "native_check.py.txt": {
+      "sha256": "0f097a4a587a70ee3c285acba82029925a1e379220091e14b13b2b8db9c97a27",
+      "bytes": 2997
+    },
+    "proposed-pilot.json.gz": {
+      "sha256": "cab2d6d09ce986e1408b9ea298822a203d87ca20708fd28a8c7a9f3e71b82855",
+      "bytes": 1088
+    },
+    "proposed-scope.json.gz": {
+      "sha256": "16cf71e30c4aa09d6c1d8a96c754b64a4b2efa5072e3faab27e1f0ea4e3b224d",
+      "bytes": 400218
+    },
+    "reuse-completeness.json": {
+      "sha256": "f74dc8d6c07da25ab5544721f6962d2c881bb43e6de99eea1f1b359b7802ba8d",
+      "bytes": 446
+    },
+    "reuse_completeness.py.txt": {
+      "sha256": "b5338898f631dc77b410d1b7bdfbd0b98aefed6e0e1d38b9dee41ea7d6305307",
+      "bytes": 1665
+    },
+    "scope-checks.json": {
+      "sha256": "283491a2fe987f794889e83dabab01b66d8b4f67111dafdc2dfda710b5d28663",
+      "bytes": 256
+    },
+    "scope-plan.json": {
+      "sha256": "c0cd536ea2078f90444c4509d16e85667466ba36ad532537ac6735329c973fda",
+      "bytes": 2096
+    },
+    "scope_checks.py.txt": {
+      "sha256": "4cc4eaaae36ef59fe7a68136789c427c1ab28447c6fe6be57184663f52ab0e02",
+      "bytes": 2298
+    },
+    "scope_repair_plan.py.txt": {
+      "sha256": "3963fd44ce4aa68a66ad3e6bdc23c88a8a4f351a4514d92abd0606be6338353b",
+      "bytes": 5350
+    }
+  }
+}

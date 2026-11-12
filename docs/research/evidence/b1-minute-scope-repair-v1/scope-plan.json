@@ -1,0 +1,59 @@
+{
+  "additional_by_interval_minutes": {
+    "60": 14601,
+    "120": 4827,
+    "240": 11660,
+    "480": 4129
+  },
+  "additional_raw_record_storage_extrapolation_bytes": 736099525,
+  "additional_requested_minute_bars": 6235620,
+  "additional_requests_before_gap_repairs": 35217,
+  "all_forecast_intervals": 855829,
+  "by_decision_offset_minutes": {
+    "10": {
+      "illiquid_or_missing_turnover": 8891,
+      "no_recent_extreme": 796842,
+      "potential_entry_interval": 49286,
+      "schedule_uncertain": 531,
+      "superseded": 279
+    },
+    "15": {
+      "illiquid_or_missing_turnover": 8891,
+      "no_recent_extreme": 796842,
+      "potential_entry_interval": 49286,
+      "schedule_uncertain": 531,
+      "superseded": 279
+    },
+    "30": {
+      "illiquid_or_missing_turnover": 8891,
+      "no_recent_extreme": 796842,
+      "potential_entry_interval": 49286,
+      "schedule_uncertain": 531,
+      "superseded": 279
+    }
+  },
+  "byte_estimate_limitation": "Storage extrapolation, not a network hard cap. Record sizes vary by interval; reuse means requested bounds, not verified complete rows.",
+  "candidate_intervals_without_premium_filter": 49286,
+  "elapsed_seconds": 19.35,
+  "existing_requested_intervals": 54909,
+  "independent_validation_intervals": 2000,
+  "input_sha256": {
+    "index": "f48fe09f7023a476e524cf70c6ec1b629eee30a9a07cff41c9d149dfb59e0cf5",
+    "minutes": "5d638d68d40a13e2ad10573ae7d6446a193a66b0db8dc4d1d12e20c0e9a58b15"
+  },
+  "market_requests": 0,
+  "observed_mean_snapshot_record_bytes": 20901.82,
+  "perpetual_prices_or_returns_selected": false,
+  "scope_decompressed_sha256": "ae80f8e0ff604c485913820107a49cd22f2cb88d7a78f7e33daf6f488ea3f789",
+  "scope_gzip_sha256": "16cf71e30c4aa09d6c1d8a96c754b64a4b2efa5072e3faab27e1f0ea4e3b224d",
+  "status": "proposal_counts_only_not_a_signal_or_fetch_authorization",
+  "target_by_interval_minutes": {
+    "60": 16968,
+    "120": 6218,
+    "240": 18789,
+    "480": 9189
+  },
+  "target_intervals_union": 51164,
+  "target_previously_requested_same_bounds": 15947,
+  "version": "b1_prior_only_scope_repair_plan_v1"
+}

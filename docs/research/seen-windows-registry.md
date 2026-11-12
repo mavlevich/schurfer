@@ -180,3 +180,15 @@ extrema, including three native premium examples. Level: **features**, no perpet
 price or strategy return. [Local result](bybit-presettlement-feasibility-result-2026-11-12.md)
 blocks B2 with `superset_rebuild_needed`; it reads no new window and releases no test
 or holdout. Computed on clean local revision `1a9f9f8` from the three pinned inputs.
+
+## B1 hourly-envelope diagnosis and scope proposal, 2026-11-12
+
+Same pinned discovery funding/liquidity index and minute-premium request metadata:
+prior-only eligibility counts and exact requested-minute timestamp completeness;
+plus the already inspected native 0GUSDT hour and its 60 minute-premium rows, now
+checked through request identity and serialization. No strategy return or new market
+request. Level: **features for the existing premium diagnostic, coverage for proposed
+scope counts**. [Proposal](b1-minute-scope-repair-proposal-v1.md) is not active.
+An illustrative response in the public API documentation, with May 2022 timestamps,
+also reached output while checking field semantics; it is an unverified documentation
+example, not a fetched historical series or a confirmation observation.

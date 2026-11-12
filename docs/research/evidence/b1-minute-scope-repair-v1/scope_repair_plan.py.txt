@@ -1,0 +1,112 @@
+from __future__ import annotations
+
+import bisect
+import collections
+import gzip
+import hashlib
+import json
+import time
+from pathlib import Path
+
+from schurfer_analytics import bybit_presettlement_feasibility as b1
+from schurfer_analytics.bybit_post_funding_screen import load_index, verified
+
+BASE = Path('/Users/mavlevich/Desktop/Projects/schurfer')
+INDEX = BASE / '.claude/worktrees/hyp031-discovery/runtime/research/hyp031-discovery/index-d87b3a2.jsonl.gz'
+MINUTES = BASE / 'runtime/research/b1/minutes-7260e55.jsonl.gz'
+OUTPUT = Path('runtime/research/b1-verified-report/scope-repair')
+
+started = time.monotonic()
+index = load_index(verified(INDEX, b1.INDEX_SHA256))
+verified(MINUTES, b1.MINUTES_SHA256)
+previous = {}
+line_bytes = line_count = 0
+with gzip.open(MINUTES, 'rb') as stream:
+    for raw in stream:
+        line_bytes += len(raw)
+        line_count += 1
+        # SnapshotWriter's canonical top-level order is kind, params, response,
+        # symbol. Decode the metadata prefix only; do not decode premium values.
+        prefix = raw.split(b',"response":', 1)[0] + b'}'
+        row = json.loads(prefix)
+        if row['kind'] != 'premium_1':
+            continue
+        p = row['params']
+        previous[(p['symbol'], int(p['start']))] = int(p['end']) + 1
+
+all_intervals = b1.intervals(index)
+times = {s: sorted(i.funding) for s, i in index.instruments.items()}
+extremes = {s: sorted(t for t, rate in i.funding.items() if rate <= b1.TRIGGER)
+            for s, i in index.instruments.items()}
+liquid_cache = {}
+candidates = {}
+by_offset = {d: collections.Counter() for d in b1.DECISION_OFFSETS_MIN}
+for iv in all_intervals:
+    inst = index.instruments[iv.symbol]
+    own = []
+    for d in b1.DECISION_OFFSETS_MIN:
+        cut = iv.predicted - d * b1.MINUTE_MS
+        counter = by_offset[d]
+        if b1.superseded(times[iv.symbol], iv, cut):
+            counter['superseded'] += 1
+            continue
+        if iv.schedule_uncertain:
+            counter['schedule_uncertain'] += 1
+            continue
+        extreme = extremes[iv.symbol]
+        k = bisect.bisect_left(extreme, cut) - 1
+        if k < 0 or extreme[k] < cut - b1.RECENT_EXTREME_LOOKBACK_MS:
+            counter['no_recent_extreme'] += 1
+            continue
+        closed_hour = (cut // b1.HOUR_MS) * b1.HOUR_MS
+        key = (iv.symbol, closed_hour)
+        if key not in liquid_cache:
+            liquid_cache[key] = b1.liquid_at(inst.turnover, cut)
+        if not liquid_cache[key]:
+            counter['illiquid_or_missing_turnover'] += 1
+            continue
+        counter['potential_entry_interval'] += 1
+        own.append(d)
+    if own:
+        candidates[iv.key] = (iv, own)
+
+sample = b1.validation_sample(all_intervals)
+target = {key: iv for key, (iv, _) in candidates.items()}
+target.update({iv.key: iv for iv in sample})
+missing = [iv for key, iv in sorted(target.items()) if previous.get(key) != iv.predicted]
+missing_by_class = collections.Counter(iv.n_min for iv in missing)
+requests_by_class = collections.Counter(iv.n_min for iv in target.values())
+manifest = [{'symbol': iv.symbol, 'start_ms': iv.s1, 'end_exclusive_ms': iv.predicted,
+             'interval_minutes': iv.n_min, 'candidate_decision_offsets': candidates.get(iv.key, (None, []))[1],
+             'validation_sample': iv.key in {s.key for s in sample},
+             'previously_requested_same_bounds': previous.get(iv.key) == iv.predicted}
+            for _, iv in sorted(target.items())]
+raw = (json.dumps(manifest, sort_keys=True, separators=(',', ':')) + '\n').encode()
+(OUTPUT / 'proposed-scope.json.gz').write_bytes(gzip.compress(raw, mtime=0))
+mean_record = line_bytes / max(1, line_count)
+out = {
+    'status': 'proposal_counts_only_not_a_signal_or_fetch_authorization',
+    'version': 'b1_prior_only_scope_repair_plan_v1',
+    'all_forecast_intervals': len(all_intervals),
+    'candidate_intervals_without_premium_filter': len(candidates),
+    'independent_validation_intervals': len(sample),
+    'target_intervals_union': len(target),
+    'target_by_interval_minutes': dict(sorted(requests_by_class.items())),
+    'target_previously_requested_same_bounds': len(target) - len(missing),
+    'additional_requests_before_gap_repairs': len(missing),
+    'additional_by_interval_minutes': dict(sorted(missing_by_class.items())),
+    'additional_requested_minute_bars': sum(iv.n_min for iv in missing),
+    'existing_requested_intervals': len(previous),
+    'by_decision_offset_minutes': {d: dict(v) for d, v in by_offset.items()},
+    'scope_decompressed_sha256': hashlib.sha256(raw).hexdigest(),
+    'scope_gzip_sha256': hashlib.sha256((OUTPUT / 'proposed-scope.json.gz').read_bytes()).hexdigest(),
+    'input_sha256': {'index': b1.INDEX_SHA256, 'minutes': b1.MINUTES_SHA256},
+    'observed_mean_snapshot_record_bytes': round(mean_record, 2),
+    'additional_raw_record_storage_extrapolation_bytes': round(len(missing) * mean_record),
+    'byte_estimate_limitation': 'Storage extrapolation, not a network hard cap. Record sizes vary by interval; reuse means requested bounds, not verified complete rows.',
+    'elapsed_seconds': round(time.monotonic() - started, 2),
+    'market_requests': 0,
+    'perpetual_prices_or_returns_selected': False,
+}
+(OUTPUT / 'scope-plan.json').write_text(json.dumps(out, sort_keys=True, indent=2) + '\n')
+print(json.dumps(out, indent=2))

@@ -1,0 +1,38 @@
+from __future__ import annotations
+import gzip,hashlib,json
+from pathlib import Path
+from schurfer_analytics import bybit_presettlement_feasibility as b1
+from schurfer_analytics.bybit_post_funding_screen import SnapshotWriter
+
+root=Path('/Users/mavlevich/Desktop/Projects/schurfer/runtime/research/b1')
+outdir=Path('runtime/research/b1-verified-report/scope-repair')
+symbol='0GUSDT';hour=1758538800000
+collected={};source_lines=[];checks=[]
+for name,kind,interval in [('hourly-551b676.jsonl.gz','premium_60','60'),('minutes-7260e55.jsonl.gz','premium_1','1')]:
+ with gzip.open(root/name,'rb') as stream:
+  for raw in stream:
+   if b'"symbol":"0GUSDT"' not in raw:continue
+   row=json.loads(raw)
+   if row['kind']!=kind or row['symbol']!=symbol:continue
+   selected=[b for b in row['response']['result']['list'] if (int(b[0])==hour if interval=='60' else hour<=int(b[0])<hour+3600000)]
+   if not selected:continue
+   source_lines.append(raw)
+   checks.append({'kind':kind,'params_interval_matches':row['params'].get('interval')==interval,'params_symbol_matches':row['params'].get('symbol')==symbol,'response_symbol_matches':row['response']['result'].get('symbol')==symbol,'ret_code_success':str(row['response'].get('retCode'))=='0'})
+   for bar in selected:collected[(kind,int(bar[0]))]=bar
+   if interval=='60' or sum(k[0]==kind for k in collected)>=60:break
+hourly=collected[('premium_60',hour)]
+minute=[b for (kind,_),b in collected.items() if kind=='premium_1']
+snippet=outdir/'native-payload-lines.jsonl.gz';snippet.write_bytes(gzip.compress(b''.join(source_lines),mtime=0))
+roundtrip=outdir/'roundtrip-hour.jsonl.gz'
+writer=SnapshotWriter(roundtrip)
+try:
+ writer.record('version',None,{}, {'version':b1.VERSION})
+ writer.record('premium_60',symbol,{}, {'result':{'symbol':symbol,'list':[hourly]}})
+finally:writer.close()
+loaded=b1.load_hourly(roundtrip)
+high=float(hourly[2]);low=float(hourly[3]);open_=float(hourly[1])
+result={'symbol':symbol,'hour_start_ms':hour,'request_response_checks':checks,'native_hour_open_outside_hilo':not low<=open_<=high,'roundtrip_hour_low_matches_native':loaded.low[symbol][hour]==low,'roundtrip_hour_high_matches_native':loaded.high[symbol][hour]==high,'minute_rows':len(minute),'minute_native_ohlc_invalid':sum(not float(b[3])<=min(float(b[1]),float(b[4]))<=max(float(b[1]),float(b[4]))<=float(b[2]) for b in minute),'minute_closes_below_hour_low':sum(float(b[4])<low for b in minute),'minute_closes_above_hour_high':sum(float(b[4])>high for b in minute),'payload_subset_sha256':hashlib.sha256(snippet.read_bytes()).hexdigest(),'no_new_market_request':True,'perpetual_price_or_return_read':False}
+assert all(all(c[k] for k in ('params_interval_matches','params_symbol_matches','response_symbol_matches','ret_code_success')) for c in checks)
+assert result['roundtrip_hour_low_matches_native'] and result['roundtrip_hour_high_matches_native']
+(outdir/'native-payload-check.json').write_text(json.dumps(result,indent=2)+'\n')
+print(json.dumps(result,indent=2))

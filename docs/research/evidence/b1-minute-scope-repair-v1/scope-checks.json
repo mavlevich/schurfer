@@ -1,0 +1,8 @@
+{
+  "reference_prefilter_checks": 6000,
+  "reference_scope_match": true,
+  "unreliable_hourly_low_counterexample_retained": true,
+  "synthetic_trigger_admitted": true,
+  "future_and_same_cut_funding_excluded": true,
+  "real_strategy_returns_read": false
+}

@@ -1,0 +1,19 @@
+import collections,gzip,json,re
+from pathlib import Path
+base=Path('/Users/mavlevich/Desktop/Projects/schurfer');root=Path('runtime/research/b1-verified-report/scope-repair')
+scope=json.loads(gzip.decompress((root/'four-hour-scope.json.gz').read_bytes()))
+target={(r['symbol'],r['start_ms']):r for r in scope if r['previously_requested_same_bounds']}
+complete=set();seen=set();bad=[]
+with gzip.open(base/'runtime/research/b1/minutes-7260e55.jsonl.gz','rb') as stream:
+ for raw in stream:
+  header=json.loads(raw.split(b',"response":',1)[0]+b'}')
+  if header['kind']!='premium_1':continue
+  p=header['params'];key=(p['symbol'],int(p['start']))
+  if key not in target:continue
+  seen.add(key);row=target[key]
+  ts=[int(t) for t in re.findall(rb'\["([0-9]{13})",',raw)]
+  expected=list(range(row['start_ms'],row['end_exclusive_ms'],60000))
+  if sorted(ts)==expected:complete.add(key)
+  else:bad.append({'symbol':key[0],'start_ms':key[1],'expected':len(expected),'unique_in_bounds':len({t for t in ts if row['start_ms']<=t<row['end_exclusive_ms']}),'returned_rows':len(ts)})
+out={'scope_intervals_previously_requested':len(target),'existing_matching_request_records_seen':len(seen),'timestamp_complete_records':len(complete),'timestamp_incomplete_records':bad,'missing_request_record_keys':len(set(target)-seen),'extra_repair_requests_if_adopted':len(set(target)-complete),'limitation':'Timestamp completeness only, using the already verified finite-value snapshot. The proposed production merge still needs full identity, duplicate-value and boundary checks.'}
+(root/'reuse-completeness.json').write_text(json.dumps(out,indent=2)+'\n');print(json.dumps(out,indent=2))
