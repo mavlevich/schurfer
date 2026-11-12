@@ -171,3 +171,12 @@ Earlier setup paths may overlap a later proxy. No individual proxy, proxy mean,
 setup mean, trade net or minute outcome was emitted or read as a trading result.
 Calibration SHA-256 is `65197f39aef5bb2164be67bfc9360bfdce81cc552b66639937efca0960900775`.
 Both candidates stop on calibrated power. See [result](hyp037-power-calibration-result-v1.md).
+
+## B1 local report and data-quality diagnosis, 2026-11-12
+
+Existing Bybit discovery premium snapshots (2024-09-30 through 2025-09-30): registered
+S1/S2/S3 aggregates and a consistency diagnosis of minute closes versus hourly
+extrema, including three native premium examples. Level: **features**, no perpetual
+price or strategy return. [Local result](bybit-presettlement-feasibility-result-2026-11-12.md)
+blocks B2 with `superset_rebuild_needed`; it reads no new window and releases no test
+or holdout. Computed on clean local revision `1a9f9f8` from the three pinned inputs.

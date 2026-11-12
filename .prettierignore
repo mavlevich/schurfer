@@ -36,3 +36,7 @@ docs/research/evidence/hyp037-preflight-v1/counts.json
 docs/research/evidence/hyp037-preflight-v1/run.json
 docs/research/evidence/hyp037-calibration-v1/run.json
 docs/research/evidence/hyp037-calibration-v1/calibration.json
+
+docs/research/evidence/bybit-presettlement-feasibility-v1/read-2026-11-12/result.json
+docs/research/evidence/bybit-presettlement-feasibility-v1/read-2026-11-12/hourly-diagnostic.json
+docs/research/evidence/bybit-presettlement-feasibility-v1/read-2026-11-12/independent-snapshot-check.json
