@@ -22,6 +22,7 @@ import asyncio
 import bisect
 import gzip
 import json
+import math
 import random
 import sys
 from collections import Counter, defaultdict
@@ -102,11 +103,16 @@ def interest(n_min: int) -> float:
 
 def funding_from(weighted: Sequence[tuple[int, float]], n_min: int) -> float:
     """F = P + clamp(I - P, -0.05%, +0.05%), with P the weight-renormalized average."""
+    if any(not math.isfinite(v) for _, v in weighted):
+        raise ValueError("premium index values must be finite")
     total = sum(w for w, _ in weighted)
     if total <= 0:
         raise ValueError("no weight")
     p = sum(w * v for w, v in weighted) / total
-    return p + max(-CLAMP, min(CLAMP, interest(n_min) - p))
+    rate = p + max(-CLAMP, min(CLAMP, interest(n_min) - p))
+    if not math.isfinite(rate):
+        raise ValueError("computed funding rate must be finite")
+    return rate
 
 
 def observed_weight_share(n_min: int, d_min: int) -> float:
@@ -138,7 +144,7 @@ def minute_starts(iv: Interval) -> list[int]:
 def full_rate(iv: Interval, closes: Mapping[int, float]) -> float | None:
     """S1: the rate rebuilt from every minute of the interval, None on any gap."""
     values = [closes.get(m) for m in minute_starts(iv)]
-    if any(v is None for v in values):
+    if any(v is None or not math.isfinite(v) for v in values):
         return None
     return funding_from([(k + 1, v) for k, v in enumerate(values) if v is not None], iv.n_min)
 
@@ -150,7 +156,7 @@ def decision_rate(iv: Interval, closes: Mapping[int, float], d_min: int) -> floa
     if not known:
         return None
     values = [(w, closes.get(m)) for w, m in known]
-    if any(v is None for _, v in values):
+    if any(v is None or not math.isfinite(v) for _, v in values):
         return None
     return funding_from([(w, v) for w, v in values if v is not None], iv.n_min)
 
@@ -211,7 +217,7 @@ def in_superset(iv: Interval, lows: Mapping[int, float]) -> bool:
     start = (iv.s1 // HOUR_MS) * HOUR_MS
     hours = range(start, iv.predicted, HOUR_MS)
     values = [lows.get(h) for h in hours]
-    return any(v is None or v <= SUPERSET_LOW for v in values)
+    return any(v is None or not math.isfinite(v) or v <= SUPERSET_LOW for v in values)
 
 
 def validation_sample(all_intervals: Sequence[Interval]) -> list[Interval]:
@@ -251,6 +257,13 @@ def _lines(path: Path, kind_version: str) -> Iterable[dict[str, Any]]:
             yield line
 
 
+def _premium_ohlc(item: Sequence[Any]) -> tuple[float, float, float, float]:
+    values = (float(item[1]), float(item[2]), float(item[3]), float(item[4]))
+    if not all(math.isfinite(v) for v in values):
+        raise ValueError("premium index OHLC values must be finite")
+    return values
+
+
 def load_hourly(path: Path) -> HourlyPremium:
     low: dict[str, dict[int, float]] = defaultdict(dict)
     high: dict[str, dict[int, float]] = defaultdict(dict)
@@ -265,8 +278,9 @@ def load_hourly(path: Path) -> HourlyPremium:
                 failed.add(symbol)
                 continue
             for item in result["list"]:
-                low[symbol][int(item[0])] = float(item[3])
-                high[symbol][int(item[0])] = float(item[2])
+                _, high_value, low_value, _ = _premium_ohlc(item)
+                low[symbol][int(item[0])] = low_value
+                high[symbol][int(item[0])] = high_value
     keep = {s for s in low if s not in failed}
     return HourlyPremium(
         {s: low[s] for s in keep}, {s: high[s] for s in keep}, tuple(sorted(failed))
@@ -285,7 +299,8 @@ def load_minutes(path: Path) -> MinutePremium:
             if result.get("symbol") not in (None, symbol):
                 continue
             for item in result["list"]:
-                closes[symbol][int(item[0])] = float(item[4])
+                _, _, _, close = _premium_ohlc(item)
+                closes[symbol][int(item[0])] = close
     return MinutePremium(dict(closes), tuple(sorted(failed)))
 
 
@@ -537,7 +552,7 @@ def classify(
     if superseded(known, iv, cut):
         return "superseded", None
     rate = decision_rate(iv, closes, d_min)
-    if rate is None:
+    if rate is None or not math.isfinite(rate):
         return "premium_gap", None
     if rate > TRIGGER:
         return "no_trigger", rate
