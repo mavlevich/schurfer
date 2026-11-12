@@ -104,7 +104,11 @@ are reported apart.
 **Coverage and counts come first.** The S1 pool is the superset plus the validation
 sample. Among its intervals whose schedule held (the settlement came at the predicted
 time), at least **95%** must have complete minute data; a fetch error or a gap stays in
-that denominator. At least **300** settlements at most -0.10% must be scored, with at
+that denominator. Premium OHLC values must be finite: snapshot loaders reject `NaN`
+and positive or negative infinity. A non-finite observation passed directly to the
+calculation makes that interval undefined, so it cannot count as complete or produce
+an admitted signal. A non-finite formula result is rejected.
+At least **300** settlements at most -0.10% must be scored, with at
 least **50** on each side of -0.30%. Settlements at a possible cap are excluded from the
 score and reported with their own count and share. If any of these fails, S1 is
 `insufficient_data` and B1 ends `insufficient_validation`: never a pass on what is left.

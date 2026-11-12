@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import math
 from typing import TYPE_CHECKING
 
 import pytest
@@ -11,6 +12,7 @@ from schurfer_analytics.bybit_post_funding_screen import (
     MINUTE_MS,
     Index,
     Instrument,
+    SnapshotWriter,
 )
 from schurfer_analytics.bybit_presettlement_feasibility import (
     HourlyPremium,
@@ -411,3 +413,62 @@ def test_s1_review_repro_extreme_side_cannot_hide_behind_the_ordinary_side() -> 
     assert report["within_tolerance_share"] == 1.0
     assert report["sensitivity_at_trigger"] == 0.0
     assert report["status"] == "fail"
+
+
+@pytest.mark.parametrize("interval", ["60", "1"])
+@pytest.mark.parametrize("field", [1, 2, 3, 4])
+@pytest.mark.parametrize("bad", ["NaN", "Infinity", "-Infinity"])
+def test_premium_snapshots_refuse_nonfinite_ohlc(
+    tmp_path: Path, interval: str, field: int, bad: str
+) -> None:
+    path = tmp_path / "premium.jsonl.gz"
+    item = [str(T0), "-0.004", "-0.0039", "-0.0041", "-0.004"]
+    item[field] = bad
+    writer = SnapshotWriter(path)
+    try:
+        writer.record("version", None, {}, {"version": b1.VERSION})
+        writer.record(
+            f"premium_{interval}",
+            "AAAUSDT",
+            {},
+            {"result": {"symbol": "AAAUSDT", "list": [item]}},
+        )
+    finally:
+        writer.close()
+    loader = b1.load_hourly if interval == "60" else b1.load_minutes
+    with pytest.raises(ValueError, match="finite"):
+        loader(path)
+
+
+@pytest.mark.parametrize("bad", [math.nan, math.inf, -math.inf])
+def test_nonfinite_premium_never_becomes_an_admitted_signal(bad: float) -> None:
+    iv = hour_interval()
+    closes = closes_for(iv, 0.0, 0.0)
+    closes[iv.s1 + 5 * MINUTE_MS] = bad
+    turnover = {T0 - (k + 1) * HOUR_MS: 200_000.0 for k in range(40)}
+    index = _index_with({T0 - DAY_MS: -0.004, T0: -0.001}, turnover)
+
+    assert b1.full_rate(iv, closes) is None
+    assert b1.decision_rate(iv, closes, 30) is None
+    assert b1.classify(index, iv, closes, 30) == ("premium_gap", None)
+    assert b1.in_superset(iv, {T0: bad})  # unknown data cannot exclude a candidate
+    with pytest.raises(ValueError, match="finite"):
+        b1.funding_from([(1, bad)], 60)
+
+
+@pytest.mark.parametrize("bad", [math.nan, math.inf, -math.inf])
+def test_s1_does_not_count_a_nonfinite_interval_as_complete(bad: float) -> None:
+    index, pool, hourly, minutes = s1_world(200, 200)
+    first = pool[0]
+    minutes.closes[first.symbol][first.s1 + 5 * MINUTE_MS] = bad
+
+    report = b1.s1(index, pool, hourly, minutes)
+    assert report["complete"] == 399
+    assert report["coverage"] == pytest.approx(399 / 400)
+    assert report["relevant"] == 399
+
+
+def test_funding_formula_refuses_a_nonfinite_computed_result() -> None:
+    # Each observation is finite, but the weighted sum overflows.
+    with pytest.raises(ValueError, match="finite"):
+        b1.funding_from([(1, 1e308), (2, 1e308)], 60)
