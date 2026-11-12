@@ -236,9 +236,12 @@ def test_validation_sample_is_deterministic_and_rate_free() -> None:
     assert len(first) == b1.VALIDATION_SAMPLE
 
 
-def test_snapshots_are_unpinned_until_fetched() -> None:
-    assert b1.HOURLY_SHA256 is None
-    assert b1.MINUTES_SHA256 is None
+def test_snapshots_are_pinned_after_their_fetches() -> None:
+    """Both fetches ran on 2026-11-12; each pin is a full SHA-256 of its snapshot."""
+    for pin in (b1.HOURLY_SHA256, b1.MINUTES_SHA256):
+        assert pin is not None
+        assert len(pin) == 64
+        assert set(pin) <= set("0123456789abcdef")
 
 
 def test_s1_tolerance_is_two_bps_with_a_strict_diagnostic() -> None:
@@ -273,6 +276,59 @@ def test_s3_reports_each_settlement_interval_apart() -> None:
     assert report["by_interval"]["1h"]["admitted"]["events"] == 1
     assert report["by_interval"]["4h"]["admitted"]["events"] == 1
     assert report["admitted"]["events"] == 2
+
+
+def test_review_repro_pooled_pass_does_not_open_a_class_without_its_own_data() -> None:
+    """Review P1 (2026-11-12): a pooled pass made of 1 h settlements must not open B2
+    for 4 h contracts. The 4 h class has no settlement of its own, so it cannot pass."""
+    index, pool, hourly, minutes = s1_world(200, 200)
+    decision = {"d30": {"floor": True, "by_interval": {"1h": {"floor": True}}}}
+    gates = b1.interval_gates(index, pool, hourly, minutes, decision, "pass")
+    assert gates["1h"]["verdict"] == "pass"
+    assert gates["1h"]["passing_decision_offsets"] == ["d30"]
+    assert gates["4h"]["s1"]["status"] == "insufficient_data"
+    assert gates["4h"]["verdict"] == "insufficient_validation"
+
+
+def test_class_needs_its_own_floor() -> None:
+    index, pool, hourly, minutes = s1_world(200, 200)
+    decision = {
+        "d30": {"floor": True, "by_interval": {"1h": {"floor": False}, "4h": {"floor": True}}}
+    }
+    gates = b1.interval_gates(index, pool, hourly, minutes, decision, "pass")
+    assert gates["1h"]["verdict"] == "insufficient_events"
+
+
+def test_class_inherits_a_failed_pooled_formula_check() -> None:
+    index, pool, hourly, minutes = s1_world(200, 200)
+    decision = {"d30": {"floor": True, "by_interval": {"1h": {"floor": True}}}}
+    gates = b1.interval_gates(index, pool, hourly, minutes, decision, "not_reconstructible")
+    assert gates["1h"]["s1"]["status"] == "pass"
+    assert gates["1h"]["verdict"] == "not_reconstructible"
+
+
+def test_review_repro_minute_check_counts_only_the_pool() -> None:
+    """Review (2026-11-12): the minute-against-hour check ran over every fetched minute,
+    so a class reported the global count. Each pool now counts its own minutes."""
+    index, pool, _, minutes = s1_world(200, 200)
+    hours = {(m // HOUR_MS) * HOUR_MS for m in minutes.closes["AAAUSDT"]}
+    hourly = HourlyPremium(
+        {"AAAUSDT": dict.fromkeys(hours, -1.0)}, {"AAAUSDT": dict.fromkeys(hours, 1.0)}, ()
+    )
+    whole = b1.s1(index, pool, hourly, minutes)
+    half = b1.s1(index, pool[:200], hourly, minutes)
+    assert whole["minutes_checked_against_hour"] == 400 * 60
+    assert half["minutes_checked_against_hour"] == 200 * 60
+    assert b1.s1(index, [], hourly, minutes)["minutes_checked_against_hour"] == 0
+
+
+def test_standard_cap_values_are_counted_not_excluded() -> None:
+    index, pool, hourly, minutes = s1_world(200, 200)
+    first = pool[0]
+    index.instruments["AAAUSDT"].funding[first.predicted] = -0.005
+    report = b1.s1(index, pool, hourly, minutes)
+    assert report["scored_at_standard_cap_value"] == 1
+    assert report["relevant"] == 400
 
 
 class FakeBybit:
@@ -331,6 +387,7 @@ def test_api_to_snapshot_to_report(tmp_path: Path) -> None:
     assert d30["status"].get("admitted", 0) >= 1
     assert report["s1"]["status"] == "insufficient_data"  # four settlements cannot validate
     assert report["verdict"] == "insufficient_validation"
+    assert report["by_interval"]["4h"]["verdict"] == "insufficient_validation"
 
 
 def test_s1_review_repro_extreme_side_cannot_hide_behind_the_ordinary_side() -> None:

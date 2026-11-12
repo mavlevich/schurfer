@@ -57,8 +57,14 @@ FIRST_MS, LAST_MS, _ = STAGES[STAGE]
 # The minute discovery index, pinned in docs/research/evidence/bybit-post-funding-minute-v1.
 INDEX_SHA256: Final = "f48fe09f7023a476e524cf70c6ec1b629eee30a9a07cff41c9d149dfb59e0cf5"
 # Pinned by a commit after each fetch and before any report; None refuses the next step.
-HOURLY_SHA256: Final[str | None] = None
-MINUTES_SHA256: Final[str | None] = None
+# Hourly premium fetched 2026-11-12 from main at 551b676: 672 symbols, 4,620 responses.
+HOURLY_SHA256: Final[str | None] = (
+    "8c3d81a765e993cfbc67444f5ac39f10be79e11567346b66e08c38e861e93919"
+)
+# Minute premium fetched 2026-11-12 at 7260e55: 54,909 intervals, no errors, 4 retried.
+MINUTES_SHA256: Final[str | None] = (
+    "5d638d68d40a13e2ad10573ae7d6446a193a66b0db8dc4d1d12e20c0e9a58b15"
+)
 
 TRIGGER: Final = -0.003  # F_hat at most -0.30%
 S1_RELEVANT: Final = -0.001  # S1 gates settlements at most -0.10%
@@ -86,6 +92,11 @@ S1_MIN_EACH_SIDE: Final = 50  # scored settlements on each side of the -0.30% tr
 MIN_CLUSTERS: Final = 150
 MIN_SYMBOLS: Final = 40
 MIN_WEEKS: Final = 26
+# Standard Bybit funding cap values, for an S1 diagnostic count only (no gate uses it).
+STANDARD_CAPS: Final = (-0.005, -0.0075, -0.01, -0.015, -0.02, -0.025, -0.03)
+# B2 for an interval class needs that class to pass on its own (S1 and the S3 floor);
+# a pooled pass is not enough. 4 h is the class the program plan carries forward.
+GATED_INTERVALS: Final = ("1h", "2h", "4h", "8h")
 MAX_TOP5_SHARE: Final = 0.30
 KLINE_PAGE_LIMIT: Final = 1000
 CONCURRENCY: Final = 4
@@ -421,7 +432,7 @@ def s1(
     few on either side of the trigger, is insufficient_data, never a pass."""
     caps = possible_caps(index)
     scheduled = complete = pinned = relevant = within = strict = agree = below = above = 0
-    hit = correct_reject = 0
+    hit = correct_reject = at_standard_cap = 0
     errors: list[float] = []
     for iv in pool:
         settled = _settled(index, iv)
@@ -438,6 +449,7 @@ def s1(
             pinned += 1
             continue
         relevant += 1
+        at_standard_cap += any(abs(settled - c) < 1e-9 for c in STANDARD_CAPS)
         below += settled <= TRIGGER
         above += settled > TRIGGER
         errors.append(abs(rebuilt - settled))
@@ -447,11 +459,13 @@ def s1(
         hit += settled <= TRIGGER and rebuilt <= TRIGGER
         correct_reject += settled > TRIGGER and rebuilt > TRIGGER
     out_of_hour = total_minutes = 0
-    for symbol, closes in minutes.closes.items():
-        lows, highs = hourly.low.get(symbol, {}), hourly.high.get(symbol, {})
-        for m, v in closes.items():
+    for iv in pool:  # only this pool's minutes, so a class reports its own share
+        closes = minutes.closes.get(iv.symbol, {})
+        lows, highs = hourly.low.get(iv.symbol, {}), hourly.high.get(iv.symbol, {})
+        for m in range(iv.s1, iv.predicted, MINUTE_MS):
+            v = closes.get(m)
             h = (m // HOUR_MS) * HOUR_MS
-            if h in lows and h in highs:
+            if v is not None and h in lows and h in highs:
                 total_minutes += 1
                 out_of_hour += not lows[h] <= v <= highs[h]
     coverage = complete / scheduled if scheduled else None
@@ -491,6 +505,9 @@ def s1(
         "relevant_above_trigger": above,
         "at_possible_cap": pinned,
         "at_possible_cap_share": pinned / (pinned + relevant) if pinned + relevant else None,
+        # diagnostic only: scored settlements equal to a standard Bybit cap value that the
+        # repeated-minimum rule did not pin (a cap may have changed during the year)
+        "scored_at_standard_cap_value": at_standard_cap,
         "within_tolerance_share": within_share,
         "within_strict_share": strict / relevant if relevant else None,
         "class_agreement_share": agree_share,
@@ -613,19 +630,12 @@ def build_report(index: Index, hourly: HourlyPremium, minutes: MinutePremium) ->
     every = intervals(index)
     superset = [iv for iv in every if in_superset(iv, hourly.low.get(iv.symbol, {}))]
     pool = {iv.key: iv for iv in (*superset, *validation_sample(every))}
-    check = s1(index, [pool[k] for k in sorted(pool)], hourly, minutes)
+    pooled_ivs = [pool[k] for k in sorted(pool)]
+    check = s1(index, pooled_ivs, hourly, minutes)
     decision = s3(index, superset, minutes)
     passing = [d for d, row in decision.items() if row["floor"]]
-    if check["status"] == "insufficient_data":
-        verdict = "insufficient_validation"
-    elif check["status"] != "pass":
-        verdict = "not_reconstructible"
-    elif check["superset_needs_rebuild"]:
-        verdict = "superset_rebuild_needed"
-    elif not passing:
-        verdict = "insufficient_events"
-    else:
-        verdict = "pass"
+    verdict = _verdict(check, passing)
+    by_interval = interval_gates(index, pooled_ivs, hourly, minutes, decision, verdict)
     return {
         "version": VERSION,
         "intervals": len(every),
@@ -636,7 +646,49 @@ def build_report(index: Index, hourly: HourlyPremium, minutes: MinutePremium) ->
         "s3": decision,
         "passing_decision_offsets": passing,
         "verdict": verdict,
+        "by_interval": by_interval,
     }
+
+
+def interval_gates(
+    index: Index,
+    pool: Sequence[Interval],
+    hourly: HourlyPremium,
+    minutes: MinutePremium,
+    decision: Mapping[str, Any],
+    pooled_verdict: str,
+) -> dict[str, Any]:
+    """Each gated interval class on its own: S1 on that class's settlements with the
+    same thresholds and minimum counts, and that class's own S3 floor. A class never
+    passes where the pooled formula check does not."""
+    inherited = pooled_verdict in (
+        "insufficient_validation", "not_reconstructible", "superset_rebuild_needed"
+    )  # fmt: skip
+    out: dict[str, Any] = {}
+    for name in GATED_INTERVALS:
+        group = [iv for iv in pool if interval_class(iv.n_min) == name]
+        check = s1(index, group, hourly, minutes)
+        passing = [
+            d for d, row in decision.items() if row["by_interval"].get(name, {}).get("floor")
+        ]
+        out[name] = {
+            "s1": check,
+            "passing_decision_offsets": passing,
+            "verdict": pooled_verdict if inherited else _verdict(check, passing),
+        }
+    return out
+
+
+def _verdict(check: Mapping[str, Any], passing: Sequence[str]) -> str:
+    if check["status"] == "insufficient_data":
+        return "insufficient_validation"
+    if check["status"] != "pass":
+        return "not_reconstructible"
+    if check["superset_needs_rebuild"]:
+        return "superset_rebuild_needed"
+    if not passing:
+        return "insufficient_events"
+    return "pass"
 
 
 # ---------------------------------------------------------------- CLI
@@ -702,4 +754,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "working_tree_dirty": args.working_tree_dirty,
     }
     digest = publish_once(args.output_dir / "result.json", report)
-    sys.stdout.write(json.dumps({"verdict": report["verdict"], "sha256": digest}) + "\n")
+    by_class = {name: row["verdict"] for name, row in report["by_interval"].items()}
+    sys.stdout.write(
+        json.dumps({"verdict": report["verdict"], "by_interval": by_class, "sha256": digest}) + "\n"
+    )
