@@ -85,6 +85,9 @@ S1_MIN_EACH_SIDE: Final = 50  # scored settlements on each side of the -0.30% tr
 MIN_CLUSTERS: Final = 150
 MIN_SYMBOLS: Final = 40
 MIN_WEEKS: Final = 26
+# B2 for an interval class needs that class to pass on its own (S1 and the S3 floor);
+# a pooled pass is not enough. 4 h is the class the program plan carries forward.
+GATED_INTERVALS: Final = ("1h", "2h", "4h", "8h")
 MAX_TOP5_SHARE: Final = 0.30
 KLINE_PAGE_LIMIT: Final = 1000
 CONCURRENCY: Final = 4
@@ -598,19 +601,12 @@ def build_report(index: Index, hourly: HourlyPremium, minutes: MinutePremium) ->
     every = intervals(index)
     superset = [iv for iv in every if in_superset(iv, hourly.low.get(iv.symbol, {}))]
     pool = {iv.key: iv for iv in (*superset, *validation_sample(every))}
-    check = s1(index, [pool[k] for k in sorted(pool)], hourly, minutes)
+    pooled_ivs = [pool[k] for k in sorted(pool)]
+    check = s1(index, pooled_ivs, hourly, minutes)
     decision = s3(index, superset, minutes)
     passing = [d for d, row in decision.items() if row["floor"]]
-    if check["status"] == "insufficient_data":
-        verdict = "insufficient_validation"
-    elif check["status"] != "pass":
-        verdict = "not_reconstructible"
-    elif check["superset_needs_rebuild"]:
-        verdict = "superset_rebuild_needed"
-    elif not passing:
-        verdict = "insufficient_events"
-    else:
-        verdict = "pass"
+    verdict = _verdict(check, passing)
+    by_interval = interval_gates(index, pooled_ivs, hourly, minutes, decision, verdict)
     return {
         "version": VERSION,
         "intervals": len(every),
@@ -621,7 +617,49 @@ def build_report(index: Index, hourly: HourlyPremium, minutes: MinutePremium) ->
         "s3": decision,
         "passing_decision_offsets": passing,
         "verdict": verdict,
+        "by_interval": by_interval,
     }
+
+
+def interval_gates(
+    index: Index,
+    pool: Sequence[Interval],
+    hourly: HourlyPremium,
+    minutes: MinutePremium,
+    decision: Mapping[str, Any],
+    pooled_verdict: str,
+) -> dict[str, Any]:
+    """Each gated interval class on its own: S1 on that class's settlements with the
+    same thresholds and minimum counts, and that class's own S3 floor. A class never
+    passes where the pooled formula check does not."""
+    inherited = pooled_verdict in (
+        "insufficient_validation", "not_reconstructible", "superset_rebuild_needed"
+    )  # fmt: skip
+    out: dict[str, Any] = {}
+    for name in GATED_INTERVALS:
+        group = [iv for iv in pool if interval_class(iv.n_min) == name]
+        check = s1(index, group, hourly, minutes)
+        passing = [
+            d for d, row in decision.items() if row["by_interval"].get(name, {}).get("floor")
+        ]
+        out[name] = {
+            "s1": check,
+            "passing_decision_offsets": passing,
+            "verdict": pooled_verdict if inherited else _verdict(check, passing),
+        }
+    return out
+
+
+def _verdict(check: Mapping[str, Any], passing: Sequence[str]) -> str:
+    if check["status"] == "insufficient_data":
+        return "insufficient_validation"
+    if check["status"] != "pass":
+        return "not_reconstructible"
+    if check["superset_needs_rebuild"]:
+        return "superset_rebuild_needed"
+    if not passing:
+        return "insufficient_events"
+    return "pass"
 
 
 # ---------------------------------------------------------------- CLI
@@ -687,4 +725,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "working_tree_dirty": args.working_tree_dirty,
     }
     digest = publish_once(args.output_dir / "result.json", report)
-    sys.stdout.write(json.dumps({"verdict": report["verdict"], "sha256": digest}) + "\n")
+    by_class = {name: row["verdict"] for name, row in report["by_interval"].items()}
+    sys.stdout.write(
+        json.dumps({"verdict": report["verdict"], "by_interval": by_class, "sha256": digest}) + "\n"
+    )

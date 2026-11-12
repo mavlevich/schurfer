@@ -173,6 +173,23 @@ pass go to B2 (the maker fill model) and B3 (the laboratory read), and nothing e
 an interval class that misses the floor on its own is read in B3 as a diagnostic only. If none passes, B1 ends
 `insufficient_events`.
 
+**Gate for each interval class (amendment, 2026-11-12, before any fetch).** The program
+plan carries 4-hour contracts forward, and that choice was made after seeing exploratory
+returns. A pooled `pass` therefore does not open B2 for a class. Each class (1 h, 2 h,
+4 h, 8 h) gets its own verdict in the report's `by_interval`, with the same names:
+
+- S1 run on that class's settlements in the pool alone, with the same thresholds and
+  minimum counts (coverage 95%, 300 scored, 50 on each side, 2 bps for 95%, sensitivity
+  and specificity 95%, agreement 98%). Too few is `insufficient_validation` for the class.
+- The class's own S3 floor at some d. Without it the class is `insufficient_events`.
+- A class never passes where the pooled formula check does not: a pooled
+  `insufficient_validation`, `not_reconstructible` or `superset_rebuild_needed` is
+  inherited.
+
+B2 for 4-hour contracts starts only on `by_interval["4h"]` = `pass`, at the values of d
+in that class's own `passing_decision_offsets`. The other classes are fetched and
+reported as diagnostics.
+
 ## What B1 does not decide
 
 It reads no perpetual price and no return, so it says nothing about an edge. It fixes

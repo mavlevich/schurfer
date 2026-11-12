@@ -273,6 +273,35 @@ def test_s3_reports_each_settlement_interval_apart() -> None:
     assert report["admitted"]["events"] == 2
 
 
+def test_review_repro_pooled_pass_does_not_open_a_class_without_its_own_data() -> None:
+    """Review P1 (2026-11-12): a pooled pass made of 1 h settlements must not open B2
+    for 4 h contracts. The 4 h class has no settlement of its own, so it cannot pass."""
+    index, pool, hourly, minutes = s1_world(200, 200)
+    decision = {"d30": {"floor": True, "by_interval": {"1h": {"floor": True}}}}
+    gates = b1.interval_gates(index, pool, hourly, minutes, decision, "pass")
+    assert gates["1h"]["verdict"] == "pass"
+    assert gates["1h"]["passing_decision_offsets"] == ["d30"]
+    assert gates["4h"]["s1"]["status"] == "insufficient_data"
+    assert gates["4h"]["verdict"] == "insufficient_validation"
+
+
+def test_class_needs_its_own_floor() -> None:
+    index, pool, hourly, minutes = s1_world(200, 200)
+    decision = {
+        "d30": {"floor": True, "by_interval": {"1h": {"floor": False}, "4h": {"floor": True}}}
+    }
+    gates = b1.interval_gates(index, pool, hourly, minutes, decision, "pass")
+    assert gates["1h"]["verdict"] == "insufficient_events"
+
+
+def test_class_inherits_a_failed_pooled_formula_check() -> None:
+    index, pool, hourly, minutes = s1_world(200, 200)
+    decision = {"d30": {"floor": True, "by_interval": {"1h": {"floor": True}}}}
+    gates = b1.interval_gates(index, pool, hourly, minutes, decision, "not_reconstructible")
+    assert gates["1h"]["s1"]["status"] == "pass"
+    assert gates["1h"]["verdict"] == "not_reconstructible"
+
+
 class FakeBybit:
     """Answers premium index kline requests like Bybit: newest first, capped at limit."""
 
@@ -329,6 +358,7 @@ def test_api_to_snapshot_to_report(tmp_path: Path) -> None:
     assert d30["status"].get("admitted", 0) >= 1
     assert report["s1"]["status"] == "insufficient_data"  # four settlements cannot validate
     assert report["verdict"] == "insufficient_validation"
+    assert report["by_interval"]["4h"]["verdict"] == "insufficient_validation"
 
 
 def test_s1_review_repro_extreme_side_cannot_hide_behind_the_ordinary_side() -> None:
