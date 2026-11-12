@@ -84,6 +84,35 @@ fetched minutes that each minute close lies within its hour's low and high; a vi
 is reported and, above 0.1% of minutes, the superset is rebuilt with a wider margin
 before S3.
 
+**Amendment 2, the event superset (2026-11-12, after the first report).** The first
+report (`87fabe3`, result `4cc65107`) ended `superset_rebuild_needed`: 59.6% of minute
+closes lay outside their hour's low and high, far above the 0.1% limit. A scratch check
+on 33,929 full hours found that Bybit's hourly premium index open and close equal the
+first minute's open and the last minute's close in every hour, but the hourly low and
+high are not the minute extremes: some minute low lies below the hourly low in 89% of
+hours. So the bound above does not hold for this series, and no margin on the hourly
+low is a proven bound. The fix drops the premium bound for S3 instead of widening it:
+
+- **S3 runs on the event superset:** every interval that passes, at some d, all S2
+  conditions that do not depend on the premium. These are: the forecast is not
+  superseded, the schedule is certain, the liquidity floor holds, and the recent-extreme
+  filter holds. An admitted event must pass all of them, so the event superset contains
+  every possible event by construction, and none is chosen by its premium or its final
+  rate.
+- **A third fetch** gets the minute premium of the event-superset intervals that the
+  second fetch did not request, into a separate pinned snapshot. The report reads both.
+- **S1 is unchanged.** Its pool stays the hourly-low superset plus the validation
+  sample, as registered, and its thresholds do not move. S1 already ran on that pool;
+  its figures are not re-tuned.
+- **The minute-against-hour check becomes a diagnostic.** It no longer gates S3,
+  because S3 no longer relies on the hourly low. `superset_rebuild_needed` now means
+  only that some event-superset interval has no minute data and no recorded fetch
+  error, so the event list could be incomplete.
+
+Nothing else changes: the trigger, the filters, the decision offsets, the floors and the
+per-class gate stay as registered. The first report's S3 counts were seen; they are on
+the old superset and are superseded by the rerun.
+
 **Exposure.** The premium index inside [t - d, t] overlaps the would-be hold, and premium
 moves with the perpetual's price. This is laboratory exposure on the discovery year,
 which the program plan allows; it gets its row in the
