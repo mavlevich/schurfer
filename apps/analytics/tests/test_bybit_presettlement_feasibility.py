@@ -141,7 +141,13 @@ def test_classify_statuses() -> None:
 
 
 def s1_world(
-    n_below: int, n_above: int, *, offset: float = 0.0, missing: int = 0
+    n_below: int,
+    n_above: int,
+    *,
+    offset: float = 0.0,
+    missing: int = 0,
+    interval_min: int = 60,
+    symbol: str = "AAAUSDT",
 ) -> tuple[Index, list[Interval], HourlyPremium, MinutePremium]:
     """Hourly intervals of one symbol, every other hour; premiums vary slightly so no
     settled value repeats (no possible cap). Settled = rebuilt + offset."""
@@ -149,8 +155,9 @@ def s1_world(
     closes: dict[int, float] = {}
     pool: list[Interval] = []
     for k in range(n_below + n_above):
-        s1 = T0 + 2 * k * HOUR_MS
-        iv = Interval("AAAUSDT", s1, s1 + HOUR_MS, 60, False, s1 + HOUR_MS)
+        s1 = T0 + 2 * k * interval_min * MINUTE_MS
+        predicted = s1 + interval_min * MINUTE_MS
+        iv = Interval(symbol, s1, predicted, interval_min, False, predicted)
         premium = (-0.004 if k < n_below else -0.0018) - k * 1e-8
         own = closes_for(iv, premium, premium)
         rebuilt = b1.full_rate(iv, own)
@@ -159,9 +166,9 @@ def s1_world(
         if k >= missing:
             closes.update(own)
         pool.append(iv)
-    index = _index_with(funding, {})
-    hourly = HourlyPremium({"AAAUSDT": {}}, {"AAAUSDT": {}}, ())
-    return index, pool, hourly, MinutePremium({"AAAUSDT": closes}, ())
+    index = Index("discovery", {symbol: Instrument(b1.LAST_MS, funding, {})}, ())
+    hourly = HourlyPremium({symbol: {}}, {symbol: {}}, ())
+    return index, pool, hourly, MinutePremium({symbol: closes}, ())
 
 
 def test_s1_passes_with_enough_scored_settlements_on_both_sides() -> None:
@@ -300,6 +307,53 @@ def test_class_inherits_a_failed_pooled_formula_check() -> None:
     gates = b1.interval_gates(index, pool, hourly, minutes, decision, "not_reconstructible")
     assert gates["1h"]["s1"]["status"] == "pass"
     assert gates["1h"]["verdict"] == "not_reconstructible"
+
+
+def test_good_8h_minutes_cannot_dilute_a_failed_4h_quality_gate() -> None:
+    four_index, four_pool, _, four_minutes = s1_world(200, 200, interval_min=240, symbol="FOURUSDT")
+    eight_index, eight_pool, _, eight_minutes = s1_world(
+        200, 200, interval_min=480, symbol="EIGHTUSDT"
+    )
+    index = Index("discovery", four_index.instruments | eight_index.instruments, ())
+    minutes = MinutePremium(four_minutes.closes | eight_minutes.closes, ())
+    lows: dict[str, dict[int, float]] = {}
+    highs: dict[str, dict[int, float]] = {}
+    for symbol, closes in minutes.closes.items():
+        lows[symbol] = {(m // HOUR_MS) * HOUR_MS: v - 0.0001 for m, v in closes.items()}
+        highs[symbol] = {(m // HOUR_MS) * HOUR_MS: v + 0.0001 for m, v in closes.items()}
+    for hour in (T0, T0 + HOUR_MS):
+        lows["FOURUSDT"][hour], highs["FOURUSDT"][hour] = -0.01, -0.009
+    hourly = HourlyPremium(lows, highs, ())
+    pooled = b1.s1(index, four_pool + eight_pool, hourly, minutes)
+    assert pooled["minutes_checked_against_hour"] == 288_000
+    assert not pooled["superset_needs_rebuild"]
+
+    decision = {"d30": {"by_interval": {"4h": {"floor": True}, "8h": {"floor": True}}}}
+    gates = b1.interval_gates(
+        index, four_pool + eight_pool, hourly, minutes, decision, b1._verdict(pooled, ["d30"])
+    )
+    target = gates["4h"]
+    assert target["s1"]["minutes_checked_against_hour"] == 96_000
+    assert target["s1"]["minutes_outside_hour_share"] == pytest.approx(120 / 96_000)
+    assert target["verdict"] == "superset_rebuild_needed"
+    assert gates["8h"]["verdict"] == "pass"
+
+
+def test_hour_check_uses_unique_minutes_in_the_requested_interval_union() -> None:
+    outer = Interval("AAAUSDT", T0, T0 + 8 * HOUR_MS, 480, False, None)
+    inner = Interval("AAAUSDT", T0 + 4 * HOUR_MS, outer.predicted, 240, False, None)
+    index = _index_with({}, {})
+    closes = {T0 - HOUR_MS + k * MINUTE_MS: -0.004 for k in range(600)}
+    hourly = HourlyPremium(
+        {"AAAUSDT": {T0 + k * HOUR_MS: -0.005 for k in range(-1, 9)}},
+        {"AAAUSDT": {T0 + k * HOUR_MS: -0.003 for k in range(-1, 9)}},
+        (),
+    )
+    minutes = MinutePremium({"AAAUSDT": closes, "UNRELATEDUSDT": dict(closes)}, ())
+    check = b1.s1(index, [outer, inner, outer], hourly, minutes)
+    assert check["minutes_checked_against_hour"] == 480
+    assert check["minutes_outside_hour_share"] == 0.0
+    assert b1.s1(index, [], hourly, minutes)["minutes_checked_against_hour"] == 0
 
 
 class FakeBybit:

@@ -401,6 +401,43 @@ def possible_caps(index: Index) -> dict[str, float]:
     return out
 
 
+def _minutes_against_hours(
+    pool: Sequence[Interval], hourly: HourlyPremium, minutes: MinutePremium
+) -> tuple[int, int]:
+    """Check unique minutes in this pool's interval union, not unrelated classes.
+
+    Merge ranges per symbol rather than materializing millions of minute keys or
+    rescanning the entire snapshot for every settlement class.
+    """
+    ranges: dict[str, list[tuple[int, int]]] = defaultdict(list)
+    for iv in pool:
+        ranges[iv.symbol].append((iv.s1, iv.predicted))
+    checked = outside = 0
+    for symbol, own in ranges.items():
+        closes = minutes.closes.get(symbol, {})
+        if not closes:
+            continue
+        lows, highs = hourly.low.get(symbol, {}), hourly.high.get(symbol, {})
+        ordered = sorted(own)
+        merged: list[tuple[int, int]] = []
+        start, end = ordered[0]
+        for left, right in ordered[1:]:
+            if left <= end:
+                end = max(end, right)
+            else:
+                merged.append((start, end))
+                start, end = left, right
+        merged.append((start, end))
+        for start, end in merged:
+            for minute in range(start, end, MINUTE_MS):
+                value = closes.get(minute)
+                hour = (minute // HOUR_MS) * HOUR_MS
+                if value is not None and hour in lows and hour in highs:
+                    checked += 1
+                    outside += not lows[hour] <= value <= highs[hour]
+    return checked, outside
+
+
 def s1(
     index: Index, pool: Sequence[Interval], hourly: HourlyPremium, minutes: MinutePremium
 ) -> dict[str, Any]:
@@ -434,14 +471,7 @@ def s1(
         agree += (rebuilt <= TRIGGER) == (settled <= TRIGGER)
         hit += settled <= TRIGGER and rebuilt <= TRIGGER
         correct_reject += settled > TRIGGER and rebuilt > TRIGGER
-    out_of_hour = total_minutes = 0
-    for symbol, closes in minutes.closes.items():
-        lows, highs = hourly.low.get(symbol, {}), hourly.high.get(symbol, {})
-        for m, v in closes.items():
-            h = (m // HOUR_MS) * HOUR_MS
-            if h in lows and h in highs:
-                total_minutes += 1
-                out_of_hour += not lows[h] <= v <= highs[h]
+    total_minutes, out_of_hour = _minutes_against_hours(pool, hourly, minutes)
     coverage = complete / scheduled if scheduled else None
     within_share = within / relevant if relevant else None
     agree_share = agree / relevant if relevant else None

@@ -186,6 +186,12 @@ returns. A pooled `pass` therefore does not open B2 for a class. Each class (1 h
   `insufficient_validation`, `not_reconstructible` or `superset_rebuild_needed` is
   inherited.
 
+The minute-versus-hour consistency check uses only unique minutes in the union of
+the intervals being checked, separately for each symbol. The pooled check uses the
+pooled interval union; a class check uses that class's union. Other classes cannot
+dilute its mismatch share. Overlapping intervals and duplicate intervals count each
+minute once, and the calculation does not materialize a set of every minute.
+
 B2 for 4-hour contracts starts only on `by_interval["4h"]` = `pass`, at the values of d
 in that class's own `passing_decision_offsets`. The other classes are fetched and
 reported as diagnostics.
