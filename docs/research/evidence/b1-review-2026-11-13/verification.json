@@ -1,0 +1,16 @@
+{
+  "review_date": "2026-11-13",
+  "tested_code_revision": "a3971eedf2e44d14d18a1cb74de401f77021b862",
+  "baseline": "8d4ea957ffeb051ef107f8eb59771f9b92811fe6",
+  "targeted_tests": "79 passed",
+  "baseline_review_regressions": "11 failed, 3 passed",
+  "full_verification": "make verify passed after installing the locked workspace dependencies",
+  "market_requests": 0,
+  "fresh_strategy_returns_read": false,
+  "fetch_enabled": false,
+  "full_verification_log_sha256": "e80cd65320a971439ed3ffeb2857f2ac46ee13989fade3ec936f4f7c694bfb48",
+  "files": {
+    "classify-containment.json": "5c5af88adc8ca1b20500aa1c9ddfa0eaa77eec93f86726a4221e43dbcad8004c",
+    "classify-containment.json.sha256": "363925337710d33f81d49555852fa6f65044e45dae3dd81d17470ec4f5c63486"
+  }
+}
