@@ -236,9 +236,12 @@ def test_validation_sample_is_deterministic_and_rate_free() -> None:
     assert len(first) == b1.VALIDATION_SAMPLE
 
 
-def test_snapshots_are_unpinned_until_fetched() -> None:
-    assert b1.HOURLY_SHA256 is None
-    assert b1.MINUTES_SHA256 is None
+def test_snapshots_are_pinned_after_their_fetches() -> None:
+    """Both fetches ran on 2026-11-12; each pin is a full SHA-256 of its snapshot."""
+    for pin in (b1.HOURLY_SHA256, b1.MINUTES_SHA256):
+        assert pin is not None
+        assert len(pin) == 64
+        assert set(pin) <= set("0123456789abcdef")
 
 
 def test_s1_tolerance_is_two_bps_with_a_strict_diagnostic() -> None:

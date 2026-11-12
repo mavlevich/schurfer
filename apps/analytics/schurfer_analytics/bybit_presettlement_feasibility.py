@@ -61,7 +61,10 @@ INDEX_SHA256: Final = "f48fe09f7023a476e524cf70c6ec1b629eee30a9a07cff41c9d149dfb
 HOURLY_SHA256: Final[str | None] = (
     "8c3d81a765e993cfbc67444f5ac39f10be79e11567346b66e08c38e861e93919"
 )
-MINUTES_SHA256: Final[str | None] = None
+# Minute premium fetched 2026-11-12 at 7260e55: 54,909 intervals, no errors, 4 retried.
+MINUTES_SHA256: Final[str | None] = (
+    "5d638d68d40a13e2ad10573ae7d6446a193a66b0db8dc4d1d12e20c0e9a58b15"
+)
 
 TRIGGER: Final = -0.003  # F_hat at most -0.30%
 S1_RELEVANT: Final = -0.001  # S1 gates settlements at most -0.10%
