@@ -192,3 +192,15 @@ scope counts**. [Proposal](b1-minute-scope-repair-proposal-v1.md) is not active.
 An illustrative response in the public API documentation, with May 2022 timestamps,
 also reached output while checking field semantics; it is an unverified documentation
 example, not a fetched historical series or a confirmation observation.
+
+## B1 review integration and classifier-containment proof, registered 2026-11-13
+
+The pinned HYP-031 discovery index only: run the real B1 `classify` over every
+forecast interval and d30/d15/d10 using constant synthetic premium closes. Output
+only counters, omitted IDs (if any), source fingerprints and timings. No real premium,
+perpetual price or return is read by this audit. Level: **coverage / synthetic code
+check**, not an economic read. The amended report is 4h-only; validation sample
+membership never selects an event. The historical 0.1% minute/hour gate is explicitly
+retired after its observed failure, because hourly premium no longer selects the
+universe. Supplemental fetching remains disabled pending the bounded pilot runner,
+design acceptance and a new owner go.

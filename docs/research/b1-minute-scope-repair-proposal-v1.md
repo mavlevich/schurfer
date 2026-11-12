@@ -2,7 +2,9 @@
 
 Status: **proposal for design review, 2026-11-12**. The local diagnostics and request
 plan below have run. The proposed selection/report method has not been activated,
-no supplemental premium has been fetched and no strategy return has been read.
+no supplemental premium has been fetched and no strategy return has been read
+within this protocol. The pre-settlement exploratory reads in #582 and the choice
+of 4h after seeing them remain part of the selection history.
 This amends B1's data-selection method only if accepted. It changes no trading
 threshold, decision offset, exit, cost, holdout, trading mode or production service.
 
@@ -48,8 +50,11 @@ not a new trading filter selected to improve returns.
 Keep the original independent 2,000-interval sample, seed 31, unchanged. The original
 index, previously captured minute responses and blocked result remain immutable.
 Hourly/minute disagreement remains a diagnostic and must not disappear from the
-history; it no longer gates the completeness proof because hourly extrema no longer
-select the universe.
+history. **The registered 0.1% S1 minute/hour gate is explicitly removed after
+observing its failure (59.5358% in the retained local read).** This is a post-read
+method change, justified because its sole purpose was the retired hourly-selection
+proof. It is now a diagnostic only, not an inherited class blocker. The original
+failed result is preserved.
 
 ## Resource priority and computed scope
 
@@ -57,6 +62,15 @@ The program plan prioritised **4-hour contracts before this read**. The proposed
 first supplemental run covers that class plus the unchanged original validation
 sample across classes. Other classes do not silently pass or get a new result;
 expanding them remains a separate budget decision.
+
+**S3 and the primary verdict are 4h-only.** Pooled S3 and every outside class get
+`not_fetched`. Validation sample membership supplies S1 only and cannot create an
+event. The 75 non-4h sample intervals passing C do not enter S3. The 47 sample/4h
+candidate overlaps still qualify independently by C, without double-counting S1.
+
+All 49,286 candidates of the all-class planning scope pass C at all three offsets on
+this index. This is one superset because the timestamps and closed-hour inputs lie
+on hourly grids; F_hat is still computed separately at each d.
 
 The offline planning command inspected the pinned index and request metadata only.
 It fetched nothing and computed no new premium or strategy-return value.
@@ -136,3 +150,22 @@ The all-class plan is capacity context, not another active experiment.
 - No market request, perpetual-return read, test-year read, order or production
   mutation was performed. The active B1 verdict remains blocked until review,
   implementation and validation of this amendment.
+
+## Review integration, 2026-11-13
+
+The canonical implementation is now `fix/b1-four-hour-prior-scope`, built on
+`8d4ea95` (`premium_free_ok` and `event_superset` reused). The earlier
+`research/b1-verified-report` branch is an evidence archive, not another implementation.
+No unrelated #587 code is merged here, and the colleague's uncommitted work in
+`b1-superset` is left untouched. No branch with unique evidence has been deleted.
+
+P1 changes are registered explicitly in Amendment 3 of the
+[protocol](bybit-presettlement-feasibility-v1.md). A dedicated audit command runs
+the real `classify` for every forecast and d, with a constant synthetic negative
+premium. It checks all classes against `event_superset`, while report S3 remains
+4h-only. No classifier function or financial threshold is mocked in the full audit.
+
+The old minute-fetch CLI is disabled rather than leaving an unbudgeted download
+path enabled under this amendment. Adding the persisted-budget/pilot transport is
+a separate implementation step before any fetch go can be executed. No market
+request is performed to close these review findings.

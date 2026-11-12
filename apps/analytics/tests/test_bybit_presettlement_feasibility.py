@@ -379,20 +379,20 @@ def test_review_repro_event_superset_contains_every_admitted_event() -> None:
     assert rows[0].key in events
 
 
-def test_extra_todo_skips_what_the_first_fetch_requested(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_extra_todo_reuses_complete_four_hour_paths(monkeypatch: pytest.MonkeyPatch) -> None:
     index, rows = _event_world()
-    monkeypatch.setattr(b1, "intervals", lambda _index: rows)
+    iv = Interval("AAAUSDT", T0, T0 + 4 * HOUR_MS, 240, False, T0 + 4 * HOUR_MS)
+    index.instruments["AAAUSDT"].turnover.update({T0 + h * HOUR_MS: 200_000.0 for h in range(4)})
+    monkeypatch.setattr(b1, "intervals", lambda _index: [iv, *rows])
     monkeypatch.setattr(b1, "validation_sample", lambda _every: [])
-    above = HourlyPremium({"AAAUSDT": {T0: 0.001}}, {"AAAUSDT": {T0: 0.002}}, ())
-    extra, counts = b1.extra_minute_todo(index, above)
-    assert [iv.symbol for iv in extra] == ["AAAUSDT"]
-    assert counts == {"event_superset": 1, "already_requested": 0, "requests": 1}
-    below = HourlyPremium({"AAAUSDT": {T0: -0.003}}, {"AAAUSDT": {T0: 0.0}}, ())
-    extra, counts = b1.extra_minute_todo(index, below)
-    assert extra == []
-    assert counts["already_requested"] == 1
+    extra, counts = b1.extra_minute_todo(index, MinutePremium({}, ()))
+    assert [item.key for item in extra] == [iv.key]
+    assert counts == {"event_superset": 1, "s1_pool": 1, "already_complete": 0, "requests": 1}
+    existing = MinutePremium({iv.symbol: closes_for(iv, -0.004, -0.004)}, ())
+    assert b1.extra_minute_todo(index, existing)[0] == []
+    assert b1.extra_minute_todo(index, existing)[1]["already_complete"] == 1
+    del existing.closes[iv.symbol][iv.s1 + 5 * MINUTE_MS]
+    assert b1.extra_minute_todo(index, existing)[0] == [iv]
 
 
 def test_merge_minutes_unions_both_snapshots() -> None:
@@ -404,7 +404,7 @@ def test_merge_minutes_unions_both_snapshots() -> None:
 
 
 def test_unfetched_event_interval_blocks_a_pass() -> None:
-    assert b1._verdict({"status": "pass"}, ["d30"], complete=False) == "superset_rebuild_needed"
+    assert b1._verdict({"status": "pass"}, ["d30"], complete=False) == "event_data_incomplete"
     assert b1._verdict({"status": "pass"}, ["d30"]) == "pass"
 
 
@@ -434,14 +434,14 @@ class FakeBybit:
 def test_api_to_snapshot_to_report(tmp_path: Path) -> None:
     """The whole path on artificial responses: fetch, write, load, plan, report."""
     s1_time = T0
-    funding = {s1_time - 2 * HOUR_MS: -0.004, s1_time - HOUR_MS: -0.004, s1_time: -0.004,
-               s1_time + HOUR_MS: -0.004}  # fmt: skip
-    turnover = {s1_time - (k + 1) * HOUR_MS: 200_000.0 for k in range(40)}
+    funding = {s1_time - 8 * HOUR_MS: -0.004, s1_time - 4 * HOUR_MS: -0.004, s1_time: -0.004,
+               s1_time + 4 * HOUR_MS: -0.004}  # fmt: skip
+    turnover = {s1_time + 7 * HOUR_MS - (k + 1) * HOUR_MS: 200_000.0 for k in range(40)}
     index = Index("discovery", {"AAAUSDT": Instrument(b1.LAST_MS, funding, turnover)}, ())
-    hours = {h: (-0.004, -0.0039, -0.0041, -0.004) for h in range(s1_time - 3 * HOUR_MS,
-             s1_time + 2 * HOUR_MS, HOUR_MS)}  # fmt: skip
-    minutes = {s1_time - 3 * HOUR_MS + k * MINUTE_MS: (-0.004, -0.004, -0.004, -0.004)
-               for k in range(5 * 60)}  # fmt: skip
+    hours = {h: (-0.004, -0.0039, -0.0041, -0.004) for h in range(s1_time - 12 * HOUR_MS,
+             s1_time + 8 * HOUR_MS, HOUR_MS)}  # fmt: skip
+    minutes = {s1_time - 12 * HOUR_MS + k * MINUTE_MS: (-0.004, -0.004, -0.004, -0.004)
+               for k in range(20 * 60)}  # fmt: skip
     client = FakeBybit({("AAAUSDT", "60"): hours, ("AAAUSDT", "1"): minutes})
 
     hourly_path = tmp_path / "hourly.jsonl.gz"
@@ -460,7 +460,8 @@ def test_api_to_snapshot_to_report(tmp_path: Path) -> None:
     assert loaded.closes["AAAUSDT"][s1_time] == -0.004
 
     report = b1.build_report(index, hourly, loaded)
-    d30 = report["s3"]["d30"]
+    assert report["s3"]["d30"]["status"] == "not_fetched"
+    d30 = report["s3"]["d30"]["by_interval"]["4h"]
     assert d30["status"].get("admitted", 0) >= 1
     assert report["s1"]["status"] == "insufficient_data"  # four settlements cannot validate
     assert report["verdict"] == "insufficient_validation"
