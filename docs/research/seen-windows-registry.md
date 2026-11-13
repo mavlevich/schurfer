@@ -6,6 +6,12 @@ window is still clean for confirmation. It decides nothing by itself. New studie
 row before their first fetch; the [discovery ledger](discovery-ledger.md) keeps the
 per-hypothesis detail.
 
+Publication correction, 2026-11-13: the specific local B1 four-hour supplement and
+B2 registrations below were committed before requests but not published in main
+before them. Their [actual chronology](b1-b2-publication-chronology-2026-11-13.md)
+is retained; this publication is retrospective, not backdated. Subsequent B2 native
+computations require the relevant contract and scope in main first.
+
 Levels of exposure, from strongest to weakest:
 
 - **outcomes:** returns, labels or verdict statistics were read;
@@ -359,3 +365,20 @@ represented by 0/1 or is absent. No unknown row is reclassified as ordinary.
 Source quality v2 and this auxiliary read remain source-level evidence only;
 there is no fill/return or new-window read. See
 [source-pilot result](bybit-presettlement-b2-source-pilot-result-2026-11-13.md).
+
+## B2 entry-pilot replay registration, 2026-11-13
+
+Publish the [entry-only contract](b2-entry-pilot-contract-v1.md) in main before
+running. Reuse only the frozen B1 events on the ten original pilot days and their
+already downloaded native files; the two ob200 fixtures are separate. Emit model
+counts and unresolved reasons for the eight original configurations, preserving
+denominators. This is execution-model exposure, not strategy-return evidence.
+Clock availability, 2-second gaps, price priority, partials, unknown flow and
+unverified native sizing are fixed by that contract before fill statistics.
+No GET/HEAD, masked tape values, exit, funding payment, test year, backward holdout
+or HYP-012 v2 blind window is opened by this entry. B3's exact exits and a separate
+main-published narrow mask amendment remain prerequisites for any exit read.
+
+The power-budget note uses only the sealed HYP-037 MDEs and arithmetic, with no
+new data exposure. HYP-037 A/B remain closed; no method or threshold was selected
+from a new outcome.

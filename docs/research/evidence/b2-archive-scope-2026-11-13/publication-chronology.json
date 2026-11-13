@@ -1,0 +1,27 @@
+{
+  "chronology": [
+    {
+      "registration_commit_utc": "2026-11-13T00:17:07+00:00",
+      "registration_revision": "1cc0949",
+      "stage": "B1 supplemental invocation",
+      "started_at_utc": "2026-11-13T00:17:39.541556+00:00"
+    },
+    {
+      "registration_commit_utc": "2026-11-13T07:58:30+00:00",
+      "registration_revision": "e3e33c6",
+      "stage": "B2 first HEAD",
+      "started_at_utc": "2026-11-13T07:58:50.959258+00:00"
+    },
+    {
+      "registration_commit_utc": "2026-11-13T12:24:03+00:00",
+      "registration_revision": "c1c9fae",
+      "stage": "B2 first native body GET",
+      "started_at_utc": "2026-11-13T12:24:26.312257+00:00"
+    }
+  ],
+  "new_market_reads": false,
+  "publication_is_retrospective_not_backdated": true,
+  "registrations_committed_locally_before_requests": true,
+  "scope": "own specific B1 4h supplement and B2 registrations",
+  "specific_registrations_published_in_main_before_requests": false
+}
