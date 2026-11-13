@@ -311,3 +311,22 @@ examples with 2022/2023 timestamps also reached output. These are unverified
 documentation examples, not historical market-path observations or confirmation
 evidence; none is used in a study input or return. The documentation does not
 establish whether old archive CSV/book versions carry today's BT/RPI/cts fields.
+
+## B2 fixed source-pilot read registration, 2026-11-13
+
+Following the owner's instruction to continue the main B2 work, the fixed 24-file
+plan is registered for source-quality inspection, before the first archive body
+read. Plan SHA-256 is
+`39c5bda6f438f51e90fbb899a2eb93250acf995727d032a6e725f5a011fe8630`.
+The 12 symbol-days and original/extra-format strata are unchanged from the metadata
+result. The transfer remains capped at 2 GiB including partials/retries, two
+attempts per file / 48 globally, three request starts per second. Every native
+file is retained with a checksum and frozen HEAD size/ETag, under a clean revision.
+
+Level: source schema, counts, clocks, units and quality diagnostics only. Full-day
+book state is reconstructed for continuity and strict-prior-quote checks; no
+numeric quotes or price paths are emitted. Native trade minutes :55 through :04
+are excluded before price/size/turnover conversion and counted only as rows,
+preserving the seconds-study tape reservation. Missing BT/RPI fields and engine
+clocks remain unknown. No fills, strategy outcomes, test-year, backward-holdout
+or HYP-012 v2 blind-window read is authorized by this entry.

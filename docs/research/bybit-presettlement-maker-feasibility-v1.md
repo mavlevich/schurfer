@@ -114,6 +114,36 @@ and do not label the latter identified API-maker fills. A price touch is not a
 substitute for missing eligible volume. This uncertainty cannot be repaired by
 changing the signal or selecting profitable filled orders.
 
+### Source-pilot implementation registration
+
+Before the first archive body read, bind the fixed `pilot-body-plan.json`
+SHA-256 `39c5bda6f438f51e90fbb899a2eb93250acf995727d032a6e725f5a011fe8630`
+to a clean code revision and source fingerprint. The transport reserves each
+whole native file, rounded to 64 KiB plus a 64 KiB read guard, durably before
+reading its body. Failed attempts retain that reservation. A restart cannot
+replenish the 2 GiB cap or the 48 global / two-per-file attempt limits. Refuse
+changed Content-Length or ETag, redirects, corrupt completed files and mismatched
+run bindings. Keep native files opaque and immutable with SHA-256 receipts.
+
+The quality inspector streams ZIP/CSV without extracting members: at most one
+book member, 1 MiB per line, 4 GiB inflated per file and 32 GiB in total. Refuse
+unsupported schemas and timestamps outside the registered discovery/file day.
+Report schemas, counts, sequence/clock regressions, observed depth counts, cadence,
+quantity/notional consistency and strict-prior-quote alignment. The diagnostic
+staleness counter uses 5 seconds; it is not a replay admission threshold.
+
+HYP-031's native trade-tape reservation remains intact: minutes :55 through :04
+of every hour are skipped before converting trade price, size or turnover.
+Only their row count leaves the inspector. No masked trade values, quote series,
+fill quantity, fill rate or strategy return are emitted. Raw daily source files
+are retained for provenance; their masked rows are not analytical observations.
+An absent BT/RPI field remains unknown, and `ts` without `cts` remains a system
+clock proxy. No missing field is inferred from present-day API documentation.
+
+After this source-only pilot, record limitations before deciding whether a
+defensible entry replay can proceed. Neither a complete download nor a successful
+parse by itself is an execution-quality or economic pass.
+
 ## What can proceed
 
 The metadata stage may finish with sizes/availability or explicit unknowns. Only
