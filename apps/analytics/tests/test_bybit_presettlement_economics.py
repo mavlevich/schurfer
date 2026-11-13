@@ -13,7 +13,7 @@ import pytest
 from schurfer_analytics import bybit_presettlement_bounded_fetch as transport
 from schurfer_analytics import bybit_presettlement_economic_report as report
 from schurfer_analytics import bybit_presettlement_economics as source
-from schurfer_analytics.bybit_post_funding_screen import MINUTE_MS
+from schurfer_analytics.bybit_post_funding_screen import DAY_MS, MINUTE_MS
 from schurfer_analytics.bybit_presettlement_feasibility import FIRST_MS
 
 if TYPE_CHECKING:
@@ -185,6 +185,114 @@ def test_portfolio_hash_ties_busy_slot_and_unknown_value_are_not_cash() -> None:
     assert p["final_cash_usd"] is None
     assert p["reason_counts"] == {"selected_path_unresolved": 1, "portfolio_value_unknown": 1}
     assert not p["gates_nomination"]
+
+
+def test_portfolio_continues_after_a_tiny_loss_at_the_actual_available_size() -> None:
+    snapshot, history = dataset()
+    row = report.evaluate(event(), "before", report.paths(snapshot), history)
+    rows = [
+        {
+            **row,
+            "decision_ms": row["decision_ms"] + i * 60 * MINUTE_MS,
+            "entry_ms": row["entry_ms"] + i * 60 * MINUTE_MS,
+            "exit_ms": row["exit_ms"] + i * 60 * MINUTE_MS,
+            "net30_bps": -1.0 if i == 0 else 40.0,
+        }
+        for i in range(50)
+    ]
+    result = report.portfolio(rows)
+    assert result["reason_counts"] == {"accepted": 50}
+    assert result["known_closed_trades"] == 50
+    assert result["decisions"][1]["notional_usd"] == pytest.approx(44.9955)
+    assert all(d["notional_usd"] <= 45 for d in result["decisions"])
+    assert result["final_cash_usd"] == pytest.approx(
+        50 - 0.0045 + 44.9955 * 0.004 + 48 * 45 * 0.004, rel=0, abs=1e-10
+    )
+    assert result["known_prefix"]["closed_trades"] == 50
+    assert result["known_prefix"]["ends_because"] == "cohort_end"
+
+
+@pytest.mark.parametrize(
+    ("cash", "expected"),
+    [(0, None), (9.99, None), (10, 5), (49.9955, 44.9955), (50, 45), (500, 45)],
+)
+def test_portfolio_model_minimum_reserve_and_cap(cash: float, expected: float | None) -> None:
+    result = report.portfolio_notional(cash)
+    if expected is None:
+        assert result is None
+    else:
+        assert result is not None
+        assert result == pytest.approx(expected)
+        assert result <= cash - 5 and result <= 45
+
+
+def test_portfolio_reports_the_known_prefix_before_an_unresolved_trade() -> None:
+    snapshot, history = dataset()
+    row = report.evaluate(event(), "before", report.paths(snapshot), history)
+    rows = [
+        {**row, "net30_bps": 0.0},
+        {
+            **row,
+            "entry_ms": row["entry_ms"] + 2 * DAY_MS,
+            "exit_ms": row["exit_ms"] + 2 * DAY_MS,
+            "status": "unresolved",
+            "reason": "missing",
+        },
+        {
+            **row,
+            "entry_ms": row["entry_ms"] + 3 * DAY_MS,
+            "exit_ms": row["exit_ms"] + 3 * DAY_MS,
+        },
+    ]
+    result = report.portfolio(rows)
+    assert result["final_cash_usd"] is None
+    prefix = result["known_prefix"]
+    assert prefix["closed_trades"] == 1 and prefix["opportunities"] == 1
+    assert prefix["elapsed_days"] == 2
+    assert prefix["utc_days"] == 3
+    assert prefix["end_exclusive_ms"] == rows[1]["entry_ms"]
+    assert prefix["ends_because"] == "selected_path_unresolved"
+    assert result["reason_counts"] == {
+        "accepted": 1,
+        "selected_path_unresolved": 1,
+        "portfolio_value_unknown": 1,
+    }
+
+
+def test_portfolio_reports_empty_and_zero_length_known_prefixes() -> None:
+    empty = report.portfolio([])
+    assert empty["known_prefix"]["utc_days"] == 0
+    assert empty["known_prefix"]["ends_because"] == "empty_cohort"
+    snapshot, history = dataset()
+    row = report.evaluate(event(), "before", report.paths(snapshot), history)
+    unknown = report.portfolio([{**row, "status": "unresolved"}])
+    assert unknown["known_prefix"]["closed_trades"] == 0
+    assert unknown["known_prefix"]["elapsed_days"] == 0
+    assert unknown["known_prefix"]["utc_days"] == 0
+
+
+def test_concentration_only_insufficient_verdict_explains_its_reason() -> None:
+    snapshot, history = dataset()
+    row = report.evaluate(event(), "before", report.paths(snapshot), history)
+    rows = []
+    for i in range(200):
+        symbol = "HEAVY" if i < 100 else f"S{i % 50}"
+        at = T + i * DAY_MS
+        rows.append(
+            {
+                **row,
+                "symbol": symbol,
+                "cluster": f"{symbol}:{i}",
+                "forecast_settlement_ms": at,
+                "week": report.week(at),
+                "net30_bps": 40.0,
+                "net30_worst_bps": 40.0,
+                "btc_adjusted_net_bps": 40.0,
+            }
+        )
+    result = report.summarize(rows, draws=100)
+    assert result["verdict"] == "insufficient_data"
+    assert result["verdict_reasons"] == ["top5_symbol_share_above_30pct"]
 
 
 def test_whole_week_bootstrap_keeps_cluster_weights_and_is_deterministic() -> None:

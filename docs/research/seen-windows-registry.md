@@ -432,3 +432,22 @@ semantics; illustrative examples are not historical execution observations.
 No HYP-031 test year, backward holdout or HYP-012 v2 blind window is released.
 The narrow future maker tape policy is specified in the design but is not
 activated by this kline registration.
+
+### B3a targeted review before outcomes, 2026-11-13
+
+The reviewer reported a source-level coverage check of the already pinned
+discovery funding index: all 1,637 events covered, no paging gaps or recorded
+fetch errors; no rate values emitted and no economic report run. This is a
+reviewer's reported pre-main-publication check, not a claim that this planned
+registration was already in main. It is not independently repeated here.
+
+Before any native B3a fetch or economic read, correct the one-slot diagnostic
+from fixed USD 45 plus a USD 5 reserve requiring cash at least 50 to
+min(45, cash minus 5), minimum modeled notional USD 5. The minimum is an
+accounting assumption, not native order evidence. Add known-prefix lengths
+and explicit verdict reasons; retain the unknown tail and circular-week
+bootstrap. Only synthetic fixtures are read for this correction. Event net,
+nomination gates, frozen requests and the two exits are unchanged. #593 was
+closed after premature publication; the correction remains local for targeted
+review before a PR is reopened or created. No native requests or returns
+have been read by this implementation.

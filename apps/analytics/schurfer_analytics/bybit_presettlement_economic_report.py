@@ -25,6 +25,9 @@ from .clustered_inference import percentile
 SEED = 3103
 DRAWS = 20_000
 HALF = int(datetime(2025, 4, 1, tzinfo=UTC).timestamp() * 1000)
+PORTFOLIO_CAP_USD = 45.0
+PORTFOLIO_RESERVE_USD = 5.0
+PORTFOLIO_MIN_MODEL_USD = 5.0  # accounting floor, not a verified native order minimum
 
 
 def day(at: int) -> str:
@@ -321,10 +324,19 @@ def summarize(rows: list[dict[str, Any]], *, draws: int = DRAWS) -> dict[str, An
         verdict = "insufficient_data"
     else:
         verdict = "nominated_for_protocol" if all(conditions.values()) else "not_nominated"
+    verdict_reasons = ["negative_mature_net"] if verdict == "fail" else []
+    verdict_reasons.extend(
+        "top5_symbol_share_above_30pct"
+        if key == "top5_symbol_share"
+        else f"condition_not_met:{key}"
+        for key, passed in conditions.items()
+        if not passed
+    )
     values = [r["net30_bps"] for r in grouped]
     wins, losses = sum(v for v in values if v > 0), -sum(v for v in values if v < 0)
     return {
         "verdict": verdict,
+        "verdict_reasons": verdict_reasons,
         "conditions": conditions,
         "opportunities": len(rows),
         "resolved_events": len(resolved),
@@ -351,21 +363,32 @@ def summarize(rows: list[dict[str, Any]], *, draws: int = DRAWS) -> dict[str, An
     }
 
 
+def portfolio_notional(cash: float) -> float | None:
+    """Bound continuous model size by cash, reserve and a fixed accounting floor."""
+    notional = min(PORTFOLIO_CAP_USD, cash - PORTFOLIO_RESERVE_USD)
+    return notional if notional >= PORTFOLIO_MIN_MODEL_USD else None
+
+
 def portfolio(rows: list[dict[str, Any]]) -> dict[str, Any]:
     def order(row: dict[str, Any]) -> tuple[int, str]:
         key = f"b3a-v1|{row['symbol']}|{row['decision_ms']}".encode()
         return row["entry_ms"], hashlib.sha256(key).hexdigest()
 
     cash, peak, drawdown = 50.0, 50.0, 0.0
-    pending = None
+    pending: tuple[dict[str, Any], float] | None = None
     unknown = False
     closed = streak = longest = 0
+    accepted_holding_ms = 0
     decisions: list[dict[str, Any]] = []
     daily: dict[str, float] = defaultdict(float)
+    ordered = sorted(rows, key=order)
+    prefix_start = ordered[0]["entry_ms"] if ordered else None
+    prefix_end = max(r["exit_ms"] for r in ordered) if ordered else None
+    prefix_opportunities = len(ordered)
 
-    def close(row: dict[str, Any]) -> None:
+    def close(row: dict[str, Any], notional: float) -> None:
         nonlocal cash, peak, drawdown, closed, streak, longest
-        pnl = 45 * row["net30_bps"] / 10_000
+        pnl = notional * row["net30_bps"] / 10_000
         cash += pnl
         daily[day(row["exit_ms"])] += pnl
         peak = max(peak, cash)
@@ -374,44 +397,69 @@ def portfolio(rows: list[dict[str, Any]]) -> dict[str, Any]:
         streak = streak + 1 if pnl < 0 else 0
         longest = max(longest, streak)
 
-    for row in sorted(rows, key=order):
-        if pending is not None and pending["exit_ms"] <= row["entry_ms"]:
-            close(pending)
+    for row in ordered:
+        if pending is not None and pending[0]["exit_ms"] <= row["entry_ms"]:
+            close(*pending)
             pending = None
+        notional = None if unknown else portfolio_notional(cash)
+        selected_notional = None
         if unknown:
             reason = "portfolio_value_unknown"
         elif pending is not None:
             reason = "slot_busy"
-        elif cash < 50:  # fixed USD45 notional plus USD5 reserve, no borrowing
+        elif notional is None:
             reason = "capital_insufficient"
         elif row["status"] != "complete":
             reason, unknown = "selected_path_unresolved", True
+            selected_notional = notional
+            prefix_end = row["entry_ms"]
+            prefix_opportunities = len(decisions)
         else:
-            pending, reason = row, "accepted"
+            pending, reason = (row, notional), "accepted"
+            selected_notional = notional
+            accepted_holding_ms += row["exit_ms"] - row["entry_ms"]
         decisions.append(
-            {"symbol": row["symbol"], "decision_ms": row["decision_ms"], "reason": reason}
+            {
+                "symbol": row["symbol"],
+                "decision_ms": row["decision_ms"],
+                "reason": reason,
+                "notional_usd": selected_notional,
+            }
         )
     if pending is not None:
-        close(pending)
+        close(*pending)
+    prefix_ms = (
+        prefix_end - prefix_start if prefix_start is not None and prefix_end is not None else 0
+    )
+    prefix_utc_days = 0
+    if prefix_start is not None and prefix_end is not None and prefix_end > prefix_start:
+        prefix_utc_days = (prefix_end - 1) // DAY_MS - prefix_start // DAY_MS + 1
     return {
+        "model_version": "capped_cash_reserve_v2",
         "initial_cash_usd": 50,
-        "notional_usd": 45,
-        "reserve_usd": 5,
+        "notional_cap_usd": PORTFOLIO_CAP_USD,
+        "reserve_usd": PORTFOLIO_RESERVE_USD,
+        "minimum_model_notional_usd": PORTFOLIO_MIN_MODEL_USD,
+        "native_minimum_verified": False,
         "final_cash_usd": None if unknown else cash,
         "known_closed_trades": closed,
+        "known_prefix": {
+            "closed_trades": closed,
+            "opportunities": prefix_opportunities,
+            "start_ms": prefix_start,
+            "end_exclusive_ms": prefix_end,
+            "elapsed_days": prefix_ms / DAY_MS,
+            "utc_days": prefix_utc_days,
+            "ends_because": "selected_path_unresolved"
+            if unknown
+            else "cohort_end"
+            if ordered
+            else "empty_cohort",
+        },
         "realized_drawdown_usd_known_prefix": drawdown,
         "longest_losing_streak_known_prefix": longest,
         "daily_realized_pnl_usd_known_prefix": dict(sorted(daily.items())),
-        "accepted_holding_ms": sum(
-            r["exit_ms"] - r["entry_ms"]
-            for r in rows
-            if any(
-                d["reason"] == "accepted"
-                and d["symbol"] == r["symbol"]
-                and d["decision_ms"] == r["decision_ms"]
-                for d in decisions
-            )
-        ),
+        "accepted_holding_ms": accepted_holding_ms,
         "reason_counts": dict(Counter(r["reason"] for r in decisions)),
         "decisions": decisions,
         "gates_nomination": False,
@@ -457,6 +505,7 @@ def report(
             "seed": SEED,
             "calendar_weeks": weeks(),
             "two_week_blocks": "circular, fixed calendar length, paired seed",
+            "two_week_wraparound": "the last calendar week may be paired with the first",
         },
         "promotes_to_live": False,
         "opens_exam": False,

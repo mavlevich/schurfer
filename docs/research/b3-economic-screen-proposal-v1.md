@@ -188,8 +188,12 @@ alone also omits funding at the through-settlement exit. Do not call the
 15 bps rule proof that the maker version loses or that the family is closed.
 
 Both policies also get a USD 50 cash-funded, one-slot feasibility report:
-fixed USD 45 entry notional, no reinvestment or borrowing, cost/funding reserve
-of USD 5 within initial cash USD 50, one position at a time. Event-level bps
+entry notional = min(USD 45, available cash minus USD 5), with a fixed
+USD 5 reserve and initial cash USD 50, one position at a time. Skip for capital
+only when this notional is below USD 5. This USD 5 minimum is a continuous-model
+accounting floor, not an observed exchange minimum. Profits never raise the
+USD 45 size cap; losses reduce size, and later recovery may restore that cap.
+No borrowing or growth above the original cap is modeled. Event-level bps
 use the same linear price/cost model; this smaller portfolio size is explicit. Simultaneous signals
 are ordered by SHA-256 of `b3a-v1|symbol|decision_ms`; an exit at the same time
 is processed before a new entry. Preserve capital, slot and missing-data skips.
@@ -257,10 +261,16 @@ pinned index, with all truncated-page tails and intervening gaps accounted for.
 The absence of a row without proven query coverage is never zero funding.
 Zero-volume execution bars are unresolved; mark bars have no volume field.
 
-The one-slot report uses a fixed USD 45 notional and USD 5 reserve for each
-entry, so it refuses a new position if cash has fallen below USD 50. That
-conservative restriction is explicit in capital-skip counts. Drawdown and daily
-PnL are realized-only diagnostics; neither estimates intrabar liquidation risk.
+The one-slot report stores each selected position's actual model notional and
+uses that amount in its eventual PnL. A small loss below initial USD 50 no
+longer halts the book: min(45, cash minus 5) remains eligible while at least
+USD 5. Native sizing is still unverified. Report the known prefix in closed
+trades, opportunities, elapsed days and touched UTC dates, ending immediately
+before the first selected unresolved entry, or at the cohort's last exit when
+fully known. A prefix of zero duration touches zero dates. The unresolved
+entry and everything after it stay unknown; this amendment does not substitute
+a skipped-trade or zero-PnL path. Drawdown and daily PnL are realized-only
+diagnostics; neither estimates intrabar liquidation risk.
 
 See [runbook](b3-economic-screen-runbook-v1.md). Before opening a connection,
 the CLI requires a clean revision included in origin/main, exact publication
@@ -284,3 +294,18 @@ Primary references checked for semantics, not historical execution evidence:
 [mark klines](https://bybit-exchange.github.io/docs/v5/market/mark-kline),
 and [funding calculation](https://www.bybit.com/en/help-center/article/Funding-fee-calculation).
 Documentation examples are illustrative, not new strategy inputs.
+
+## Targeted review correction before outcomes, 2026-11-13
+
+The review of `1033ca9` found that requiring cash at least USD 50 halted the
+one-slot diagnostic after its first loss. The corrected model sizes at
+min(45, cash minus 5), with a USD 5 accounting minimum, and stores the selected
+size until close. The synthetic regression is one loss of 1 bps followed by
+49 wins of 40 bps; it must accept all 50 positions and account for the reduced
+second position. This is not a market return or a newly selected strategy.
+
+Report explicit verdict-reason codes, including excessive top-five-symbol
+concentration, without changing the registered verdict ordering. The two-week
+bootstrap remains circular; its report explicitly states that the last calendar
+week can be paired with the first. No signal, cost, event-level nomination rule,
+request scope or native-read authorization changes in this correction.
