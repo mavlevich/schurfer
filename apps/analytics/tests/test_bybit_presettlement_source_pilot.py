@@ -191,6 +191,25 @@ def test_real_zip_csv_quality_keeps_masked_values_opaque(tmp_path: Path) -> None
     assert not r["maker_volume_identified"]
 
 
+def test_native_day_trailer_is_counted_without_applying_prices(tmp_path: Path) -> None:
+    start = FIRST + 5 * 60_000
+    book = tmp_path / "book.zip"
+    rows = [
+        message(start, "snapshot", 1, [["100", "3"]], [["101", "3"]]),
+        message(FIRST + 86_400_000 + 1000, "snapshot", 2, [["DO_NOT_PARSE", "x"]], []),
+    ]
+    with zipfile.ZipFile(book, "w") as out:
+        out.writestr("data", "\n".join(json.dumps(m) for m in rows) + "\n")
+    tape = tmp_path / "trades.csv.gz"
+    with gzip.open(tape, "wt") as out:
+        out.write("timestamp,symbol,side,size,price\n")
+        out.write(f"{(start + 50) / 1000},TESTUSDT,Sell,1,100\n")
+    r = q.inspect_pair(book, tape, "TESTUSDT", q.InflatedBudget(), "2024-10-01")
+    assert r["book_counts"]["messages"] == 1
+    assert r["book_counts"]["off_day_rows_ignored"] == 1
+    assert r["strict_prior_quote_alignment"]["consistent"] == 1
+
+
 def test_outside_discovery_refused_before_prices_are_parsed() -> None:
     b = q.Book("TESTUSDT")
     m = message(END, "snapshot", 1, [["DO_NOT_PARSE", "1"]], [["x", "1"]])

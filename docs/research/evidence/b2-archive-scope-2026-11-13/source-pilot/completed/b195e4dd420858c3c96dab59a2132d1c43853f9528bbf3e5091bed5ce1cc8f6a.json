@@ -1,0 +1,15 @@
+{
+  "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+  "path": "runtime/research/b2/source-pilot/bodies/b195e4dd420858c3c96dab59a2132d1c43853f9528bbf3e5091bed5ce1cc8f6a.csv.gz",
+  "recovered_after_publication": false,
+  "sha256": "425b3de76346b68f1cd97e2fd909a194081d7d35f87cc855fd36674b84601a2f",
+  "task": {
+    "bytes": 1911110,
+    "day": "2025-08-23",
+    "etag": "\"24b530e6eaabb5564540d8ab3266c967\"",
+    "id": "b195e4dd420858c3c96dab59a2132d1c43853f9528bbf3e5091bed5ce1cc8f6a",
+    "kind": "trades",
+    "symbol": "ASRUSDT",
+    "url": "https://public.bybit.com/trading/ASRUSDT/ASRUSDT2025-08-23.csv.gz"
+  }
+}

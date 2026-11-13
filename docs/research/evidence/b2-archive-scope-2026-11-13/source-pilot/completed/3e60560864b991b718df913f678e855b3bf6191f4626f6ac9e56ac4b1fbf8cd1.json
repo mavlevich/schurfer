@@ -1,0 +1,15 @@
+{
+  "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+  "path": "runtime/research/b2/source-pilot/bodies/3e60560864b991b718df913f678e855b3bf6191f4626f6ac9e56ac4b1fbf8cd1.data.zip",
+  "recovered_after_publication": false,
+  "sha256": "309bca3082594747f0a9b403e0f856773d4bb02cecfc6ad668751a9721630234",
+  "task": {
+    "bytes": 81289410,
+    "day": "2025-04-11",
+    "etag": "\"40106fc96dc7fb65be6430ef5084da6a\"",
+    "id": "3e60560864b991b718df913f678e855b3bf6191f4626f6ac9e56ac4b1fbf8cd1",
+    "kind": "ob500",
+    "symbol": "AUCTIONUSDT",
+    "url": "https://quote-saver.bycsi.com/orderbook/linear/AUCTIONUSDT/2025-04-11_AUCTIONUSDT_ob500.data.zip"
+  }
+}

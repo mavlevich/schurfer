@@ -1,0 +1,15 @@
+{
+  "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+  "path": "runtime/research/b2/source-pilot/bodies/197fcfea87a39e4bb000cdb2b3f53177d74b07988164b9a32db0c1bbf1785a5c.csv.gz",
+  "recovered_after_publication": false,
+  "sha256": "73734c8779ce24edf47449b10f8edae2fd63899a19ce0b959c351ab2e27711ff",
+  "task": {
+    "bytes": 17309548,
+    "day": "2025-04-11",
+    "etag": "\"7394264ee968691a8f3b9c8aa6732fd8-3\"",
+    "id": "197fcfea87a39e4bb000cdb2b3f53177d74b07988164b9a32db0c1bbf1785a5c",
+    "kind": "trades",
+    "symbol": "AUCTIONUSDT",
+    "url": "https://public.bybit.com/trading/AUCTIONUSDT/AUCTIONUSDT2025-04-11.csv.gz"
+  }
+}

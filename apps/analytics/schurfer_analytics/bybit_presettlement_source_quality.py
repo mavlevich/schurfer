@@ -26,7 +26,7 @@ from .bybit_presettlement_source_fetch import file_sha
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-VERSION = "b2_source_quality_v1"
+VERSION = "b2_source_quality_v2_native_day_clip"
 MAX_LINE = 1024 * 1024
 MAX_FILE_INFLATED = 4 * 1024**3
 MAX_TOTAL_INFLATED = 32 * 1024**3
@@ -255,6 +255,14 @@ def inspect_pair(
         with archive.open(members[0]) as source:
             for line in budget.lines(source):
                 message = json.loads(line)
+                # Native archives carry a closing snapshot after the named UTC day.
+                # Count its timestamp only; never apply its prices or advance the tape.
+                if date is not None:
+                    stamp = int(message["ts"])
+                    stamp_day = datetime.fromtimestamp(stamp / 1000, UTC).date().isoformat()
+                    if stamp_day != date:
+                        book.counts["off_day_rows_ignored"] += 1
+                        continue
                 # Fix a clock per file; never switch axes after seeing an alignment.
                 key = (
                     "cts"
@@ -269,6 +277,8 @@ def inspect_pair(
     while pending is not None:
         compare(pending)
         pending = next(stream, None)
+    if not book.counts["messages"]:
+        raise ValueError("native file contains no in-day book messages")
     return {
         "symbol": symbol,
         "book_clock": book.clock,

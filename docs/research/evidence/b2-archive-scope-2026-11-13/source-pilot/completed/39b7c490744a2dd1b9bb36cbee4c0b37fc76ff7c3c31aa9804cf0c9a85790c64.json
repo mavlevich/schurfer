@@ -1,0 +1,15 @@
+{
+  "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+  "path": "runtime/research/b2/source-pilot/bodies/39b7c490744a2dd1b9bb36cbee4c0b37fc76ff7c3c31aa9804cf0c9a85790c64.data.zip",
+  "recovered_after_publication": false,
+  "sha256": "76104f6406b7defe8e31c252f86f8df4e9798ff59fbeed546a9a5128013343b3",
+  "task": {
+    "bytes": 36856663,
+    "day": "2025-03-20",
+    "etag": "\"5176701892b1eb2fefd523eead48d34d\"",
+    "id": "39b7c490744a2dd1b9bb36cbee4c0b37fc76ff7c3c31aa9804cf0c9a85790c64",
+    "kind": "ob500",
+    "symbol": "VIDTUSDT",
+    "url": "https://quote-saver.bycsi.com/orderbook/linear/VIDTUSDT/2025-03-20_VIDTUSDT_ob500.data.zip"
+  }
+}

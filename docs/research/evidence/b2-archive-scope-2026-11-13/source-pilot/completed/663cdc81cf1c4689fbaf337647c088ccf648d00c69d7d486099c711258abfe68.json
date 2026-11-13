@@ -1,0 +1,15 @@
+{
+  "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+  "path": "runtime/research/b2/source-pilot/bodies/663cdc81cf1c4689fbaf337647c088ccf648d00c69d7d486099c711258abfe68.data.zip",
+  "recovered_after_publication": false,
+  "sha256": "310279e80aa29eb0b388589b622ae78072930ab326f651d417ad954366109e88",
+  "task": {
+    "bytes": 10522221,
+    "day": "2025-08-23",
+    "etag": "\"031e55e8fc4af90029e3d071dec7da3b\"",
+    "id": "663cdc81cf1c4689fbaf337647c088ccf648d00c69d7d486099c711258abfe68",
+    "kind": "ob200",
+    "symbol": "ASRUSDT",
+    "url": "https://quote-saver.bycsi.com/orderbook/linear/ASRUSDT/2025-08-23_ASRUSDT_ob200.data.zip"
+  }
+}

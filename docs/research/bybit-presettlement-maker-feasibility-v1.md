@@ -127,7 +127,7 @@ run bindings. Keep native files opaque and immutable with SHA-256 receipts.
 
 The quality inspector streams ZIP/CSV without extracting members: at most one
 book member, 1 MiB per line, 4 GiB inflated per file and 32 GiB in total. Refuse
-unsupported schemas and timestamps outside the registered discovery/file day.
+unsupported schemas and in-scope timestamps outside the registered discovery.
 Report schemas, counts, sequence/clock regressions, observed depth counts, cadence,
 quantity/notional consistency and strict-prior-quote alignment. The diagnostic
 staleness counter uses 5 seconds; it is not a replay admission threshold.
@@ -143,6 +143,17 @@ clock proxy. No missing field is inferred from present-day API documentation.
 After this source-only pilot, record limitations before deciding whether a
 defensible entry replay can proceed. Neither a complete download nor a successful
 parse by itself is an execution-quality or economic pass.
+
+The first implementation (`c1c9fae`) rejected all 12 pairs at a book row outside
+the named file day. Retained timestamp-only boundary inspection showed that all
+12 archives end with a snapshot 0.655 to 1.904 seconds after the next midnight.
+The original report is retained as `quality-v1.json`; it is not replaced or called
+a successful parse. Before rerunning, version 2 clips book rows to the named UTC
+day: count off-day rows, skip their levels before numeric conversion and before
+advancing trade alignment. An entirely off-day book remains invalid. This is a
+correction of the archive-boundary assumption, not a change to an execution,
+signal, cost, coverage or profitability threshold. No fill/strategy return has
+been read. The transport, frozen pilot and native checksums remain unchanged.
 
 ## What can proceed
 

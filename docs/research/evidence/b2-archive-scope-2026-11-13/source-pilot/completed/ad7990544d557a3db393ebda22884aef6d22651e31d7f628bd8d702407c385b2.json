@@ -1,0 +1,15 @@
+{
+  "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+  "path": "runtime/research/b2/source-pilot/bodies/ad7990544d557a3db393ebda22884aef6d22651e31d7f628bd8d702407c385b2.data.zip",
+  "recovered_after_publication": false,
+  "sha256": "f096eef5f3cd2497f70c83e77d6f4e5b724c284b3f89758b908915c0cf710920",
+  "task": {
+    "bytes": 22005149,
+    "day": "2025-06-01",
+    "etag": "\"f662e4befeeeae518357b75b27557571\"",
+    "id": "ad7990544d557a3db393ebda22884aef6d22651e31d7f628bd8d702407c385b2",
+    "kind": "ob500",
+    "symbol": "OMGUSDT",
+    "url": "https://quote-saver.bycsi.com/orderbook/linear/OMGUSDT/2025-06-01_OMGUSDT_ob500.data.zip"
+  }
+}

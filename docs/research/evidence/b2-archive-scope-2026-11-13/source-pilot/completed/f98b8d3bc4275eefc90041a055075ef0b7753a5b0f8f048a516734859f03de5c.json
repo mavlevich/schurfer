@@ -1,0 +1,15 @@
+{
+  "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+  "path": "runtime/research/b2/source-pilot/bodies/f98b8d3bc4275eefc90041a055075ef0b7753a5b0f8f048a516734859f03de5c.data.zip",
+  "recovered_after_publication": false,
+  "sha256": "09e6d0a9ca2643509517fefb8a19e409c4553a4ce35aba6294880b7337ae7e83",
+  "task": {
+    "bytes": 147007705,
+    "day": "2025-02-17",
+    "etag": "\"abe00d483fcc8c11e0237059bd43bea1\"",
+    "id": "f98b8d3bc4275eefc90041a055075ef0b7753a5b0f8f048a516734859f03de5c",
+    "kind": "ob500",
+    "symbol": "IPUSDT",
+    "url": "https://quote-saver.bycsi.com/orderbook/linear/IPUSDT/2025-02-17_IPUSDT_ob500.data.zip"
+  }
+}

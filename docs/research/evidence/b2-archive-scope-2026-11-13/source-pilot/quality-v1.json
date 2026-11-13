@@ -1,0 +1,98 @@
+{
+  "elapsed_seconds": 541.073,
+  "fills_or_strategy_returns_computed": false,
+  "inflated_bytes": 7129991849,
+  "manifest_sha256": "527b7446887d1f6c466c9891d9f1ef67134dc4b86aaf7a30d3f83c8ddc9bb0a0",
+  "masked_tape_rule": "minutes :55 through :04; row count only",
+  "pairs": [
+    {
+      "day": "2025-08-23",
+      "failure_reason": "book clock outside native file day",
+      "failure_type": "ValueError",
+      "status": "invalid_or_unsupported_source",
+      "symbol": "ASRUSDT"
+    },
+    {
+      "day": "2025-04-11",
+      "failure_reason": "book clock outside native file day",
+      "failure_type": "ValueError",
+      "status": "invalid_or_unsupported_source",
+      "symbol": "AUCTIONUSDT"
+    },
+    {
+      "day": "2025-02-17",
+      "failure_reason": "book clock outside native file day",
+      "failure_type": "ValueError",
+      "status": "invalid_or_unsupported_source",
+      "symbol": "IPUSDT"
+    },
+    {
+      "day": "2025-02-10",
+      "failure_reason": "book clock outside native file day",
+      "failure_type": "ValueError",
+      "status": "invalid_or_unsupported_source",
+      "symbol": "MEUSDT"
+    },
+    {
+      "day": "2025-07-09",
+      "failure_reason": "book clock outside native file day",
+      "failure_type": "ValueError",
+      "status": "invalid_or_unsupported_source",
+      "symbol": "MUSDT"
+    },
+    {
+      "day": "2025-06-01",
+      "failure_reason": "book clock outside native file day",
+      "failure_type": "ValueError",
+      "status": "invalid_or_unsupported_source",
+      "symbol": "OMGUSDT"
+    },
+    {
+      "day": "2025-08-24",
+      "failure_reason": "book clock outside native file day",
+      "failure_type": "ValueError",
+      "status": "invalid_or_unsupported_source",
+      "symbol": "PROMPTUSDT"
+    },
+    {
+      "day": "2025-07-22",
+      "failure_reason": "book clock outside native file day",
+      "failure_type": "ValueError",
+      "status": "invalid_or_unsupported_source",
+      "symbol": "SPKUSDT"
+    },
+    {
+      "day": "2025-02-18",
+      "failure_reason": "book clock outside native file day",
+      "failure_type": "ValueError",
+      "status": "invalid_or_unsupported_source",
+      "symbol": "STMXUSDT"
+    },
+    {
+      "day": "2025-05-07",
+      "failure_reason": "book clock outside native file day",
+      "failure_type": "ValueError",
+      "status": "invalid_or_unsupported_source",
+      "symbol": "STPTUSDT"
+    },
+    {
+      "day": "2024-12-27",
+      "failure_reason": "book clock outside native file day",
+      "failure_type": "ValueError",
+      "status": "invalid_or_unsupported_source",
+      "symbol": "UXLINKUSDT"
+    },
+    {
+      "day": "2025-03-20",
+      "failure_reason": "book clock outside native file day",
+      "failure_type": "ValueError",
+      "status": "invalid_or_unsupported_source",
+      "symbol": "VIDTUSDT"
+    }
+  ],
+  "recorded_at_utc": "2026-11-13T12:34:43.321919+00:00",
+  "revision": "c1c9faeb29d3c996979dda0a45f625f44b1066aa",
+  "source_sha256": "8608d94ea52202c23b1059fd1564a75e0c7d4ef994782b35413e1fafc992b72a",
+  "version": "b2_source_quality_v1",
+  "working_tree_dirty": false
+}

@@ -1,0 +1,15 @@
+{
+  "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+  "path": "runtime/research/b2/source-pilot/bodies/eba21ddb727e6009d691e114c367ff242347bc5633808c2aa05b778e440f58a6.csv.gz",
+  "recovered_after_publication": false,
+  "sha256": "8a52f2f79a6117ffd874f037feb55a630da09811eb2e4dbc4e0a59745eefcb53",
+  "task": {
+    "bytes": 33224358,
+    "day": "2025-02-10",
+    "etag": "\"08c7dbf6cd3527076836515fd5322878-4\"",
+    "id": "eba21ddb727e6009d691e114c367ff242347bc5633808c2aa05b778e440f58a6",
+    "kind": "trades",
+    "symbol": "MEUSDT",
+    "url": "https://public.bybit.com/trading/MEUSDT/MEUSDT2025-02-10.csv.gz"
+  }
+}

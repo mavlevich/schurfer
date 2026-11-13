@@ -1,0 +1,15 @@
+{
+  "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+  "path": "runtime/research/b2/source-pilot/bodies/8f2258f0246a2eab60398690073186696b6c1aea2895aa9da616d89ed791a5f1.data.zip",
+  "recovered_after_publication": false,
+  "sha256": "7a412caeaf843aae807e29662e9996a5fcb0fba3b504e8c3cde375f50834d154",
+  "task": {
+    "bytes": 50061753,
+    "day": "2025-05-07",
+    "etag": "\"c9d2e57d396fe887d9829ddcdada0211\"",
+    "id": "8f2258f0246a2eab60398690073186696b6c1aea2895aa9da616d89ed791a5f1",
+    "kind": "ob500",
+    "symbol": "STPTUSDT",
+    "url": "https://quote-saver.bycsi.com/orderbook/linear/STPTUSDT/2025-05-07_STPTUSDT_ob500.data.zip"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+  "path": "runtime/research/b2/source-pilot/bodies/38beb1d2c85153b5e4f81129e3732e1d2e15821139546dcf7f863ca9a581917b.csv.gz",
+  "recovered_after_publication": false,
+  "sha256": "31cdd90c9bb7f6468266b2b9a179c9b42a7078871f896c90356e5e52cfe451dd",
+  "task": {
+    "bytes": 9660306,
+    "day": "2025-06-01",
+    "etag": "\"8b756b1c961a9a8b25fd7deeb4ef31d4-2\"",
+    "id": "38beb1d2c85153b5e4f81129e3732e1d2e15821139546dcf7f863ca9a581917b",
+    "kind": "trades",
+    "symbol": "OMGUSDT",
+    "url": "https://public.bybit.com/trading/OMGUSDT/OMGUSDT2025-06-01.csv.gz"
+  }
+}

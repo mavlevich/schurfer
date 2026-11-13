@@ -1,0 +1,15 @@
+{
+  "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+  "path": "runtime/research/b2/source-pilot/bodies/4447e323affd81b5cb993f784af1a764e6560ac2a83ac2cced2e402daf8d3102.csv.gz",
+  "recovered_after_publication": false,
+  "sha256": "4270abd08c8ec35dccc57c8b1d6c089f4a21a1e5761ceb5fa154ff2d07dcd8a9",
+  "task": {
+    "bytes": 50516941,
+    "day": "2024-12-27",
+    "etag": "\"8213dfcf1525a63f308461735c0e5861-7\"",
+    "id": "4447e323affd81b5cb993f784af1a764e6560ac2a83ac2cced2e402daf8d3102",
+    "kind": "trades",
+    "symbol": "UXLINKUSDT",
+    "url": "https://public.bybit.com/trading/UXLINKUSDT/UXLINKUSDT2024-12-27.csv.gz"
+  }
+}

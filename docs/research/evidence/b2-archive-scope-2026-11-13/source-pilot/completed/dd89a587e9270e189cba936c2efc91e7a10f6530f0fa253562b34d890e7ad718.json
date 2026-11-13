@@ -1,0 +1,15 @@
+{
+  "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+  "path": "runtime/research/b2/source-pilot/bodies/dd89a587e9270e189cba936c2efc91e7a10f6530f0fa253562b34d890e7ad718.data.zip",
+  "recovered_after_publication": false,
+  "sha256": "9b6b4098a491c41064ddb3da48b9ff97073f7fd8dd9372cd789136018c1ebe6c",
+  "task": {
+    "bytes": 105016217,
+    "day": "2025-02-10",
+    "etag": "\"59d915288a570b2471416f9ef9cff44b\"",
+    "id": "dd89a587e9270e189cba936c2efc91e7a10f6530f0fa253562b34d890e7ad718",
+    "kind": "ob500",
+    "symbol": "MEUSDT",
+    "url": "https://quote-saver.bycsi.com/orderbook/linear/MEUSDT/2025-02-10_MEUSDT_ob500.data.zip"
+  }
+}

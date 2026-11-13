@@ -1,0 +1,15 @@
+{
+  "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+  "path": "runtime/research/b2/source-pilot/bodies/d5d73f3af1f6ae81f198134b959cb3c571864178d2976c299aa8483779003048.data.zip",
+  "recovered_after_publication": false,
+  "sha256": "1bb2f74606531c274f3ff4e36f13429b80533db4dafafcfea84eabe10bb6a721",
+  "task": {
+    "bytes": 243974109,
+    "day": "2025-08-24",
+    "etag": "\"bcb51822137ef00b35fc97879e5fe518\"",
+    "id": "d5d73f3af1f6ae81f198134b959cb3c571864178d2976c299aa8483779003048",
+    "kind": "ob200",
+    "symbol": "PROMPTUSDT",
+    "url": "https://quote-saver.bycsi.com/orderbook/linear/PROMPTUSDT/2025-08-24_PROMPTUSDT_ob200.data.zip"
+  }
+}

@@ -330,3 +330,12 @@ are excluded before price/size/turnover conversion and counted only as rows,
 preserving the seconds-study tape reservation. Missing BT/RPI fields and engine
 clocks remain unknown. No fills, strategy outcomes, test-year, backward-holdout
 or HYP-012 v2 blind-window read is authorized by this entry.
+
+The first source-quality implementation rejected all 12 pairs because native
+book archives end after their named UTC day. It computed no fills or returns;
+its exact report is retained. A timestamp-only boundary check found closing
+snapshots 0.655 to 1.904 seconds after the next midnight. Before the second read,
+register source-quality v2: off-day book rows are counted and skipped before
+level conversion or tape alignment. This clips the source to the existing
+population rather than extending the read window. No signal, execution policy,
+threshold, pilot ID or native input changes. Reserved trade minutes remain opaque.
