@@ -1,9 +1,10 @@
 # Program plan after the method retrospective (proposal, 2026-11-11)
 
-Status: **proposal for one review round (the colleague and two outside reviewers), then
-the owner's decision.** If adopted, it amends the [2026-11-09 program review](program-review-2026-11-09.md),
-which stopped the program, and [strategy v2](research-strategy-v2.md) where section 1
-says so. Until then nothing below runs. It follows the
+Status, updated 2026-11-13: **B1 and bounded B2 continuation authorized by the owner;
+later economic, test and live stages remain separately gated.** The original
+2026-11-11 proposal follows the [2026-11-09 program review](program-review-2026-11-09.md),
+which stopped the program, and amends [strategy v2](research-strategy-v2.md) only
+within the specifically accepted research scope. It follows the
 [method retrospective](method-retrospective-v1.md) and the
 [resume readiness note](resume-readiness-v1.md).
 
@@ -68,6 +69,15 @@ A second series followed the same night: 54 configurations of pump long, post-pu
   costs (-4.7 gross). **4-hour contracts were chosen after seeing these returns;** that choice is part of the selection history and is counted in any later confirmation. B1 fetches and reports every interval, but B2 for 4-hour contracts starts only when the 4-hour group passes on its own: S1 on the 4-hour settlements with the same thresholds and minimum counts, and the 4-hour group's own event floor at the chosen d. A pooled `pass` is not enough. 1-hour and 2-hour contracts go on only if B1 shows the same for their own group.
 
 ## 3. Track B: HYP-031 family, entry before settlement
+
+Consolidation checkpoint, 2026-11-13: #591 publishes the canonical four-hour B1
+result and bounded B2 source history, including the prior local-only registration
+gap. Preserve the other all-class B1 branch/snapshot, without a duplicate report
+or automatic threshold substitution. The [entry pilot](b2-entry-pilot-result-2026-11-13.md)
+is complete; execution identification remains unresolved. Discuss this result
+before a larger corpus or B3. The [power-method note](power-design-budget-2026-11-13.md)
+opens no new candidate and does not reopen track A. HYP-038 radar cases remain
+intake-only until v2's terminal state under their separate recorded boundary.
 
 **Question.** On Bybit USDT perpetuals with extreme negative funding, does a long opened
 by a resting limit order about 30 minutes before settlement and closed at or just before

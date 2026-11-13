@@ -382,3 +382,16 @@ main-published narrow mask amendment remain prerequisites for any exit read.
 The power-budget note uses only the sealed HYP-037 MDEs and arithmetic, with no
 new data exposure. HYP-037 A/B remain closed; no method or threshold was selected
 from a new outcome.
+
+The entry pilot completed on clean `d6f0ece` after #591 merged in main at
+2026-11-13T15:53:52Z. **Level: outcomes (execution-model labels only)**, not strategy
+returns. The ten original days produce 24 primary decisions and 184 overlapping
+configuration instances across all eight settings. Strict primary has 11
+unknown-class cases, 9 modeled post-only rejections and 4 no-qualifying-flow cases;
+the all-unknown-eligible sensitivity gives 9 full modeled fills, not a real fill
+rate. The 300s setting fails the fixed 95% source floor (21/24 complete).
+Source-only quote diagnostics on all 12 frozen days split the old 911,480
+discrepancies into 432,934 inside-spread and 478,546 at/beyond old opposite quotes;
+neither category is automatically corrupt data. See [result](b2-entry-pilot-result-2026-11-13.md).
+No new download, masked tape, exit, funding payment, economic return, independent
+test or HYP-012 v2 blind-window read occurred. No configuration was selected.

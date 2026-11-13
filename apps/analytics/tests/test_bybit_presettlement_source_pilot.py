@@ -93,6 +93,25 @@ def test_changed_source_etag_does_not_become_native_evidence(tmp_path: Path) -> 
     assert not list((tmp_path / "source/bodies").iterdir())
 
 
+def test_native_receipt_can_move_between_worktrees_without_path_escape(tmp_path: Path) -> None:
+    root = tmp_path / "moved"
+    (root / "bodies").mkdir(parents=True)
+    expected = root / "bodies/test.csv.gz"
+    expected.write_bytes(b"body")
+    receipt = {"task": contract()["tasks"][0], "path": "old/worktree/bodies/test.csv.gz"}
+    assert f.body_path(root, receipt).read_bytes() == b"body"
+    receipt["path"] = "old/wrong.csv.gz"
+    with pytest.raises(ValueError, match="filename"):
+        f.body_path(root, receipt)
+    expected.unlink()
+    outside = tmp_path / "outside.csv.gz"
+    outside.write_bytes(b"body")
+    expected.symlink_to(outside)
+    receipt["path"] = "old/test.csv.gz"
+    with pytest.raises(ValueError, match="escapes"):
+        f.body_path(root, receipt)
+
+
 def test_partial_retry_is_charged_and_publication_gap_recovers(tmp_path: Path) -> None:
     calls = []
 

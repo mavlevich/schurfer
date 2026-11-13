@@ -1,0 +1,10 @@
+{
+  "all_native_hashes_verified": true,
+  "archive_root_from_project": "runtime/research/b2/native-source-pilot-527b7446",
+  "manifest_sha256": "527b7446887d1f6c466c9891d9f1ef67134dc4b86aaf7a30d3f83c8ddc9bb0a0",
+  "method": "hard-linked immutable bodies; copied/fsynced metadata; atomic publication",
+  "native_bytes": 1555848890,
+  "native_files": 24,
+  "new_downloads": 0,
+  "outside_disposable_worktrees": true
+}

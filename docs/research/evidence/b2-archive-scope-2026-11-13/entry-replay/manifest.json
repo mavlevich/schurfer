@@ -1,0 +1,15 @@
+{
+  "files": {
+    "archive-location.json": "f3f1ec0296f6daaccd88c2ccb2b5082c0be77196cb48c207c0c5f45f82de24e2",
+    "invocation.json": "fe8d82d1c7f2a267d02a582925dc4893bdd1a20c4de60b9ee78194ee635e3ef7",
+    "main-publication.json": "ae7d75247e52df67056810bb89dbebabdd032efd2d963e4e50c6429dd38a6b2e",
+    "quote-diagnostics.json": "c8008f26069effa7b6adcdac7cdadb34bb612713f3e38906120e7f013c14e366",
+    "result.json": "941978473831f538c23c39beb2bd28bcd51d949be16929cc778a5a7c477d6ff8",
+    "summary.json": "c3a3c8dff4bd401cfeb5fdfe2e75c4e4d67fe103b94c7434f008eae059879d8e",
+    "verification.json": "efe74111e16664d9a804effe7125128e7473ba26958eecf23a4a97b3a99f3799"
+  },
+  "new_downloads": 0,
+  "read_revision": "d6f0eceebc139f816f9257a50b78113864b097a1",
+  "source_manifest_sha256": "527b7446887d1f6c466c9891d9f1ef67134dc4b86aaf7a30d3f83c8ddc9bb0a0",
+  "strategy_returns_computed": false
+}

@@ -21,12 +21,12 @@ from .bybit_compressed_spring import minute_masked
 from .bybit_presettlement_book_scope import END, FIRST
 from .bybit_presettlement_bounded_fetch import clean_revision
 from .bybit_presettlement_source_fetch import VERSION as FETCH_VERSION
-from .bybit_presettlement_source_fetch import file_sha
+from .bybit_presettlement_source_fetch import body_path, file_sha
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-VERSION = "b2_source_quality_v2_native_day_clip"
+VERSION = "b2_source_quality_v3_quote_categories"
 MAX_LINE = 1024 * 1024
 MAX_FILE_INFLATED = 4 * 1024**3
 MAX_TOTAL_INFLATED = 32 * 1024**3
@@ -214,7 +214,14 @@ def trades(
                 unit = Decimal(1).scaleb(int(foreign.as_tuple().exponent))
                 counts["unit_checks"] += 1
                 counts["unit_mismatches"] += home != size or abs(foreign - price * size) > unit
-            yield {"at": at, "price": price, "side": row["side"]}
+            yield {
+                "at": at,
+                "price": price,
+                "side": row["side"],
+                "size": size,
+                "BT": row.get("BT"),
+                "RPI": row.get("RPI"),
+            }
 
 
 def inspect_pair(
@@ -247,6 +254,12 @@ def inspect_pair(
                 else row["price"] <= book.best_bid
             )
             alignment["consistent" if consistent else "violates_prior_quote"] += 1
+            if not consistent:
+                alignment[
+                    "inside_prior_engine_spread"
+                    if book.best_bid < row["price"] < book.best_ask
+                    else "opposite_or_at_prior_engine_quote"
+                ] += 1
 
     with zipfile.ZipFile(book_path) as archive:
         members = [m for m in archive.infolist() if not m.is_dir()]
@@ -322,7 +335,7 @@ def main() -> None:
         raise ValueError("source manifest binding differs")
     grouped: dict[tuple[str, str], dict[str, Path]] = {}
     for key, record in files.items():
-        path = Path(record["path"])
+        path = body_path(args.run, record)
         if (
             record["binding"] != manifest["binding"]
             or record["task"] != tasks[key]

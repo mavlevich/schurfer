@@ -164,3 +164,26 @@ The earlier parked/pending statuses are superseded by this result. No net or
 setup mean is known. No changes to the thresholds or lag/maximum rules follow.
 The proposed C group and hourly execution variant were considered before this
 calibration and were not added to the registered A/B experiment.
+
+## HYP-031 family: B2 entry-model pilot, 2026-11-13
+
+The [entry-only contract](b2-entry-pilot-contract-v1.md) was published in main by
+#591 before this computation. The [result](b2-entry-pilot-result-2026-11-13.md)
+uses clean `d6f0ece`, the frozen B1 four-hour export and ten original source-pilot
+days. Eight predeclared configurations and two explicit eligibility assumptions
+were reported without selecting a winner. There are 24 primary decisions and
+184 overlapping configuration instances, not independent confirmations.
+
+Primary model: 9 post-only rejections, 11 unknown-trade-class cases and 4 cases
+with no qualifying observed flow. Treating unknown prints as eligible produces
+9 full modeled fills out of all 24 signals; this is a conditional sensitivity,
+not observed API-maker execution. The 300s wait fails the fixed 95% source floor
+at 87.5%. Native order sizing remains unverified throughout. A separate source
+audit adds quote-discrepancy categories and reproduces all old core counters.
+
+Exposure is execution-model outcomes on reused discovery, with no strategy PnL,
+actual funding payment, exit read or independent-window expenditure. Unknowns,
+rejections and incomplete paths stay in the denominator. No parameter is tuned,
+no full-corpus download is released, and no strategy is promoted. Further B3
+work requires frozen exits, explicit execution assumptions and a separate read
+decision, carrying the existing exploratory and variant history forward.

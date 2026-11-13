@@ -1,0 +1,2171 @@
+{
+  "completed_at_utc": "2026-11-13T16:04:42.136932+00:00",
+  "elapsed_seconds": 520.745,
+  "events_sha256": "4f1554108d6da503630d24d5b123d8000532b7bb3decb33f033e57dab65711f7",
+  "fills_are_conditional_model_outputs": true,
+  "inflated_bytes": 3816682730,
+  "manifest_sha256": "527b7446887d1f6c466c9891d9f1ef67134dc4b86aaf7a30d3f83c8ddc9bb0a0",
+  "mask_source_sha256": "53d986820dc0777d431d21dd99210fc3c7cca4e03c8fae5f0f0adf7a1f107115",
+  "pilot_days": [
+    {
+      "day": "2025-03-20",
+      "events": [
+        {
+          "configuration": "primary",
+          "diagnostic_counts": {
+            "sell_at_limit": 4,
+            "sell_below_limit": 62,
+            "unknown": 66
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742441400000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "primary",
+          "diagnostic_counts": {
+            "sell_above_limit": 204,
+            "sell_at_limit": 10,
+            "sell_below_limit": 20,
+            "unknown": 30
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742455800000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "primary",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "VIDTUSDT:1742470200000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "primary",
+          "diagnostic_counts": {
+            "sell_above_limit": 89,
+            "sell_at_limit": 11,
+            "sell_below_limit": 14,
+            "unknown": 25
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742484600000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "primary",
+          "diagnostic_counts": {
+            "sell_above_limit": 9,
+            "sell_at_limit": 7,
+            "sell_below_limit": 239,
+            "unknown": 246
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742499000000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "primary",
+          "diagnostic_counts": {
+            "sell_above_limit": 57
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742513400000",
+          "native_order_sizing": "unverified",
+          "primary": "none",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "d15",
+          "diagnostic_counts": {
+            "sell_above_limit": 105
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742442300000",
+          "native_order_sizing": "unverified",
+          "primary": "none",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "d15",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "VIDTUSDT:1742456700000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "d15",
+          "diagnostic_counts": {
+            "sell_above_limit": 45,
+            "sell_at_limit": 5,
+            "sell_below_limit": 113,
+            "unknown": 118
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742471100000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "d15",
+          "diagnostic_counts": {
+            "sell_above_limit": 13,
+            "sell_at_limit": 10,
+            "sell_below_limit": 364,
+            "unknown": 374
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742485500000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "d15",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "VIDTUSDT:1742499900000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "d15",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "VIDTUSDT:1742514300000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "d10",
+          "diagnostic_counts": {
+            "sell_above_limit": 4,
+            "sell_at_limit": 11,
+            "sell_below_limit": 12,
+            "unknown": 23
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742442600000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "d10",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "VIDTUSDT:1742457000000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "d10",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "VIDTUSDT:1742471400000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "d10",
+          "diagnostic_counts": {
+            "sell_above_limit": 46,
+            "sell_at_limit": 10,
+            "sell_below_limit": 7,
+            "unknown": 17
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742485800000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "d10",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "VIDTUSDT:1742500200000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "d10",
+          "diagnostic_counts": {
+            "sell_above_limit": 17,
+            "sell_at_limit": 11,
+            "sell_below_limit": 14,
+            "unknown": 25
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742514600000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "wait300",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "incomplete_book_data",
+          "id": "VIDTUSDT:1742441400000",
+          "native_order_sizing": "unverified",
+          "primary": "incomplete_book_data",
+          "unknown_eligible_sensitivity": "incomplete_book_data"
+        },
+        {
+          "configuration": "wait300",
+          "diagnostic_counts": {
+            "sell_above_limit": 1324,
+            "sell_at_limit": 10,
+            "sell_below_limit": 20,
+            "unknown": 30
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742455800000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "wait300",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "VIDTUSDT:1742470200000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "wait300",
+          "diagnostic_counts": {
+            "sell_above_limit": 381,
+            "sell_at_limit": 15,
+            "sell_below_limit": 173,
+            "unknown": 188
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742484600000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "wait300",
+          "diagnostic_counts": {
+            "sell_above_limit": 9,
+            "sell_at_limit": 7,
+            "sell_below_limit": 1316,
+            "unknown": 1323
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742499000000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "wait300",
+          "diagnostic_counts": {
+            "sell_above_limit": 138,
+            "sell_at_limit": 18,
+            "sell_below_limit": 323,
+            "unknown": 341
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742513400000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "zero_queue",
+          "diagnostic_counts": {
+            "sell_at_limit": 4,
+            "sell_below_limit": 62,
+            "unknown": 66
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742441400000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "zero_queue",
+          "diagnostic_counts": {
+            "sell_above_limit": 204,
+            "sell_at_limit": 10,
+            "sell_below_limit": 20,
+            "unknown": 30
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742455800000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "zero_queue",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "VIDTUSDT:1742470200000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "zero_queue",
+          "diagnostic_counts": {
+            "sell_above_limit": 89,
+            "sell_at_limit": 11,
+            "sell_below_limit": 14,
+            "unknown": 25
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742484600000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "zero_queue",
+          "diagnostic_counts": {
+            "sell_above_limit": 9,
+            "sell_at_limit": 7,
+            "sell_below_limit": 239,
+            "unknown": 246
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742499000000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "zero_queue",
+          "diagnostic_counts": {
+            "sell_above_limit": 57
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742513400000",
+          "native_order_sizing": "unverified",
+          "primary": "none",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "usd25",
+          "diagnostic_counts": {
+            "sell_at_limit": 4,
+            "sell_below_limit": 62,
+            "unknown": 66
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742441400000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "usd25",
+          "diagnostic_counts": {
+            "sell_above_limit": 204,
+            "sell_at_limit": 10,
+            "sell_below_limit": 20,
+            "unknown": 30
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742455800000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "usd25",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "VIDTUSDT:1742470200000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "usd25",
+          "diagnostic_counts": {
+            "sell_above_limit": 89,
+            "sell_at_limit": 11,
+            "sell_below_limit": 14,
+            "unknown": 25
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742484600000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "usd25",
+          "diagnostic_counts": {
+            "sell_above_limit": 9,
+            "sell_at_limit": 7,
+            "sell_below_limit": 239,
+            "unknown": 246
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742499000000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "usd25",
+          "diagnostic_counts": {
+            "sell_above_limit": 57
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742513400000",
+          "native_order_sizing": "unverified",
+          "primary": "none",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "usd100",
+          "diagnostic_counts": {
+            "sell_at_limit": 4,
+            "sell_below_limit": 62,
+            "unknown": 66
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742441400000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "usd100",
+          "diagnostic_counts": {
+            "sell_above_limit": 204,
+            "sell_at_limit": 10,
+            "sell_below_limit": 20,
+            "unknown": 30
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742455800000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "usd100",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "VIDTUSDT:1742470200000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "usd100",
+          "diagnostic_counts": {
+            "sell_above_limit": 89,
+            "sell_at_limit": 11,
+            "sell_below_limit": 14,
+            "unknown": 25
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742484600000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "usd100",
+          "diagnostic_counts": {
+            "sell_above_limit": 9,
+            "sell_at_limit": 7,
+            "sell_below_limit": 239,
+            "unknown": 246
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742499000000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "usd100",
+          "diagnostic_counts": {
+            "sell_above_limit": 57
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742513400000",
+          "native_order_sizing": "unverified",
+          "primary": "none",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "arrival5000",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "VIDTUSDT:1742441400000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "arrival5000",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "VIDTUSDT:1742455800000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "arrival5000",
+          "diagnostic_counts": {
+            "sell_above_limit": 21,
+            "sell_at_limit": 7,
+            "sell_below_limit": 113,
+            "unknown": 120
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742470200000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "arrival5000",
+          "diagnostic_counts": {
+            "sell_above_limit": 84,
+            "sell_at_limit": 14,
+            "sell_below_limit": 23,
+            "unknown": 37
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742484600000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "arrival5000",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "VIDTUSDT:1742499000000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "arrival5000",
+          "diagnostic_counts": {
+            "sell_above_limit": 56
+          },
+          "excluded_unknown_case": "none",
+          "id": "VIDTUSDT:1742513400000",
+          "native_order_sizing": "unverified",
+          "primary": "none",
+          "unknown_eligible_sensitivity": "none"
+        }
+      ],
+      "symbol": "VIDTUSDT"
+    },
+    {
+      "day": "2025-05-07",
+      "events": [
+        {
+          "configuration": "primary",
+          "diagnostic_counts": {
+            "sell_above_limit": 8,
+            "sell_at_limit": 6,
+            "sell_below_limit": 206,
+            "unknown": 212
+          },
+          "excluded_unknown_case": "none",
+          "id": "STPTUSDT:1746617400000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "d15",
+          "diagnostic_counts": {
+            "sell_above_limit": 58,
+            "sell_below_limit": 41,
+            "unknown": 41
+          },
+          "excluded_unknown_case": "none",
+          "id": "STPTUSDT:1746618300000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "d10",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "incomplete_book_data",
+          "id": "STPTUSDT:1746618600000",
+          "native_order_sizing": "unverified",
+          "primary": "incomplete_book_data",
+          "unknown_eligible_sensitivity": "incomplete_book_data"
+        },
+        {
+          "configuration": "wait300",
+          "diagnostic_counts": {
+            "sell_above_limit": 81,
+            "sell_at_limit": 23,
+            "sell_below_limit": 584,
+            "unknown": 607
+          },
+          "excluded_unknown_case": "none",
+          "id": "STPTUSDT:1746617400000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "zero_queue",
+          "diagnostic_counts": {
+            "sell_above_limit": 8,
+            "sell_at_limit": 6,
+            "sell_below_limit": 206,
+            "unknown": 212
+          },
+          "excluded_unknown_case": "none",
+          "id": "STPTUSDT:1746617400000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "usd25",
+          "diagnostic_counts": {
+            "sell_above_limit": 8,
+            "sell_at_limit": 6,
+            "sell_below_limit": 206,
+            "unknown": 212
+          },
+          "excluded_unknown_case": "none",
+          "id": "STPTUSDT:1746617400000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "usd100",
+          "diagnostic_counts": {
+            "sell_above_limit": 8,
+            "sell_at_limit": 6,
+            "sell_below_limit": 206,
+            "unknown": 212
+          },
+          "excluded_unknown_case": "none",
+          "id": "STPTUSDT:1746617400000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "arrival5000",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "STPTUSDT:1746617400000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        }
+      ],
+      "symbol": "STPTUSDT"
+    },
+    {
+      "day": "2025-02-18",
+      "events": [
+        {
+          "configuration": "primary",
+          "diagnostic_counts": {
+            "sell_above_limit": 19
+          },
+          "excluded_unknown_case": "none",
+          "id": "STMXUSDT:1739849400000",
+          "native_order_sizing": "unverified",
+          "primary": "none",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "wait300",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "incomplete_book_data",
+          "id": "STMXUSDT:1739849400000",
+          "native_order_sizing": "unverified",
+          "primary": "incomplete_book_data",
+          "unknown_eligible_sensitivity": "incomplete_book_data"
+        },
+        {
+          "configuration": "zero_queue",
+          "diagnostic_counts": {
+            "sell_above_limit": 19
+          },
+          "excluded_unknown_case": "none",
+          "id": "STMXUSDT:1739849400000",
+          "native_order_sizing": "unverified",
+          "primary": "none",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "usd25",
+          "diagnostic_counts": {
+            "sell_above_limit": 19
+          },
+          "excluded_unknown_case": "none",
+          "id": "STMXUSDT:1739849400000",
+          "native_order_sizing": "unverified",
+          "primary": "none",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "usd100",
+          "diagnostic_counts": {
+            "sell_above_limit": 19
+          },
+          "excluded_unknown_case": "none",
+          "id": "STMXUSDT:1739849400000",
+          "native_order_sizing": "unverified",
+          "primary": "none",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "arrival5000",
+          "diagnostic_counts": {
+            "sell_above_limit": 19
+          },
+          "excluded_unknown_case": "none",
+          "id": "STMXUSDT:1739849400000",
+          "native_order_sizing": "unverified",
+          "primary": "none",
+          "unknown_eligible_sensitivity": "none"
+        }
+      ],
+      "symbol": "STMXUSDT"
+    },
+    {
+      "day": "2025-06-01",
+      "events": [
+        {
+          "configuration": "primary",
+          "diagnostic_counts": {
+            "sell_above_limit": 19
+          },
+          "excluded_unknown_case": "none",
+          "id": "OMGUSDT:1748820600000",
+          "native_order_sizing": "unverified",
+          "primary": "none",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "wait300",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "incomplete_book_data",
+          "id": "OMGUSDT:1748820600000",
+          "native_order_sizing": "unverified",
+          "primary": "incomplete_book_data",
+          "unknown_eligible_sensitivity": "incomplete_book_data"
+        },
+        {
+          "configuration": "zero_queue",
+          "diagnostic_counts": {
+            "sell_above_limit": 19
+          },
+          "excluded_unknown_case": "none",
+          "id": "OMGUSDT:1748820600000",
+          "native_order_sizing": "unverified",
+          "primary": "none",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "usd25",
+          "diagnostic_counts": {
+            "sell_above_limit": 19
+          },
+          "excluded_unknown_case": "none",
+          "id": "OMGUSDT:1748820600000",
+          "native_order_sizing": "unverified",
+          "primary": "none",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "usd100",
+          "diagnostic_counts": {
+            "sell_above_limit": 19
+          },
+          "excluded_unknown_case": "none",
+          "id": "OMGUSDT:1748820600000",
+          "native_order_sizing": "unverified",
+          "primary": "none",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "arrival5000",
+          "diagnostic_counts": {
+            "sell_above_limit": 21
+          },
+          "excluded_unknown_case": "none",
+          "id": "OMGUSDT:1748820600000",
+          "native_order_sizing": "unverified",
+          "primary": "none",
+          "unknown_eligible_sensitivity": "none"
+        }
+      ],
+      "symbol": "OMGUSDT"
+    },
+    {
+      "day": "2024-12-27",
+      "events": [
+        {
+          "configuration": "primary",
+          "diagnostic_counts": {
+            "sell_above_limit": 299
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735270200000",
+          "native_order_sizing": "unverified",
+          "primary": "none",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "primary",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "UXLINKUSDT:1735284600000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "primary",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "UXLINKUSDT:1735299000000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "primary",
+          "diagnostic_counts": {
+            "sell_above_limit": 355,
+            "sell_at_limit": 2,
+            "unknown": 2
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735313400000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "primary",
+          "diagnostic_counts": {
+            "sell_above_limit": 35,
+            "sell_at_limit": 2,
+            "sell_below_limit": 360,
+            "unknown": 362
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735327800000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "primary",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "UXLINKUSDT:1735342200000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "d15",
+          "diagnostic_counts": {
+            "sell_above_limit": 9,
+            "sell_below_limit": 304,
+            "unknown": 304
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735271100000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "d15",
+          "diagnostic_counts": {
+            "sell_above_limit": 538,
+            "sell_below_limit": 16,
+            "unknown": 16
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735285500000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "d15",
+          "diagnostic_counts": {
+            "sell_above_limit": 49,
+            "sell_at_limit": 3,
+            "sell_below_limit": 382,
+            "unknown": 385
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735299900000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "d15",
+          "diagnostic_counts": {
+            "sell_above_limit": 272,
+            "sell_below_limit": 3,
+            "unknown": 3
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735314300000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "d15",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "UXLINKUSDT:1735328700000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "d15",
+          "diagnostic_counts": {
+            "sell_above_limit": 16,
+            "sell_at_limit": 1,
+            "sell_below_limit": 226,
+            "unknown": 227
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735343100000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "d10",
+          "diagnostic_counts": {
+            "sell_above_limit": 35,
+            "sell_at_limit": 2,
+            "sell_below_limit": 210,
+            "unknown": 212
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735271400000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "d10",
+          "diagnostic_counts": {
+            "sell_above_limit": 232,
+            "sell_at_limit": 6,
+            "sell_below_limit": 178,
+            "unknown": 184
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735285800000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "d10",
+          "diagnostic_counts": {
+            "sell_above_limit": 162,
+            "sell_at_limit": 15,
+            "sell_below_limit": 197,
+            "unknown": 212
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735300200000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "d10",
+          "diagnostic_counts": {
+            "sell_above_limit": 365
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735314600000",
+          "native_order_sizing": "unverified",
+          "primary": "none",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "d10",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "UXLINKUSDT:1735329000000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "d10",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "UXLINKUSDT:1735343400000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "wait300",
+          "diagnostic_counts": {
+            "sell_above_limit": 1700
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735270200000",
+          "native_order_sizing": "unverified",
+          "primary": "none",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "wait300",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "UXLINKUSDT:1735284600000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "wait300",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "UXLINKUSDT:1735299000000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "wait300",
+          "diagnostic_counts": {
+            "sell_above_limit": 1872,
+            "sell_at_limit": 10,
+            "sell_below_limit": 130,
+            "unknown": 140
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735313400000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "wait300",
+          "diagnostic_counts": {
+            "sell_above_limit": 35,
+            "sell_at_limit": 2,
+            "sell_below_limit": 1949,
+            "unknown": 1951
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735327800000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "wait300",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "UXLINKUSDT:1735342200000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "zero_queue",
+          "diagnostic_counts": {
+            "sell_above_limit": 299
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735270200000",
+          "native_order_sizing": "unverified",
+          "primary": "none",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "zero_queue",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "UXLINKUSDT:1735284600000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "zero_queue",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "UXLINKUSDT:1735299000000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "zero_queue",
+          "diagnostic_counts": {
+            "sell_above_limit": 355,
+            "sell_at_limit": 2,
+            "unknown": 2
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735313400000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "partial"
+        },
+        {
+          "configuration": "zero_queue",
+          "diagnostic_counts": {
+            "sell_above_limit": 35,
+            "sell_at_limit": 2,
+            "sell_below_limit": 360,
+            "unknown": 362
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735327800000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "zero_queue",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "UXLINKUSDT:1735342200000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "usd25",
+          "diagnostic_counts": {
+            "sell_above_limit": 299
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735270200000",
+          "native_order_sizing": "unverified",
+          "primary": "none",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "usd25",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "UXLINKUSDT:1735284600000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "usd25",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "UXLINKUSDT:1735299000000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "usd25",
+          "diagnostic_counts": {
+            "sell_above_limit": 355,
+            "sell_at_limit": 2,
+            "unknown": 2
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735313400000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "usd25",
+          "diagnostic_counts": {
+            "sell_above_limit": 35,
+            "sell_at_limit": 2,
+            "sell_below_limit": 360,
+            "unknown": 362
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735327800000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "usd25",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "UXLINKUSDT:1735342200000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "usd100",
+          "diagnostic_counts": {
+            "sell_above_limit": 299
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735270200000",
+          "native_order_sizing": "unverified",
+          "primary": "none",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "usd100",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "UXLINKUSDT:1735284600000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "usd100",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "UXLINKUSDT:1735299000000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "usd100",
+          "diagnostic_counts": {
+            "sell_above_limit": 355,
+            "sell_at_limit": 2,
+            "unknown": 2
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735313400000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "usd100",
+          "diagnostic_counts": {
+            "sell_above_limit": 35,
+            "sell_at_limit": 2,
+            "sell_below_limit": 360,
+            "unknown": 362
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735327800000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "usd100",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "UXLINKUSDT:1735342200000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "arrival5000",
+          "diagnostic_counts": {
+            "sell_above_limit": 328
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735270200000",
+          "native_order_sizing": "unverified",
+          "primary": "none",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "arrival5000",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "UXLINKUSDT:1735284600000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "arrival5000",
+          "diagnostic_counts": {
+            "sell_above_limit": 279,
+            "sell_at_limit": 7,
+            "sell_below_limit": 220,
+            "unknown": 227
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735299000000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "arrival5000",
+          "diagnostic_counts": {
+            "sell_above_limit": 360
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735313400000",
+          "native_order_sizing": "unverified",
+          "primary": "none",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "arrival5000",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "UXLINKUSDT:1735327800000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "arrival5000",
+          "diagnostic_counts": {
+            "sell_above_limit": 281
+          },
+          "excluded_unknown_case": "none",
+          "id": "UXLINKUSDT:1735342200000",
+          "native_order_sizing": "unverified",
+          "primary": "none",
+          "unknown_eligible_sensitivity": "none"
+        }
+      ],
+      "symbol": "UXLINKUSDT"
+    },
+    {
+      "day": "2025-02-17",
+      "events": [
+        {
+          "configuration": "primary",
+          "diagnostic_counts": {
+            "sell_above_limit": 9,
+            "sell_below_limit": 888,
+            "unknown": 888
+          },
+          "excluded_unknown_case": "none",
+          "id": "IPUSDT:1739806200000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "primary",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "IPUSDT:1739820600000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "d15",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "IPUSDT:1739807100000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "d15",
+          "diagnostic_counts": {
+            "sell_above_limit": 54,
+            "sell_at_limit": 2,
+            "sell_below_limit": 38,
+            "unknown": 40
+          },
+          "excluded_unknown_case": "none",
+          "id": "IPUSDT:1739821500000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "d10",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "IPUSDT:1739807400000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "d10",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "IPUSDT:1739821800000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "wait300",
+          "diagnostic_counts": {
+            "sell_above_limit": 9,
+            "sell_below_limit": 2974,
+            "unknown": 2974
+          },
+          "excluded_unknown_case": "none",
+          "id": "IPUSDT:1739806200000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "wait300",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "IPUSDT:1739820600000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "zero_queue",
+          "diagnostic_counts": {
+            "sell_above_limit": 9,
+            "sell_below_limit": 888,
+            "unknown": 888
+          },
+          "excluded_unknown_case": "none",
+          "id": "IPUSDT:1739806200000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "zero_queue",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "IPUSDT:1739820600000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "usd25",
+          "diagnostic_counts": {
+            "sell_above_limit": 9,
+            "sell_below_limit": 888,
+            "unknown": 888
+          },
+          "excluded_unknown_case": "none",
+          "id": "IPUSDT:1739806200000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "usd25",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "IPUSDT:1739820600000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "usd100",
+          "diagnostic_counts": {
+            "sell_above_limit": 9,
+            "sell_below_limit": 888,
+            "unknown": 888
+          },
+          "excluded_unknown_case": "none",
+          "id": "IPUSDT:1739806200000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "usd100",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "IPUSDT:1739820600000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "arrival5000",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "IPUSDT:1739806200000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "arrival5000",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "IPUSDT:1739820600000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        }
+      ],
+      "symbol": "IPUSDT"
+    },
+    {
+      "day": "2025-02-10",
+      "events": [
+        {
+          "configuration": "primary",
+          "diagnostic_counts": {
+            "sell_above_limit": 117,
+            "sell_at_limit": 6,
+            "sell_below_limit": 8,
+            "unknown": 14
+          },
+          "excluded_unknown_case": "none",
+          "id": "MEUSDT:1739158200000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "primary",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "MEUSDT:1739172600000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "primary",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "MEUSDT:1739187000000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "d15",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "MEUSDT:1739173500000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "d15",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "MEUSDT:1739187900000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "d10",
+          "diagnostic_counts": {
+            "sell_above_limit": 1,
+            "sell_at_limit": 2,
+            "sell_below_limit": 76,
+            "unknown": 78
+          },
+          "excluded_unknown_case": "none",
+          "id": "MEUSDT:1739173800000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "d10",
+          "diagnostic_counts": {
+            "sell_above_limit": 296,
+            "sell_at_limit": 6,
+            "sell_below_limit": 740,
+            "unknown": 746
+          },
+          "excluded_unknown_case": "none",
+          "id": "MEUSDT:1739188200000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "wait300",
+          "diagnostic_counts": {
+            "sell_above_limit": 1275,
+            "sell_at_limit": 6,
+            "sell_below_limit": 8,
+            "unknown": 14
+          },
+          "excluded_unknown_case": "none",
+          "id": "MEUSDT:1739158200000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "wait300",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "MEUSDT:1739172600000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "wait300",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "MEUSDT:1739187000000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "zero_queue",
+          "diagnostic_counts": {
+            "sell_above_limit": 117,
+            "sell_at_limit": 6,
+            "sell_below_limit": 8,
+            "unknown": 14
+          },
+          "excluded_unknown_case": "none",
+          "id": "MEUSDT:1739158200000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "zero_queue",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "MEUSDT:1739172600000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "zero_queue",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "MEUSDT:1739187000000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "usd25",
+          "diagnostic_counts": {
+            "sell_above_limit": 117,
+            "sell_at_limit": 6,
+            "sell_below_limit": 8,
+            "unknown": 14
+          },
+          "excluded_unknown_case": "none",
+          "id": "MEUSDT:1739158200000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "usd25",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "MEUSDT:1739172600000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "usd25",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "MEUSDT:1739187000000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "usd100",
+          "diagnostic_counts": {
+            "sell_above_limit": 117,
+            "sell_at_limit": 6,
+            "sell_below_limit": 8,
+            "unknown": 14
+          },
+          "excluded_unknown_case": "none",
+          "id": "MEUSDT:1739158200000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "usd100",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "MEUSDT:1739172600000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "usd100",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "MEUSDT:1739187000000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "arrival5000",
+          "diagnostic_counts": {
+            "sell_above_limit": 111,
+            "sell_at_limit": 6,
+            "sell_below_limit": 5,
+            "unknown": 11
+          },
+          "excluded_unknown_case": "none",
+          "id": "MEUSDT:1739158200000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "arrival5000",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "MEUSDT:1739172600000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "arrival5000",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "MEUSDT:1739187000000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        }
+      ],
+      "symbol": "MEUSDT"
+    },
+    {
+      "day": "2025-04-11",
+      "events": [
+        {
+          "configuration": "primary",
+          "diagnostic_counts": {
+            "sell_above_limit": 7,
+            "sell_at_limit": 4,
+            "sell_below_limit": 190,
+            "unknown": 194
+          },
+          "excluded_unknown_case": "none",
+          "id": "AUCTIONUSDT:1744342200000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "wait300",
+          "diagnostic_counts": {
+            "sell_above_limit": 7,
+            "sell_at_limit": 4,
+            "sell_below_limit": 1399,
+            "unknown": 1403
+          },
+          "excluded_unknown_case": "none",
+          "id": "AUCTIONUSDT:1744342200000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "zero_queue",
+          "diagnostic_counts": {
+            "sell_above_limit": 7,
+            "sell_at_limit": 4,
+            "sell_below_limit": 190,
+            "unknown": 194
+          },
+          "excluded_unknown_case": "none",
+          "id": "AUCTIONUSDT:1744342200000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "usd25",
+          "diagnostic_counts": {
+            "sell_above_limit": 7,
+            "sell_at_limit": 4,
+            "sell_below_limit": 190,
+            "unknown": 194
+          },
+          "excluded_unknown_case": "none",
+          "id": "AUCTIONUSDT:1744342200000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "usd100",
+          "diagnostic_counts": {
+            "sell_above_limit": 7,
+            "sell_at_limit": 4,
+            "sell_below_limit": 190,
+            "unknown": 194
+          },
+          "excluded_unknown_case": "none",
+          "id": "AUCTIONUSDT:1744342200000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "arrival5000",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "AUCTIONUSDT:1744342200000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        }
+      ],
+      "symbol": "AUCTIONUSDT"
+    },
+    {
+      "day": "2025-07-09",
+      "events": [
+        {
+          "configuration": "primary",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "MUSDT:1752075000000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "primary",
+          "diagnostic_counts": {
+            "sell_above_limit": 56,
+            "sell_at_limit": 23,
+            "sell_below_limit": 277,
+            "unknown": 300
+          },
+          "excluded_unknown_case": "none",
+          "id": "MUSDT:1752089400000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "d15",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "MUSDT:1752075900000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "d15",
+          "diagnostic_counts": {
+            "sell_above_limit": 646,
+            "sell_at_limit": 7,
+            "sell_below_limit": 36,
+            "unknown": 43
+          },
+          "excluded_unknown_case": "none",
+          "id": "MUSDT:1752090300000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "d10",
+          "diagnostic_counts": {
+            "sell_above_limit": 284,
+            "sell_at_limit": 21,
+            "sell_below_limit": 64,
+            "unknown": 85
+          },
+          "excluded_unknown_case": "none",
+          "id": "MUSDT:1752076200000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "d10",
+          "diagnostic_counts": {
+            "sell_above_limit": 281,
+            "sell_at_limit": 17,
+            "sell_below_limit": 8,
+            "unknown": 25
+          },
+          "excluded_unknown_case": "none",
+          "id": "MUSDT:1752090600000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "wait300",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "MUSDT:1752075000000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "wait300",
+          "diagnostic_counts": {
+            "sell_above_limit": 724,
+            "sell_at_limit": 86,
+            "sell_below_limit": 408,
+            "unknown": 494
+          },
+          "excluded_unknown_case": "none",
+          "id": "MUSDT:1752089400000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "zero_queue",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "MUSDT:1752075000000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "zero_queue",
+          "diagnostic_counts": {
+            "sell_above_limit": 56,
+            "sell_at_limit": 23,
+            "sell_below_limit": 277,
+            "unknown": 300
+          },
+          "excluded_unknown_case": "none",
+          "id": "MUSDT:1752089400000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "usd25",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "MUSDT:1752075000000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "usd25",
+          "diagnostic_counts": {
+            "sell_above_limit": 56,
+            "sell_at_limit": 23,
+            "sell_below_limit": 277,
+            "unknown": 300
+          },
+          "excluded_unknown_case": "none",
+          "id": "MUSDT:1752089400000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "usd100",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "MUSDT:1752075000000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "usd100",
+          "diagnostic_counts": {
+            "sell_above_limit": 56,
+            "sell_at_limit": 23,
+            "sell_below_limit": 277,
+            "unknown": 300
+          },
+          "excluded_unknown_case": "none",
+          "id": "MUSDT:1752089400000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "full"
+        },
+        {
+          "configuration": "arrival5000",
+          "diagnostic_counts": {
+            "sell_above_limit": 198
+          },
+          "excluded_unknown_case": "none",
+          "id": "MUSDT:1752075000000",
+          "native_order_sizing": "unverified",
+          "primary": "none",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "arrival5000",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "MUSDT:1752089400000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        }
+      ],
+      "symbol": "MUSDT"
+    },
+    {
+      "day": "2025-07-22",
+      "events": [
+        {
+          "configuration": "primary",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "SPKUSDT:1753198200000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "d15",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "SPKUSDT:1753199100000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "d10",
+          "diagnostic_counts": {
+            "sell_above_limit": 287,
+            "sell_at_limit": 1,
+            "sell_below_limit": 2,
+            "unknown": 3
+          },
+          "excluded_unknown_case": "none",
+          "id": "SPKUSDT:1753199400000",
+          "native_order_sizing": "unverified",
+          "primary": "unidentified_trade_class",
+          "unknown_eligible_sensitivity": "none"
+        },
+        {
+          "configuration": "wait300",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "SPKUSDT:1753198200000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "zero_queue",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "SPKUSDT:1753198200000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "usd25",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "SPKUSDT:1753198200000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "usd100",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "SPKUSDT:1753198200000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        },
+        {
+          "configuration": "arrival5000",
+          "diagnostic_counts": {},
+          "excluded_unknown_case": "post_only_rejected",
+          "id": "SPKUSDT:1753198200000",
+          "native_order_sizing": "unverified",
+          "primary": "post_only_rejected",
+          "unknown_eligible_sensitivity": "post_only_rejected"
+        }
+      ],
+      "symbol": "SPKUSDT"
+    }
+  ],
+  "reader_sha256": "78c7fe0a6704424991d4625378c46e34f99320d2baa74148dfc576f59260e482",
+  "registration_sha256": "32f342e040434f2dc03636d296be68a6997e98cbd96f9436d2d33060f9526be6",
+  "revision": "d6f0eceebc139f816f9257a50b78113864b097a1",
+  "source_sha256": "d45db01acc8b0af6fadcbe5aed5c505481953f7a87aed2d53ff113103702577d",
+  "started_at_utc": "2026-11-13T15:56:01.409857+00:00",
+  "strategy_returns_or_funding_computed": false,
+  "transport_helpers_sha256": "baffff2934c68b749852df91dac3c51d7f9d866f788612092d735176227c7992",
+  "version": "b2_entry_only_pilot_v1",
+  "working_tree_dirty": false
+}
