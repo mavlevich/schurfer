@@ -102,6 +102,11 @@ and 30 minutes means no latency race.
    [result](bybit-presettlement-feasibility-result-2026-11-13.md). B2 scope and
    execution-model work is next; no strategy economics or test-year result follows
    from this feasibility pass.
+   **B2 metadata completed 2026-11-13:** the official archive source is confirmed;
+   all 724 decision symbol-days have known-size book/tape files, 75.79 GB in total.
+   The source-quality pilot plus two depth-format fixtures is 1.56 GB under a
+   2 GiB transfer cap; no archive body or fill result has been read yet. See the
+   [scope result](bybit-presettlement-b2-scope-result-2026-11-13.md).
 2. **Costs.** At a 30 bps taker round trip about +5 bps would remain, which does not
    trade. The case rests on a **maker entry** (0.02% fee, no spread paid), simulated with
    the strategy's **order book fill model** (`ob500` from 2023-01-18, volume-limited

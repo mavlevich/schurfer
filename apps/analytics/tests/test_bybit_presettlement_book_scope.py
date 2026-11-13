@@ -4,11 +4,14 @@ import copy
 import gzip
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
 import pytest
 from schurfer_analytics import bybit_presettlement_book_scope as b
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
 
 
 def sample() -> dict[str, Any]:
@@ -83,9 +86,11 @@ async def test_heads_never_read_body_and_resume_uses_saved_metadata(tmp_path: Pa
     calls: list[str] = []
 
     class ForbiddenBody(httpx.AsyncByteStream):
-        async def __aiter__(self) -> Any:
+        def __aiter__(self) -> AsyncIterator[bytes]:
+            return self
+
+        async def __anext__(self) -> bytes:
             raise AssertionError("a HEAD inventory must never consume a body")
-            yield b""  # pragma: no cover
 
     def handle(request: httpx.Request) -> httpx.Response:
         assert request.method == "HEAD"

@@ -86,6 +86,13 @@ index, not today's listing. Freeze the IDs and byte cap before fetching bodies.
 If a stratum has fewer than 5 eligible instruments, report the shortfall; do not
 silently replace it. Metadata existence cannot resample the pilot.
 
+The completed [HEAD result](bybit-presettlement-b2-scope-result-2026-11-13.md)
+shows that all ten original pilot books use ob500. Before any body read, two
+separate ob200 format fixtures were therefore frozen by a published metadata-only
+hash rule; the original ten are unchanged. Their 24 book/tape files total
+1,555,848,890 bytes, with a 2 GiB wire cap including retries/partials and at most
+48 attempts at 3 requests/s. No complete-corpus download follows from this cap.
+
 Check snapshots/deltas, depth, sizes/multipliers, clocks, resets, crossed books,
 cadence/gaps, and alignment with trades. Emit quality/count/format diagnostics
 only, no fill rate or PnL during this calibration. Retain the exact native inputs,
@@ -129,3 +136,6 @@ unknown size versus zero, HTML error-page refusal, interrupted-attempt accountin
 and resume without duplicate requests. Ruff and strict mypy pass for the scope
 module and its tests. This is an analytics-only metadata tool; no production code,
 orders or fill calculation runs in this step.
+Full `make verify` also passed after correcting an unreachable-code issue in the
+test-only body-forbidden stream. The completed HEAD inventory and original run
+binding are retained with the result.

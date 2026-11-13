@@ -293,3 +293,21 @@ archive, redirect following, trade row or order-book level is allowed in this st
 Missing/unknown sizes remain explicit. Ten source-quality pilot IDs (5 per pinned
 delivery stratum) are fixed before HEAD results, without existence/size resampling.
 The pilot's book/tape bodies and all strategy economics remain unread.
+
+The HEAD run completed from clean `e3e33c6`: 2,172 attempts, 1,448 available files,
+724 absent depth alternatives, no retries or unknown sizes. Every frozen symbol-day
+has a book and tape file, totalling 75,793,957,219 bytes. No body was consumed.
+See [metadata result](bybit-presettlement-b2-scope-result-2026-11-13.md).
+
+All ten original pilot books are ob500. Two additional ob200-only schema fixtures,
+PROMPTUSDT 2025-08-24 and ASRUSDT 2025-08-23, were frozen by the recorded hash rule
+after HEAD but before any body/fill read. They do not replace or resample the
+original ten or add a strategy candidate. The resulting source-only plan is 24
+files / 1,555,848,890 nominal bytes, capped at 2 GiB on the wire including retries
+and partials, 48 attempts, 3 requests/s. Archive bodies still have not been read.
+
+While checking current official API field semantics, illustrative BTC response
+examples with 2022/2023 timestamps also reached output. These are unverified
+documentation examples, not historical market-path observations or confirmation
+evidence; none is used in a study input or return. The documentation does not
+establish whether old archive CSV/book versions carry today's BT/RPI/cts fields.
