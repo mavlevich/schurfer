@@ -1,0 +1,11 @@
+{
+  "model_sha256": "d45db01acc8b0af6fadcbe5aed5c505481953f7a87aed2d53ff113103702577d",
+  "no_downloads": true,
+  "no_strategy_returns": true,
+  "operation": "entry replay on original ten days plus source-only quote categories on all twelve frozen days",
+  "publication_main_revision": "92b9f94aaa9ba7fa2ffa4bc56db63ca8b37320da",
+  "published_contract_sha256": "32f342e040434f2dc03636d296be68a6997e98cbd96f9436d2d33060f9526be6",
+  "revision": "d6f0eceebc139f816f9257a50b78113864b097a1",
+  "started_at_utc": "2026-11-13T15:56:00.250890+00:00",
+  "working_tree_dirty": false
+}

@@ -1,0 +1,19 @@
+{
+  "frozen_code_unchanged_after_main_merge": true,
+  "outputs": {
+    "invocation.json": "fe8d82d1c7f2a267d02a582925dc4893bdd1a20c4de60b9ee78194ee635e3ef7",
+    "main-publication.json": "ae7d75247e52df67056810bb89dbebabdd032efd2d963e4e50c6429dd38a6b2e",
+    "quote-diagnostics.json": "c8008f26069effa7b6adcdac7cdadb34bb612713f3e38906120e7f013c14e366",
+    "result.json": "941978473831f538c23c39beb2bd28bcd51d949be16929cc778a5a7c477d6ff8",
+    "summary.json": "c3a3c8dff4bd401cfeb5fdfe2e75c4e4d67fe103b94c7434f008eae059879d8e"
+  },
+  "read_revision": "d6f0eceebc139f816f9257a50b78113864b097a1",
+  "source_core_diagnostics_equal_to_prior_v2": true,
+  "source_fingerprints": {
+    "apps/analytics/schurfer_analytics/bybit_presettlement_entry_pilot.py": "d45db01acc8b0af6fadcbe5aed5c505481953f7a87aed2d53ff113103702577d",
+    "apps/analytics/schurfer_analytics/bybit_presettlement_source_fetch.py": "baffff2934c68b749852df91dac3c51d7f9d866f788612092d735176227c7992",
+    "apps/analytics/schurfer_analytics/bybit_presettlement_source_quality.py": "78c7fe0a6704424991d4625378c46e34f99320d2baa74148dfc576f59260e482",
+    "apps/analytics/tests/test_bybit_presettlement_entry_pilot.py": "9f8d18b4f25125700ab8dc8eb0b44723c50df3266ee158ed315b0513d5d8dbbc",
+    "apps/analytics/tests/test_bybit_presettlement_source_pilot.py": "c692db9b106e1ca89914800ad3fd42eaf01ac733a02f47ca56279e240e127385"
+  }
+}

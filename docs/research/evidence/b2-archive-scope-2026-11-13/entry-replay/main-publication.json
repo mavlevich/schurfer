@@ -1,0 +1,8 @@
+{
+  "merge_revision": "92b9f94aaa9ba7fa2ffa4bc56db63ca8b37320da",
+  "merged_at_utc": "2026-11-13T15:53:52+00:00",
+  "pilot_invocation_started_at_utc": "2026-11-13T15:56:00.250890+00:00",
+  "pr": "https://github.com/mavlevich/schurfer/pull/591",
+  "published_before_native_pilot_read": true,
+  "published_contract_sha256": "32f342e040434f2dc03636d296be68a6997e98cbd96f9436d2d33060f9526be6"
+}
