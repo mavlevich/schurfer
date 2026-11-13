@@ -94,6 +94,9 @@ for overlap checking, avoiding a full extra OHLC dictionary for every minute.
 The old unbudgeted minute-fetch CLI is disabled **before loading inputs**. The
 subsequent [bounded transport implementation](b1-bounded-fetch-runbook-v1.md) closes
 the remaining tooling requirement, with 22 additional transport tests and a new
-successful full `make verify`. Its actual pilot has not run. The fixed pilot and
-request/byte budgets are unchanged; transport review and a new owner fetch go
-remain required. No approval or download is implied by these review fixes.
+successful full `make verify`. The owner then waived another review round and
+continued the unchanged bounded fetch: 64/64 pilot and 11,660/11,660 full paths
+completed with no retries. The separate clean, pinned
+[B1 report](bybit-presettlement-feasibility-result-2026-11-13.md) passed for 4h at
+d30/d15/d10. No formula, event floor or financial threshold was loosened; no
+strategy return, test-year read or production change followed from these fixes.

@@ -1,0 +1,31 @@
+{
+  "all_status_and_event_counts_match_accepted_report": true,
+  "classifier_sha256": "bec0005fbe9969ea61767d043633be1705b5aa3a564a0ab9ec9ee7dc1ede3604",
+  "code_revision": "81758783a7454ff592ea899f952a23a0f2aa9cad",
+  "count_comparison": "JSON-normalized dictionary keys; no numerical or selection tolerance",
+  "counts": {
+    "d10": {
+      "events": 1574,
+      "symbol_days_at_decision": 677
+    },
+    "d15": {
+      "events": 1594,
+      "symbol_days_at_decision": 685
+    },
+    "d30": {
+      "events": 1637,
+      "symbol_days_at_decision": 707
+    }
+  },
+  "elapsed_seconds": 135.011,
+  "events_sha256": "4f1554108d6da503630d24d5b123d8000532b7bb3decb33f033e57dab65711f7",
+  "finished_at_utc": "2026-11-13T07:21:50.229153+00:00",
+  "helper_sha256": "07c34d10b13ec7f97b7eaa7f6cffe3a258a11fc7557d3f77a458b5fd063cca65",
+  "max_rss_bytes_macos": 2667069440,
+  "porcelain": " M docs/research/seen-windows-registry.md\n?? docs/research/bybit-presettlement-feasibility-result-2026-11-13.md\n?? docs/research/evidence/b1-prior-only-4h-2026-11-13/read/\n",
+  "report_sha256": "96ed96d58514815203aa221a35bce5ed19a37b9b5316947148375a033170311e",
+  "scope": "same registered S3 identities only; no new feature, outcome, market request or selection rule",
+  "source_hashes_match_accepted_clean_report": true,
+  "started_at_utc": "2026-11-13T07:19:35.224242+00:00",
+  "working_tree_dirty": true
+}

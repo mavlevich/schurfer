@@ -118,3 +118,7 @@ run binding are retained in the fetch evidence.
 No external market API, production service, blind window or strategy outcome was
 used for the tooling tests. The later registered market fetch is recorded above;
 it read historical discovery premium features only.
+
+The subsequent [B1 report](bybit-presettlement-feasibility-result-2026-11-13.md)
+passed for 4h at d30/d15/d10. That formula/event-floor result, rather than the
+transport pass itself, releases the next data/fill-model stage.

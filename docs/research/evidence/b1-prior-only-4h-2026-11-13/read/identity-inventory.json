@@ -1,0 +1,24 @@
+{
+  "per_offset": {
+    "d10": {
+      "decision_symbol_days": 677,
+      "events": 1574
+    },
+    "d15": {
+      "decision_symbol_days": 685,
+      "events": 1594
+    },
+    "d30": {
+      "decision_symbol_days": 707,
+      "events": 1637
+    }
+  },
+  "source_events_sha256": "4f1554108d6da503630d24d5b123d8000532b7bb3decb33f033e57dab65711f7",
+  "union": {
+    "decision_points": 4805,
+    "decision_symbol_days": 724,
+    "symbols": 151,
+    "unique_forecasts": 1685
+  },
+  "usage": "metadata only for B2 scoping; decision-day archive counts are not inference clusters or a final fetch scope; placement/wait/remainder and archive availability still need to be fixed"
+}

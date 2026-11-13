@@ -252,3 +252,15 @@ The [fetch inventory](evidence/b1-prior-only-4h-2026-11-13/fetch/inventory.json)
 preserves the clean run binding and per-receipt digest manifest. No strategy return
 was read. The next read is the already registered B1 S1/S3 feature-level report on
 the same discovery scope, with all financial and data gates unchanged.
+
+## B1 prior-only 4h report, 2026-11-13
+
+Completed the already registered S1/S3 read on clean `8175878`, from the four pinned
+discovery inputs. Level: **features**, not strategy outcomes. Pooled and 4h S1 pass;
+4h S3 passes at d30/d15/d10, with 1,637 / 1,594 / 1,574 events. No non-4h or pooled
+S3 result is admitted. The derived S3 identity export uses the same frozen
+classifier and checks all counts against the accepted result; it introduces no new
+feature or filter. Result SHA-256:
+`96ed96d58514815203aa221a35bce5ed19a37b9b5316947148375a033170311e`.
+See [result](bybit-presettlement-feasibility-result-2026-11-13.md). No strategy return,
+test year, backward holdout or HYP-012 v2 blind-window read is released by this entry.

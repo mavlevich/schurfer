@@ -96,6 +96,12 @@ and 30 minutes means no latency race.
    reused as a result. **B2 starts only on B1's verdict `pass` for the 4-hour group on its own (section 2);** `insufficient_validation`,
    `not_reconstructible` and `insufficient_events` stop the track or send it back to
    design.
+   **B1 completed 2026-11-13:** the registered prior-only 4h report passes at
+   d30/d15/d10, with 1,637/1,594/1,574 events. Both pooled S1 and the 4h group's own
+   S1/S3 gates pass. Other classes remain `not_fetched`. See the
+   [result](bybit-presettlement-feasibility-result-2026-11-13.md). B2 scope and
+   execution-model work is next; no strategy economics or test-year result follows
+   from this feasibility pass.
 2. **Costs.** At a 30 bps taker round trip about +5 bps would remain, which does not
    trade. The case rests on a **maker entry** (0.02% fee, no spread paid), simulated with
    the strategy's **order book fill model** (`ob500` from 2023-01-18, volume-limited
