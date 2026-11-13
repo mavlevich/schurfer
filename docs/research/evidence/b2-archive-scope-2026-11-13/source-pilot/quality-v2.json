@@ -1,0 +1,635 @@
+{
+  "elapsed_seconds": 510.436,
+  "fills_or_strategy_returns_computed": false,
+  "inflated_bytes": 7130337280,
+  "manifest_sha256": "527b7446887d1f6c466c9891d9f1ef67134dc4b86aaf7a30d3f83c8ddc9bb0a0",
+  "masked_tape_rule": "minutes :55 through :04; row count only",
+  "pairs": [
+    {
+      "book_clock": "cts",
+      "book_counts": {
+        "cts_present": 307643,
+        "delta": 307642,
+        "max_ask_levels": 200,
+        "max_bid_levels": 200,
+        "messages": 307643,
+        "off_day_rows_ignored": 11,
+        "snapshot": 1,
+        "update_id_jumps": 0
+      },
+      "book_gap_ms": {
+        "max": 9349,
+        "p50": 147,
+        "p99": 1804
+      },
+      "day": "2025-08-23",
+      "maker_volume_identified": false,
+      "native_lot_constraints_identified": false,
+      "status": "inspected",
+      "strict_prior_quote_alignment": {
+        "consistent": 35186,
+        "violates_prior_quote": 2365
+      },
+      "symbol": "ASRUSDT",
+      "system_minus_engine_ms": {
+        "p50": 33,
+        "p99": 99
+      },
+      "trade_columns": [
+        "timestamp",
+        "symbol",
+        "side",
+        "size",
+        "price",
+        "tickDirection",
+        "trdMatchID",
+        "grossValue",
+        "homeNotional",
+        "foreignNotional",
+        "RPI"
+      ],
+      "trade_counts": {
+        "class_unknown": 37551,
+        "reserved_rows_only_counted": 11731,
+        "rows": 49282,
+        "unit_checks": 37551,
+        "unit_mismatches": 6088,
+        "unmasked_rows": 37551
+      }
+    },
+    {
+      "book_clock": "cts",
+      "book_counts": {
+        "cts_present": 751690,
+        "delta": 751689,
+        "max_ask_levels": 500,
+        "max_bid_levels": 500,
+        "messages": 751690,
+        "off_day_rows_ignored": 18,
+        "snapshot": 1,
+        "update_id_jumps": 0
+      },
+      "book_gap_ms": {
+        "max": 1966,
+        "p50": 101,
+        "p99": 401
+      },
+      "day": "2025-04-11",
+      "maker_volume_identified": false,
+      "native_lot_constraints_identified": false,
+      "status": "inspected",
+      "strict_prior_quote_alignment": {
+        "consistent": 348332,
+        "violates_prior_quote": 22409
+      },
+      "symbol": "AUCTIONUSDT",
+      "system_minus_engine_ms": {
+        "p50": 13,
+        "p99": 98
+      },
+      "trade_columns": [
+        "timestamp",
+        "symbol",
+        "side",
+        "size",
+        "price",
+        "tickDirection",
+        "trdMatchID",
+        "grossValue",
+        "homeNotional",
+        "foreignNotional",
+        "RPI"
+      ],
+      "trade_counts": {
+        "class_unknown": 370741,
+        "reserved_rows_only_counted": 65311,
+        "rows": 436052,
+        "unit_checks": 370741,
+        "unit_mismatches": 62656,
+        "unmasked_rows": 370741
+      }
+    },
+    {
+      "book_clock": "cts",
+      "book_counts": {
+        "cts_present": 847034,
+        "delta": 847033,
+        "max_ask_levels": 500,
+        "max_bid_levels": 500,
+        "messages": 847034,
+        "off_day_rows_ignored": 7,
+        "snapshot": 1,
+        "update_id_jumps": 0
+      },
+      "book_gap_ms": {
+        "max": 1150,
+        "p50": 100,
+        "p99": 207
+      },
+      "day": "2025-02-17",
+      "maker_volume_identified": false,
+      "native_lot_constraints_identified": false,
+      "status": "inspected",
+      "strict_prior_quote_alignment": {
+        "consistent": 728708,
+        "violates_prior_quote": 99348
+      },
+      "symbol": "IPUSDT",
+      "system_minus_engine_ms": {
+        "p50": 8,
+        "p99": 80
+      },
+      "trade_columns": [
+        "timestamp",
+        "symbol",
+        "side",
+        "size",
+        "price",
+        "tickDirection",
+        "trdMatchID",
+        "grossValue",
+        "homeNotional",
+        "foreignNotional"
+      ],
+      "trade_counts": {
+        "class_unknown": 828056,
+        "reserved_rows_only_counted": 212612,
+        "rows": 1040668,
+        "unit_checks": 828056,
+        "unit_mismatches": 149589,
+        "unmasked_rows": 828056
+      }
+    },
+    {
+      "book_clock": "cts",
+      "book_counts": {
+        "cts_present": 808159,
+        "delta": 808158,
+        "max_ask_levels": 500,
+        "max_bid_levels": 500,
+        "messages": 808159,
+        "off_day_rows_ignored": 14,
+        "snapshot": 1,
+        "update_id_jumps": 0
+      },
+      "book_gap_ms": {
+        "max": 1515,
+        "p50": 100,
+        "p99": 296
+      },
+      "day": "2025-02-10",
+      "maker_volume_identified": false,
+      "native_lot_constraints_identified": false,
+      "status": "inspected",
+      "strict_prior_quote_alignment": {
+        "consistent": 653124,
+        "violates_prior_quote": 51444
+      },
+      "symbol": "MEUSDT",
+      "system_minus_engine_ms": {
+        "p50": 11,
+        "p99": 97
+      },
+      "trade_columns": [
+        "timestamp",
+        "symbol",
+        "side",
+        "size",
+        "price",
+        "tickDirection",
+        "trdMatchID",
+        "grossValue",
+        "homeNotional",
+        "foreignNotional"
+      ],
+      "trade_counts": {
+        "class_unknown": 704568,
+        "reserved_rows_only_counted": 188318,
+        "rows": 892886,
+        "unit_checks": 704568,
+        "unit_mismatches": 49076,
+        "unmasked_rows": 704568
+      }
+    },
+    {
+      "book_clock": "cts",
+      "book_counts": {
+        "cts_present": 819702,
+        "delta": 819701,
+        "max_ask_levels": 500,
+        "max_bid_levels": 500,
+        "messages": 819702,
+        "off_day_rows_ignored": 12,
+        "snapshot": 1,
+        "update_id_jumps": 0
+      },
+      "book_gap_ms": {
+        "max": 1358,
+        "p50": 100,
+        "p99": 261
+      },
+      "day": "2025-07-09",
+      "maker_volume_identified": false,
+      "native_lot_constraints_identified": false,
+      "status": "inspected",
+      "strict_prior_quote_alignment": {
+        "consistent": 788324,
+        "violates_prior_quote": 50705
+      },
+      "symbol": "MUSDT",
+      "system_minus_engine_ms": {
+        "p50": 18,
+        "p99": 92
+      },
+      "trade_columns": [
+        "timestamp",
+        "symbol",
+        "side",
+        "size",
+        "price",
+        "tickDirection",
+        "trdMatchID",
+        "grossValue",
+        "homeNotional",
+        "foreignNotional",
+        "RPI"
+      ],
+      "trade_counts": {
+        "class_unknown": 839029,
+        "reserved_rows_only_counted": 136228,
+        "rows": 975257,
+        "unit_checks": 839029,
+        "unit_mismatches": 105485,
+        "unmasked_rows": 839029
+      }
+    },
+    {
+      "book_clock": "cts",
+      "book_counts": {
+        "cts_present": 423974,
+        "delta": 423973,
+        "max_ask_levels": 500,
+        "max_bid_levels": 500,
+        "messages": 423974,
+        "off_day_rows_ignored": 13,
+        "snapshot": 1,
+        "update_id_jumps": 0
+      },
+      "book_gap_ms": {
+        "max": 13816,
+        "p50": 105,
+        "p99": 1761
+      },
+      "day": "2025-06-01",
+      "maker_volume_identified": false,
+      "native_lot_constraints_identified": false,
+      "status": "inspected",
+      "strict_prior_quote_alignment": {
+        "consistent": 182353,
+        "prior_book_over_5s": 65,
+        "violates_prior_quote": 11387
+      },
+      "symbol": "OMGUSDT",
+      "system_minus_engine_ms": {
+        "p50": 40,
+        "p99": 100
+      },
+      "trade_columns": [
+        "timestamp",
+        "symbol",
+        "side",
+        "size",
+        "price",
+        "tickDirection",
+        "trdMatchID",
+        "grossValue",
+        "homeNotional",
+        "foreignNotional",
+        "RPI"
+      ],
+      "trade_counts": {
+        "class_unknown": 193805,
+        "reserved_rows_only_counted": 50746,
+        "rows": 244551,
+        "unit_checks": 193805,
+        "unit_mismatches": 38595,
+        "unmasked_rows": 193805
+      }
+    },
+    {
+      "book_clock": "cts",
+      "book_counts": {
+        "cts_present": 862200,
+        "delta": 862199,
+        "max_ask_levels": 200,
+        "max_bid_levels": 200,
+        "messages": 862200,
+        "off_day_rows_ignored": 7,
+        "snapshot": 1,
+        "update_id_jumps": 0
+      },
+      "book_gap_ms": {
+        "max": 520,
+        "p50": 100,
+        "p99": 134
+      },
+      "day": "2025-08-24",
+      "maker_volume_identified": false,
+      "native_lot_constraints_identified": false,
+      "status": "inspected",
+      "strict_prior_quote_alignment": {
+        "consistent": 2554582,
+        "violates_prior_quote": 322497
+      },
+      "symbol": "PROMPTUSDT",
+      "system_minus_engine_ms": {
+        "p50": 3,
+        "p99": 39
+      },
+      "trade_columns": [
+        "timestamp",
+        "symbol",
+        "side",
+        "size",
+        "price",
+        "tickDirection",
+        "trdMatchID",
+        "grossValue",
+        "homeNotional",
+        "foreignNotional",
+        "RPI"
+      ],
+      "trade_counts": {
+        "class_unknown": 2877079,
+        "reserved_rows_only_counted": 537914,
+        "rows": 3414993,
+        "unit_checks": 2877079,
+        "unit_mismatches": 371140,
+        "unmasked_rows": 2877079
+      }
+    },
+    {
+      "book_clock": "cts",
+      "book_counts": {
+        "cts_present": 856929,
+        "delta": 856927,
+        "max_ask_levels": 500,
+        "max_bid_levels": 500,
+        "messages": 856929,
+        "off_day_rows_ignored": 18,
+        "snapshot": 2,
+        "update_id_jumps": 0
+      },
+      "book_gap_ms": {
+        "max": 12153,
+        "p50": 100,
+        "p99": 174
+      },
+      "day": "2025-07-22",
+      "maker_volume_identified": false,
+      "native_lot_constraints_identified": false,
+      "status": "inspected",
+      "strict_prior_quote_alignment": {
+        "consistent": 1538071,
+        "prior_book_over_5s": 200,
+        "violates_prior_quote": 204792
+      },
+      "symbol": "SPKUSDT",
+      "system_minus_engine_ms": {
+        "p50": 7,
+        "p99": 69
+      },
+      "trade_columns": [
+        "timestamp",
+        "symbol",
+        "side",
+        "size",
+        "price",
+        "tickDirection",
+        "trdMatchID",
+        "grossValue",
+        "homeNotional",
+        "foreignNotional",
+        "RPI"
+      ],
+      "trade_counts": {
+        "class_unknown": 1743063,
+        "reserved_rows_only_counted": 367297,
+        "rows": 2110360,
+        "unit_checks": 1743063,
+        "unit_mismatches": 295374,
+        "unmasked_rows": 1743063
+      }
+    },
+    {
+      "book_clock": "cts",
+      "book_counts": {
+        "cts_present": 485966,
+        "delta": 485965,
+        "max_ask_levels": 500,
+        "max_bid_levels": 500,
+        "messages": 485966,
+        "off_day_rows_ignored": 4,
+        "snapshot": 1,
+        "update_id_jumps": 0
+      },
+      "book_gap_ms": {
+        "max": 3407,
+        "p50": 122,
+        "p99": 886
+      },
+      "day": "2025-02-18",
+      "maker_volume_identified": false,
+      "native_lot_constraints_identified": false,
+      "status": "inspected",
+      "strict_prior_quote_alignment": {
+        "consistent": 53134,
+        "violates_prior_quote": 1753
+      },
+      "symbol": "STMXUSDT",
+      "system_minus_engine_ms": {
+        "p50": 38,
+        "p99": 100
+      },
+      "trade_columns": [
+        "timestamp",
+        "symbol",
+        "side",
+        "size",
+        "price",
+        "tickDirection",
+        "trdMatchID",
+        "grossValue",
+        "homeNotional",
+        "foreignNotional"
+      ],
+      "trade_counts": {
+        "class_unknown": 54887,
+        "reserved_rows_only_counted": 12971,
+        "rows": 67858,
+        "unit_checks": 54887,
+        "unit_mismatches": 6407,
+        "unmasked_rows": 54887
+      }
+    },
+    {
+      "book_clock": "cts",
+      "book_counts": {
+        "cts_present": 647384,
+        "delta": 647383,
+        "max_ask_levels": 500,
+        "max_bid_levels": 500,
+        "messages": 647384,
+        "off_day_rows_ignored": 15,
+        "snapshot": 1,
+        "update_id_jumps": 0
+      },
+      "book_gap_ms": {
+        "max": 3144,
+        "p50": 101,
+        "p99": 714
+      },
+      "day": "2025-05-07",
+      "maker_volume_identified": false,
+      "native_lot_constraints_identified": false,
+      "status": "inspected",
+      "strict_prior_quote_alignment": {
+        "consistent": 348285,
+        "violates_prior_quote": 31292
+      },
+      "symbol": "STPTUSDT",
+      "system_minus_engine_ms": {
+        "p50": 18,
+        "p99": 99
+      },
+      "trade_columns": [
+        "timestamp",
+        "symbol",
+        "side",
+        "size",
+        "price",
+        "tickDirection",
+        "trdMatchID",
+        "grossValue",
+        "homeNotional",
+        "foreignNotional",
+        "RPI"
+      ],
+      "trade_counts": {
+        "class_unknown": 379577,
+        "reserved_rows_only_counted": 110285,
+        "rows": 489862,
+        "unit_checks": 379577,
+        "unit_mismatches": 63520,
+        "unmasked_rows": 379577
+      }
+    },
+    {
+      "book_clock": "cts",
+      "book_counts": {
+        "cts_present": 857551,
+        "delta": 857550,
+        "max_ask_levels": 500,
+        "max_bid_levels": 500,
+        "messages": 857551,
+        "off_day_rows_ignored": 13,
+        "snapshot": 1,
+        "update_id_jumps": 0
+      },
+      "book_gap_ms": {
+        "max": 679,
+        "p50": 100,
+        "p99": 176
+      },
+      "day": "2024-12-27",
+      "maker_volume_identified": false,
+      "native_lot_constraints_identified": false,
+      "status": "inspected",
+      "strict_prior_quote_alignment": {
+        "consistent": 937635,
+        "violates_prior_quote": 93625
+      },
+      "symbol": "UXLINKUSDT",
+      "system_minus_engine_ms": {
+        "p50": 7,
+        "p99": 75
+      },
+      "trade_columns": [
+        "timestamp",
+        "symbol",
+        "side",
+        "size",
+        "price",
+        "tickDirection",
+        "trdMatchID",
+        "grossValue",
+        "homeNotional",
+        "foreignNotional"
+      ],
+      "trade_counts": {
+        "class_unknown": 1031260,
+        "reserved_rows_only_counted": 267873,
+        "rows": 1299133,
+        "unit_checks": 1031260,
+        "unit_mismatches": 105077,
+        "unmasked_rows": 1031260
+      }
+    },
+    {
+      "book_clock": "cts",
+      "book_counts": {
+        "cts_present": 642130,
+        "delta": 642129,
+        "max_ask_levels": 500,
+        "max_bid_levels": 500,
+        "messages": 642130,
+        "off_day_rows_ignored": 20,
+        "snapshot": 1,
+        "update_id_jumps": 0
+      },
+      "book_gap_ms": {
+        "max": 5723,
+        "p50": 103,
+        "p99": 650
+      },
+      "day": "2025-03-20",
+      "maker_volume_identified": false,
+      "native_lot_constraints_identified": false,
+      "status": "inspected",
+      "strict_prior_quote_alignment": {
+        "consistent": 340718,
+        "violates_prior_quote": 19863
+      },
+      "symbol": "VIDTUSDT",
+      "system_minus_engine_ms": {
+        "p50": 21,
+        "p99": 100
+      },
+      "trade_columns": [
+        "timestamp",
+        "symbol",
+        "side",
+        "size",
+        "price",
+        "tickDirection",
+        "trdMatchID",
+        "grossValue",
+        "homeNotional",
+        "foreignNotional"
+      ],
+      "trade_counts": {
+        "class_unknown": 360581,
+        "reserved_rows_only_counted": 112215,
+        "rows": 472796,
+        "unit_checks": 360581,
+        "unit_mismatches": 64028,
+        "unmasked_rows": 360581
+      }
+    }
+  ],
+  "recorded_at_utc": "2026-11-13T12:46:21.581215+00:00",
+  "revision": "1f03acf1e52da995dba54841c75eed4c9afc940a",
+  "source_sha256": "bbb56068b983de1f3707f347d0e52ca8ebedb42ec00f2cfe0b7d8fa73687b507",
+  "version": "b2_source_quality_v2_native_day_clip",
+  "working_tree_dirty": false
+}

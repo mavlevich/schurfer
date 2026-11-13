@@ -339,3 +339,13 @@ register source-quality v2: off-day book rows are counted and skipped before
 level conversion or tape alignment. This clips the source to the existing
 population rather than extending the read window. No signal, execution policy,
 threshold, pilot ID or native input changes. Reserved trade minutes remain opaque.
+
+Source-quality v2 completed on clean `1f03acf`: all 12 pairs parsed, with no fills
+or returns. The original exact-decimal notional diagnostic flagged 1,317,035 of
+9,420,197 unmasked trades. Before a further source-only diagnostic, register a
+breakdown of home-notional versus size and relative error of foreign-notional
+versus price times size. Fixed reporting bins are exact, at most 1e-15 / 1e-12 /
+1e-9 / 1e-6, and larger; these are diagnostics, not replacement quality gates.
+Also count native BT/RPI label representations without inferring eligibility.
+Read only the same 12 pinned tapes, skip reserved rows before numeric conversion,
+emit no prices, sizes, monetary amounts or returns, and preserve all prior results.
