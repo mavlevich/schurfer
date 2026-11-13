@@ -204,3 +204,13 @@ membership never selects an event. The historical 0.1% minute/hour gate is expli
 retired after its observed failure, because hourly premium no longer selects the
 universe. Supplemental fetching remains disabled pending the bounded pilot runner,
 design acceptance and a new owner go.
+
+## B1 bounded transport tooling, 2026-11-13
+
+Implementation and tests only. The fixed scope/pilot artifacts are read as request
+metadata to check their pinned hashes and 11,660/64 counts. HTTP tests use generated
+premium rows and a localhost server, including a partial response and restart.
+No new market request, premium value, price or strategy return is read. Level:
+**coverage / synthetic code check**. The real classifier-containment evidence and
+report thresholds are unchanged. The bounded pilot has not run; a separate fetch
+go and review remain required. See [runbook](b1-bounded-fetch-runbook-v1.md).

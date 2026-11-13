@@ -166,6 +166,8 @@ premium. It checks all classes against `event_superset`, while report S3 remains
 4h-only. No classifier function or financial threshold is mocked in the full audit.
 
 The old minute-fetch CLI is disabled rather than leaving an unbudgeted download
-path enabled under this amendment. Adding the persisted-budget/pilot transport is
-a separate implementation step before any fetch go can be executed. No market
+path enabled under this amendment. The separate bounded transport is now implemented
+locally; its [runbook](b1-bounded-fetch-runbook-v1.md) specifies persisted attempts,
+conservative pre-read byte reservations, the fixed pilot and crash recovery.
+It still needs review and a separate fetch go before a market run. No market
 request is performed to close these review findings.

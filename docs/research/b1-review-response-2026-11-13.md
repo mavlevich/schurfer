@@ -92,7 +92,8 @@ for overlap checking, avoiding a full extra OHLC dictionary for every minute.
   complete command. No production database was used.
 
 The old unbudgeted minute-fetch CLI is disabled **before loading inputs**. The
-persisted-budget/pilot transport is still a separate implementation requirement
-before any additional fetch can run. The fixed pilot and request/byte budgets are
-unchanged, and a new owner go remains required. No approval or download is implied
-by these review fixes.
+subsequent [bounded transport implementation](b1-bounded-fetch-runbook-v1.md) closes
+the remaining tooling requirement, with 22 additional transport tests and a new
+successful full `make verify`. Its actual pilot has not run. The fixed pilot and
+request/byte budgets are unchanged; transport review and a new owner fetch go
+remain required. No approval or download is implied by these review fixes.
