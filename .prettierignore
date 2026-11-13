@@ -43,3 +43,5 @@ docs/research/evidence/bybit-presettlement-feasibility-v1/read-2026-11-12/indepe
 # Immutable outputs of the B1 scope-repair audit.
 docs/research/evidence/b1-minute-scope-repair-v1/*.json
 docs/research/evidence/b1-review-2026-11-13/classify-containment.json
+# Immutable B1 supplemental-fetch metadata and the subsequent report.
+docs/research/evidence/b1-prior-only-4h-2026-11-13/**/*.json

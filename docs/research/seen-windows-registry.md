@@ -242,3 +242,13 @@ passes. This is not permission to relax a data gate or open B2/outcome reading.
 The [transport runbook](b1-bounded-fetch-runbook-v1.md) and report thresholds are
 unchanged. The later result must distinguish pilot transport success from S1/S3
 acceptance; a successful download alone releases no strategy stage.
+
+The registered fetch completed on clean `1cc0949`: pilot 64/64 and full supplement
+11,660/11,660 complete, 11,660 attempts including the pilot, no retries. Reserved
+body bytes: 167,326,720 globally and 951,296 for the pilot. Native responses, ledger
+and sealed supplemental snapshot are retained; snapshot SHA-256 is
+`3fd3205c7f6f2ab129db6d77b4b3e514a7416d1aa6fbb010b3ee577bc9a6dfc8`.
+The [fetch inventory](evidence/b1-prior-only-4h-2026-11-13/fetch/inventory.json)
+preserves the clean run binding and per-receipt digest manifest. No strategy return
+was read. The next read is the already registered B1 S1/S3 feature-level report on
+the same discovery scope, with all financial and data gates unchanged.

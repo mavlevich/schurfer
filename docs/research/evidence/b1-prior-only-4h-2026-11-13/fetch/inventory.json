@@ -1,0 +1,41 @@
+{
+  "acceptance": "transport complete only; B1 S1/S3 not read yet; no B2 release",
+  "attempts": 11660,
+  "complete": 11660,
+  "fetch_metadata": {
+    "invocation.json": {
+      "bytes": 261,
+      "native_bytes_sha256": "b49f8ea4e896e74b606a43e21d858731fca7267a605bd1ad9da03333fe6d9700",
+      "sha256": "b49f8ea4e896e74b606a43e21d858731fca7267a605bd1ad9da03333fe6d9700"
+    },
+    "manifest.json.gz": {
+      "bytes": 893351,
+      "native_bytes_sha256": "ab319bb8c8d6aca81e1d5b30faa89cba8b1ccd46ac236f223ce5735535bbeda3",
+      "sha256": "92cefc669cb0d4c840078816215eaf9a297ca5db3c577b74748e70bf58870067"
+    },
+    "pilot.json": {
+      "bytes": 355,
+      "native_bytes_sha256": "fdfe1a97066d9c2d0accfd7139aa13b61ce5ded75fa9748599c533147560d112",
+      "sha256": "fdfe1a97066d9c2d0accfd7139aa13b61ce5ded75fa9748599c533147560d112"
+    },
+    "run.json.gz": {
+      "bytes": 115304,
+      "native_bytes_sha256": "b7b4690cada93be02bff4349169dcfb02d1a7f45b5245bdf8e64c27a2b55b4ca",
+      "sha256": "eb8d0b7e3c8048e3577119f04429d7268470dc76707c62e9cc258ae685c3c82a"
+    }
+  },
+  "fetch_revision": "1cc09494b2b7a94b58bfcbbbe495663adf12a284",
+  "fixed_intervals": 11660,
+  "native_receipts": "attempts/ under the retained runtime run directory; all digests in manifest.json.gz",
+  "pilot_attempts": 64,
+  "pilot_complete": 64,
+  "pilot_reserved_body_bytes": 951296,
+  "recorded_at_utc": "2026-11-13T07:06:45.668195+00:00",
+  "reserved_body_bytes": 167326720,
+  "rules": "b1_prior_only_4h_bounded_transport_v1",
+  "scope": "Bybit historical minute premium; fixed prior-only 4h supplement; no strategy returns",
+  "supplement_bytes": 21144541,
+  "supplement_path_from_worktree": "runtime/research/b1/prior-only-4h/supplement.jsonl.gz",
+  "supplement_sha256": "3fd3205c7f6f2ab129db6d77b4b3e514a7416d1aa6fbb010b3ee577bc9a6dfc8",
+  "working_tree_dirty_at_fetch": false
+}

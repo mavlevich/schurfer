@@ -1,10 +1,11 @@
 # B1 bounded supplemental premium transport
 
-Status, 2026-11-13: implemented locally; **no supplemental market fetch run**.
-This implements the transport portion of the
-[scope amendment](b1-minute-scope-repair-proposal-v1.md), not an authorization to
-fetch and not a release of B2. The registered fixed pilot is first. A separate
-owner go is still needed before invoking a market-fetch action.
+Status, 2026-11-13: **pilot and full supplemental fetch completed**, all 11,660
+intervals complete, no retries or integrity failures. The owner waived another
+review round before the registered pilot; its unchanged gate passed 64/64 before
+the full run. This implements the transport portion of the
+[scope amendment](b1-minute-scope-repair-proposal-v1.md), not a release of B2.
+See the immutable [fetch inventory](evidence/b1-prior-only-4h-2026-11-13/fetch/inventory.json).
 
 ## Bound inputs and scope
 
@@ -59,10 +60,13 @@ all charged attempts, receipt digests are verified, and orphan/missing receipts
 are refused. Back up the **whole run directory**; copying only `run.json` or a
 snapshot is not sufficient for a resumable run.
 
-## Commands after review and fetch authorization
+## Original invocation and reproduction
 
-Run from the committed, clean canonical worktree. The same arguments and revision
-are required for every action; keep the output under ignored `runtime/`.
+The completed run is bound to clean revision `1cc0949`; the later report pin is
+deliberately a different revision. The same arguments and original revision are
+required to inspect/reseal its ledger. Do not reset its budgets by creating another
+run directory. The invocation below documents the original preparation; output
+remains under ignored `runtime/`.
 
 ```sh
 uv run --package schurfer-analytics python -m schurfer_analytics.bybit_presettlement_bounded_fetch prepare \
@@ -85,9 +89,13 @@ attempt is consumed; a saved atomic receipt is reused, an unsaved attempt is
 recorded as interrupted. Exhausted per-ID/global budgets are never reset by moving
 the same task into another run directory.
 
-Pin the eventual supplemental SHA in a separate reviewed commit before any B1
-report. At present `MINUTES_EXTRA_SHA256` remains `None`, and the old unbudgeted
-minute-fetch CLI remains disabled. This runbook contains no result of a new fetch.
+The supplemental SHA is pinned in a separate commit before the B1 report:
+`3fd3205c7f6f2ab129db6d77b4b3e514a7416d1aa6fbb010b3ee577bc9a6dfc8`.
+The old unbudgeted minute-fetch CLI remains disabled. The completed fetch consumed
+11,660 attempts and 167,326,720 conservatively reserved body bytes, below the
+23,320 / 512 MiB limits. The sealed gzip is 21,144,541 bytes. Raw native-response
+receipts and the ledger remain in the runtime directory; their hashes and original
+run binding are retained in the fetch evidence.
 
 ## Local verification, 2026-11-13
 
@@ -108,4 +116,5 @@ minute-fetch CLI remains disabled. This runbook contains no result of a new fetc
   not repeated for a transport-only addition.
 
 No external market API, production service, blind window or strategy outcome was
-used to verify this transport. The actual pilot remains unrun.
+used for the tooling tests. The later registered market fetch is recorded above;
+it read historical discovery premium features only.

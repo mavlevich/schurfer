@@ -67,8 +67,10 @@ HOURLY_SHA256: Final[str | None] = (
 MINUTES_SHA256: Final[str | None] = (
     "5d638d68d40a13e2ad10573ae7d6446a193a66b0db8dc4d1d12e20c0e9a58b15"
 )
-# Event-superset minutes (amendment 2), fetched after the first report; None refuses the report.
-MINUTES_EXTRA_SHA256: Final[str | None] = None
+# Prior-only 4h supplement (amendment 3), 2026-11-13: all 11,660 paths complete.
+MINUTES_EXTRA_SHA256: Final[str | None] = (
+    "3fd3205c7f6f2ab129db6d77b4b3e514a7416d1aa6fbb010b3ee577bc9a6dfc8"
+)
 
 TRIGGER: Final = -0.003  # F_hat at most -0.30%
 S1_RELEVANT: Final = -0.001  # S1 gates settlements at most -0.10%
