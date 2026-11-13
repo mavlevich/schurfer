@@ -6,6 +6,11 @@ review round. This stage checks archive availability and whether a defensible
 entry replay can be constructed; it does not authorize a strategy-return read,
 the test year or any order.
 
+Follow-up: the [fixed source pilot](bybit-presettlement-b2-source-pilot-result-2026-11-13.md)
+is complete: 24 files downloaded and all 12 pairs parsed, with retained boundary
+correction history. Engine clocks and source quantities were checked; eligibility
+and historical native sizing remain unresolved. No fill replay or B3 read has run.
+
 ## Frozen population and windows
 
 Use only B1's accepted 4h S3 identities:

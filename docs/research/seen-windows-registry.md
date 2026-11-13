@@ -349,3 +349,12 @@ versus price times size. Fixed reporting bins are exact, at most 1e-15 / 1e-12 /
 Also count native BT/RPI label representations without inferring eligibility.
 Read only the same 12 pinned tapes, skip reserved rows before numeric conversion,
 emit no prices, sizes, monetary amounts or returns, and preserve all prior results.
+
+The registered unit/flag diagnostic completed from clean `5e8f09d`. All 9,420,197
+unmasked rows have home-notional equal to size. Every nonzero foreign-notional
+relative error is at most 3.123e-16, consistent with floating-point serialization;
+the original strict diagnostic is retained. Native BT is always absent; RPI is
+represented by 0/1 or is absent. No unknown row is reclassified as ordinary.
+Source quality v2 and this auxiliary read remain source-level evidence only;
+there is no fill/return or new-window read. See
+[source-pilot result](bybit-presettlement-b2-source-pilot-result-2026-11-13.md).

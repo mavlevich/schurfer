@@ -1,5 +1,9 @@
 # B2 archive scope result, 2026-11-13
 
+Subsequent step: the [24-file source pilot](bybit-presettlement-b2-source-pilot-result-2026-11-13.md)
+has completed. The statements below about unread bodies describe this metadata
+stage's boundary, not the current pilot status. No full-corpus download occurred.
+
 **Metadata inventory complete.** Every one of the 724 frozen symbol-days has a
 verified-size book file and trade file. This is availability and sizing, not a
 maker-fill or profitability pass. No archive body was downloaded by this step.

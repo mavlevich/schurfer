@@ -23,6 +23,13 @@ There is no strategy-return or fill result in this directory.
 - `quality-v1.json`: the first inspector's exact result, clean `c1c9fae`, reporting
   all 12 pairs invalid because of the strict file-day boundary assumption.
   This artifact is retained, not overwritten by a successful rerun.
+- `quality-v2.json`: complete source inspection from clean `1f03acf`; all 12 pairs
+  parsed after clipping off-day book trailers. No identified ordinary-volume or
+  native lot/minimum claim is made.
+- `tape-unit-diagnostic.py.txt` and `unit-diagnostic.json`: registered relative
+  unit-error/flag-label breakdown from clean `5e8f09d`, without market values or
+  returns. Its fixed bins explain the strict decimal diagnostic; they do not
+  replace an admission gate.
 - `boundary-metadata.json`: auxiliary timestamp-only first/last book records.
   For each ZIP member, read the first line and the last 1 MiB (discarding its
   partial initial line); emit only first/last system/engine timestamps relative
@@ -46,6 +53,10 @@ python -m schurfer_analytics.bybit_presettlement_source_fetch \
 python -m schurfer_analytics.bybit_presettlement_source_quality \
   --run runtime/research/b2/source-pilot \
   --output runtime/research/b2/source-pilot/quality-v2.json
+
+python docs/research/evidence/b2-archive-scope-2026-11-13/source-pilot/tape-unit-diagnostic.py.txt \
+  --run runtime/research/b2/source-pilot \
+  --output runtime/research/b2/source-pilot/unit-diagnostic.json
 ```
 
 The fetch must use its original clean revision to match `run.json`; replaying it
