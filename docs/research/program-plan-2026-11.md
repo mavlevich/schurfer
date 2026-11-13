@@ -1,7 +1,8 @@
 # Program plan after the method retrospective (proposal, 2026-11-11)
 
 Status, updated 2026-11-13: **B1 and bounded B2 continuation authorized by the owner;
-later economic, test and live stages remain separately gated.** The original
+the owner accepted the revised B3a design on 2026-11-13; code review and main
+publication still precede native B3a reads. Test and live stages remain separately gated.** The original
 2026-11-11 proposal follows the [2026-11-09 program review](program-review-2026-11-09.md),
 which stopped the program, and amends [strategy v2](research-strategy-v2.md) only
 within the specifically accepted research scope. It follows the
@@ -33,9 +34,8 @@ whether to close the project or make one different attempt.
    skipped signal with its reason, daily PnL on the available capital and drawdown, with
    the number of slots set from the event rate before the read. A rarer filter can raise
    the mean trade and lower the money made on the capital, and the report must show it.
-   The pending B3a amendment below proposes a BTC-only nomination gate and defers
-   the liquid-pool median to a non-gating diagnostic; that exception is not active
-   until accepted before outcomes. The portfolio report remains mandatory, but
+   The owner-accepted B3a amendment below uses a BTC-only nomination gate and defers
+   the liquid-pool median to a non-gating diagnostic; the implementation must be published before outcomes. The portfolio report remains mandatory, but
    its one-slot result is not an event-level nomination gate.
 3. **The guards stay:** the floor of counts, symbols and weeks; the ISO-week block bound;
    without the top 5 symbols and the top 5 weeks; both halves.
@@ -146,9 +146,10 @@ and 30 minutes means no latency race.
 its criteria, is frozen before the read, with the batch's multiplicity counted, and the
 results come back together, so the first cannot steer the choice of a second. Only the pre-settlement long goes to it.
 
-### Proposed B3 staging amendment, 2026-11-13 (not yet accepted)
+### B3 staging amendment, accepted 2026-11-13 before outcomes
 
-The [B3a design](b3-economic-screen-proposal-v1.md) explicitly proposes changing
+The owner accepted the revised [B3a design](b3-economic-screen-proposal-v1.md)
+with "ну значит го го го" after the review response. It changes
 the combined B3 read above into a cheap, minute-resolution taker read first
 and a separately gated native maker read later. No B3 fetch or outcome read
 has happened. Before the taker read, freeze both stages to B1's exact 1,637
@@ -159,7 +160,7 @@ taker entry is a different policy, not an approximation of that maker order.
 No parameters or sample may be tuned on B3a; any later maker read is openly
 exposed discovery rather than an outcome-blind independent test.
 
-Other proposed exceptions are explicit: no new 50 bps planning-MDE gate for
+The other accepted exceptions are explicit: no new 50 bps planning-MDE gate for
 this bounded discovery read; the portfolio remains a required diagnostic,
 not a nomination gate; BTC-adjusted net stays a gate, while the expensive
 liquid-pool median is deferred and non-gating. These changes do not waive
@@ -173,13 +174,14 @@ a budget decision, not a mathematical upper bound on maker EV: maker prices,
 timing and fill selection differ. A value above the hurdle permits only
 further source/budget review, never a maker pass or automatic archive fetch.
 
-The proposed single tape policy releases only [t minus 5 minutes, t plus 2
+The future maker tape policy permits registration of only [t minus 5 minutes, t plus 2
 minutes) for these same event instruments and forecast settlements at the
 later maker stage. Exact keys, hashes, next-day coverage and a budget must be
 published in main before that read. All other reserved trade-tape minutes
 stay closed. B3a itself fetches klines only and has no tape-read permission.
-The full design, implementation and seen-windows registration still precede
-any read; this pending amendment is not an authorization or a past exposure.
+Implementation and seen-windows registration in main still precede any B3a
+read. The future maker tape windows remain unread and need their separately
+bounded stage invocation; acceptance does not release a full archive or exam.
 
 **The seconds-level short after settlement is out of this plan** (2026-11-11). Bybit's
 help center warns that whether a position takes part in funding is uncertain within

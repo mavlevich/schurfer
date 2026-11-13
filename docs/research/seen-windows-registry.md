@@ -395,3 +395,40 @@ discrepancies into 432,934 inside-spread and 478,546 at/beyond old opposite quot
 neither category is automatically corrupt data. See [result](b2-entry-pilot-result-2026-11-13.md).
 No new download, masked tape, exit, funding payment, economic return, independent
 test or HYP-012 v2 blind-window read occurred. No configuration was selected.
+
+## B3a fixed economic read registration, 2026-11-13 (not yet run)
+
+Owner accepted the revised [design](b3-economic-screen-proposal-v1.md) after the
+colleague review response with "ну значит го го го". Publish this registration,
+contract, exact scope and implementation in main before the first native read.
+Level: **strategy outcomes**, discovery only. This entry records planned
+exposure, not a completed request or result.
+
+Use B1's frozen d30 export SHA
+`4f1554108d6da503630d24d5b123d8000532b7bb3decb33f033e57dab65711f7`,
+1,637 events, 150 symbols, 718 forecast-settlement symbol-day clusters.
+[Scope](evidence/b3-economic-screen-proposal-2026-11-13/requests.json.gz) SHA
+`c199994e706ae956ed454682a757c867fab187581a233c7d3d5b3897bdb56213`
+fixes 4,200 native linear-perpetual price/mark request identities, each 32
+one-minute bars in [forecast t minus 30 minutes, t plus 2 minutes). Reuse
+pinned discovery funding index `f48fe09f...`, with rates used only for cash-flow
+accounting and proven page coverage. BTC is the only fetched benchmark; no
+median-pool queries, native tape, order-book or new venue is opened.
+
+Both fixed next-minute-entry policies are reported together, exits t minus
+one minute and t plus one minute. Costs 30/50 bps, two-exit Bonferroni bound,
+calendar-week dependence, complete-cluster accounting, funding valuation
+sensitivity, mandatory non-gating portfolio and the limited 15 bps spending
+stop are fixed before the read. Maker uses the same future frozen event list
+and exits; B3a is not an outcome-blind maker validation. All existing discovery
+selection history remains, including the choice of 4h after exploratory returns.
+
+Budget: 256 MiB conservatively reserved response-body bytes including retries,
+two attempts per key, 8,400 globally, three request starts per second. Resume
+cannot reset code/scope/limits/ledger. Preserve source bodies and immutable
+receipts. There have been no B3a market requests or return computations at
+registration. Official API/help pages were read only for schema and funding
+semantics; illustrative examples are not historical execution observations.
+No HYP-031 test year, backward holdout or HYP-012 v2 blind window is released.
+The narrow future maker tape policy is specified in the design but is not
+activated by this kline registration.

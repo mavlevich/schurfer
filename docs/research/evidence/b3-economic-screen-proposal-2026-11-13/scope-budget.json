@@ -1,5 +1,5 @@
 {
-  "status": "proposal_metadata_only_no_requests",
+  "status": "design_accepted_implementation_pending_review_no_requests",
   "base_revision": "596d2458bfb2b9cdddf3c494ba6feecee2eb30e5",
   "event_export_sha256": "4f1554108d6da503630d24d5b123d8000532b7bb3decb33f033e57dab65711f7",
   "decision": "d30",
@@ -24,5 +24,7 @@
   "network_requests": 0,
   "design_revision": "review-response-v2",
   "deferred_median_pool_request_upper_bound": 19446,
-  "request_pacing_seconds_upper_bound_before_retries": 1400
+  "request_pacing_seconds_upper_bound_before_retries": 1400,
+  "request_scope_sha256": "c199994e706ae956ed454682a757c867fab187581a233c7d3d5b3897bdb56213",
+  "request_scope_count": 4200
 }

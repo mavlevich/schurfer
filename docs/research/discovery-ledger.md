@@ -187,3 +187,21 @@ rejections and incomplete paths stay in the denominator. No parameter is tuned,
 no full-corpus download is released, and no strategy is promoted. Further B3
 work requires frozen exits, explicit execution assumptions and a separate read
 decision, carrying the existing exploratory and variant history forward.
+
+## HYP-031 family: B3a two-exit economic read registered, 2026-11-13
+
+[Design](b3-economic-screen-proposal-v1.md), owner accepted after review, not
+yet run. Two selectable minute-entry taker policies on all 1,637 B1 d30 events,
+fixed exits one minute before/after forecast settlement. Neither d15/d10 nor
+B2 sensitivities become selectable candidates. BTC adjustment gates nomination;
+portfolio is mandatory but non-gating, liquid-pool median deferred. Shared week
+draws and a per-policy one-sided 97.5% lower bound account for the two exits
+within this read, not for the full historical search.
+
+Funding-inclusive upper diagnostics below 15 bps on both exits pause larger
+maker spending; this is explicitly not a bound on maker EV. The later maker
+model and cohort are frozen before B3a, so the outcome exposure cannot steer
+its parameters. The 4h post-selection and at least 124 exploratory variants
+plus eight B2 execution configurations remain part of any later confirmation.
+No outcome, candidate nomination, test expenditure or native market request
+is recorded yet. HYP-037 stays closed.

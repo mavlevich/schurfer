@@ -1,7 +1,9 @@
 # B3a: fixed taker economic baseline (proposal, 2026-11-13)
 
-**Status: local design for colleague review, not an active read contract.**
-Revised after colleague review: staged taker/maker reads, a funding-inclusive
+**Status: design accepted by the owner on 2026-11-13 ("ну значит го го го");
+implementation awaits code review and publication in main before native reads.**
+The acceptance follows the disclosed review response, including the limited
+budget interpretation of 15 bps. Revised after colleague review: staged taker/maker reads, a funding-inclusive
 budget stop, portfolio diagnostics, and a BTC-only first fetch. No new market
 data or strategy return was read to prepare this proposal.
 It follows the [B2 pilot](b2-entry-pilot-result-2026-11-13.md), merged as
@@ -65,8 +67,8 @@ Funding valuation is explicitly approximate: USD quantity = 50 / entry price;
 cash proxy per settlement = minus quantity times settlement-minute mark open
 times the settled rate. Show the mark-bar low/high valuation sensitivity and
 require any nomination to survive its less favorable value. This sensitivity
-is not proof of the exchange's exact assessment price. Verify the API and
-funding semantics against primary documentation before freezing implementation.
+is not proof of the exchange's exact assessment price. API fields and funding semantics were checked against primary documentation
+on 2026-11-13; sources are listed below. The minute mark remains a proxy.
 Neither exit is within the documented five-second settlement uncertainty zone.
 
 ## Inputs, budget and integrity
@@ -124,8 +126,12 @@ rather than moving an exit after seeing B3a.
 Average events within the original (symbol, forecast-settlement UTC date)
 cluster, then give clusters equal weight. Retain incomplete clusters in the
 coverage denominator. Resample whole UTC ISO weeks together, 20,000 draws with
-fixed seed 3103; use paired draws for both exits and report a two-week-block
-sensitivity. No assumption that simultaneous altcoin moves are independent.
+fixed seed 3103; include every calendar ISO week touched by discovery, including
+weeks without events. Use paired week draws for both exits and report circular
+two-week blocks, truncated to the same calendar length, as sensitivity. A cluster
+is complete only if all its original events are resolved; do not average just
+the surviving members. A bootstrap with fewer than 95% defined draws is
+unestimable. No assumption that simultaneous altcoin moves are independent.
 
 This proposes a bounded discovery read without a new 50 bps planning-MDE gate.
 Report uncertainty and detectable effects; the read can nominate, never confirm.
@@ -222,9 +228,8 @@ completion of this frozen maker stage.
 
 The changed items needing targeted colleague review are the funding-inclusive
 budget stop and its limited meaning, staged maker freeze, BTC-only scope,
-non-gating portfolio, and narrow future tape release. The scope/contract then
-needs acceptance before implementation reads; no full re-review of B1/B2 is
-requested.
+non-gating portfolio, and narrow future tape release. The owner accepted this design after the response. One focused code review
+remains before merge; no full re-review of B1/B2 is requested.
 
 After acceptance: freeze exact scopes, implement with boundary/regression tests,
 publish contract/code/registry in main, then fetch and read from a clean revision
@@ -237,3 +242,45 @@ eight model configurations), a single frozen test-year batch, and uncertainty
 appropriate to that claim. Before maker economics, justify ordinary-flow
 eligibility, lot constraints, source gaps, both exit paths and adverse selection.
 No new venue, ML, production deployment or live order is part of this proposal.
+
+## Frozen implementation and run sequence
+
+The exact native request list is
+[evidence](evidence/b3-economic-screen-proposal-2026-11-13/requests.json.gz),
+SHA-256 `c199994e706ae956ed454682a757c867fab187581a233c7d3d5b3897bdb56213`.
+It contains 4,200 endpoint/instrument/start/end identities and no market values.
+Original B1 native symbols are reused directly; BTCUSDT is the fixed native
+benchmark. No symbol is reconstructed from a base name or current listing.
+
+Funding coverage is established from successful native funding pages in the
+pinned index, with all truncated-page tails and intervening gaps accounted for.
+The absence of a row without proven query coverage is never zero funding.
+Zero-volume execution bars are unresolved; mark bars have no volume field.
+
+The one-slot report uses a fixed USD 45 notional and USD 5 reserve for each
+entry, so it refuses a new position if cash has fallen below USD 50. That
+conservative restriction is explicit in capital-skip counts. Drawdown and daily
+PnL are realized-only diagnostics; neither estimates intrabar liquidation risk.
+
+See [runbook](b3-economic-screen-runbook-v1.md). Before opening a connection,
+the CLI requires a clean revision included in origin/main, exact publication
+of contract/registry/scope/code, and an immutable local run binding. Every
+request and each 1 KiB body-read reservation are charged durably before I/O,
+including retries and EOF probes. These conservative reservations bound exposed
+HTTP response bodies, not TLS/HTTP headers or kernel buffers. All 4,200 keys
+use the shared transport's `pilot` phase name; this is the entire frozen scope,
+not an extra sampled pilot or another selection gate. The shared 95% transport
+summary never substitutes for the economic report's event/cluster denominators.
+
+Native invalid responses and conflicting values between retries stop sealing;
+there is no last-response-wins merge. Gaps and exhausted fetch errors
+remain unresolved opportunities. Retry limits, byte budgets, source hashes and
+revision cannot change on resume. Sealing retains native bytes and receipt
+hashes; reporting re-verifies the durable receipts and the sealed SHA.
+No report is run until main publication and the authorized stage invocation.
+
+Primary references checked for semantics, not historical execution evidence:
+[Bybit native klines](https://bybit-exchange.github.io/docs/v5/market/kline),
+[mark klines](https://bybit-exchange.github.io/docs/v5/market/mark-kline),
+and [funding calculation](https://www.bybit.com/en/help-center/article/Funding-fee-calculation).
+Documentation examples are illustrative, not new strategy inputs.
