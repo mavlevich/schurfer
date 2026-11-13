@@ -264,3 +264,32 @@ feature or filter. Result SHA-256:
 `96ed96d58514815203aa221a35bce5ed19a37b9b5316947148375a033170311e`.
 See [result](bybit-presettlement-feasibility-result-2026-11-13.md). No strategy return,
 test year, backward holdout or HYP-012 v2 blind-window read is released by this entry.
+
+## Incidental documentation-search exposure, 2026-11-13
+
+A web search intended to verify the order-book archive's official host returned
+irrelevant recent Bybit community snippets with BTC, ETH, NEAR and ZRO quotes and
+technical indicators. The posting times and market values were not verified;
+conservatively record this as incidental quote-level exposure inside the v2 blind
+period. It is not a systematic market-path or strategy-outcome read. The snippets
+are not used in any feature, rule or result; no claim that these incidental quotes
+were unseen is made. Subsequent source verification used the official history
+catalogue's exact public metadata URL, without visiting a market/chart page.
+
+## B2 source and HEAD inventory registration, 2026-11-13
+
+Following the owner's continuation instruction after B1 passed, the
+[B2 contract](bybit-presettlement-maker-feasibility-v1.md) fixes entry model, offsets,
+wait/latency/quantity sensitivities and the metadata scope before any fill or book
+body read. The accepted B1 event identities remain unchanged. Level for this step:
+**coverage and source metadata only**, not price paths or returns.
+
+The official history catalogue links to quote-saver.bycsi.com. The retained browser
+observation and one matching HEAD establish that link; the standalone 0GUSDT
+2025-09-30 provenance example is not part of event selection and no body was read.
+The frozen metadata scope has 724 symbol-days on 151 instruments, 2,172 HEAD URLs
+(ob500, ob200, trades) and at most 4,344 attempts at 3 requests/s. No GET for an
+archive, redirect following, trade row or order-book level is allowed in this step.
+Missing/unknown sizes remain explicit. Ten source-quality pilot IDs (5 per pinned
+delivery stratum) are fixed before HEAD results, without existence/size resampling.
+The pilot's book/tape bodies and all strategy economics remain unread.

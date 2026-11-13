@@ -45,3 +45,5 @@ docs/research/evidence/b1-minute-scope-repair-v1/*.json
 docs/research/evidence/b1-review-2026-11-13/classify-containment.json
 # Immutable B1 supplemental-fetch metadata and the subsequent report.
 docs/research/evidence/b1-prior-only-4h-2026-11-13/**/*.json
+# Immutable source and archive metadata for B2.
+docs/research/evidence/b2-archive-scope-2026-11-13/**/*.json
