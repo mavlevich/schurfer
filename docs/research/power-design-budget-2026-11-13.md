@@ -48,6 +48,14 @@ They are not a forecast that six calendar years or a BTC hedge will solve A.
 
 ## What does not solve this stop
 
+A power floor for an expensive confirmation should not be confused with a universal
+ban on cheap exploratory estimation. A future methodology decision could allow
+one bounded laboratory read on already-exposed discovery under a fixed variant
+and work budget, explicitly reporting uncertainty and spending no holdout. Such a
+read could estimate an effect without pretending to confirm it. It would require
+a new decision before outcomes; it does not retroactively waive HYP-037's stop.
+The current priority remains B2, not restarting all closed families.
+
 Faster computation, more bootstrap draws, relabelling overlapping events as
 independent, screening more features, or choosing the most favorable proxy do
 not create independent information. A shorter hold, volatility targeting,

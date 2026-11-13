@@ -37,6 +37,19 @@ def file_sha(path: Path) -> str:
     return digest.hexdigest()
 
 
+def body_path(root: Path, receipt: dict[str, Any]) -> Path:
+    """Relocate a bound native receipt without trusting its old working directory."""
+    task = receipt["task"]
+    suffix = ".csv.gz" if task["kind"] == "trades" else ".data.zip"
+    expected = f"{task['id']}{suffix}"
+    if Path(expected).name != expected or Path(receipt["path"]).name != expected:
+        raise ValueError("native receipt filename differs")
+    target = root / "bodies" / expected
+    if target.resolve().parent != (root / "bodies").resolve():
+        raise ValueError("native body escapes bound root")
+    return target
+
+
 def tasks(plan: dict[str, Any]) -> list[dict[str, Any]]:
     rows = [*plan["original_pilot_rows"], *plan["additional_format_fixtures"]]
     out = []
