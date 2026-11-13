@@ -1,0 +1,41 @@
+import collections,gzip,json,math
+from pathlib import Path
+base=Path('/Users/mavlevich/Desktop/Projects/schurfer/runtime/research/b1')
+hours={};c=collections.Counter()
+with gzip.open(base/'hourly-551b676.jsonl.gz','rt') as stream:
+ for line in stream:
+  row=json.loads(line)
+  if row['kind']!='premium_60':continue
+  symbol=row['symbol']; target=hours.setdefault(symbol,{})
+  for bar in row['response']['result']['list']:
+   ts=int(bar[0]);o,h,l,close=map(float,bar[1:5]);target[ts]=(o,h,l,close)
+   c['hourly_rows_including_repeated_pages']+=1
+   c['hourly_low_above_high']+=l>h
+   c['hourly_open_outside_hilo']+=not l<=o<=h
+   c['hourly_close_outside_hilo']+=not l<=close<=h
+examples=[]
+seen=set()
+with gzip.open(base/'minutes-7260e55.jsonl.gz','rt') as stream:
+ for line in stream:
+  row=json.loads(line)
+  if row['kind']!='premium_1':continue
+  symbol=row['symbol'];hs=hours.get(symbol,{})
+  for bar in row['response']['result']['list']:
+   t=int(bar[0]);key=(symbol,t)
+   if key in seen:continue
+   seen.add(key);c['minute_rows_unique']+=1
+   close=float(bar[4]); hts=t//3600000*3600000
+   hour=hs.get(hts)
+   if hour is None: c['hour_missing']+=1;continue
+   c['comparable']+=1
+   inside=hour[2]<=close<=hour[1]
+   if not inside:
+    c['outside']+=1
+    c['outside_with_invalid_hour_ohlc']+=not (hour[2]<=min(hour[0],hour[3])<=max(hour[0],hour[3])<=hour[1])
+    if len(examples)<3:examples.append({'symbol':symbol,'hour_start_ms':hts,'hourly_ohlc':hour,'minute_start_ms':t,'minute_close':close})
+   for shift in (-3600000,3600000):
+    other=hs.get(hts+shift)
+    if other is not None and other[2]<=close<=other[1]:c['inside_shift_'+str(shift)]+=1
+out={'scope':'existing B1 discovery premium snapshots only; no perpetual returns','counts':dict(c),'examples':examples}
+Path('runtime/research/b1-verified-report/hourly-diagnostic.json').write_text(json.dumps(out,indent=2)+'\n')
+print(json.dumps(out,indent=2))

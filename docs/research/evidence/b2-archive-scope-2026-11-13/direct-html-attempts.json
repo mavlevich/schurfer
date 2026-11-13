@@ -1,0 +1,22 @@
+{
+  "note": "Direct HTTP returned 403; the normal browser rendered the public page and catalogue. No access-control challenge was bypassed.",
+  "results": [
+    {
+      "archive_link_matches": [],
+      "bytes": 406,
+      "location": null,
+      "scripts": [],
+      "sha256": "8c83ef8ddbf00279a13eaf88bb10470dff3017ad6cd1a0ff7cdec0968b65bff2",
+      "status": 403,
+      "url": "https://www.bybit.com/derivatives/en/history-data"
+    },
+    {
+      "archive_host_present": false,
+      "bytes": 418,
+      "scripts": [],
+      "sha256": "4f49e4bd9aa823dce4b2d98ad2271130ccba6029403880b97f8f1cda98aa75ff",
+      "status": 403,
+      "url": "https://www.bybit.com/en/derivative-activity/history-data"
+    }
+  ]
+}

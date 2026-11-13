@@ -1,0 +1,470 @@
+{
+  "files": [
+    {
+      "columns": [
+        "timestamp",
+        "symbol",
+        "side",
+        "size",
+        "price",
+        "tickDirection",
+        "trdMatchID",
+        "grossValue",
+        "homeNotional",
+        "foreignNotional",
+        "RPI"
+      ],
+      "day": "2025-05-07",
+      "kind": "trades",
+      "symbol": "STPTUSDT"
+    },
+    {
+      "columns": [
+        "timestamp",
+        "symbol",
+        "side",
+        "size",
+        "price",
+        "tickDirection",
+        "trdMatchID",
+        "grossValue",
+        "homeNotional",
+        "foreignNotional",
+        "RPI"
+      ],
+      "day": "2025-08-24",
+      "kind": "trades",
+      "symbol": "PROMPTUSDT"
+    },
+    {
+      "columns": [
+        "timestamp",
+        "symbol",
+        "side",
+        "size",
+        "price",
+        "tickDirection",
+        "trdMatchID",
+        "grossValue",
+        "homeNotional",
+        "foreignNotional",
+        "RPI"
+      ],
+      "day": "2025-04-11",
+      "kind": "trades",
+      "symbol": "AUCTIONUSDT"
+    },
+    {
+      "columns": [
+        "timestamp",
+        "symbol",
+        "side",
+        "size",
+        "price",
+        "tickDirection",
+        "trdMatchID",
+        "grossValue",
+        "homeNotional",
+        "foreignNotional",
+        "RPI"
+      ],
+      "day": "2025-07-22",
+      "kind": "trades",
+      "symbol": "SPKUSDT"
+    },
+    {
+      "columns": [
+        "timestamp",
+        "symbol",
+        "side",
+        "size",
+        "price",
+        "tickDirection",
+        "trdMatchID",
+        "grossValue",
+        "homeNotional",
+        "foreignNotional",
+        "RPI"
+      ],
+      "day": "2025-06-01",
+      "kind": "trades",
+      "symbol": "OMGUSDT"
+    },
+    {
+      "cts_present": true,
+      "data_keys": [
+        "a",
+        "b",
+        "s",
+        "seq",
+        "u"
+      ],
+      "day": "2025-03-20",
+      "kind": "ob500",
+      "members": 1,
+      "symbol": "VIDTUSDT",
+      "top_keys": [
+        "cts",
+        "data",
+        "topic",
+        "ts",
+        "type"
+      ]
+    },
+    {
+      "cts_present": true,
+      "data_keys": [
+        "a",
+        "b",
+        "s",
+        "seq",
+        "u"
+      ],
+      "day": "2025-04-11",
+      "kind": "ob500",
+      "members": 1,
+      "symbol": "AUCTIONUSDT",
+      "top_keys": [
+        "cts",
+        "data",
+        "topic",
+        "ts",
+        "type"
+      ]
+    },
+    {
+      "columns": [
+        "timestamp",
+        "symbol",
+        "side",
+        "size",
+        "price",
+        "tickDirection",
+        "trdMatchID",
+        "grossValue",
+        "homeNotional",
+        "foreignNotional"
+      ],
+      "day": "2024-12-27",
+      "kind": "trades",
+      "symbol": "UXLINKUSDT"
+    },
+    {
+      "columns": [
+        "timestamp",
+        "symbol",
+        "side",
+        "size",
+        "price",
+        "tickDirection",
+        "trdMatchID",
+        "grossValue",
+        "homeNotional",
+        "foreignNotional"
+      ],
+      "day": "2025-03-20",
+      "kind": "trades",
+      "symbol": "VIDTUSDT"
+    },
+    {
+      "columns": [
+        "timestamp",
+        "symbol",
+        "side",
+        "size",
+        "price",
+        "tickDirection",
+        "trdMatchID",
+        "grossValue",
+        "homeNotional",
+        "foreignNotional"
+      ],
+      "day": "2025-02-17",
+      "kind": "trades",
+      "symbol": "IPUSDT"
+    },
+    {
+      "cts_present": true,
+      "data_keys": [
+        "a",
+        "b",
+        "s",
+        "seq",
+        "u"
+      ],
+      "day": "2025-08-23",
+      "kind": "ob200",
+      "members": 1,
+      "symbol": "ASRUSDT",
+      "top_keys": [
+        "cts",
+        "data",
+        "topic",
+        "ts",
+        "type"
+      ]
+    },
+    {
+      "cts_present": true,
+      "data_keys": [
+        "a",
+        "b",
+        "s",
+        "seq",
+        "u"
+      ],
+      "day": "2025-07-22",
+      "kind": "ob500",
+      "members": 1,
+      "symbol": "SPKUSDT",
+      "top_keys": [
+        "cts",
+        "data",
+        "topic",
+        "ts",
+        "type"
+      ]
+    },
+    {
+      "cts_present": true,
+      "data_keys": [
+        "a",
+        "b",
+        "s",
+        "seq",
+        "u"
+      ],
+      "day": "2025-07-09",
+      "kind": "ob500",
+      "members": 1,
+      "symbol": "MUSDT",
+      "top_keys": [
+        "cts",
+        "data",
+        "topic",
+        "ts",
+        "type"
+      ]
+    },
+    {
+      "columns": [
+        "timestamp",
+        "symbol",
+        "side",
+        "size",
+        "price",
+        "tickDirection",
+        "trdMatchID",
+        "grossValue",
+        "homeNotional",
+        "foreignNotional",
+        "RPI"
+      ],
+      "day": "2025-07-09",
+      "kind": "trades",
+      "symbol": "MUSDT"
+    },
+    {
+      "cts_present": true,
+      "data_keys": [
+        "a",
+        "b",
+        "s",
+        "seq",
+        "u"
+      ],
+      "day": "2025-05-07",
+      "kind": "ob500",
+      "members": 1,
+      "symbol": "STPTUSDT",
+      "top_keys": [
+        "cts",
+        "data",
+        "topic",
+        "ts",
+        "type"
+      ]
+    },
+    {
+      "cts_present": true,
+      "data_keys": [
+        "a",
+        "b",
+        "s",
+        "seq",
+        "u"
+      ],
+      "day": "2025-06-01",
+      "kind": "ob500",
+      "members": 1,
+      "symbol": "OMGUSDT",
+      "top_keys": [
+        "cts",
+        "data",
+        "topic",
+        "ts",
+        "type"
+      ]
+    },
+    {
+      "columns": [
+        "timestamp",
+        "symbol",
+        "side",
+        "size",
+        "price",
+        "tickDirection",
+        "trdMatchID",
+        "grossValue",
+        "homeNotional",
+        "foreignNotional",
+        "RPI"
+      ],
+      "day": "2025-08-23",
+      "kind": "trades",
+      "symbol": "ASRUSDT"
+    },
+    {
+      "cts_present": true,
+      "data_keys": [
+        "a",
+        "b",
+        "s",
+        "seq",
+        "u"
+      ],
+      "day": "2024-12-27",
+      "kind": "ob500",
+      "members": 1,
+      "symbol": "UXLINKUSDT",
+      "top_keys": [
+        "cts",
+        "data",
+        "topic",
+        "ts",
+        "type"
+      ]
+    },
+    {
+      "cts_present": true,
+      "data_keys": [
+        "a",
+        "b",
+        "s",
+        "seq",
+        "u"
+      ],
+      "day": "2025-02-18",
+      "kind": "ob500",
+      "members": 1,
+      "symbol": "STMXUSDT",
+      "top_keys": [
+        "cts",
+        "data",
+        "topic",
+        "ts",
+        "type"
+      ]
+    },
+    {
+      "cts_present": true,
+      "data_keys": [
+        "a",
+        "b",
+        "s",
+        "seq",
+        "u"
+      ],
+      "day": "2025-08-24",
+      "kind": "ob200",
+      "members": 1,
+      "symbol": "PROMPTUSDT",
+      "top_keys": [
+        "cts",
+        "data",
+        "topic",
+        "ts",
+        "type"
+      ]
+    },
+    {
+      "cts_present": true,
+      "data_keys": [
+        "a",
+        "b",
+        "s",
+        "seq",
+        "u"
+      ],
+      "day": "2025-02-10",
+      "kind": "ob500",
+      "members": 1,
+      "symbol": "MEUSDT",
+      "top_keys": [
+        "cts",
+        "data",
+        "topic",
+        "ts",
+        "type"
+      ]
+    },
+    {
+      "columns": [
+        "timestamp",
+        "symbol",
+        "side",
+        "size",
+        "price",
+        "tickDirection",
+        "trdMatchID",
+        "grossValue",
+        "homeNotional",
+        "foreignNotional"
+      ],
+      "day": "2025-02-10",
+      "kind": "trades",
+      "symbol": "MEUSDT"
+    },
+    {
+      "cts_present": true,
+      "data_keys": [
+        "a",
+        "b",
+        "s",
+        "seq",
+        "u"
+      ],
+      "day": "2025-02-17",
+      "kind": "ob500",
+      "members": 1,
+      "symbol": "IPUSDT",
+      "top_keys": [
+        "cts",
+        "data",
+        "topic",
+        "ts",
+        "type"
+      ]
+    },
+    {
+      "columns": [
+        "timestamp",
+        "symbol",
+        "side",
+        "size",
+        "price",
+        "tickDirection",
+        "trdMatchID",
+        "grossValue",
+        "homeNotional",
+        "foreignNotional"
+      ],
+      "day": "2025-02-18",
+      "kind": "trades",
+      "symbol": "STMXUSDT"
+    }
+  ],
+  "level": "schema_only",
+  "manifest_sha256": "527b7446887d1f6c466c9891d9f1ef67134dc4b86aaf7a30d3f83c8ddc9bb0a0",
+  "revision": "c1c9faeb29d3c996979dda0a45f625f44b1066aa"
+}

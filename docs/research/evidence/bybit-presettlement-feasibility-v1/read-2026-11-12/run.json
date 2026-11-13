@@ -1,0 +1,27 @@
+{
+  "run_date_utc": "2026-11-12",
+  "revision": "1a9f9f8dc96e8a2cb7bade545df3cc56f53516fc",
+  "working_tree_porcelain_before_report": "",
+  "module_invocation": "from schurfer_analytics.bybit_presettlement_feasibility import main; main()",
+  "elapsed_seconds": 130.63,
+  "max_rss_bytes_macos": 1936637952,
+  "input_sha256": {
+    "index": "f48fe09f7023a476e524cf70c6ec1b629eee30a9a07cff41c9d149dfb59e0cf5",
+    "hourly": "8c3d81a765e993cfbc67444f5ac39f10be79e11567346b66e08c38e861e93919",
+    "minutes": "5d638d68d40a13e2ad10573ae7d6446a193a66b0db8dc4d1d12e20c0e9a58b15"
+  },
+  "code_sha256": {
+    "apps/analytics/schurfer_analytics/bybit_presettlement_feasibility.py": "4faba063c0f4ecd882314af26888269ad249cb6d114d0863801b5010e8bb3070",
+    "apps/analytics/schurfer_analytics/bybit_post_funding_screen.py": "4d58764c5a2342020a6bb872155bb6aad8a398dada183c25af0141707e71981e",
+    "apps/analytics/schurfer_analytics/bybit_carry_feasibility.py": "685dac395ebfe30d650ea89a08e50609550dbf0eb9542b4a1582aa5acb0a4961",
+    "apps/analytics/schurfer_analytics/reporting.py": "98f445f4b8190373826cc693c7a5d18aea2afab57f258ccc6315ec0cc4ecb005"
+  },
+  "evidence_sha256": {
+    "result.json": "1b3b6ecf52e2422357d0a2daa9c4164c8c36b115f96946dc8fe3c74f965ae04b",
+    "hourly-diagnostic.json": "59e3d154d34039ac0e05db753b85ab2781ab7cf053b28df6a4526ea3721cf398",
+    "hourly_diagnostic.py.txt": "134ab1327708ee27bf1be5ee7522f5c3412b1eeb76cb04e634a7ddccce33be3d",
+    "independent-snapshot-check.json": "09f90c1f61b113bfffbf84c5497cbe407e3f9e22667f358cf547d27a8000eeaa"
+  },
+  "scope": "existing B1 discovery snapshots only; no new market fetch, perpetual price or return read; all interval gates retained",
+  "code_delivery": "local merge of reviewed/tested interval fix #587 and the snapshot-pinning branch, not deployed and not yet merged to main"
+}

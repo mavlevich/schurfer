@@ -1,0 +1,369 @@
+{
+  "attempts": 24,
+  "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+  "complete": 24,
+  "files": {
+    "0b3cfebf0ab4b1e2464eaa8ddf00d80007d827eaffb377a333259b09199e0188": {
+      "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+      "path": "runtime/research/b2/source-pilot/bodies/0b3cfebf0ab4b1e2464eaa8ddf00d80007d827eaffb377a333259b09199e0188.csv.gz",
+      "recovered_after_publication": false,
+      "sha256": "8c660591ec47459e87e049939f1fb13f4c4d25833e921d02c8b118e4ce85580f",
+      "task": {
+        "bytes": 19290250,
+        "day": "2025-05-07",
+        "etag": "\"1b8e4abfcd54b2574df7659c685348f7-3\"",
+        "id": "0b3cfebf0ab4b1e2464eaa8ddf00d80007d827eaffb377a333259b09199e0188",
+        "kind": "trades",
+        "symbol": "STPTUSDT",
+        "url": "https://public.bybit.com/trading/STPTUSDT/STPTUSDT2025-05-07.csv.gz"
+      }
+    },
+    "0ba0184cd6e61b525eaf9a71a32d134a7643c48044018dd30b6f6c98aef635e3": {
+      "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+      "path": "runtime/research/b2/source-pilot/bodies/0ba0184cd6e61b525eaf9a71a32d134a7643c48044018dd30b6f6c98aef635e3.csv.gz",
+      "recovered_after_publication": false,
+      "sha256": "02d65a8ead4b458d186f131f3c30ef85bf5df8388c8363e5e076d664c93967a9",
+      "task": {
+        "bytes": 135832174,
+        "day": "2025-08-24",
+        "etag": "\"26d3a84f2478506ae136b605d89846d3-17\"",
+        "id": "0ba0184cd6e61b525eaf9a71a32d134a7643c48044018dd30b6f6c98aef635e3",
+        "kind": "trades",
+        "symbol": "PROMPTUSDT",
+        "url": "https://public.bybit.com/trading/PROMPTUSDT/PROMPTUSDT2025-08-24.csv.gz"
+      }
+    },
+    "197fcfea87a39e4bb000cdb2b3f53177d74b07988164b9a32db0c1bbf1785a5c": {
+      "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+      "path": "runtime/research/b2/source-pilot/bodies/197fcfea87a39e4bb000cdb2b3f53177d74b07988164b9a32db0c1bbf1785a5c.csv.gz",
+      "recovered_after_publication": false,
+      "sha256": "73734c8779ce24edf47449b10f8edae2fd63899a19ce0b959c351ab2e27711ff",
+      "task": {
+        "bytes": 17309548,
+        "day": "2025-04-11",
+        "etag": "\"7394264ee968691a8f3b9c8aa6732fd8-3\"",
+        "id": "197fcfea87a39e4bb000cdb2b3f53177d74b07988164b9a32db0c1bbf1785a5c",
+        "kind": "trades",
+        "symbol": "AUCTIONUSDT",
+        "url": "https://public.bybit.com/trading/AUCTIONUSDT/AUCTIONUSDT2025-04-11.csv.gz"
+      }
+    },
+    "2f759a8d2500f80805ec662a3dce84b69854f3ef95bdff5c52bd80030486de6d": {
+      "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+      "path": "runtime/research/b2/source-pilot/bodies/2f759a8d2500f80805ec662a3dce84b69854f3ef95bdff5c52bd80030486de6d.csv.gz",
+      "recovered_after_publication": false,
+      "sha256": "2e0c4ce6fcf5361b82e82dd4c01abe26bc919d84e956d4eb69d9f7a3048fa6db",
+      "task": {
+        "bytes": 83018082,
+        "day": "2025-07-22",
+        "etag": "\"dd8a5d2f33f3c2941cbdedaa4a7e5ca8-10\"",
+        "id": "2f759a8d2500f80805ec662a3dce84b69854f3ef95bdff5c52bd80030486de6d",
+        "kind": "trades",
+        "symbol": "SPKUSDT",
+        "url": "https://public.bybit.com/trading/SPKUSDT/SPKUSDT2025-07-22.csv.gz"
+      }
+    },
+    "38beb1d2c85153b5e4f81129e3732e1d2e15821139546dcf7f863ca9a581917b": {
+      "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+      "path": "runtime/research/b2/source-pilot/bodies/38beb1d2c85153b5e4f81129e3732e1d2e15821139546dcf7f863ca9a581917b.csv.gz",
+      "recovered_after_publication": false,
+      "sha256": "31cdd90c9bb7f6468266b2b9a179c9b42a7078871f896c90356e5e52cfe451dd",
+      "task": {
+        "bytes": 9660306,
+        "day": "2025-06-01",
+        "etag": "\"8b756b1c961a9a8b25fd7deeb4ef31d4-2\"",
+        "id": "38beb1d2c85153b5e4f81129e3732e1d2e15821139546dcf7f863ca9a581917b",
+        "kind": "trades",
+        "symbol": "OMGUSDT",
+        "url": "https://public.bybit.com/trading/OMGUSDT/OMGUSDT2025-06-01.csv.gz"
+      }
+    },
+    "39b7c490744a2dd1b9bb36cbee4c0b37fc76ff7c3c31aa9804cf0c9a85790c64": {
+      "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+      "path": "runtime/research/b2/source-pilot/bodies/39b7c490744a2dd1b9bb36cbee4c0b37fc76ff7c3c31aa9804cf0c9a85790c64.data.zip",
+      "recovered_after_publication": false,
+      "sha256": "76104f6406b7defe8e31c252f86f8df4e9798ff59fbeed546a9a5128013343b3",
+      "task": {
+        "bytes": 36856663,
+        "day": "2025-03-20",
+        "etag": "\"5176701892b1eb2fefd523eead48d34d\"",
+        "id": "39b7c490744a2dd1b9bb36cbee4c0b37fc76ff7c3c31aa9804cf0c9a85790c64",
+        "kind": "ob500",
+        "symbol": "VIDTUSDT",
+        "url": "https://quote-saver.bycsi.com/orderbook/linear/VIDTUSDT/2025-03-20_VIDTUSDT_ob500.data.zip"
+      }
+    },
+    "3e60560864b991b718df913f678e855b3bf6191f4626f6ac9e56ac4b1fbf8cd1": {
+      "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+      "path": "runtime/research/b2/source-pilot/bodies/3e60560864b991b718df913f678e855b3bf6191f4626f6ac9e56ac4b1fbf8cd1.data.zip",
+      "recovered_after_publication": false,
+      "sha256": "309bca3082594747f0a9b403e0f856773d4bb02cecfc6ad668751a9721630234",
+      "task": {
+        "bytes": 81289410,
+        "day": "2025-04-11",
+        "etag": "\"40106fc96dc7fb65be6430ef5084da6a\"",
+        "id": "3e60560864b991b718df913f678e855b3bf6191f4626f6ac9e56ac4b1fbf8cd1",
+        "kind": "ob500",
+        "symbol": "AUCTIONUSDT",
+        "url": "https://quote-saver.bycsi.com/orderbook/linear/AUCTIONUSDT/2025-04-11_AUCTIONUSDT_ob500.data.zip"
+      }
+    },
+    "4447e323affd81b5cb993f784af1a764e6560ac2a83ac2cced2e402daf8d3102": {
+      "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+      "path": "runtime/research/b2/source-pilot/bodies/4447e323affd81b5cb993f784af1a764e6560ac2a83ac2cced2e402daf8d3102.csv.gz",
+      "recovered_after_publication": false,
+      "sha256": "4270abd08c8ec35dccc57c8b1d6c089f4a21a1e5761ceb5fa154ff2d07dcd8a9",
+      "task": {
+        "bytes": 50516941,
+        "day": "2024-12-27",
+        "etag": "\"8213dfcf1525a63f308461735c0e5861-7\"",
+        "id": "4447e323affd81b5cb993f784af1a764e6560ac2a83ac2cced2e402daf8d3102",
+        "kind": "trades",
+        "symbol": "UXLINKUSDT",
+        "url": "https://public.bybit.com/trading/UXLINKUSDT/UXLINKUSDT2024-12-27.csv.gz"
+      }
+    },
+    "5daebe4b883ee86ea5139df75712eedb80b1ad4d928699a0774757ea2234a787": {
+      "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+      "path": "runtime/research/b2/source-pilot/bodies/5daebe4b883ee86ea5139df75712eedb80b1ad4d928699a0774757ea2234a787.csv.gz",
+      "recovered_after_publication": false,
+      "sha256": "e820b1b0f3e69bd8d3602aa8f4b13a636f53d4eaef416cdc0992a295adc134a8",
+      "task": {
+        "bytes": 18608766,
+        "day": "2025-03-20",
+        "etag": "\"c915a60cabf1c5b374012c876e1bd9b0-3\"",
+        "id": "5daebe4b883ee86ea5139df75712eedb80b1ad4d928699a0774757ea2234a787",
+        "kind": "trades",
+        "symbol": "VIDTUSDT",
+        "url": "https://public.bybit.com/trading/VIDTUSDT/VIDTUSDT2025-03-20.csv.gz"
+      }
+    },
+    "64fe18eb3234779f37b8ff9b61c19dceb222232cf908eed84ca5d36854771743": {
+      "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+      "path": "runtime/research/b2/source-pilot/bodies/64fe18eb3234779f37b8ff9b61c19dceb222232cf908eed84ca5d36854771743.csv.gz",
+      "recovered_after_publication": false,
+      "sha256": "b9549c48e50de129aa92b6a56f8e30e2360c9ef1a49d4bd6cc7062a5453cde1d",
+      "task": {
+        "bytes": 41823074,
+        "day": "2025-02-17",
+        "etag": "\"947e352409e81a6cc5d20c63c5bdedde-5\"",
+        "id": "64fe18eb3234779f37b8ff9b61c19dceb222232cf908eed84ca5d36854771743",
+        "kind": "trades",
+        "symbol": "IPUSDT",
+        "url": "https://public.bybit.com/trading/IPUSDT/IPUSDT2025-02-17.csv.gz"
+      }
+    },
+    "663cdc81cf1c4689fbaf337647c088ccf648d00c69d7d486099c711258abfe68": {
+      "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+      "path": "runtime/research/b2/source-pilot/bodies/663cdc81cf1c4689fbaf337647c088ccf648d00c69d7d486099c711258abfe68.data.zip",
+      "recovered_after_publication": false,
+      "sha256": "310279e80aa29eb0b388589b622ae78072930ab326f651d417ad954366109e88",
+      "task": {
+        "bytes": 10522221,
+        "day": "2025-08-23",
+        "etag": "\"031e55e8fc4af90029e3d071dec7da3b\"",
+        "id": "663cdc81cf1c4689fbaf337647c088ccf648d00c69d7d486099c711258abfe68",
+        "kind": "ob200",
+        "symbol": "ASRUSDT",
+        "url": "https://quote-saver.bycsi.com/orderbook/linear/ASRUSDT/2025-08-23_ASRUSDT_ob200.data.zip"
+      }
+    },
+    "766ae1fbb6ff7c0174e3ce36b99c2f8a1c5619381cbfbb869c9b5ae0a66d406f": {
+      "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+      "path": "runtime/research/b2/source-pilot/bodies/766ae1fbb6ff7c0174e3ce36b99c2f8a1c5619381cbfbb869c9b5ae0a66d406f.data.zip",
+      "recovered_after_publication": false,
+      "sha256": "694b2ead1bee53c9b3aefaf722be0a495e1da91d21981a0e05da584ad5226cd6",
+      "task": {
+        "bytes": 165443456,
+        "day": "2025-07-22",
+        "etag": "\"8db66846d86d116d28ec4e401baf3c8a\"",
+        "id": "766ae1fbb6ff7c0174e3ce36b99c2f8a1c5619381cbfbb869c9b5ae0a66d406f",
+        "kind": "ob500",
+        "symbol": "SPKUSDT",
+        "url": "https://quote-saver.bycsi.com/orderbook/linear/SPKUSDT/2025-07-22_SPKUSDT_ob500.data.zip"
+      }
+    },
+    "79eb34c462c0308ca0684c6c3bfe8bd2eb1a90bd1bc2c5e5468a926464bd5c4c": {
+      "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+      "path": "runtime/research/b2/source-pilot/bodies/79eb34c462c0308ca0684c6c3bfe8bd2eb1a90bd1bc2c5e5468a926464bd5c4c.data.zip",
+      "recovered_after_publication": false,
+      "sha256": "054988b1f6aa1f7e89611969ccb00e1997531d9f478cfe08f456eef335c2c930",
+      "task": {
+        "bytes": 71567386,
+        "day": "2025-07-09",
+        "etag": "\"42526552c5bd2ab1db9705c83556d91a\"",
+        "id": "79eb34c462c0308ca0684c6c3bfe8bd2eb1a90bd1bc2c5e5468a926464bd5c4c",
+        "kind": "ob500",
+        "symbol": "MUSDT",
+        "url": "https://quote-saver.bycsi.com/orderbook/linear/MUSDT/2025-07-09_MUSDT_ob500.data.zip"
+      }
+    },
+    "84f68a61ed3fc4363cc2e2acba9460bbeccb87a29fd03c3148ead88542b2d806": {
+      "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+      "path": "runtime/research/b2/source-pilot/bodies/84f68a61ed3fc4363cc2e2acba9460bbeccb87a29fd03c3148ead88542b2d806.csv.gz",
+      "recovered_after_publication": false,
+      "sha256": "b8c762fa7a04ed014225abb79bf54faf74fd444465b7bef3b890f8c56b7e0f7c",
+      "task": {
+        "bytes": 35990982,
+        "day": "2025-07-09",
+        "etag": "\"7f529943aceadc8be75e618b55d8aba6-5\"",
+        "id": "84f68a61ed3fc4363cc2e2acba9460bbeccb87a29fd03c3148ead88542b2d806",
+        "kind": "trades",
+        "symbol": "MUSDT",
+        "url": "https://public.bybit.com/trading/MUSDT/MUSDT2025-07-09.csv.gz"
+      }
+    },
+    "8f2258f0246a2eab60398690073186696b6c1aea2895aa9da616d89ed791a5f1": {
+      "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+      "path": "runtime/research/b2/source-pilot/bodies/8f2258f0246a2eab60398690073186696b6c1aea2895aa9da616d89ed791a5f1.data.zip",
+      "recovered_after_publication": false,
+      "sha256": "7a412caeaf843aae807e29662e9996a5fcb0fba3b504e8c3cde375f50834d154",
+      "task": {
+        "bytes": 50061753,
+        "day": "2025-05-07",
+        "etag": "\"c9d2e57d396fe887d9829ddcdada0211\"",
+        "id": "8f2258f0246a2eab60398690073186696b6c1aea2895aa9da616d89ed791a5f1",
+        "kind": "ob500",
+        "symbol": "STPTUSDT",
+        "url": "https://quote-saver.bycsi.com/orderbook/linear/STPTUSDT/2025-05-07_STPTUSDT_ob500.data.zip"
+      }
+    },
+    "ad7990544d557a3db393ebda22884aef6d22651e31d7f628bd8d702407c385b2": {
+      "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+      "path": "runtime/research/b2/source-pilot/bodies/ad7990544d557a3db393ebda22884aef6d22651e31d7f628bd8d702407c385b2.data.zip",
+      "recovered_after_publication": false,
+      "sha256": "f096eef5f3cd2497f70c83e77d6f4e5b724c284b3f89758b908915c0cf710920",
+      "task": {
+        "bytes": 22005149,
+        "day": "2025-06-01",
+        "etag": "\"f662e4befeeeae518357b75b27557571\"",
+        "id": "ad7990544d557a3db393ebda22884aef6d22651e31d7f628bd8d702407c385b2",
+        "kind": "ob500",
+        "symbol": "OMGUSDT",
+        "url": "https://quote-saver.bycsi.com/orderbook/linear/OMGUSDT/2025-06-01_OMGUSDT_ob500.data.zip"
+      }
+    },
+    "b195e4dd420858c3c96dab59a2132d1c43853f9528bbf3e5091bed5ce1cc8f6a": {
+      "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+      "path": "runtime/research/b2/source-pilot/bodies/b195e4dd420858c3c96dab59a2132d1c43853f9528bbf3e5091bed5ce1cc8f6a.csv.gz",
+      "recovered_after_publication": false,
+      "sha256": "425b3de76346b68f1cd97e2fd909a194081d7d35f87cc855fd36674b84601a2f",
+      "task": {
+        "bytes": 1911110,
+        "day": "2025-08-23",
+        "etag": "\"24b530e6eaabb5564540d8ab3266c967\"",
+        "id": "b195e4dd420858c3c96dab59a2132d1c43853f9528bbf3e5091bed5ce1cc8f6a",
+        "kind": "trades",
+        "symbol": "ASRUSDT",
+        "url": "https://public.bybit.com/trading/ASRUSDT/ASRUSDT2025-08-23.csv.gz"
+      }
+    },
+    "d0b2b9845df051182aa06b9e8b97cab5d4657b46f501fb22171aa7de8e86b9b4": {
+      "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+      "path": "runtime/research/b2/source-pilot/bodies/d0b2b9845df051182aa06b9e8b97cab5d4657b46f501fb22171aa7de8e86b9b4.data.zip",
+      "recovered_after_publication": false,
+      "sha256": "727e796793979784e610d932d9882233e3cc2f48bf22e24b740301746bc0a366",
+      "task": {
+        "bytes": 154507366,
+        "day": "2024-12-27",
+        "etag": "\"1c467c486194d19765270fcc02955a23\"",
+        "id": "d0b2b9845df051182aa06b9e8b97cab5d4657b46f501fb22171aa7de8e86b9b4",
+        "kind": "ob500",
+        "symbol": "UXLINKUSDT",
+        "url": "https://quote-saver.bycsi.com/orderbook/linear/UXLINKUSDT/2024-12-27_UXLINKUSDT_ob500.data.zip"
+      }
+    },
+    "d2d62426a1ee47163c1bdccb28d65b9072b2aae63ad1a0c5fcc6d1b6ea018e9a": {
+      "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+      "path": "runtime/research/b2/source-pilot/bodies/d2d62426a1ee47163c1bdccb28d65b9072b2aae63ad1a0c5fcc6d1b6ea018e9a.data.zip",
+      "recovered_after_publication": false,
+      "sha256": "74b8502be39422e0210ab48b223508bbb7ae9fee1d847ad4829de02e36058ddd",
+      "task": {
+        "bytes": 17605852,
+        "day": "2025-02-18",
+        "etag": "\"14ea27ea441c405dbf30433458a5703a\"",
+        "id": "d2d62426a1ee47163c1bdccb28d65b9072b2aae63ad1a0c5fcc6d1b6ea018e9a",
+        "kind": "ob500",
+        "symbol": "STMXUSDT",
+        "url": "https://quote-saver.bycsi.com/orderbook/linear/STMXUSDT/2025-02-18_STMXUSDT_ob500.data.zip"
+      }
+    },
+    "d5d73f3af1f6ae81f198134b959cb3c571864178d2976c299aa8483779003048": {
+      "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+      "path": "runtime/research/b2/source-pilot/bodies/d5d73f3af1f6ae81f198134b959cb3c571864178d2976c299aa8483779003048.data.zip",
+      "recovered_after_publication": false,
+      "sha256": "1bb2f74606531c274f3ff4e36f13429b80533db4dafafcfea84eabe10bb6a721",
+      "task": {
+        "bytes": 243974109,
+        "day": "2025-08-24",
+        "etag": "\"bcb51822137ef00b35fc97879e5fe518\"",
+        "id": "d5d73f3af1f6ae81f198134b959cb3c571864178d2976c299aa8483779003048",
+        "kind": "ob200",
+        "symbol": "PROMPTUSDT",
+        "url": "https://quote-saver.bycsi.com/orderbook/linear/PROMPTUSDT/2025-08-24_PROMPTUSDT_ob200.data.zip"
+      }
+    },
+    "dd89a587e9270e189cba936c2efc91e7a10f6530f0fa253562b34d890e7ad718": {
+      "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+      "path": "runtime/research/b2/source-pilot/bodies/dd89a587e9270e189cba936c2efc91e7a10f6530f0fa253562b34d890e7ad718.data.zip",
+      "recovered_after_publication": false,
+      "sha256": "9b6b4098a491c41064ddb3da48b9ff97073f7fd8dd9372cd789136018c1ebe6c",
+      "task": {
+        "bytes": 105016217,
+        "day": "2025-02-10",
+        "etag": "\"59d915288a570b2471416f9ef9cff44b\"",
+        "id": "dd89a587e9270e189cba936c2efc91e7a10f6530f0fa253562b34d890e7ad718",
+        "kind": "ob500",
+        "symbol": "MEUSDT",
+        "url": "https://quote-saver.bycsi.com/orderbook/linear/MEUSDT/2025-02-10_MEUSDT_ob500.data.zip"
+      }
+    },
+    "eba21ddb727e6009d691e114c367ff242347bc5633808c2aa05b778e440f58a6": {
+      "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+      "path": "runtime/research/b2/source-pilot/bodies/eba21ddb727e6009d691e114c367ff242347bc5633808c2aa05b778e440f58a6.csv.gz",
+      "recovered_after_publication": false,
+      "sha256": "8a52f2f79a6117ffd874f037feb55a630da09811eb2e4dbc4e0a59745eefcb53",
+      "task": {
+        "bytes": 33224358,
+        "day": "2025-02-10",
+        "etag": "\"08c7dbf6cd3527076836515fd5322878-4\"",
+        "id": "eba21ddb727e6009d691e114c367ff242347bc5633808c2aa05b778e440f58a6",
+        "kind": "trades",
+        "symbol": "MEUSDT",
+        "url": "https://public.bybit.com/trading/MEUSDT/MEUSDT2025-02-10.csv.gz"
+      }
+    },
+    "f98b8d3bc4275eefc90041a055075ef0b7753a5b0f8f048a516734859f03de5c": {
+      "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+      "path": "runtime/research/b2/source-pilot/bodies/f98b8d3bc4275eefc90041a055075ef0b7753a5b0f8f048a516734859f03de5c.data.zip",
+      "recovered_after_publication": false,
+      "sha256": "09e6d0a9ca2643509517fefb8a19e409c4553a4ce35aba6294880b7337ae7e83",
+      "task": {
+        "bytes": 147007705,
+        "day": "2025-02-17",
+        "etag": "\"abe00d483fcc8c11e0237059bd43bea1\"",
+        "id": "f98b8d3bc4275eefc90041a055075ef0b7753a5b0f8f048a516734859f03de5c",
+        "kind": "ob500",
+        "symbol": "IPUSDT",
+        "url": "https://quote-saver.bycsi.com/orderbook/linear/IPUSDT/2025-02-17_IPUSDT_ob500.data.zip"
+      }
+    },
+    "fc8b04e6168b07d5d45513a27f5e4b875043c8f1981261fa3814b82c5522c73b": {
+      "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+      "path": "runtime/research/b2/source-pilot/bodies/fc8b04e6168b07d5d45513a27f5e4b875043c8f1981261fa3814b82c5522c73b.csv.gz",
+      "recovered_after_publication": false,
+      "sha256": "c10a40d85b1602b555811fa319b08f844d4f2fb404b796a20243e46b0ddca03e",
+      "task": {
+        "bytes": 2806012,
+        "day": "2025-02-18",
+        "etag": "\"deb077accaffd6ede94f2cc644e06e7f\"",
+        "id": "fc8b04e6168b07d5d45513a27f5e4b875043c8f1981261fa3814b82c5522c73b",
+        "kind": "trades",
+        "symbol": "STMXUSDT",
+        "url": "https://public.bybit.com/trading/STMXUSDT/STMXUSDT2025-02-18.csv.gz"
+      }
+    }
+  },
+  "reserved_bytes": 1558183936,
+  "version": "b2_source_pilot_fetch_v1"
+}

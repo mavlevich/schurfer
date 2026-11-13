@@ -1,0 +1,256 @@
+{
+  "active_interval_classes": [
+    "4h"
+  ],
+  "amendment": "prior_only_4h_2026_11_13",
+  "by_interval": {
+    "1h": {
+      "passing_decision_offsets": [],
+      "s1": {
+        "status": "not_fetched"
+      },
+      "verdict": "not_fetched"
+    },
+    "2h": {
+      "passing_decision_offsets": [],
+      "s1": {
+        "status": "not_fetched"
+      },
+      "verdict": "not_fetched"
+    },
+    "4h": {
+      "passing_decision_offsets": [
+        "d30",
+        "d15",
+        "d10"
+      ],
+      "s1": {
+        "at_possible_cap": 100,
+        "at_possible_cap_share": 0.02767017155506364,
+        "class_agreement_share": 0.9960159362549801,
+        "complete": 18788,
+        "coverage": 1.0,
+        "hourly_range_exceeded": true,
+        "max_abs_error": 0.20279294045089905,
+        "minutes_checked_against_hour": 4509360,
+        "minutes_outside_hour_share": 0.5316712349424308,
+        "pool": 18789,
+        "relevant": 3514,
+        "relevant_above_trigger": 2056,
+        "relevant_at_or_below_trigger": 1458,
+        "schedule_held": 18788,
+        "scored_at_standard_cap_value": 48,
+        "sensitivity_at_trigger": 0.9958847736625515,
+        "specificity_above_trigger": 0.9961089494163424,
+        "status": "pass",
+        "within_strict_share": 0.831815594763802,
+        "within_tolerance_share": 0.9672737620944792
+      },
+      "verdict": "pass"
+    },
+    "8h": {
+      "passing_decision_offsets": [],
+      "s1": {
+        "status": "not_fetched"
+      },
+      "verdict": "not_fetched"
+    }
+  },
+  "code_revision": "81758783a7454ff592ea899f952a23a0f2aa9cad",
+  "event_superset": 17892,
+  "hourly_failed": [],
+  "hourly_sha256": "8c3d81a765e993cfbc67444f5ac39f10be79e11567346b66e08c38e861e93919",
+  "index_sha256": "f48fe09f7023a476e524cf70c6ec1b629eee30a9a07cff41c9d149dfb59e0cf5",
+  "intervals": 855829,
+  "minute_hour_gate": "diagnostic_only_removed_after_observed_failure",
+  "minutes_extra_sha256": "3fd3205c7f6f2ab129db6d77b4b3e514a7416d1aa6fbb010b3ee577bc9a6dfc8",
+  "minutes_failed": 0,
+  "minutes_sha256": "5d638d68d40a13e2ad10573ae7d6446a193a66b0db8dc4d1d12e20c0e9a58b15",
+  "passing_decision_offsets": [
+    "d30",
+    "d15",
+    "d10"
+  ],
+  "pooled_s3_verdict": "not_fetched",
+  "s1": {
+    "at_possible_cap": 101,
+    "at_possible_cap_share": 0.02778541953232462,
+    "class_agreement_share": 0.9960384833050367,
+    "complete": 19844,
+    "coverage": 1.0,
+    "hourly_range_exceeded": true,
+    "max_abs_error": 0.20279294045089905,
+    "minutes_checked_against_hour": 4892340,
+    "minutes_outside_hour_share": 0.5230507282813541,
+    "pool": 19845,
+    "relevant": 3534,
+    "relevant_above_trigger": 2071,
+    "relevant_at_or_below_trigger": 1463,
+    "schedule_held": 19844,
+    "scored_at_standard_cap_value": 48,
+    "sensitivity_at_trigger": 0.9958988380041012,
+    "specificity_above_trigger": 0.9961371318203767,
+    "status": "pass",
+    "within_strict_share": 0.831918505942275,
+    "within_tolerance_share": 0.9674589700056593
+  },
+  "s1_pool": "4h_event_candidates_plus_original_validation_sample",
+  "s1_pool_intervals": 19845,
+  "s3": {
+    "d10": {
+      "admitted": null,
+      "by_interval": {
+        "1h": {
+          "admitted": null,
+          "floor": null,
+          "status": "not_fetched"
+        },
+        "2h": {
+          "admitted": null,
+          "floor": null,
+          "status": "not_fetched"
+        },
+        "4h": {
+          "admitted": {
+            "by_interval_min": {
+              "240": 1574
+            },
+            "clusters": 693,
+            "events": 1574,
+            "symbols": 147,
+            "top5_symbol_share": 0.16305916305916307,
+            "weeks": 45
+          },
+          "complete_prefixes": 17892,
+          "data_complete": true,
+          "floor": true,
+          "input_intervals": 17892,
+          "precision_vs_settled": 0.96569250317662,
+          "prefix_complete_share": 1.0,
+          "recall_vs_settled": 0.977491961414791,
+          "status": {
+            "admitted": 1574,
+            "no_trigger": 16318
+          }
+        },
+        "8h": {
+          "admitted": null,
+          "floor": null,
+          "status": "not_fetched"
+        },
+        "other": {
+          "admitted": null,
+          "floor": null,
+          "status": "not_fetched"
+        }
+      },
+      "floor": null,
+      "status": "not_fetched"
+    },
+    "d15": {
+      "admitted": null,
+      "by_interval": {
+        "1h": {
+          "admitted": null,
+          "floor": null,
+          "status": "not_fetched"
+        },
+        "2h": {
+          "admitted": null,
+          "floor": null,
+          "status": "not_fetched"
+        },
+        "4h": {
+          "admitted": {
+            "by_interval_min": {
+              "240": 1594
+            },
+            "clusters": 701,
+            "events": 1594,
+            "symbols": 150,
+            "top5_symbol_share": 0.16262482168330955,
+            "weeks": 46
+          },
+          "complete_prefixes": 17892,
+          "data_complete": true,
+          "floor": true,
+          "input_intervals": 17892,
+          "precision_vs_settled": 0.9479297365119197,
+          "prefix_complete_share": 1.0,
+          "recall_vs_settled": 0.9717041800643087,
+          "status": {
+            "admitted": 1594,
+            "no_trigger": 16298
+          }
+        },
+        "8h": {
+          "admitted": null,
+          "floor": null,
+          "status": "not_fetched"
+        },
+        "other": {
+          "admitted": null,
+          "floor": null,
+          "status": "not_fetched"
+        }
+      },
+      "floor": null,
+      "status": "not_fetched"
+    },
+    "d30": {
+      "admitted": null,
+      "by_interval": {
+        "1h": {
+          "admitted": null,
+          "floor": null,
+          "status": "not_fetched"
+        },
+        "2h": {
+          "admitted": null,
+          "floor": null,
+          "status": "not_fetched"
+        },
+        "4h": {
+          "admitted": {
+            "by_interval_min": {
+              "240": 1637
+            },
+            "clusters": 718,
+            "events": 1637,
+            "symbols": 150,
+            "top5_symbol_share": 0.1615598885793872,
+            "weeks": 46
+          },
+          "complete_prefixes": 17892,
+          "data_complete": true,
+          "floor": true,
+          "input_intervals": 17892,
+          "precision_vs_settled": 0.9034819792302994,
+          "prefix_complete_share": 1.0,
+          "recall_vs_settled": 0.9511254019292604,
+          "status": {
+            "admitted": 1637,
+            "no_trigger": 16255
+          }
+        },
+        "8h": {
+          "admitted": null,
+          "floor": null,
+          "status": "not_fetched"
+        },
+        "other": {
+          "admitted": null,
+          "floor": null,
+          "status": "not_fetched"
+        }
+      },
+      "floor": null,
+      "status": "not_fetched"
+    }
+  },
+  "snapshot_version": "bybit_presettlement_feasibility_v1",
+  "validation_role": "s1_only_no_event_selection",
+  "verdict": "pass",
+  "version": "bybit_presettlement_feasibility_prior_only_4h_v2",
+  "working_tree_dirty": false
+}

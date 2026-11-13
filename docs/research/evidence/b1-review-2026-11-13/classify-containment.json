@@ -1,0 +1,40 @@
+{
+  "admitted_by_d": {
+    "d10": 49286,
+    "d15": 49286,
+    "d30": 49286
+  },
+  "admitted_outside_superset": 0,
+  "classifications": 2567487,
+  "classifier_monkeypatched": false,
+  "classifier_sha256": "9b31f96127fd8223ee1f6c5199fa95a0dc948e8eea1eed78029bb3eb38e23a77",
+  "code_revision": "a3971eedf2e44d14d18a1cb74de401f77021b862",
+  "decision_offsets_minutes": [
+    30,
+    15,
+    10
+  ],
+  "elapsed_seconds": 718.12,
+  "event_superset_intervals": 49286,
+  "forecast_intervals": 855829,
+  "four_hour_candidate_intervals": 17892,
+  "four_hour_s1_pool_intervals": 19845,
+  "four_hour_sample_overlap": 47,
+  "index_sha256": "f48fe09f7023a476e524cf70c6ec1b629eee30a9a07cff41c9d149dfb59e0cf5",
+  "market_requests": 0,
+  "omitted_ids": [],
+  "real_premium_or_returns_read": false,
+  "sample_other_class_candidates": 75,
+  "status": "pass",
+  "status_counts": {
+    "admitted": 147858,
+    "illiquid": 1065270,
+    "no_recent_extreme": 1351929,
+    "schedule_uncertain": 1593,
+    "superseded": 837
+  },
+  "synthetic_close": -0.0045,
+  "version": "b1_classify_scope_containment_v1",
+  "workers": 3,
+  "working_tree_dirty": false
+}

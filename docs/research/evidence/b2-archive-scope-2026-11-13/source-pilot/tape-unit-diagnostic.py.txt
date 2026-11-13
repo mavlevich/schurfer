@@ -1,0 +1,127 @@
+"""Reproduce B2 tape unit/flag diagnostics; no quotes, volumes or returns emitted."""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import gzip
+import json
+import sys
+from collections import Counter
+from decimal import Decimal
+from pathlib import Path
+
+from schurfer_analytics.bybit_carry_feasibility import publish_once
+from schurfer_analytics.bybit_compressed_spring import minute_masked
+from schurfer_analytics.bybit_presettlement_book_scope import END, FIRST, day
+from schurfer_analytics.bybit_presettlement_bounded_fetch import clean_revision
+from schurfer_analytics.bybit_presettlement_source_fetch import file_sha
+from schurfer_analytics.bybit_presettlement_source_quality import InflatedBudget, number
+
+
+def relative_bin(error: Decimal) -> str:
+    if error == 0:
+        return "exact"
+    for cutoff in ("1e-15", "1e-12", "1e-9", "1e-6"):
+        if error <= Decimal(cutoff):
+            return "at_most_" + cutoff
+    return "above_1e-6"
+
+
+def inspect(run: Path) -> dict:
+    revision = clean_revision()
+    manifest = run / "manifest.json"
+    files = json.loads(manifest.read_bytes())["files"]
+    if len(files) != 24:
+        raise ValueError("not the complete fixed pilot")
+    results = []
+    budget = InflatedBudget()
+    for record in files.values():
+        task = record["task"]
+        if task["kind"] != "trades":
+            continue
+        path = Path(record["path"])
+        if file_sha(path) != record["sha256"]:
+            raise ValueError("native tape checksum changed")
+        counts = Counter()
+        relative = Counter()
+        flags = {name: Counter() for name in ("BT", "RPI")}
+        maximum = Decimal(0)
+        with gzip.open(path, "rb") as handle:
+            rows = csv.DictReader(line.decode() for line in budget.lines(handle))
+            for row in rows:
+                stamp = number(row["timestamp"]) * 1000
+                if (
+                    not FIRST <= stamp < END
+                    or day(int(stamp)) != task["day"]
+                    or row["symbol"] != task["symbol"]
+                ):
+                    raise ValueError("native identity/window changed")
+                if minute_masked(int(stamp)):
+                    counts["reserved_rows_only_counted"] += 1
+                    continue
+                counts["checked"] += 1
+                price, size = number(row["price"]), number(row["size"])
+                home, foreign = number(row["homeNotional"]), number(row["foreignNotional"])
+                if min(price, size) <= 0 or min(home, foreign) < 0:
+                    raise ValueError("invalid unmasked native unit")
+                expected = price * size
+                counts["home_differs_from_size"] += home != size
+                error = abs(foreign - expected) / expected
+                relative[relative_bin(error)] += 1
+                maximum = max(maximum, error)
+                published_unit = Decimal(1).scaleb(int(foreign.as_tuple().exponent))
+                counts["strict_foreign_mismatch"] += abs(foreign - expected) > published_unit
+                for name, labels in flags.items():
+                    label = row.get(name, "absent")
+                    labels[
+                        label
+                        if label in ("absent", "true", "false", "True", "False", "0", "1")
+                        else "unrecognised"
+                    ] += 1
+        results.append(
+            {
+                "symbol": task["symbol"],
+                "day": task["day"],
+                "counts": dict(counts),
+                "relative_error_bins": dict(relative),
+                "max_relative_error": str(maximum),
+                "flag_labels": {k: dict(v) for k, v in flags.items()},
+            }
+        )
+    return {
+        "revision": revision,
+        "working_tree_dirty": False,
+        "manifest_sha256": file_sha(manifest),
+        "helper_sha256": file_sha(Path(__file__)),
+        "level": "units_and_flag_representations_only",
+        "pairs": results,
+        "thresholds_are_diagnostic_bins_not_gates": True,
+        "fills_or_strategy_returns_computed": False,
+    }
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--run", type=Path)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--self-test", action="store_true")
+    args = parser.parse_args()
+    if args.self_test:
+        noise = abs(Decimal("0.020000000000000004") - Decimal("0.1") * Decimal("0.2")) / Decimal(
+            "0.02"
+        )
+        assert relative_bin(noise) == "at_most_1e-15"
+        assert relative_bin(abs(Decimal(199) - Decimal(100)) / Decimal(100)) == "above_1e-6"
+        assert relative_bin(Decimal(0)) == "exact"
+        sys.stdout.write("synthetic unit-diagnostic controls passed\n")
+        return
+    if args.run is None or args.output is None:
+        parser.error("--run and --output required")
+    result = inspect(args.run)
+    digest = publish_once(args.output, result)
+    sys.stdout.write(json.dumps({"pairs": len(result["pairs"]), "sha256": digest}) + "\n")
+
+
+if __name__ == "__main__":
+    main()

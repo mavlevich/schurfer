@@ -5,7 +5,7 @@ selection by the settled rate; caps, schedule and liquidity at decision time; S1
 apart from the signal) and after the code review (forecasts superseded by settlements
 known at decision time; a recent-extreme filter instead of a cap proof; S1 minimum
 counts and coverage), fixed before any fetch; registers no hypothesis and reads no
-return.** Step B1 of track B in the [program plan](program-plan-2026-11.md). Nothing
+return within this protocol.** Step B1 of track B in the [program plan](program-plan-2026-11.md). Nothing
 here runs until the owner's go for the fetch below.
 
 ## Question
@@ -83,6 +83,83 @@ trigger at any d is missed, and none is chosen by its final rate. S1 checks on t
 fetched minutes that each minute close lies within its hour's low and high; a violation
 is reported and, above 0.1% of minutes, the superset is rebuilt with a wider margin
 before S3.
+
+**Amendment 2, the event superset (2026-11-12, after the first report).** The first
+report (`87fabe3`, result `4cc65107`) ended `superset_rebuild_needed`: 59.6% of minute
+closes lay outside their hour's low and high, far above the 0.1% limit. A scratch check
+on 33,929 full hours found that Bybit's hourly premium index open and close equal the
+first minute's open and the last minute's close in every hour, but the hourly low and
+high are not the minute extremes: some minute low lies below the hourly low in 89% of
+hours. So the bound above does not hold for this series, and no margin on the hourly
+low is a proven bound. The fix drops the premium bound for S3 instead of widening it:
+
+- **S3 runs on the event superset:** every interval that passes, at some d, all S2
+  conditions that do not depend on the premium. These are: the forecast is not
+  superseded, the schedule is certain, the liquidity floor holds, and the recent-extreme
+  filter holds. An admitted event must pass all of them, so the event superset contains
+  every possible event by construction, and none is chosen by its premium or its final
+  rate.
+- **A third fetch** gets the minute premium of the event-superset intervals that the
+  second fetch did not request, into a separate pinned snapshot. The report reads both.
+- **S1 is unchanged.** Its pool stays the hourly-low superset plus the validation
+  sample, as registered, and its thresholds do not move. S1 already ran on that pool;
+  its figures are not re-tuned.
+- **The minute-against-hour check becomes a diagnostic.** It no longer gates S3,
+  because S3 no longer relies on the hourly low. `superset_rebuild_needed` now means
+  only that some event-superset interval has no minute data and no recorded fetch
+  error, so the event list could be incomplete.
+
+Nothing else changes: the trigger, the filters, the decision offsets, the floors and the
+per-class gate stay as registered. The first report's S3 counts were seen; they are on
+the old superset and are superseded by the rerun.
+
+**Amendment 3, four-hour prior-only run (2026-11-13, after review and before any
+supplemental fetch).** This section overrides the old hourly selection, S1 pool,
+pooled S3 and inherited hourly-gate wording below. The original failed reports remain
+unchanged. No strategy return has been read **within this protocol**; the exploratory
+pre-settlement returns and post-hoc choice of 4h in #582 remain part of the selection
+history and later confirmation correction.
+
+- **Remove the failed 0.1% minute/hour gate explicitly.** It was a registered S1
+  guard and it failed after the first read (about 59.6%; the independently retained
+  local result is 59.5358%). We are changing that guard after observing its failure.
+  Its sole purpose was to protect the hourly-low selection proof. The new selection
+  does not use hourly premium, so that proof and guard are retired; the measured
+  discrepancy stays in S1 as `hourly_range_exceeded`, a diagnostic only. No formula,
+  sensitivity, specificity, coverage, minimum-count or event-floor threshold changes.
+- **S1 pool:** the 4h prior-only candidates plus the original unchanged 2,000-interval
+  validation sample across all classes, a union of 19,845 intervals. A 4h class pass
+  still requires its own S1 and S3 floor and the pooled S1 formula gate. The historical
+  hourly-selected pool is not reused for the new acceptance decision.
+- **S3 and the reported primary verdict are only 4h.** Pooled S3 and 1h/2h/8h/other
+  S3 are `not_fetched`, never a floor or a verdict computed from the sample's partial
+  population. No outside class may become `pass` or silently contribute `premium_gap`
+  rows to the active denominator. Top-level `verdict` is explicitly the 4h verdict;
+  `pooled_s3_verdict` is `not_fetched`.
+- **Validation is S1-only.** Sample membership never creates an event. The 75
+  non-4h sample intervals that independently pass C remain S1-only. Of the 17,892
+  actual 4h candidates, 47 also belong to the sample: they remain S3 candidates by C,
+  not by their sample membership; excluding those would arbitrarily delete signals.
+- **One superset across d on this index.** All 49,286 all-class candidates pass C at
+  d30/d15/d10 together because the funding timestamps and liquidity buckets lie on
+  hourly grids. There are not three independently selected supersets. The three
+  decision-time F_hat values are still calculated separately.
+- **Missingness:** decision-prefix coverage keeps the full fixed candidate denominator
+  and must be at least the existing 95% coverage threshold at a passing d. Sparse
+  survivors cannot produce a pass. An incomplete active event path is
+  `event_data_incomplete`; classes outside the run remain `not_fetched`.
+- **Immutable inputs and conflicts:** reuse the original pinned minute snapshot,
+  write a supplemental snapshot, and refuse conflicting duplicate closes or native
+  OHLC values. Equal observations fold, never last-file-wins. The report has a new
+  version `bybit_presettlement_feasibility_prior_only_4h_v2`; raw snapshot format v1
+  remains readable and old reports are not rewritten.
+- **Bounded run:** the 64 fixed pilot IDs, 11,660 supplemental requests, unchanged
+  financial thresholds and budgets are specified in the
+  [scope-repair proposal](b1-minute-scope-repair-proposal-v1.md). The old unbudgeted
+  minute-fetch CLI is disabled. No new fetch is authorized by this revision; the
+  persisted-budget/pilot runner must be implemented and reviewed before the owner's
+  separate fetch go is used. This commit executes only synthetic tests and a
+  classify-based containment audit on the pinned index.
 
 **Exposure.** The premium index inside [t - d, t] overlaps the would-be hold, and premium
 moves with the perpetual's price. This is laboratory exposure on the discovery year,

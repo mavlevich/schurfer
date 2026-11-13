@@ -1,0 +1,288 @@
+{
+  "fills_or_strategy_returns_computed": false,
+  "helper_sha256": "56bd8e29267f93675ad1d09c05e44473f8e8778005abd0b1998bc3c052584835",
+  "level": "units_and_flag_representations_only",
+  "manifest_sha256": "527b7446887d1f6c466c9891d9f1ef67134dc4b86aaf7a30d3f83c8ddc9bb0a0",
+  "pairs": [
+    {
+      "counts": {
+        "checked": 379577,
+        "home_differs_from_size": 0,
+        "reserved_rows_only_counted": 110285,
+        "strict_foreign_mismatch": 63520
+      },
+      "day": "2025-05-07",
+      "flag_labels": {
+        "BT": {
+          "absent": 379577
+        },
+        "RPI": {
+          "0": 379577
+        }
+      },
+      "max_relative_error": "3.096358682189744860044587565E-16",
+      "relative_error_bins": {
+        "at_most_1e-15": 115354,
+        "exact": 264223
+      },
+      "symbol": "STPTUSDT"
+    },
+    {
+      "counts": {
+        "checked": 2877079,
+        "home_differs_from_size": 0,
+        "reserved_rows_only_counted": 537914,
+        "strict_foreign_mismatch": 371140
+      },
+      "day": "2025-08-24",
+      "flag_labels": {
+        "BT": {
+          "absent": 2877079
+        },
+        "RPI": {
+          "0": 2877079
+        }
+      },
+      "max_relative_error": "3.096358682189744860044587565E-16",
+      "relative_error_bins": {
+        "at_most_1e-15": 685405,
+        "exact": 2191674
+      },
+      "symbol": "PROMPTUSDT"
+    },
+    {
+      "counts": {
+        "checked": 370741,
+        "home_differs_from_size": 0,
+        "reserved_rows_only_counted": 65311,
+        "strict_foreign_mismatch": 62656
+      },
+      "day": "2025-04-11",
+      "flag_labels": {
+        "BT": {
+          "absent": 370741
+        },
+        "RPI": {
+          "0": 370741
+        }
+      },
+      "max_relative_error": "3.086067331817045584300558270E-16",
+      "relative_error_bins": {
+        "at_most_1e-15": 114809,
+        "exact": 255932
+      },
+      "symbol": "AUCTIONUSDT"
+    },
+    {
+      "counts": {
+        "checked": 1743063,
+        "home_differs_from_size": 0,
+        "reserved_rows_only_counted": 367297,
+        "strict_foreign_mismatch": 295374
+      },
+      "day": "2025-07-22",
+      "flag_labels": {
+        "BT": {
+          "absent": 1743063
+        },
+        "RPI": {
+          "0": 1743063
+        }
+      },
+      "max_relative_error": "3.116225876516433417159809412E-16",
+      "relative_error_bins": {
+        "at_most_1e-15": 511350,
+        "exact": 1231713
+      },
+      "symbol": "SPKUSDT"
+    },
+    {
+      "counts": {
+        "checked": 193805,
+        "home_differs_from_size": 0,
+        "reserved_rows_only_counted": 50746,
+        "strict_foreign_mismatch": 38595
+      },
+      "day": "2025-06-01",
+      "flag_labels": {
+        "BT": {
+          "absent": 193805
+        },
+        "RPI": {
+          "0": 193805
+        }
+      },
+      "max_relative_error": "3.111064859946859901127247686E-16",
+      "relative_error_bins": {
+        "at_most_1e-15": 59376,
+        "exact": 134429
+      },
+      "symbol": "OMGUSDT"
+    },
+    {
+      "counts": {
+        "checked": 1031260,
+        "home_differs_from_size": 0,
+        "reserved_rows_only_counted": 267873,
+        "strict_foreign_mismatch": 105077
+      },
+      "day": "2024-12-27",
+      "flag_labels": {
+        "BT": {
+          "absent": 1031260
+        },
+        "RPI": {
+          "absent": 1031260
+        }
+      },
+      "max_relative_error": "2.903431856454329016897973405E-16",
+      "relative_error_bins": {
+        "at_most_1e-15": 173921,
+        "exact": 857339
+      },
+      "symbol": "UXLINKUSDT"
+    },
+    {
+      "counts": {
+        "checked": 360581,
+        "home_differs_from_size": 0,
+        "reserved_rows_only_counted": 112215,
+        "strict_foreign_mismatch": 64028
+      },
+      "day": "2025-03-20",
+      "flag_labels": {
+        "BT": {
+          "absent": 360581
+        },
+        "RPI": {
+          "absent": 360581
+        }
+      },
+      "max_relative_error": "3.113751572444544084494762670E-16",
+      "relative_error_bins": {
+        "at_most_1e-15": 108599,
+        "exact": 251982
+      },
+      "symbol": "VIDTUSDT"
+    },
+    {
+      "counts": {
+        "checked": 828056,
+        "home_differs_from_size": 0,
+        "reserved_rows_only_counted": 212612,
+        "strict_foreign_mismatch": 149589
+      },
+      "day": "2025-02-17",
+      "flag_labels": {
+        "BT": {
+          "absent": 828056
+        },
+        "RPI": {
+          "absent": 828056
+        }
+      },
+      "max_relative_error": "3.122911552898998794556140581E-16",
+      "relative_error_bins": {
+        "at_most_1e-15": 254115,
+        "exact": 573941
+      },
+      "symbol": "IPUSDT"
+    },
+    {
+      "counts": {
+        "checked": 839029,
+        "home_differs_from_size": 0,
+        "reserved_rows_only_counted": 136228,
+        "strict_foreign_mismatch": 105485
+      },
+      "day": "2025-07-09",
+      "flag_labels": {
+        "BT": {
+          "absent": 839029
+        },
+        "RPI": {
+          "0": 839029
+        }
+      },
+      "max_relative_error": "3.096358682189744860044587565E-16",
+      "relative_error_bins": {
+        "at_most_1e-15": 180559,
+        "exact": 658470
+      },
+      "symbol": "MUSDT"
+    },
+    {
+      "counts": {
+        "checked": 37551,
+        "home_differs_from_size": 0,
+        "reserved_rows_only_counted": 11731,
+        "strict_foreign_mismatch": 6088
+      },
+      "day": "2025-08-23",
+      "flag_labels": {
+        "BT": {
+          "absent": 37551
+        },
+        "RPI": {
+          "0": 37390,
+          "1": 161
+        }
+      },
+      "max_relative_error": "3.120241631511944284965427723E-16",
+      "relative_error_bins": {
+        "at_most_1e-15": 11836,
+        "exact": 25715
+      },
+      "symbol": "ASRUSDT"
+    },
+    {
+      "counts": {
+        "checked": 704568,
+        "home_differs_from_size": 0,
+        "reserved_rows_only_counted": 188318,
+        "strict_foreign_mismatch": 49076
+      },
+      "day": "2025-02-10",
+      "flag_labels": {
+        "BT": {
+          "absent": 704568
+        },
+        "RPI": {
+          "absent": 704568
+        }
+      },
+      "max_relative_error": "2.428552000155427328009947349E-16",
+      "relative_error_bins": {
+        "at_most_1e-15": 128890,
+        "exact": 575678
+      },
+      "symbol": "MEUSDT"
+    },
+    {
+      "counts": {
+        "checked": 54887,
+        "home_differs_from_size": 0,
+        "reserved_rows_only_counted": 12971,
+        "strict_foreign_mismatch": 6407
+      },
+      "day": "2025-02-18",
+      "flag_labels": {
+        "BT": {
+          "absent": 54887
+        },
+        "RPI": {
+          "absent": 54887
+        }
+      },
+      "max_relative_error": "2.497776978489144661251486177E-16",
+      "relative_error_bins": {
+        "at_most_1e-15": 10943,
+        "exact": 43944
+      },
+      "symbol": "STMXUSDT"
+    }
+  ],
+  "revision": "5e8f09d7c4b58429d56328f044a04381a177060c",
+  "thresholds_are_diagnostic_bins_not_gates": true,
+  "working_tree_dirty": false
+}

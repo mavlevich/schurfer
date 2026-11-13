@@ -6,6 +6,12 @@ window is still clean for confirmation. It decides nothing by itself. New studie
 row before their first fetch; the [discovery ledger](discovery-ledger.md) keeps the
 per-hypothesis detail.
 
+Publication correction, 2026-11-13: the specific local B1 four-hour supplement and
+B2 registrations below were committed before requests but not published in main
+before them. Their [actual chronology](b1-b2-publication-chronology-2026-11-13.md)
+is retained; this publication is retrospective, not backdated. Subsequent B2 native
+computations require the relevant contract and scope in main first.
+
 Levels of exposure, from strongest to weakest:
 
 - **outcomes:** returns, labels or verdict statistics were read;
@@ -172,3 +178,207 @@ Earlier setup paths may overlap a later proxy. No individual proxy, proxy mean,
 setup mean, trade net or minute outcome was emitted or read as a trading result.
 Calibration SHA-256 is `65197f39aef5bb2164be67bfc9360bfdce81cc552b66639937efca0960900775`.
 Both candidates stop on calibrated power. See [result](hyp037-power-calibration-result-v1.md).
+
+## B1 local report and data-quality diagnosis, 2026-11-12
+
+Existing Bybit discovery premium snapshots (2024-09-30 through 2025-09-30): registered
+S1/S2/S3 aggregates and a consistency diagnosis of minute closes versus hourly
+extrema, including three native premium examples. Level: **features**, no perpetual
+price or strategy return. [Local result](bybit-presettlement-feasibility-result-2026-11-12.md)
+blocks B2 with `superset_rebuild_needed`; it reads no new window and releases no test
+or holdout. Computed on clean local revision `1a9f9f8` from the three pinned inputs.
+
+## B1 hourly-envelope diagnosis and scope proposal, 2026-11-12
+
+Same pinned discovery funding/liquidity index and minute-premium request metadata:
+prior-only eligibility counts and exact requested-minute timestamp completeness;
+plus the already inspected native 0GUSDT hour and its 60 minute-premium rows, now
+checked through request identity and serialization. No strategy return or new market
+request. Level: **features for the existing premium diagnostic, coverage for proposed
+scope counts**. [Proposal](b1-minute-scope-repair-proposal-v1.md) is not active.
+An illustrative response in the public API documentation, with May 2022 timestamps,
+also reached output while checking field semantics; it is an unverified documentation
+example, not a fetched historical series or a confirmation observation.
+
+## B1 review integration and classifier-containment proof, registered 2026-11-13
+
+The pinned HYP-031 discovery index only: run the real B1 `classify` over every
+forecast interval and d30/d15/d10 using constant synthetic premium closes. Output
+only counters, omitted IDs (if any), source fingerprints and timings. No real premium,
+perpetual price or return is read by this audit. Level: **coverage / synthetic code
+check**, not an economic read. The amended report is 4h-only; validation sample
+membership never selects an event. The historical 0.1% minute/hour gate is explicitly
+retired after its observed failure, because hourly premium no longer selects the
+universe. Supplemental fetching remains disabled pending the bounded pilot runner,
+design acceptance and a new owner go.
+
+## B1 bounded transport tooling, 2026-11-13
+
+Implementation and tests only. The fixed scope/pilot artifacts are read as request
+metadata to check their pinned hashes and 11,660/64 counts. HTTP tests use generated
+premium rows and a localhost server, including a partial response and restart.
+No new market request, premium value, price or strategy return is read. Level:
+**coverage / synthetic code check**. The real classifier-containment evidence and
+report thresholds are unchanged. The bounded pilot has not run; a separate fetch
+go and review remain required. See [runbook](b1-bounded-fetch-runbook-v1.md).
+
+## B1 bounded supplemental premium fetch registration, 2026-11-13
+
+Registered before the first request, following the owner's instruction to continue
+and subsequent request, "может хватит ревью ?", to stop adding review rounds.
+Operational interpretation: waive another code-review round, run the already frozen
+64-ID pilot, and continue the same supplemental scope only if its unchanged gate
+passes. This is not permission to relax a data gate or open B2/outcome reading.
+
+- Venue/market: Bybit linear perpetual **premium index**, native symbol and minute
+  timestamp, existing discovery bounds 2024-09-30 through 2025-09-30 only.
+- Level: **features**, historical minute premium; this can overlap the hypothetical
+  holding path. No perpetual prices, trade returns, test year or blind window.
+- Frozen scope SHA-256:
+  `0b11db40c505452e05620c22d1aa9aa3038cd95c6ae3ce2e524f232d8168ab6a`.
+  Frozen pilot SHA-256:
+  `cab2d6d09ce986e1408b9ea298822a203d87ca20708fd28a8c7a9f3e71b82855`.
+- 64 fixed pilot IDs; at least 61 complete and no integrity failure, no replacement.
+  Up to 11,660 supplemental 4h intervals in total, with successful pilot reuse.
+- Persisted limits remain 128 attempts / 10 MiB for the pilot, 23,320 attempts /
+  512 MiB globally including the pilot and retries; at most 3 requests per second.
+- Run from the clean committed transport revision following `23d8177`. Immutable
+  `run.json` binds that exact revision, source/input hashes, IDs and limits before
+  HTTP. Retain native-response receipts, the SQLite ledger and eventual manifest.
+
+The [transport runbook](b1-bounded-fetch-runbook-v1.md) and report thresholds are
+unchanged. The later result must distinguish pilot transport success from S1/S3
+acceptance; a successful download alone releases no strategy stage.
+
+The registered fetch completed on clean `1cc0949`: pilot 64/64 and full supplement
+11,660/11,660 complete, 11,660 attempts including the pilot, no retries. Reserved
+body bytes: 167,326,720 globally and 951,296 for the pilot. Native responses, ledger
+and sealed supplemental snapshot are retained; snapshot SHA-256 is
+`3fd3205c7f6f2ab129db6d77b4b3e514a7416d1aa6fbb010b3ee577bc9a6dfc8`.
+The [fetch inventory](evidence/b1-prior-only-4h-2026-11-13/fetch/inventory.json)
+preserves the clean run binding and per-receipt digest manifest. No strategy return
+was read. The next read is the already registered B1 S1/S3 feature-level report on
+the same discovery scope, with all financial and data gates unchanged.
+
+## B1 prior-only 4h report, 2026-11-13
+
+Completed the already registered S1/S3 read on clean `8175878`, from the four pinned
+discovery inputs. Level: **features**, not strategy outcomes. Pooled and 4h S1 pass;
+4h S3 passes at d30/d15/d10, with 1,637 / 1,594 / 1,574 events. No non-4h or pooled
+S3 result is admitted. The derived S3 identity export uses the same frozen
+classifier and checks all counts against the accepted result; it introduces no new
+feature or filter. Result SHA-256:
+`96ed96d58514815203aa221a35bce5ed19a37b9b5316947148375a033170311e`.
+See [result](bybit-presettlement-feasibility-result-2026-11-13.md). No strategy return,
+test year, backward holdout or HYP-012 v2 blind-window read is released by this entry.
+
+## Incidental documentation-search exposure, 2026-11-13
+
+A web search intended to verify the order-book archive's official host returned
+irrelevant recent Bybit community snippets with BTC, ETH, NEAR and ZRO quotes and
+technical indicators. The posting times and market values were not verified;
+conservatively record this as incidental quote-level exposure inside the v2 blind
+period. It is not a systematic market-path or strategy-outcome read. The snippets
+are not used in any feature, rule or result; no claim that these incidental quotes
+were unseen is made. Subsequent source verification used the official history
+catalogue's exact public metadata URL, without visiting a market/chart page.
+
+## B2 source and HEAD inventory registration, 2026-11-13
+
+Following the owner's continuation instruction after B1 passed, the
+[B2 contract](bybit-presettlement-maker-feasibility-v1.md) fixes entry model, offsets,
+wait/latency/quantity sensitivities and the metadata scope before any fill or book
+body read. The accepted B1 event identities remain unchanged. Level for this step:
+**coverage and source metadata only**, not price paths or returns.
+
+The official history catalogue links to quote-saver.bycsi.com. The retained browser
+observation and one matching HEAD establish that link; the standalone 0GUSDT
+2025-09-30 provenance example is not part of event selection and no body was read.
+The frozen metadata scope has 724 symbol-days on 151 instruments, 2,172 HEAD URLs
+(ob500, ob200, trades) and at most 4,344 attempts at 3 requests/s. No GET for an
+archive, redirect following, trade row or order-book level is allowed in this step.
+Missing/unknown sizes remain explicit. Ten source-quality pilot IDs (5 per pinned
+delivery stratum) are fixed before HEAD results, without existence/size resampling.
+The pilot's book/tape bodies and all strategy economics remain unread.
+
+The HEAD run completed from clean `e3e33c6`: 2,172 attempts, 1,448 available files,
+724 absent depth alternatives, no retries or unknown sizes. Every frozen symbol-day
+has a book and tape file, totalling 75,793,957,219 bytes. No body was consumed.
+See [metadata result](bybit-presettlement-b2-scope-result-2026-11-13.md).
+
+All ten original pilot books are ob500. Two additional ob200-only schema fixtures,
+PROMPTUSDT 2025-08-24 and ASRUSDT 2025-08-23, were frozen by the recorded hash rule
+after HEAD but before any body/fill read. They do not replace or resample the
+original ten or add a strategy candidate. The resulting source-only plan is 24
+files / 1,555,848,890 nominal bytes, capped at 2 GiB on the wire including retries
+and partials, 48 attempts, 3 requests/s. Archive bodies still have not been read.
+
+While checking current official API field semantics, illustrative BTC response
+examples with 2022/2023 timestamps also reached output. These are unverified
+documentation examples, not historical market-path observations or confirmation
+evidence; none is used in a study input or return. The documentation does not
+establish whether old archive CSV/book versions carry today's BT/RPI/cts fields.
+
+## B2 fixed source-pilot read registration, 2026-11-13
+
+Following the owner's instruction to continue the main B2 work, the fixed 24-file
+plan is registered for source-quality inspection, before the first archive body
+read. Plan SHA-256 is
+`39c5bda6f438f51e90fbb899a2eb93250acf995727d032a6e725f5a011fe8630`.
+The 12 symbol-days and original/extra-format strata are unchanged from the metadata
+result. The transfer remains capped at 2 GiB including partials/retries, two
+attempts per file / 48 globally, three request starts per second. Every native
+file is retained with a checksum and frozen HEAD size/ETag, under a clean revision.
+
+Level: source schema, counts, clocks, units and quality diagnostics only. Full-day
+book state is reconstructed for continuity and strict-prior-quote checks; no
+numeric quotes or price paths are emitted. Native trade minutes :55 through :04
+are excluded before price/size/turnover conversion and counted only as rows,
+preserving the seconds-study tape reservation. Missing BT/RPI fields and engine
+clocks remain unknown. No fills, strategy outcomes, test-year, backward-holdout
+or HYP-012 v2 blind-window read is authorized by this entry.
+
+The first source-quality implementation rejected all 12 pairs because native
+book archives end after their named UTC day. It computed no fills or returns;
+its exact report is retained. A timestamp-only boundary check found closing
+snapshots 0.655 to 1.904 seconds after the next midnight. Before the second read,
+register source-quality v2: off-day book rows are counted and skipped before
+level conversion or tape alignment. This clips the source to the existing
+population rather than extending the read window. No signal, execution policy,
+threshold, pilot ID or native input changes. Reserved trade minutes remain opaque.
+
+Source-quality v2 completed on clean `1f03acf`: all 12 pairs parsed, with no fills
+or returns. The original exact-decimal notional diagnostic flagged 1,317,035 of
+9,420,197 unmasked trades. Before a further source-only diagnostic, register a
+breakdown of home-notional versus size and relative error of foreign-notional
+versus price times size. Fixed reporting bins are exact, at most 1e-15 / 1e-12 /
+1e-9 / 1e-6, and larger; these are diagnostics, not replacement quality gates.
+Also count native BT/RPI label representations without inferring eligibility.
+Read only the same 12 pinned tapes, skip reserved rows before numeric conversion,
+emit no prices, sizes, monetary amounts or returns, and preserve all prior results.
+
+The registered unit/flag diagnostic completed from clean `5e8f09d`. All 9,420,197
+unmasked rows have home-notional equal to size. Every nonzero foreign-notional
+relative error is at most 3.123e-16, consistent with floating-point serialization;
+the original strict diagnostic is retained. Native BT is always absent; RPI is
+represented by 0/1 or is absent. No unknown row is reclassified as ordinary.
+Source quality v2 and this auxiliary read remain source-level evidence only;
+there is no fill/return or new-window read. See
+[source-pilot result](bybit-presettlement-b2-source-pilot-result-2026-11-13.md).
+
+## B2 entry-pilot replay registration, 2026-11-13
+
+Publish the [entry-only contract](b2-entry-pilot-contract-v1.md) in main before
+running. Reuse only the frozen B1 events on the ten original pilot days and their
+already downloaded native files; the two ob200 fixtures are separate. Emit model
+counts and unresolved reasons for the eight original configurations, preserving
+denominators. This is execution-model exposure, not strategy-return evidence.
+Clock availability, 2-second gaps, price priority, partials, unknown flow and
+unverified native sizing are fixed by that contract before fill statistics.
+No GET/HEAD, masked tape values, exit, funding payment, test year, backward holdout
+or HYP-012 v2 blind window is opened by this entry. B3's exact exits and a separate
+main-published narrow mask amendment remain prerequisites for any exit read.
+
+The power-budget note uses only the sealed HYP-037 MDEs and arithmetic, with no
+new data exposure. HYP-037 A/B remain closed; no method or threshold was selected
+from a new outcome.

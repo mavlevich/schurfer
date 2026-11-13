@@ -1,0 +1,15 @@
+{
+  "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+  "path": "runtime/research/b2/source-pilot/bodies/84f68a61ed3fc4363cc2e2acba9460bbeccb87a29fd03c3148ead88542b2d806.csv.gz",
+  "recovered_after_publication": false,
+  "sha256": "b8c762fa7a04ed014225abb79bf54faf74fd444465b7bef3b890f8c56b7e0f7c",
+  "task": {
+    "bytes": 35990982,
+    "day": "2025-07-09",
+    "etag": "\"7f529943aceadc8be75e618b55d8aba6-5\"",
+    "id": "84f68a61ed3fc4363cc2e2acba9460bbeccb87a29fd03c3148ead88542b2d806",
+    "kind": "trades",
+    "symbol": "MUSDT",
+    "url": "https://public.bybit.com/trading/MUSDT/MUSDT2025-07-09.csv.gz"
+  }
+}

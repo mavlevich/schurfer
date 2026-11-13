@@ -1,0 +1,30 @@
+{
+  "selection": "previously prioritised 4-hour candidates plus the unchanged original independent 2000-interval sample across all classes",
+  "scope_intervals": 19845,
+  "four_hour_candidate_intervals": 17892,
+  "validation_intervals": 2000,
+  "previously_requested_same_bounds": 8185,
+  "additional_requests_before_gap_repairs": 11660,
+  "additional_requested_minute_bars": 2798400,
+  "additional_by_interval_minutes": {
+    "240": 11660
+  },
+  "observed_record_bytes_by_interval": {
+    "60": 4405.13,
+    "120": 8241.61,
+    "180": 12992.8,
+    "240": 14837.2,
+    "300": 22209.0,
+    "480": 28322.25
+  },
+  "estimated_additional_raw_snapshot_bytes": 173001774,
+  "time_at_3_requests_per_second_hours": 1.08,
+  "limitations": [
+    "Bytes are extrapolated uncompressed snapshot records, not network bytes or a hard cap.",
+    "Previously requested means matching bounds, not a completed usable interval. Existing gaps need a separate bounded repair.",
+    "No network fetch, strategy return, test year or production mutation.",
+    "4-hour selection predates the observed B1 counts in the adopted main program plan. Other classes remain diagnostics, not implicitly passed."
+  ],
+  "scope_decompressed_sha256": "33c371a1538b1f689fb89fc148715b0746954c3652fa3e6ef4c8b0f8967838da",
+  "scope_gzip_sha256": "0b11db40c505452e05620c22d1aa9aa3038cd95c6ae3ce2e524f232d8168ab6a"
+}

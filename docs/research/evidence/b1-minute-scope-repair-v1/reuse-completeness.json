@@ -1,0 +1,9 @@
+{
+  "scope_intervals_previously_requested": 8185,
+  "existing_matching_request_records_seen": 8185,
+  "timestamp_complete_records": 8185,
+  "timestamp_incomplete_records": [],
+  "missing_request_record_keys": 0,
+  "extra_repair_requests_if_adopted": 0,
+  "limitation": "Timestamp completeness only, using the already verified finite-value snapshot. The proposed production merge still needs full identity, duplicate-value and boundary checks."
+}

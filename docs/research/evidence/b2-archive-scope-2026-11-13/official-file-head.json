@@ -1,0 +1,12 @@
+{
+  "body_read": false,
+  "headers": {
+    "content-length": "91864958",
+    "content-type": "application/octet-stream",
+    "etag": "\"13a47618d9d85565ca106c7deaf042bc\"",
+    "last-modified": "Wed, 01 Oct 2025 00:23:52 GMT"
+  },
+  "method": "HEAD",
+  "status": 200,
+  "url": "https://quote-saver.bycsi.com/orderbook/linear/0GUSDT/2025-09-30_0GUSDT_ob200.data.zip"
+}

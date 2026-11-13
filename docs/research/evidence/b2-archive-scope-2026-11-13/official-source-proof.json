@@ -1,0 +1,36 @@
+{
+  "catalogue_url": "https://www.bybit.com/x-api/quote/public/support/download/list-files?bizType=contract&productId=orderbook&symbols=0GUSDT&interval=daily&periods=&startDay=2025-09-30&endDay=2025-09-30",
+  "decoded_response": {
+    "ext_code": "",
+    "ext_info": null,
+    "result": {
+      "list": [
+        {
+          "bizType": "contract",
+          "date": "2025-09-30",
+          "filename": "2025-09-30_0GUSDT_ob200.data.zip",
+          "interval": "daily",
+          "period": "",
+          "productId": "orderbook",
+          "size": "91864958",
+          "symbol": "0GUSDT",
+          "url": "https://quote-saver.bycsi.com/orderbook/linear/0GUSDT/2025-09-30_0GUSDT_ob200.data.zip"
+        }
+      ]
+    },
+    "ret_code": 0,
+    "ret_msg": "",
+    "time_now": "1794555474.778509"
+  },
+  "format_from_official_dialog": {
+    "seq": "cross-sequence, smaller means generated earlier; not a promise of contiguous increments",
+    "ts": "system-generated timestamp in ms, not yet verified matching-engine timestamp",
+    "type": "snapshot or delta",
+    "u": "update ID; u=1 may mark service restart and must overwrite local book",
+    "zero_size": "level filled or cancelled; cannot distinguish"
+  },
+  "method": "official website UI followed by browser navigation to its observed public list-files request; decoded JSON transcribed from rendered page, not raw HTTP bytes",
+  "no_archive_body_downloaded": true,
+  "observed_at_utc": "2026-11-13T07:43:13.316916+00:00",
+  "page": "https://www.bybit.com/en/derivative-activity/history-data"
+}

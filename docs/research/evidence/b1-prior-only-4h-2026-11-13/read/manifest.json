@@ -1,0 +1,44 @@
+{
+  "active_classes": [
+    "4h"
+  ],
+  "files": {
+    "events-run.json": {
+      "bytes": 1393,
+      "sha256": "6059c0ad6d27fea2131ef012205e4db3d7c88265496e17f1b6e43e82fc124bc2"
+    },
+    "events.json.gz": {
+      "bytes": 56622,
+      "sha256": "4f1554108d6da503630d24d5b123d8000532b7bb3decb33f033e57dab65711f7"
+    },
+    "export_events.py.txt": {
+      "bytes": 5228,
+      "sha256": "07c34d10b13ec7f97b7eaa7f6cffe3a258a11fc7557d3f77a458b5fd063cca65"
+    },
+    "identity-inventory.json": {
+      "bytes": 672,
+      "sha256": "58cd68df94023b01b2e80211bc6e0bb1a796398facb170f13af3e6c3fc4fe548"
+    },
+    "result.json": {
+      "bytes": 7107,
+      "sha256": "96ed96d58514815203aa221a35bce5ed19a37b9b5316947148375a033170311e"
+    },
+    "run.json": {
+      "bytes": 2178,
+      "sha256": "9fd9636ed0679bcff9bcbeb9615e8fc5ed0bc1c82022879d827c55efb3b66c5c"
+    }
+  },
+  "notes": [
+    "B1 report ran from clean 8175878; identity export source hashes exactly match that accepted report.",
+    "Identity export records its later documentation/evidence-only dirty state explicitly.",
+    "The first export attempt published no event artifact: Python integer dictionary keys needed JSON string-key normalization for comparison. Only that serialization comparison changed; no count, selection or tolerance was changed.",
+    "No strategy return, new market request, test year or holdout is part of the report or derivative export."
+  ],
+  "passing_offsets": [
+    "d30",
+    "d15",
+    "d10"
+  ],
+  "recorded_at_utc": "2026-11-13T07:23:54.688287+00:00",
+  "verdict": "pass"
+}

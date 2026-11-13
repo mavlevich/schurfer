@@ -1,0 +1,114 @@
+{
+  "level": "clock_boundary_metadata_only",
+  "manifest_sha256": "527b7446887d1f6c466c9891d9f1ef67134dc4b86aaf7a30d3f83c8ddc9bb0a0",
+  "rows": [
+    {
+      "day": "2025-03-20",
+      "first_engine_ms_from_midnight": 1845,
+      "first_system_ms_from_midnight": 1885,
+      "last_engine_ms_after_next_midnight": 1878,
+      "last_system_ms_after_next_midnight": 1885,
+      "last_type": "snapshot",
+      "symbol": "VIDTUSDT"
+    },
+    {
+      "day": "2025-04-11",
+      "first_engine_ms_from_midnight": 1817,
+      "first_system_ms_from_midnight": 1908,
+      "last_engine_ms_after_next_midnight": 1797,
+      "last_system_ms_after_next_midnight": 1904,
+      "last_type": "snapshot",
+      "symbol": "AUCTIONUSDT"
+    },
+    {
+      "day": "2025-08-23",
+      "first_engine_ms_from_midnight": 1041,
+      "first_system_ms_from_midnight": 1146,
+      "last_engine_ms_after_next_midnight": 1041,
+      "last_system_ms_after_next_midnight": 1146,
+      "last_type": "snapshot",
+      "symbol": "ASRUSDT"
+    },
+    {
+      "day": "2025-07-22",
+      "first_engine_ms_from_midnight": 1107,
+      "first_system_ms_from_midnight": 1112,
+      "last_engine_ms_after_next_midnight": 1670,
+      "last_system_ms_after_next_midnight": 1680,
+      "last_type": "snapshot",
+      "symbol": "SPKUSDT"
+    },
+    {
+      "day": "2025-07-09",
+      "first_engine_ms_from_midnight": 977,
+      "first_system_ms_from_midnight": 1023,
+      "last_engine_ms_after_next_midnight": 1018,
+      "last_system_ms_after_next_midnight": 1023,
+      "last_type": "snapshot",
+      "symbol": "MUSDT"
+    },
+    {
+      "day": "2025-05-07",
+      "first_engine_ms_from_midnight": 1146,
+      "first_system_ms_from_midnight": 1417,
+      "last_engine_ms_after_next_midnight": 1310,
+      "last_system_ms_after_next_midnight": 1417,
+      "last_type": "snapshot",
+      "symbol": "STPTUSDT"
+    },
+    {
+      "day": "2025-06-01",
+      "first_engine_ms_from_midnight": 1327,
+      "first_system_ms_from_midnight": 1335,
+      "last_engine_ms_after_next_midnight": 1326,
+      "last_system_ms_after_next_midnight": 1334,
+      "last_type": "snapshot",
+      "symbol": "OMGUSDT"
+    },
+    {
+      "day": "2024-12-27",
+      "first_engine_ms_from_midnight": 1114,
+      "first_system_ms_from_midnight": 1216,
+      "last_engine_ms_after_next_midnight": 1112,
+      "last_system_ms_after_next_midnight": 1216,
+      "last_type": "snapshot",
+      "symbol": "UXLINKUSDT"
+    },
+    {
+      "day": "2025-02-18",
+      "first_engine_ms_from_midnight": 671,
+      "first_system_ms_from_midnight": 680,
+      "last_engine_ms_after_next_midnight": 384,
+      "last_system_ms_after_next_midnight": 679,
+      "last_type": "snapshot",
+      "symbol": "STMXUSDT"
+    },
+    {
+      "day": "2025-08-24",
+      "first_engine_ms_from_midnight": 551,
+      "first_system_ms_from_midnight": 655,
+      "last_engine_ms_after_next_midnight": 547,
+      "last_system_ms_after_next_midnight": 655,
+      "last_type": "snapshot",
+      "symbol": "PROMPTUSDT"
+    },
+    {
+      "day": "2025-02-10",
+      "first_engine_ms_from_midnight": 1225,
+      "first_system_ms_from_midnight": 1326,
+      "last_engine_ms_after_next_midnight": 1197,
+      "last_system_ms_after_next_midnight": 1327,
+      "last_type": "snapshot",
+      "symbol": "MEUSDT"
+    },
+    {
+      "day": "2025-02-17",
+      "first_engine_ms_from_midnight": 660,
+      "first_system_ms_from_midnight": 663,
+      "last_engine_ms_after_next_midnight": 561,
+      "last_system_ms_after_next_midnight": 662,
+      "last_type": "snapshot",
+      "symbol": "IPUSDT"
+    }
+  ]
+}

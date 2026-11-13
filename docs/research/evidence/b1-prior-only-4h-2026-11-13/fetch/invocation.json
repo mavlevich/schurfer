@@ -1,0 +1,6 @@
+{
+  "external_reads": "Bybit historical discovery minute premium only",
+  "purpose": "fixed 64-ID B1 pilot; conditional full supplement under unchanged registered limits",
+  "source_revision": "1cc0949",
+  "started_at_utc": "2026-11-13T00:17:39.541556+00:00"
+}

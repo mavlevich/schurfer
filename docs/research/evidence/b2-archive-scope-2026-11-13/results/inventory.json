@@ -1,0 +1,23 @@
+{
+  "attempts": 2172,
+  "binding_sha256": "b014b8dfb5e707ebd1b6b21464c224850c69eb3f15c57b0928436e3dda403410",
+  "book_bytes_known": 49985850895,
+  "book_selection": "verified ob500 preferred, then ob200; both HEAD responses retained",
+  "combined_bytes_known": 75793957219,
+  "complete_size_inventory": true,
+  "head_states": {
+    "available": 1448,
+    "not_found": 724
+  },
+  "not_a_fill_or_profitability_result": true,
+  "selected_book_depths": {
+    "ob200": 68,
+    "ob500": 656
+  },
+  "selected_files_unknown_size": 0,
+  "symbol_days": 724,
+  "symbol_days_without_verified_book": 0,
+  "symbol_days_without_verified_trades": 0,
+  "trade_bytes_known": 25808106324,
+  "version": "b2_presettlement_archive_metadata_v1"
+}

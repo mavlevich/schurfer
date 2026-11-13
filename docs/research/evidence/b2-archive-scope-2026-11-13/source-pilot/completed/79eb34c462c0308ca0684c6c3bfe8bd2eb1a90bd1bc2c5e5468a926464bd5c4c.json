@@ -1,0 +1,15 @@
+{
+  "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+  "path": "runtime/research/b2/source-pilot/bodies/79eb34c462c0308ca0684c6c3bfe8bd2eb1a90bd1bc2c5e5468a926464bd5c4c.data.zip",
+  "recovered_after_publication": false,
+  "sha256": "054988b1f6aa1f7e89611969ccb00e1997531d9f478cfe08f456eef335c2c930",
+  "task": {
+    "bytes": 71567386,
+    "day": "2025-07-09",
+    "etag": "\"42526552c5bd2ab1db9705c83556d91a\"",
+    "id": "79eb34c462c0308ca0684c6c3bfe8bd2eb1a90bd1bc2c5e5468a926464bd5c4c",
+    "kind": "ob500",
+    "symbol": "MUSDT",
+    "url": "https://quote-saver.bycsi.com/orderbook/linear/MUSDT/2025-07-09_MUSDT_ob500.data.zip"
+  }
+}

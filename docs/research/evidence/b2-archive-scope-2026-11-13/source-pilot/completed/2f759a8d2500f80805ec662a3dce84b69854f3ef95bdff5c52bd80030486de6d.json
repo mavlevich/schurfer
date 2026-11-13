@@ -1,0 +1,15 @@
+{
+  "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+  "path": "runtime/research/b2/source-pilot/bodies/2f759a8d2500f80805ec662a3dce84b69854f3ef95bdff5c52bd80030486de6d.csv.gz",
+  "recovered_after_publication": false,
+  "sha256": "2e0c4ce6fcf5361b82e82dd4c01abe26bc919d84e956d4eb69d9f7a3048fa6db",
+  "task": {
+    "bytes": 83018082,
+    "day": "2025-07-22",
+    "etag": "\"dd8a5d2f33f3c2941cbdedaa4a7e5ca8-10\"",
+    "id": "2f759a8d2500f80805ec662a3dce84b69854f3ef95bdff5c52bd80030486de6d",
+    "kind": "trades",
+    "symbol": "SPKUSDT",
+    "url": "https://public.bybit.com/trading/SPKUSDT/SPKUSDT2025-07-22.csv.gz"
+  }
+}

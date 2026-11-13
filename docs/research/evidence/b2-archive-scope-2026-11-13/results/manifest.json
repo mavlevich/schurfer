@@ -1,0 +1,33 @@
+{
+  "archive_bodies_read": 0,
+  "counts": {
+    "attempts": 2172,
+    "responses": 2172
+  },
+  "files": {
+    "attempts.jsonl.gz": {
+      "bytes": 230368,
+      "sha256": "a1ec162aebb95694bd4be944e01c9094166f652184f1505c8920e1ec93c74654"
+    },
+    "inventory.json": {
+      "bytes": 724,
+      "sha256": "9bb576d29370d4531a5e7544ea6ee08bc905ec03650ba1ae8fb0505892f6e69b"
+    },
+    "pilot-body-plan.json": {
+      "bytes": 7747,
+      "sha256": "39c5bda6f438f51e90fbb899a2eb93250acf995727d032a6e725f5a011fe8630"
+    },
+    "responses.jsonl.gz": {
+      "bytes": 267656,
+      "sha256": "e1b3b67665be8925baf33f3afa220ace26a9558a00eac3d4155605e3525f6195"
+    },
+    "run.json.gz": {
+      "bytes": 18253,
+      "sha256": "daa45896195afc8716d9056e912817c0ea4984d769e816e85e4227a47dbafd2e"
+    }
+  },
+  "method": "HEAD",
+  "probe_revision": "e3e33c6eef8336bfe580381f459f9f1f2e4bd0c4",
+  "probe_source_sha256": "39e9471102fcf41447e316186c579335931420ca3bb1fb1ba0e0ddb138fe5385",
+  "recorded_at_utc": "2026-11-13T08:19:40.641704+00:00"
+}

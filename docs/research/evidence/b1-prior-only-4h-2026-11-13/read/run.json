@@ -1,0 +1,40 @@
+{
+  "argv": [
+    "report",
+    "--index",
+    "/Users/mavlevich/Desktop/Projects/schurfer/.claude/worktrees/hyp031-discovery/runtime/research/hyp031-discovery/index-d87b3a2.jsonl.gz",
+    "--hourly",
+    "/Users/mavlevich/Desktop/Projects/schurfer/runtime/research/b1/hourly-551b676.jsonl.gz",
+    "--hourly-sha256",
+    "8c3d81a765e993cfbc67444f5ac39f10be79e11567346b66e08c38e861e93919",
+    "--minutes",
+    "/Users/mavlevich/Desktop/Projects/schurfer/runtime/research/b1/minutes-7260e55.jsonl.gz",
+    "--minutes-sha256",
+    "5d638d68d40a13e2ad10573ae7d6446a193a66b0db8dc4d1d12e20c0e9a58b15",
+    "--minutes-extra",
+    "runtime/research/b1/prior-only-4h/supplement.jsonl.gz",
+    "--minutes-extra-sha256",
+    "3fd3205c7f6f2ab129db6d77b4b3e514a7416d1aa6fbb010b3ee577bc9a6dfc8",
+    "--output-dir",
+    "runtime/research/b1/prior-only-4h-report",
+    "--code-revision",
+    "81758783a7454ff592ea899f952a23a0f2aa9cad",
+    "--no-working-tree-dirty"
+  ],
+  "elapsed_seconds": 149.504,
+  "finished_at_utc": "2026-11-13T07:11:49.565198+00:00",
+  "max_rss_bytes_macos": 2317598720,
+  "porcelain": "",
+  "result_sha256": "96ed96d58514815203aa221a35bce5ed19a37b9b5316947148375a033170311e",
+  "revision": "81758783a7454ff592ea899f952a23a0f2aa9cad",
+  "scope": "registered B1 S1/S3, 4h only, prior-only candidates plus unchanged S1 sample; no strategy return, test year or holdout",
+  "source_sha256": {
+    "apps/analytics/schurfer_analytics/bybit_carry_feasibility.py": "685dac395ebfe30d650ea89a08e50609550dbf0eb9542b4a1582aa5acb0a4961",
+    "apps/analytics/schurfer_analytics/bybit_post_funding_screen.py": "4d58764c5a2342020a6bb872155bb6aad8a398dada183c25af0141707e71981e",
+    "apps/analytics/schurfer_analytics/bybit_presettlement_bounded_fetch.py": "42f72c2fad7ae71e183bb230aeedaf3c64a2772ef0e7e1e8366a80c8b1f62d1b",
+    "apps/analytics/schurfer_analytics/bybit_presettlement_feasibility.py": "bec0005fbe9969ea61767d043633be1705b5aa3a564a0ab9ec9ee7dc1ede3604",
+    "apps/analytics/schurfer_analytics/reporting.py": "98f445f4b8190373826cc693c7a5d18aea2afab57f258ccc6315ec0cc4ecb005"
+  },
+  "started_at_utc": "2026-11-13T07:09:20.067269+00:00",
+  "working_tree_dirty": false
+}

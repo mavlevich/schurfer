@@ -1,0 +1,15 @@
+{
+  "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+  "path": "runtime/research/b2/source-pilot/bodies/64fe18eb3234779f37b8ff9b61c19dceb222232cf908eed84ca5d36854771743.csv.gz",
+  "recovered_after_publication": false,
+  "sha256": "b9549c48e50de129aa92b6a56f8e30e2360c9ef1a49d4bd6cc7062a5453cde1d",
+  "task": {
+    "bytes": 41823074,
+    "day": "2025-02-17",
+    "etag": "\"947e352409e81a6cc5d20c63c5bdedde-5\"",
+    "id": "64fe18eb3234779f37b8ff9b61c19dceb222232cf908eed84ca5d36854771743",
+    "kind": "trades",
+    "symbol": "IPUSDT",
+    "url": "https://public.bybit.com/trading/IPUSDT/IPUSDT2025-02-17.csv.gz"
+  }
+}

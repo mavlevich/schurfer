@@ -52,6 +52,8 @@ if TYPE_CHECKING:
     from collections.abc import Iterable, Mapping, Sequence
 
 VERSION: Final = "bybit_presettlement_feasibility_v1"
+REPORT_VERSION: Final = "bybit_presettlement_feasibility_prior_only_4h_v2"
+ACTIVE_INTERVAL_CLASSES: Final = ("4h",)
 STAGE: Final = "discovery"
 FIRST_MS, LAST_MS, _ = STAGES[STAGE]
 # The minute discovery index, pinned in docs/research/evidence/bybit-post-funding-minute-v1.
@@ -64,6 +66,10 @@ HOURLY_SHA256: Final[str | None] = (
 # Minute premium fetched 2026-11-12 at 7260e55: 54,909 intervals, no errors, 4 retried.
 MINUTES_SHA256: Final[str | None] = (
     "5d638d68d40a13e2ad10573ae7d6446a193a66b0db8dc4d1d12e20c0e9a58b15"
+)
+# Prior-only 4h supplement (amendment 3), 2026-11-13: all 11,660 paths complete.
+MINUTES_EXTRA_SHA256: Final[str | None] = (
+    "3fd3205c7f6f2ab129db6d77b4b3e514a7416d1aa6fbb010b3ee577bc9a6dfc8"
 )
 
 TRIGGER: Final = -0.003  # F_hat at most -0.30%
@@ -236,6 +242,29 @@ def validation_sample(all_intervals: Sequence[Interval]) -> list[Interval]:
     return sorted(rng.sample(pool, k), key=lambda iv: iv.key)
 
 
+def premium_free_ok(index: Index, iv: Interval, d_min: int, times: Sequence[int]) -> bool:
+    """Every S2 condition that does not read the premium, at t - d (amendment 2)."""
+    inst = index.instruments[iv.symbol]
+    cut = iv.predicted - d_min * MINUTE_MS
+    return (
+        not superseded(times, iv, cut)
+        and not iv.schedule_uncertain
+        and liquid_at(inst.turnover, cut)
+        and recent_extreme(inst.funding, cut)
+    )
+
+
+def event_superset(index: Index, every: Sequence[Interval]) -> list[Interval]:
+    """Intervals that pass the premium-free S2 conditions at some d. An admitted event
+    passes all of them, so this contains every possible event by construction."""
+    times = {s: sorted(i.funding) for s, i in index.instruments.items()}
+    return [
+        iv
+        for iv in every
+        if any(premium_free_ok(index, iv, d, times[iv.symbol]) for d in DECISION_OFFSETS_MIN)
+    ]
+
+
 # ---------------------------------------------------------------- snapshots
 
 
@@ -250,6 +279,7 @@ class HourlyPremium:
 class MinutePremium:
     closes: dict[str, dict[int, float]]
     failed: tuple[tuple[str, int], ...]
+    source_paths: tuple[Path, ...] = ()
 
 
 def _lines(path: Path, kind_version: str) -> Iterable[dict[str, Any]]:
@@ -295,9 +325,42 @@ def load_hourly(path: Path) -> HourlyPremium:
     )
 
 
+def _store_close(rows: dict[int, float], ts: int, value: float) -> bool:
+    if not math.isfinite(value):
+        raise ValueError("premium index values must be finite")
+    repeated = ts in rows
+    if repeated and rows[ts] != value:
+        raise ValueError("conflicting premium minute close")
+    rows[ts] = value
+    return repeated
+
+
+def _check_repeated_ohlc(paths: Sequence[Path], repeated: Mapping[str, set[int]]) -> None:
+    """Only retain OHLC for overlapping keys, not millions of unshared bars."""
+    if not repeated:
+        return
+    seen: dict[tuple[str, int], tuple[float, float, float, float]] = {}
+    for path in dict.fromkeys(paths):
+        for line in _lines(path, VERSION):
+            symbol = line["symbol"]
+            wanted = repeated.get(symbol)
+            if line["kind"] != "premium_1" or not wanted:
+                continue
+            for item in line["response"]["result"]["list"]:
+                ts = int(item[0])
+                if ts not in wanted:
+                    continue
+                values = _premium_ohlc(item)
+                key = (symbol, ts)
+                if key in seen and seen[key] != values:
+                    raise ValueError("conflicting premium minute OHLC")
+                seen[key] = values
+
+
 def load_minutes(path: Path) -> MinutePremium:
     closes: dict[str, dict[int, float]] = defaultdict(dict)
     failed: set[tuple[str, int]] = set()
+    repeated: dict[str, set[int]] = defaultdict(set)
     for line in _lines(path, VERSION):
         symbol = line["symbol"]
         if line["kind"] == "fetch_error":
@@ -308,8 +371,11 @@ def load_minutes(path: Path) -> MinutePremium:
                 continue
             for item in result["list"]:
                 _, _, _, close = _premium_ohlc(item)
-                closes[symbol][int(item[0])] = close
-    return MinutePremium(dict(closes), tuple(sorted(failed)))
+                ts = int(item[0])
+                if _store_close(closes[symbol], ts, close):
+                    repeated[symbol].add(ts)
+    _check_repeated_ohlc((path,), repeated)
+    return MinutePremium(dict(closes), tuple(sorted(failed)), (path,))
 
 
 # ---------------------------------------------------------------- fetching
@@ -400,6 +466,54 @@ def minute_todo(index: Index, hourly: HourlyPremium) -> tuple[list[Interval], di
     counts = {"intervals": len(every), "superset": len(superset), "sample": len(sample),
               "requests": len(todo)}  # fmt: skip
     return [todo[k] for k in sorted(todo)], counts
+
+
+def report_scope(index: Index) -> tuple[list[Interval], list[Interval]]:
+    """S3 gets only independently eligible 4h candidates; validation adds to S1 only."""
+    every = intervals(index)
+    events = event_superset(
+        index, [iv for iv in every if interval_class(iv.n_min) in ACTIVE_INTERVAL_CLASSES]
+    )
+    pool = {iv.key: iv for iv in (*events, *validation_sample(every))}
+    return events, [pool[key] for key in sorted(pool)]
+
+
+def extra_minute_todo(
+    index: Index, minutes: MinutePremium
+) -> tuple[list[Interval], dict[str, int]]:
+    """Missing paths in the 4h-candidate plus unchanged S1-validation union."""
+    events, pool = report_scope(index)
+    extra = [
+        iv
+        for iv in pool
+        if any(
+            (value := minutes.closes.get(iv.symbol, {}).get(m)) is None or not math.isfinite(value)
+            for m in minute_starts(iv)
+        )
+    ]
+    counts = {
+        "event_superset": len(events),
+        "s1_pool": len(pool),
+        "already_complete": len(pool) - len(extra),
+        "requests": len(extra),
+    }
+    return extra, counts
+
+
+def merge_minutes(*parts: MinutePremium) -> MinutePremium:
+    closes: dict[str, dict[int, float]] = defaultdict(dict)
+    failed: set[tuple[str, int]] = set()
+    repeated: dict[str, set[int]] = defaultdict(set)
+    paths: list[Path] = []
+    for part in parts:
+        for symbol, rows in part.closes.items():
+            for ts, value in rows.items():
+                if _store_close(closes[symbol], ts, value):
+                    repeated[symbol].add(ts)
+        failed.update(part.failed)
+        paths.extend(part.source_paths)
+    _check_repeated_ohlc(paths, repeated)
+    return MinutePremium(dict(closes), tuple(sorted(failed)), tuple(dict.fromkeys(paths)))
 
 
 # ---------------------------------------------------------------- report
@@ -516,7 +630,9 @@ def s1(
         "max_abs_error": max(errors) if errors else None,
         "minutes_checked_against_hour": total_minutes,
         "minutes_outside_hour_share": out_of_hour / total_minutes if total_minutes else None,
-        "superset_needs_rebuild": bool(total_minutes)
+        # diagnostic since amendment 2: Bybit's hourly premium low/high are not minute
+        # extremes, and S3 no longer relies on them
+        "hourly_range_exceeded": bool(total_minutes)
         and out_of_hour / total_minutes > MAX_OUT_OF_HOUR_SHARE,
         "status": status,
     }
@@ -584,11 +700,15 @@ def _decision_block(
 ) -> dict[str, Any]:
     status: Counter[str] = Counter()
     admitted: list[Interval] = []
+    eligible = prefix_complete = 0
     tp = fp = fn = 0
     times = {s: sorted(index.instruments[s].funding) for s in {iv.symbol for iv in rows}}
     for iv in rows:
         label, _ = classify(index, iv, minutes.closes.get(iv.symbol, {}), d_min, times[iv.symbol])
         status[label] += 1
+        if premium_free_ok(index, iv, d_min, times[iv.symbol]):
+            eligible += 1
+            prefix_complete += label != "premium_gap"
         if label == "admitted":
             admitted.append(iv)
         settled = _settled(index, iv)
@@ -602,6 +722,10 @@ def _decision_block(
         "status": dict(sorted(status.items())),
         "admitted": counts,
         "floor": floor_ok(counts),
+        "input_intervals": eligible,
+        "complete_prefixes": prefix_complete,
+        "prefix_complete_share": prefix_complete / eligible if eligible else None,
+        "data_complete": not eligible or prefix_complete / eligible >= S1_MIN_COVERAGE,
         "precision_vs_settled": tp / (tp + fp) if tp + fp else None,
         "recall_vs_settled": tp / (tp + fn) if tp + fn else None,
     }
@@ -626,26 +750,49 @@ def s3(index: Index, superset: Sequence[Interval], minutes: MinutePremium) -> di
     return out
 
 
+def _not_fetched() -> dict[str, Any]:
+    return {"status": "not_fetched", "floor": None, "admitted": None}
+
+
 def build_report(index: Index, hourly: HourlyPremium, minutes: MinutePremium) -> dict[str, Any]:
     every = intervals(index)
-    superset = [iv for iv in every if in_superset(iv, hourly.low.get(iv.symbol, {}))]
-    pool = {iv.key: iv for iv in (*superset, *validation_sample(every))}
-    pooled_ivs = [pool[k] for k in sorted(pool)]
-    check = s1(index, pooled_ivs, hourly, minutes)
-    decision = s3(index, superset, minutes)
-    passing = [d for d, row in decision.items() if row["floor"]]
-    verdict = _verdict(check, passing)
-    by_interval = interval_gates(index, pooled_ivs, hourly, minutes, decision, verdict)
+    events, pool = report_scope(index)
+    check = s1(index, pool, hourly, minutes)
+    decision: dict[str, Any] = {}
+    for d in DECISION_OFFSETS_MIN:
+        by_class = {name: _not_fetched() for name in (*GATED_INTERVALS, "other")}
+        by_class["4h"] = _decision_block(index, events, minutes, d)
+        decision[f"d{d}"] = _not_fetched() | {"by_interval": by_class}
+    # Pooled S1 is still the formula gate. There is deliberately no pooled S3 verdict.
+    formula_verdict = _verdict(check, ["formula_only"])
+    by_interval = interval_gates(
+        index,
+        pool,
+        hourly,
+        minutes,
+        decision,
+        formula_verdict,
+        active_classes=ACTIVE_INTERVAL_CLASSES,
+    )
+    primary = by_interval["4h"]
     return {
-        "version": VERSION,
+        "version": REPORT_VERSION,
+        "snapshot_version": VERSION,
+        "amendment": "prior_only_4h_2026_11_13",
         "intervals": len(every),
-        "superset": len(superset),
+        "event_superset": len(events),
+        "s1_pool_intervals": len(pool),
+        "s1_pool": "4h_event_candidates_plus_original_validation_sample",
+        "validation_role": "s1_only_no_event_selection",
+        "active_interval_classes": list(ACTIVE_INTERVAL_CLASSES),
+        "pooled_s3_verdict": "not_fetched",
+        "minute_hour_gate": "diagnostic_only_removed_after_observed_failure",
         "hourly_failed": list(hourly.failed),
         "minutes_failed": len(minutes.failed),
         "s1": check,
         "s3": decision,
-        "passing_decision_offsets": passing,
-        "verdict": verdict,
+        "passing_decision_offsets": primary["passing_decision_offsets"],
+        "verdict": primary["verdict"],
         "by_interval": by_interval,
     }
 
@@ -657,35 +804,56 @@ def interval_gates(
     minutes: MinutePremium,
     decision: Mapping[str, Any],
     pooled_verdict: str,
+    *,
+    complete: bool = True,
+    active_classes: Sequence[str] = GATED_INTERVALS,
 ) -> dict[str, Any]:
     """Each gated interval class on its own: S1 on that class's settlements with the
     same thresholds and minimum counts, and that class's own S3 floor. A class never
     passes where the pooled formula check does not."""
-    inherited = pooled_verdict in (
-        "insufficient_validation", "not_reconstructible", "superset_rebuild_needed"
-    )  # fmt: skip
+    inherited = pooled_verdict in ("insufficient_validation", "not_reconstructible")
     out: dict[str, Any] = {}
     for name in GATED_INTERVALS:
+        if name not in active_classes:
+            out[name] = {
+                "s1": {"status": "not_fetched"},
+                "passing_decision_offsets": [],
+                "verdict": "not_fetched",
+            }
+            continue
         group = [iv for iv in pool if interval_class(iv.n_min) == name]
         check = s1(index, group, hourly, minutes)
         passing = [
-            d for d, row in decision.items() if row["by_interval"].get(name, {}).get("floor")
+            d
+            for d, row in decision.items()
+            if row["by_interval"].get(name, {}).get("floor")
+            and row["by_interval"][name].get("data_complete", True)
         ]
         out[name] = {
             "s1": check,
             "passing_decision_offsets": passing,
-            "verdict": pooled_verdict if inherited else _verdict(check, passing),
+            "verdict": pooled_verdict
+            if inherited
+            else _verdict(
+                check,
+                passing,
+                complete=complete
+                and any(
+                    row["by_interval"].get(name, {}).get("data_complete", True)
+                    for row in decision.values()
+                ),
+            ),
         }
     return out
 
 
-def _verdict(check: Mapping[str, Any], passing: Sequence[str]) -> str:
+def _verdict(check: Mapping[str, Any], passing: Sequence[str], *, complete: bool = True) -> str:
     if check["status"] == "insufficient_data":
         return "insufficient_validation"
     if check["status"] != "pass":
         return "not_reconstructible"
-    if check["superset_needs_rebuild"]:
-        return "superset_rebuild_needed"
+    if not complete:
+        return "event_data_incomplete"
     if not passing:
         return "insufficient_events"
     return "pass"
@@ -697,16 +865,19 @@ def _verdict(check: Mapping[str, Any], passing: Sequence[str]) -> str:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     sub = parser.add_subparsers(dest="command", required=True)
-    for name in ("plan", "fetch-hourly", "fetch-minutes", "report"):
+    for name in ("plan", "fetch-hourly", "fetch-minutes", "fetch-minutes-extra", "report"):
         cmd = sub.add_parser(name)
         cmd.add_argument("--index", type=Path, required=True)
         cmd.add_argument("--hourly", type=Path)
         cmd.add_argument("--hourly-sha256")
-        if name in ("fetch-hourly", "fetch-minutes"):
+        if name in ("fetch-hourly", "fetch-minutes", "fetch-minutes-extra"):
             cmd.add_argument("--snapshot", type=Path, required=True)
+        if name in ("plan", "fetch-minutes-extra", "report"):
+            cmd.add_argument("--minutes", type=Path, required=name != "plan")
+            cmd.add_argument("--minutes-sha256", required=name != "plan")
         if name == "report":
-            cmd.add_argument("--minutes", type=Path, required=True)
-            cmd.add_argument("--minutes-sha256", required=True)
+            cmd.add_argument("--minutes-extra", type=Path, required=True)
+            cmd.add_argument("--minutes-extra-sha256", required=True)
             cmd.add_argument("--output-dir", type=Path, required=True)
             cmd.add_argument("--code-revision", required=True)
             dirty = cmd.add_mutually_exclusive_group(required=True)
@@ -723,33 +894,52 @@ def _pinned_hourly(args: argparse.Namespace) -> HourlyPremium:
     return load_hourly(verified(args.hourly, args.hourly_sha256))
 
 
+def _pinned_minutes(args: argparse.Namespace) -> MinutePremium:
+    if MINUTES_SHA256 is None or args.minutes_sha256 != MINUTES_SHA256:
+        raise SystemExit(f"the minutes snapshot must be pinned in code first ({MINUTES_SHA256})")
+    return load_minutes(verified(args.minutes, args.minutes_sha256))
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
+    if args.command in ("fetch-minutes", "fetch-minutes-extra"):
+        raise SystemExit(
+            "minute downloads are disabled until the budgeted 4h pilot runner "
+            "is reviewed and the owner gives a new fetch go; use plan only"
+        )
     index = load_index(verified(args.index, INDEX_SHA256))
     if index.stage != STAGE:
         raise SystemExit(f"the index is not the {STAGE} stage")
     if args.command == "plan":
-        out: dict[str, Any] = {"hourly_requests": hourly_requests(index)}
-        if args.hourly is not None:
-            _, counts = minute_todo(index, _pinned_hourly(args))
-            out["minute_requests"] = counts
+        events, pool = report_scope(index)
+        out: dict[str, Any] = {
+            "active_interval_classes": list(ACTIVE_INTERVAL_CLASSES),
+            "event_superset": len(events),
+            "s1_pool": len(pool),
+        }
+        if args.minutes is not None:
+            minutes = _pinned_minutes(args)
+            _, out["extra_minute_requests"] = extra_minute_todo(index, minutes)
         sys.stdout.write(json.dumps(out) + "\n")
         return
     if args.command == "fetch-hourly":
         _run_fetch(lambda c: fetch_hourly(c, index, args.snapshot), args.snapshot)
         return
-    hourly = _pinned_hourly(args)
-    if args.command == "fetch-minutes":
-        todo, _ = minute_todo(index, hourly)
-        _run_fetch(lambda c: fetch_minutes(c, todo, args.snapshot), args.snapshot)
-        return
-    if MINUTES_SHA256 is None or args.minutes_sha256 != MINUTES_SHA256:
-        raise SystemExit(f"the minutes snapshot must be pinned in code first ({MINUTES_SHA256})")
-    minutes = load_minutes(verified(args.minutes, args.minutes_sha256))
+    original = _pinned_minutes(args)
+    hourly = _pinned_hourly(args) if args.hourly is not None else HourlyPremium({}, {}, ())
+    if MINUTES_EXTRA_SHA256 is None or args.minutes_extra_sha256 != MINUTES_EXTRA_SHA256:
+        raise SystemExit(
+            f"the extra minutes snapshot must be pinned in code first ({MINUTES_EXTRA_SHA256})"
+        )
+    minutes = merge_minutes(
+        original,
+        load_minutes(verified(args.minutes_extra, args.minutes_extra_sha256)),
+    )
     report = build_report(index, hourly, minutes) | {
         "index_sha256": INDEX_SHA256,
         "hourly_sha256": args.hourly_sha256,
         "minutes_sha256": args.minutes_sha256,
+        "minutes_extra_sha256": args.minutes_extra_sha256,
         "code_revision": normalize_code_revision(args.code_revision),
         "working_tree_dirty": args.working_tree_dirty,
     }

@@ -1,0 +1,80 @@
+{
+  "body_fetch_executed": false,
+  "events_sha256": "4f1554108d6da503630d24d5b123d8000532b7bb3decb33f033e57dab65711f7",
+  "index_sha256": "f48fe09f7023a476e524cf70c6ec1b629eee30a9a07cff41c9d149dfb59e0cf5",
+  "rows": [
+    {
+      "day": "2025-03-20",
+      "delivery_time_ms": 1744772400000,
+      "selection_sha256": "04d379b4e7cb8f62b91b3934f989aff014785aefc983654cd97ef756d2eaa9fb",
+      "stratum": "delivered_by_discovery_end",
+      "symbol": "VIDTUSDT"
+    },
+    {
+      "day": "2025-05-07",
+      "delivery_time_ms": 1747465200000,
+      "selection_sha256": "100f8274dfaa41e0f6da891a53140706168e9f636492f2cdeba9fdafd248b110",
+      "stratum": "delivered_by_discovery_end",
+      "symbol": "STPTUSDT"
+    },
+    {
+      "day": "2025-02-18",
+      "delivery_time_ms": 1740304800000,
+      "selection_sha256": "10da1f37e8c87692172afe7f4b9a911b9850863aac78b684a82b57fdfa874376",
+      "stratum": "delivered_by_discovery_end",
+      "symbol": "STMXUSDT"
+    },
+    {
+      "day": "2025-06-01",
+      "delivery_time_ms": 1748941200000,
+      "selection_sha256": "1289f70f3e6d03146dea83650ed817b850f984855a32e2257f5b13b6e347b8f6",
+      "stratum": "delivered_by_discovery_end",
+      "symbol": "OMGUSDT"
+    },
+    {
+      "day": "2024-12-27",
+      "delivery_time_ms": 1758877200000,
+      "selection_sha256": "138bf490a59bf1c33367418df27a9922c280776f018d93916d4a3973485c560e",
+      "stratum": "delivered_by_discovery_end",
+      "symbol": "UXLINKUSDT"
+    },
+    {
+      "day": "2025-02-17",
+      "delivery_time_ms": 1782457200000,
+      "selection_sha256": "00a8772ec7ffb6491cd3c352c6959c7a4f40872577fc803e4b120ba94abf395b",
+      "stratum": "continuing_at_discovery_end",
+      "symbol": "IPUSDT"
+    },
+    {
+      "day": "2025-02-10",
+      "delivery_time_ms": 0,
+      "selection_sha256": "02053a99baac741dd3ef56040dedce8203f986b5cfd5e48611d0fc536a4eca97",
+      "stratum": "continuing_at_discovery_end",
+      "symbol": "MEUSDT"
+    },
+    {
+      "day": "2025-04-11",
+      "delivery_time_ms": 0,
+      "selection_sha256": "02442ab635b4f904837409c08f2b07839fca3e3cfc1b614559e723bcafaf5a71",
+      "stratum": "continuing_at_discovery_end",
+      "symbol": "AUCTIONUSDT"
+    },
+    {
+      "day": "2025-07-09",
+      "delivery_time_ms": 0,
+      "selection_sha256": "02a18d5ade98c135dcb6597699c18e6b7ed0d7316eca7c225220b9c3679c1f11",
+      "stratum": "continuing_at_discovery_end",
+      "symbol": "MUSDT"
+    },
+    {
+      "day": "2025-07-22",
+      "delivery_time_ms": 0,
+      "selection_sha256": "02f93e79b178d4d688cacea1b3bf6ce8bb28c8529dbc743d31ea5b49a7f74c5e",
+      "stratum": "continuing_at_discovery_end",
+      "symbol": "SPKUSDT"
+    }
+  ],
+  "rule": "5 lowest SHA-256 symbol-days per discovery-end delivery stratum; at most one day per instrument; no existence/size resampling",
+  "scope_raw_sha256": "e2037c18d474fa14e4af1829453737833db73518e4ac27b33ca7ec709b62c962",
+  "version": "b2_source_quality_pilot_v1"
+}

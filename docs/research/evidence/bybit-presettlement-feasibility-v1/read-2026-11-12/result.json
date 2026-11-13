@@ -1,0 +1,594 @@
+{
+  "by_interval": {
+    "1h": {
+      "passing_decision_offsets": [],
+      "s1": {
+        "at_possible_cap": 153,
+        "at_possible_cap_share": 0.07874420998455996,
+        "class_agreement_share": 0.9921787709497206,
+        "complete": 2837,
+        "coverage": 1.0,
+        "max_abs_error": 0.2596351879945355,
+        "minutes_checked_against_hour": 170220,
+        "minutes_outside_hour_share": 0.7416284807895664,
+        "pool": 2837,
+        "relevant": 1790,
+        "relevant_above_trigger": 974,
+        "relevant_at_or_below_trigger": 816,
+        "schedule_held": 2837,
+        "scored_at_standard_cap_value": 13,
+        "sensitivity_at_trigger": 0.9938725490196079,
+        "specificity_above_trigger": 0.9907597535934292,
+        "status": "fail",
+        "superset_needs_rebuild": true,
+        "within_strict_share": 0.5541899441340782,
+        "within_tolerance_share": 0.8910614525139665
+      },
+      "verdict": "superset_rebuild_needed"
+    },
+    "2h": {
+      "passing_decision_offsets": [],
+      "s1": {
+        "at_possible_cap": 91,
+        "at_possible_cap_share": 0.08125,
+        "class_agreement_share": 0.9980563654033042,
+        "complete": 2109,
+        "coverage": 1.0,
+        "max_abs_error": 0.13180408615151515,
+        "minutes_checked_against_hour": 254280,
+        "minutes_outside_hour_share": 0.7094777410728331,
+        "pool": 2119,
+        "relevant": 1029,
+        "relevant_above_trigger": 676,
+        "relevant_at_or_below_trigger": 353,
+        "schedule_held": 2109,
+        "scored_at_standard_cap_value": 2,
+        "sensitivity_at_trigger": 0.9971671388101983,
+        "specificity_above_trigger": 0.9985207100591716,
+        "status": "pass",
+        "superset_needs_rebuild": true,
+        "within_strict_share": 0.749271137026239,
+        "within_tolerance_share": 0.9552964042759962
+      },
+      "verdict": "superset_rebuild_needed"
+    },
+    "4h": {
+      "passing_decision_offsets": [
+        "d30",
+        "d15",
+        "d10"
+      ],
+      "s1": {
+        "at_possible_cap": 125,
+        "at_possible_cap_share": 0.021291091807187874,
+        "class_agreement_share": 0.9966933518969718,
+        "complete": 21963,
+        "coverage": 0.9998634252936356,
+        "max_abs_error": 0.20279294045089905,
+        "minutes_checked_against_hour": 5284500,
+        "minutes_outside_hour_share": 0.6185037373450658,
+        "pool": 22020,
+        "relevant": 5746,
+        "relevant_above_trigger": 3753,
+        "relevant_at_or_below_trigger": 1993,
+        "schedule_held": 21966,
+        "scored_at_standard_cap_value": 70,
+        "sensitivity_at_trigger": 0.9954841946813848,
+        "specificity_above_trigger": 0.9973354649613643,
+        "status": "pass",
+        "superset_needs_rebuild": true,
+        "within_strict_share": 0.8572920292377306,
+        "within_tolerance_share": 0.9707622694048034
+      },
+      "verdict": "superset_rebuild_needed"
+    },
+    "8h": {
+      "passing_decision_offsets": [
+        "d30",
+        "d15",
+        "d10"
+      ],
+      "s1": {
+        "at_possible_cap": 52,
+        "at_possible_cap_share": 0.00938120151542486,
+        "class_agreement_share": 0.9978146057184484,
+        "complete": 27877,
+        "coverage": 1.0,
+        "max_abs_error": 0.08008690228300416,
+        "minutes_checked_against_hour": 13393122,
+        "minutes_outside_hour_share": 0.5824827848204474,
+        "pool": 27927,
+        "relevant": 5491,
+        "relevant_above_trigger": 3754,
+        "relevant_at_or_below_trigger": 1737,
+        "schedule_held": 27877,
+        "scored_at_standard_cap_value": 54,
+        "sensitivity_at_trigger": 0.9959700633275763,
+        "specificity_above_trigger": 0.9986680873734683,
+        "status": "pass",
+        "superset_needs_rebuild": true,
+        "within_strict_share": 0.95301402294664,
+        "within_tolerance_share": 0.9857949371699144
+      },
+      "verdict": "superset_rebuild_needed"
+    }
+  },
+  "code_revision": "1a9f9f8dc96e8a2cb7bade545df3cc56f53516fc",
+  "hourly_failed": [],
+  "hourly_sha256": "8c3d81a765e993cfbc67444f5ac39f10be79e11567346b66e08c38e861e93919",
+  "index_sha256": "f48fe09f7023a476e524cf70c6ec1b629eee30a9a07cff41c9d149dfb59e0cf5",
+  "intervals": 855829,
+  "minutes_failed": 0,
+  "minutes_sha256": "5d638d68d40a13e2ad10573ae7d6446a193a66b0db8dc4d1d12e20c0e9a58b15",
+  "passing_decision_offsets": [
+    "d30",
+    "d15",
+    "d10"
+  ],
+  "s1": {
+    "at_possible_cap": 421,
+    "at_possible_cap_share": 0.029080610623748015,
+    "class_agreement_share": 0.9966562322140011,
+    "complete": 54786,
+    "coverage": 0.9999452444833817,
+    "max_abs_error": 0.2596351879945355,
+    "minutes_checked_against_hour": 19085862,
+    "minutes_outside_hour_share": 0.5953576526960114,
+    "pool": 54909,
+    "relevant": 14056,
+    "relevant_above_trigger": 9157,
+    "relevant_at_or_below_trigger": 4899,
+    "schedule_held": 54789,
+    "scored_at_standard_cap_value": 139,
+    "sensitivity_at_trigger": 0.9955092876097162,
+    "specificity_above_trigger": 0.9972698482035601,
+    "status": "pass",
+    "superset_needs_rebuild": true,
+    "within_strict_share": 0.8481787137165623,
+    "within_tolerance_share": 0.965352874217416
+  },
+  "s3": {
+    "d10": {
+      "admitted": {
+        "by_interval_min": {
+          "60": 838,
+          "120": 379,
+          "240": 1573,
+          "480": 1059
+        },
+        "clusters": 1606,
+        "events": 3849,
+        "symbols": 281,
+        "top5_symbol_share": 0.11706102117061021,
+        "weeks": 53
+      },
+      "by_interval": {
+        "1h": {
+          "admitted": {
+            "by_interval_min": {
+              "60": 838
+            },
+            "clusters": 175,
+            "events": 838,
+            "symbols": 35,
+            "top5_symbol_share": 0.3657142857142857,
+            "weeks": 32
+          },
+          "floor": false,
+          "precision_vs_settled": 0.9397089397089398,
+          "recall_vs_settled": 0.9338842975206612,
+          "status": {
+            "admitted": 838,
+            "illiquid": 70,
+            "no_recent_extreme": 25,
+            "no_trigger": 1690,
+            "schedule_uncertain": 29
+          }
+        },
+        "2h": {
+          "admitted": {
+            "by_interval_min": {
+              "120": 379
+            },
+            "clusters": 122,
+            "events": 379,
+            "symbols": 22,
+            "top5_symbol_share": 0.4180327868852459,
+            "weeks": 25
+          },
+          "floor": false,
+          "precision_vs_settled": 0.9617117117117117,
+          "recall_vs_settled": 0.9617117117117117,
+          "status": {
+            "admitted": 379,
+            "illiquid": 15,
+            "no_recent_extreme": 31,
+            "no_trigger": 1548,
+            "schedule_uncertain": 19,
+            "superseded": 10
+          }
+        },
+        "4h": {
+          "admitted": {
+            "by_interval_min": {
+              "240": 1573
+            },
+            "clusters": 693,
+            "events": 1573,
+            "symbols": 147,
+            "top5_symbol_share": 0.16305916305916307,
+            "weeks": 45
+          },
+          "floor": true,
+          "precision_vs_settled": 0.9630149812734082,
+          "recall_vs_settled": 0.9711992445703493,
+          "status": {
+            "admitted": 1573,
+            "illiquid": 193,
+            "no_recent_extreme": 332,
+            "no_trigger": 18942,
+            "premium_gap": 3,
+            "schedule_uncertain": 38,
+            "superseded": 54
+          }
+        },
+        "8h": {
+          "admitted": {
+            "by_interval_min": {
+              "480": 1059
+            },
+            "clusters": 644,
+            "events": 1059,
+            "symbols": 140,
+            "top5_symbol_share": 0.18167701863354038,
+            "weeks": 53
+          },
+          "floor": true,
+          "precision_vs_settled": 0.9680440771349862,
+          "recall_vs_settled": 0.9821129122414757,
+          "status": {
+            "admitted": 1059,
+            "illiquid": 349,
+            "no_recent_extreme": 402,
+            "no_trigger": 25381,
+            "premium_gap": 2,
+            "schedule_uncertain": 5,
+            "superseded": 48
+          }
+        },
+        "other": {
+          "admitted": {
+            "by_interval_min": {},
+            "clusters": 0,
+            "events": 0,
+            "symbols": 0,
+            "top5_symbol_share": null,
+            "weeks": 0
+          },
+          "floor": false,
+          "precision_vs_settled": null,
+          "recall_vs_settled": null,
+          "status": {
+            "superseded": 6
+          }
+        }
+      },
+      "floor": true,
+      "observed_weight_share": {
+        "60": 0.6967213114754098,
+        "120": 0.8409090909090909,
+        "180": 0.8922651933701657,
+        "240": 0.9185684647302904,
+        "300": 0.9345514950166113,
+        "480": 0.9588097713097713
+      },
+      "precision_vs_settled": 0.960425611349636,
+      "recall_vs_settled": 0.9672870840383531,
+      "status": {
+        "admitted": 3849,
+        "illiquid": 627,
+        "no_recent_extreme": 790,
+        "no_trigger": 47561,
+        "premium_gap": 5,
+        "schedule_uncertain": 91,
+        "superseded": 118
+      }
+    },
+    "d15": {
+      "admitted": {
+        "by_interval_min": {
+          "60": 838,
+          "120": 388,
+          "240": 1593,
+          "480": 1066
+        },
+        "clusters": 1619,
+        "events": 3885,
+        "symbols": 284,
+        "top5_symbol_share": 0.11673872760963558,
+        "weeks": 53
+      },
+      "by_interval": {
+        "1h": {
+          "admitted": {
+            "by_interval_min": {
+              "60": 838
+            },
+            "clusters": 175,
+            "events": 838,
+            "symbols": 35,
+            "top5_symbol_share": 0.36,
+            "weeks": 31
+          },
+          "floor": false,
+          "precision_vs_settled": 0.9178794178794178,
+          "recall_vs_settled": 0.9121900826446281,
+          "status": {
+            "admitted": 838,
+            "illiquid": 72,
+            "no_recent_extreme": 24,
+            "no_trigger": 1690,
+            "schedule_uncertain": 28
+          }
+        },
+        "2h": {
+          "admitted": {
+            "by_interval_min": {
+              "120": 388
+            },
+            "clusters": 124,
+            "events": 388,
+            "symbols": 22,
+            "top5_symbol_share": 0.41935483870967744,
+            "weeks": 25
+          },
+          "floor": false,
+          "precision_vs_settled": 0.9273127753303965,
+          "recall_vs_settled": 0.9481981981981982,
+          "status": {
+            "admitted": 388,
+            "illiquid": 15,
+            "no_recent_extreme": 30,
+            "no_trigger": 1538,
+            "schedule_uncertain": 21,
+            "superseded": 10
+          }
+        },
+        "4h": {
+          "admitted": {
+            "by_interval_min": {
+              "240": 1593
+            },
+            "clusters": 701,
+            "events": 1593,
+            "symbols": 150,
+            "top5_symbol_share": 0.16262482168330955,
+            "weeks": 46
+          },
+          "floor": true,
+          "precision_vs_settled": 0.9422098936662043,
+          "recall_vs_settled": 0.9622285174693107,
+          "status": {
+            "admitted": 1593,
+            "illiquid": 197,
+            "no_recent_extreme": 335,
+            "no_trigger": 18915,
+            "premium_gap": 3,
+            "schedule_uncertain": 38,
+            "superseded": 54
+          }
+        },
+        "8h": {
+          "admitted": {
+            "by_interval_min": {
+              "480": 1066
+            },
+            "clusters": 648,
+            "events": 1066,
+            "symbols": 140,
+            "top5_symbol_share": 0.18055555555555555,
+            "weeks": 53
+          },
+          "floor": true,
+          "precision_vs_settled": 0.9578313253012049,
+          "recall_vs_settled": 0.9776411403018446,
+          "status": {
+            "admitted": 1066,
+            "illiquid": 354,
+            "no_recent_extreme": 401,
+            "no_trigger": 25370,
+            "premium_gap": 2,
+            "schedule_uncertain": 5,
+            "superseded": 48
+          }
+        },
+        "other": {
+          "admitted": {
+            "by_interval_min": {},
+            "clusters": 0,
+            "events": 0,
+            "symbols": 0,
+            "top5_symbol_share": null,
+            "weeks": 0
+          },
+          "floor": false,
+          "precision_vs_settled": null,
+          "recall_vs_settled": null,
+          "status": {
+            "superseded": 6
+          }
+        }
+      },
+      "floor": true,
+      "observed_weight_share": {
+        "60": 0.5655737704918032,
+        "120": 0.7665289256198347,
+        "180": 0.8406998158379374,
+        "240": 0.879149377593361,
+        "300": 0.90265780730897,
+        "480": 0.938539501039501
+      },
+      "precision_vs_settled": 0.9419056429232192,
+      "recall_vs_settled": 0.9571347997743936,
+      "status": {
+        "admitted": 3885,
+        "illiquid": 638,
+        "no_recent_extreme": 790,
+        "no_trigger": 47513,
+        "premium_gap": 5,
+        "schedule_uncertain": 92,
+        "superseded": 118
+      }
+    },
+    "d30": {
+      "admitted": {
+        "by_interval_min": {
+          "60": 853,
+          "120": 407,
+          "240": 1636,
+          "480": 1069
+        },
+        "clusters": 1650,
+        "events": 3965,
+        "symbols": 283,
+        "top5_symbol_share": 0.11515151515151516,
+        "weeks": 53
+      },
+      "by_interval": {
+        "1h": {
+          "admitted": {
+            "by_interval_min": {
+              "60": 853
+            },
+            "clusters": 174,
+            "events": 853,
+            "symbols": 34,
+            "top5_symbol_share": 0.3620689655172414,
+            "weeks": 31
+          },
+          "floor": false,
+          "precision_vs_settled": 0.8549382716049383,
+          "recall_vs_settled": 0.8584710743801653,
+          "status": {
+            "admitted": 853,
+            "illiquid": 70,
+            "no_recent_extreme": 20,
+            "no_trigger": 1680,
+            "schedule_uncertain": 29
+          }
+        },
+        "2h": {
+          "admitted": {
+            "by_interval_min": {
+              "120": 407
+            },
+            "clusters": 137,
+            "events": 407,
+            "symbols": 22,
+            "top5_symbol_share": 0.43795620437956206,
+            "weeks": 27
+          },
+          "floor": false,
+          "precision_vs_settled": 0.848421052631579,
+          "recall_vs_settled": 0.9076576576576577,
+          "status": {
+            "admitted": 407,
+            "illiquid": 16,
+            "no_recent_extreme": 31,
+            "no_trigger": 1517,
+            "schedule_uncertain": 21,
+            "superseded": 10
+          }
+        },
+        "4h": {
+          "admitted": {
+            "by_interval_min": {
+              "240": 1636
+            },
+            "clusters": 718,
+            "events": 1636,
+            "symbols": 150,
+            "top5_symbol_share": 0.1615598885793872,
+            "weeks": 46
+          },
+          "floor": true,
+          "precision_vs_settled": 0.8922452660054103,
+          "recall_vs_settled": 0.9343720491029273,
+          "status": {
+            "admitted": 1636,
+            "illiquid": 196,
+            "no_recent_extreme": 346,
+            "no_trigger": 18860,
+            "premium_gap": 3,
+            "schedule_uncertain": 40,
+            "superseded": 54
+          }
+        },
+        "8h": {
+          "admitted": {
+            "by_interval_min": {
+              "480": 1069
+            },
+            "clusters": 650,
+            "events": 1069,
+            "symbols": 140,
+            "top5_symbol_share": 0.18,
+            "weeks": 53
+          },
+          "floor": true,
+          "precision_vs_settled": 0.9304347826086956,
+          "recall_vs_settled": 0.9569591950810509,
+          "status": {
+            "admitted": 1069,
+            "illiquid": 360,
+            "no_recent_extreme": 405,
+            "no_trigger": 25356,
+            "premium_gap": 2,
+            "schedule_uncertain": 6,
+            "superseded": 48
+          }
+        },
+        "other": {
+          "admitted": {
+            "by_interval_min": {},
+            "clusters": 0,
+            "events": 0,
+            "symbols": 0,
+            "top5_symbol_share": null,
+            "weeks": 0
+          },
+          "floor": false,
+          "precision_vs_settled": null,
+          "recall_vs_settled": null,
+          "status": {
+            "superseded": 6
+          }
+        }
+      },
+      "floor": true,
+      "observed_weight_share": {
+        "60": 0.2540983606557377,
+        "120": 0.5640495867768595,
+        "180": 0.6952117863720073,
+        "240": 0.7660788381742739,
+        "300": 0.8102990033222591,
+        "480": 0.8790280665280665
+      },
+      "precision_vs_settled": 0.8946412352406903,
+      "recall_vs_settled": 0.9259259259259259,
+      "status": {
+        "admitted": 3965,
+        "illiquid": 642,
+        "no_recent_extreme": 802,
+        "no_trigger": 47413,
+        "premium_gap": 5,
+        "schedule_uncertain": 96,
+        "superseded": 118
+      }
+    }
+  },
+  "superset": 53041,
+  "verdict": "superset_rebuild_needed",
+  "version": "bybit_presettlement_feasibility_v1",
+  "working_tree_dirty": false
+}

@@ -1,0 +1,15 @@
+{
+  "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+  "path": "runtime/research/b2/source-pilot/bodies/d0b2b9845df051182aa06b9e8b97cab5d4657b46f501fb22171aa7de8e86b9b4.data.zip",
+  "recovered_after_publication": false,
+  "sha256": "727e796793979784e610d932d9882233e3cc2f48bf22e24b740301746bc0a366",
+  "task": {
+    "bytes": 154507366,
+    "day": "2024-12-27",
+    "etag": "\"1c467c486194d19765270fcc02955a23\"",
+    "id": "d0b2b9845df051182aa06b9e8b97cab5d4657b46f501fb22171aa7de8e86b9b4",
+    "kind": "ob500",
+    "symbol": "UXLINKUSDT",
+    "url": "https://quote-saver.bycsi.com/orderbook/linear/UXLINKUSDT/2024-12-27_UXLINKUSDT_ob500.data.zip"
+  }
+}

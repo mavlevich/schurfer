@@ -1,0 +1,15 @@
+{
+  "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+  "path": "runtime/research/b2/source-pilot/bodies/0b3cfebf0ab4b1e2464eaa8ddf00d80007d827eaffb377a333259b09199e0188.csv.gz",
+  "recovered_after_publication": false,
+  "sha256": "8c660591ec47459e87e049939f1fb13f4c4d25833e921d02c8b118e4ce85580f",
+  "task": {
+    "bytes": 19290250,
+    "day": "2025-05-07",
+    "etag": "\"1b8e4abfcd54b2574df7659c685348f7-3\"",
+    "id": "0b3cfebf0ab4b1e2464eaa8ddf00d80007d827eaffb377a333259b09199e0188",
+    "kind": "trades",
+    "symbol": "STPTUSDT",
+    "url": "https://public.bybit.com/trading/STPTUSDT/STPTUSDT2025-05-07.csv.gz"
+  }
+}

@@ -1,0 +1,228 @@
+{
+  "byte_cap": 2147483648,
+  "max_attempts": 48,
+  "plan_sha256": "39c5bda6f438f51e90fbb899a2eb93250acf995727d032a6e725f5a011fe8630",
+  "rate": 3,
+  "revision": "c1c9faeb29d3c996979dda0a45f625f44b1066aa",
+  "source_sha256": "c649ff52cae29493487382a8d93e987a0a98ab30ee57e11751299f314e3b6746",
+  "tasks": [
+    {
+      "bytes": 36856663,
+      "day": "2025-03-20",
+      "etag": "\"5176701892b1eb2fefd523eead48d34d\"",
+      "id": "39b7c490744a2dd1b9bb36cbee4c0b37fc76ff7c3c31aa9804cf0c9a85790c64",
+      "kind": "ob500",
+      "symbol": "VIDTUSDT",
+      "url": "https://quote-saver.bycsi.com/orderbook/linear/VIDTUSDT/2025-03-20_VIDTUSDT_ob500.data.zip"
+    },
+    {
+      "bytes": 18608766,
+      "day": "2025-03-20",
+      "etag": "\"c915a60cabf1c5b374012c876e1bd9b0-3\"",
+      "id": "5daebe4b883ee86ea5139df75712eedb80b1ad4d928699a0774757ea2234a787",
+      "kind": "trades",
+      "symbol": "VIDTUSDT",
+      "url": "https://public.bybit.com/trading/VIDTUSDT/VIDTUSDT2025-03-20.csv.gz"
+    },
+    {
+      "bytes": 50061753,
+      "day": "2025-05-07",
+      "etag": "\"c9d2e57d396fe887d9829ddcdada0211\"",
+      "id": "8f2258f0246a2eab60398690073186696b6c1aea2895aa9da616d89ed791a5f1",
+      "kind": "ob500",
+      "symbol": "STPTUSDT",
+      "url": "https://quote-saver.bycsi.com/orderbook/linear/STPTUSDT/2025-05-07_STPTUSDT_ob500.data.zip"
+    },
+    {
+      "bytes": 19290250,
+      "day": "2025-05-07",
+      "etag": "\"1b8e4abfcd54b2574df7659c685348f7-3\"",
+      "id": "0b3cfebf0ab4b1e2464eaa8ddf00d80007d827eaffb377a333259b09199e0188",
+      "kind": "trades",
+      "symbol": "STPTUSDT",
+      "url": "https://public.bybit.com/trading/STPTUSDT/STPTUSDT2025-05-07.csv.gz"
+    },
+    {
+      "bytes": 17605852,
+      "day": "2025-02-18",
+      "etag": "\"14ea27ea441c405dbf30433458a5703a\"",
+      "id": "d2d62426a1ee47163c1bdccb28d65b9072b2aae63ad1a0c5fcc6d1b6ea018e9a",
+      "kind": "ob500",
+      "symbol": "STMXUSDT",
+      "url": "https://quote-saver.bycsi.com/orderbook/linear/STMXUSDT/2025-02-18_STMXUSDT_ob500.data.zip"
+    },
+    {
+      "bytes": 2806012,
+      "day": "2025-02-18",
+      "etag": "\"deb077accaffd6ede94f2cc644e06e7f\"",
+      "id": "fc8b04e6168b07d5d45513a27f5e4b875043c8f1981261fa3814b82c5522c73b",
+      "kind": "trades",
+      "symbol": "STMXUSDT",
+      "url": "https://public.bybit.com/trading/STMXUSDT/STMXUSDT2025-02-18.csv.gz"
+    },
+    {
+      "bytes": 22005149,
+      "day": "2025-06-01",
+      "etag": "\"f662e4befeeeae518357b75b27557571\"",
+      "id": "ad7990544d557a3db393ebda22884aef6d22651e31d7f628bd8d702407c385b2",
+      "kind": "ob500",
+      "symbol": "OMGUSDT",
+      "url": "https://quote-saver.bycsi.com/orderbook/linear/OMGUSDT/2025-06-01_OMGUSDT_ob500.data.zip"
+    },
+    {
+      "bytes": 9660306,
+      "day": "2025-06-01",
+      "etag": "\"8b756b1c961a9a8b25fd7deeb4ef31d4-2\"",
+      "id": "38beb1d2c85153b5e4f81129e3732e1d2e15821139546dcf7f863ca9a581917b",
+      "kind": "trades",
+      "symbol": "OMGUSDT",
+      "url": "https://public.bybit.com/trading/OMGUSDT/OMGUSDT2025-06-01.csv.gz"
+    },
+    {
+      "bytes": 154507366,
+      "day": "2024-12-27",
+      "etag": "\"1c467c486194d19765270fcc02955a23\"",
+      "id": "d0b2b9845df051182aa06b9e8b97cab5d4657b46f501fb22171aa7de8e86b9b4",
+      "kind": "ob500",
+      "symbol": "UXLINKUSDT",
+      "url": "https://quote-saver.bycsi.com/orderbook/linear/UXLINKUSDT/2024-12-27_UXLINKUSDT_ob500.data.zip"
+    },
+    {
+      "bytes": 50516941,
+      "day": "2024-12-27",
+      "etag": "\"8213dfcf1525a63f308461735c0e5861-7\"",
+      "id": "4447e323affd81b5cb993f784af1a764e6560ac2a83ac2cced2e402daf8d3102",
+      "kind": "trades",
+      "symbol": "UXLINKUSDT",
+      "url": "https://public.bybit.com/trading/UXLINKUSDT/UXLINKUSDT2024-12-27.csv.gz"
+    },
+    {
+      "bytes": 147007705,
+      "day": "2025-02-17",
+      "etag": "\"abe00d483fcc8c11e0237059bd43bea1\"",
+      "id": "f98b8d3bc4275eefc90041a055075ef0b7753a5b0f8f048a516734859f03de5c",
+      "kind": "ob500",
+      "symbol": "IPUSDT",
+      "url": "https://quote-saver.bycsi.com/orderbook/linear/IPUSDT/2025-02-17_IPUSDT_ob500.data.zip"
+    },
+    {
+      "bytes": 41823074,
+      "day": "2025-02-17",
+      "etag": "\"947e352409e81a6cc5d20c63c5bdedde-5\"",
+      "id": "64fe18eb3234779f37b8ff9b61c19dceb222232cf908eed84ca5d36854771743",
+      "kind": "trades",
+      "symbol": "IPUSDT",
+      "url": "https://public.bybit.com/trading/IPUSDT/IPUSDT2025-02-17.csv.gz"
+    },
+    {
+      "bytes": 105016217,
+      "day": "2025-02-10",
+      "etag": "\"59d915288a570b2471416f9ef9cff44b\"",
+      "id": "dd89a587e9270e189cba936c2efc91e7a10f6530f0fa253562b34d890e7ad718",
+      "kind": "ob500",
+      "symbol": "MEUSDT",
+      "url": "https://quote-saver.bycsi.com/orderbook/linear/MEUSDT/2025-02-10_MEUSDT_ob500.data.zip"
+    },
+    {
+      "bytes": 33224358,
+      "day": "2025-02-10",
+      "etag": "\"08c7dbf6cd3527076836515fd5322878-4\"",
+      "id": "eba21ddb727e6009d691e114c367ff242347bc5633808c2aa05b778e440f58a6",
+      "kind": "trades",
+      "symbol": "MEUSDT",
+      "url": "https://public.bybit.com/trading/MEUSDT/MEUSDT2025-02-10.csv.gz"
+    },
+    {
+      "bytes": 81289410,
+      "day": "2025-04-11",
+      "etag": "\"40106fc96dc7fb65be6430ef5084da6a\"",
+      "id": "3e60560864b991b718df913f678e855b3bf6191f4626f6ac9e56ac4b1fbf8cd1",
+      "kind": "ob500",
+      "symbol": "AUCTIONUSDT",
+      "url": "https://quote-saver.bycsi.com/orderbook/linear/AUCTIONUSDT/2025-04-11_AUCTIONUSDT_ob500.data.zip"
+    },
+    {
+      "bytes": 17309548,
+      "day": "2025-04-11",
+      "etag": "\"7394264ee968691a8f3b9c8aa6732fd8-3\"",
+      "id": "197fcfea87a39e4bb000cdb2b3f53177d74b07988164b9a32db0c1bbf1785a5c",
+      "kind": "trades",
+      "symbol": "AUCTIONUSDT",
+      "url": "https://public.bybit.com/trading/AUCTIONUSDT/AUCTIONUSDT2025-04-11.csv.gz"
+    },
+    {
+      "bytes": 71567386,
+      "day": "2025-07-09",
+      "etag": "\"42526552c5bd2ab1db9705c83556d91a\"",
+      "id": "79eb34c462c0308ca0684c6c3bfe8bd2eb1a90bd1bc2c5e5468a926464bd5c4c",
+      "kind": "ob500",
+      "symbol": "MUSDT",
+      "url": "https://quote-saver.bycsi.com/orderbook/linear/MUSDT/2025-07-09_MUSDT_ob500.data.zip"
+    },
+    {
+      "bytes": 35990982,
+      "day": "2025-07-09",
+      "etag": "\"7f529943aceadc8be75e618b55d8aba6-5\"",
+      "id": "84f68a61ed3fc4363cc2e2acba9460bbeccb87a29fd03c3148ead88542b2d806",
+      "kind": "trades",
+      "symbol": "MUSDT",
+      "url": "https://public.bybit.com/trading/MUSDT/MUSDT2025-07-09.csv.gz"
+    },
+    {
+      "bytes": 165443456,
+      "day": "2025-07-22",
+      "etag": "\"8db66846d86d116d28ec4e401baf3c8a\"",
+      "id": "766ae1fbb6ff7c0174e3ce36b99c2f8a1c5619381cbfbb869c9b5ae0a66d406f",
+      "kind": "ob500",
+      "symbol": "SPKUSDT",
+      "url": "https://quote-saver.bycsi.com/orderbook/linear/SPKUSDT/2025-07-22_SPKUSDT_ob500.data.zip"
+    },
+    {
+      "bytes": 83018082,
+      "day": "2025-07-22",
+      "etag": "\"dd8a5d2f33f3c2941cbdedaa4a7e5ca8-10\"",
+      "id": "2f759a8d2500f80805ec662a3dce84b69854f3ef95bdff5c52bd80030486de6d",
+      "kind": "trades",
+      "symbol": "SPKUSDT",
+      "url": "https://public.bybit.com/trading/SPKUSDT/SPKUSDT2025-07-22.csv.gz"
+    },
+    {
+      "bytes": 243974109,
+      "day": "2025-08-24",
+      "etag": "\"bcb51822137ef00b35fc97879e5fe518\"",
+      "id": "d5d73f3af1f6ae81f198134b959cb3c571864178d2976c299aa8483779003048",
+      "kind": "ob200",
+      "symbol": "PROMPTUSDT",
+      "url": "https://quote-saver.bycsi.com/orderbook/linear/PROMPTUSDT/2025-08-24_PROMPTUSDT_ob200.data.zip"
+    },
+    {
+      "bytes": 135832174,
+      "day": "2025-08-24",
+      "etag": "\"26d3a84f2478506ae136b605d89846d3-17\"",
+      "id": "0ba0184cd6e61b525eaf9a71a32d134a7643c48044018dd30b6f6c98aef635e3",
+      "kind": "trades",
+      "symbol": "PROMPTUSDT",
+      "url": "https://public.bybit.com/trading/PROMPTUSDT/PROMPTUSDT2025-08-24.csv.gz"
+    },
+    {
+      "bytes": 10522221,
+      "day": "2025-08-23",
+      "etag": "\"031e55e8fc4af90029e3d071dec7da3b\"",
+      "id": "663cdc81cf1c4689fbaf337647c088ccf648d00c69d7d486099c711258abfe68",
+      "kind": "ob200",
+      "symbol": "ASRUSDT",
+      "url": "https://quote-saver.bycsi.com/orderbook/linear/ASRUSDT/2025-08-23_ASRUSDT_ob200.data.zip"
+    },
+    {
+      "bytes": 1911110,
+      "day": "2025-08-23",
+      "etag": "\"24b530e6eaabb5564540d8ab3266c967\"",
+      "id": "b195e4dd420858c3c96dab59a2132d1c43853f9528bbf3e5091bed5ce1cc8f6a",
+      "kind": "trades",
+      "symbol": "ASRUSDT",
+      "url": "https://public.bybit.com/trading/ASRUSDT/ASRUSDT2025-08-23.csv.gz"
+    }
+  ],
+  "version": "b2_source_pilot_fetch_v1",
+  "working_tree_dirty": false
+}

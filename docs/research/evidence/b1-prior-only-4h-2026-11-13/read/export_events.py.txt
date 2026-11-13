@@ -1,0 +1,85 @@
+"""Freeze the accepted B1 S3 identities; no new rule or market request."""
+import gzip
+import hashlib
+import json
+import os
+import resource
+import subprocess
+import time
+from collections import Counter
+from datetime import UTC, datetime
+from pathlib import Path
+
+from schurfer_analytics import bybit_presettlement_feasibility as b1
+from schurfer_analytics.bybit_carry_feasibility import publish_once
+from schurfer_analytics.bybit_post_funding_screen import MINUTE_MS, load_index, verified
+
+root = Path(__file__).resolve().parent
+revision = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+porcelain = subprocess.check_output(["git", "status", "--porcelain"], text=True)
+accepted_run = json.loads((root / "run.json").read_bytes())
+for source, expected_sha in accepted_run["source_sha256"].items():
+    if hashlib.sha256(Path(source).read_bytes()).hexdigest() != expected_sha:
+        raise SystemExit("source differs from the accepted report")
+report_raw = (root / "result.json").read_bytes()
+report_sha = hashlib.sha256(report_raw).hexdigest()
+if report_sha != "96ed96d58514815203aa221a35bce5ed19a37b9b5316947148375a033170311e":
+    raise SystemExit("accepted B1 result digest differs")
+report = json.loads(report_raw)
+if revision != report["code_revision"] or report["verdict"] != "pass":
+    raise SystemExit("revision or accepted verdict differs")
+started = time.monotonic()
+started_at = datetime.now(UTC).isoformat()
+index = load_index(verified(Path("/Users/mavlevich/Desktop/Projects/schurfer/.claude/worktrees/hyp031-discovery/runtime/research/hyp031-discovery/index-d87b3a2.jsonl.gz"), b1.INDEX_SHA256))
+original = b1.load_minutes(verified(Path("/Users/mavlevich/Desktop/Projects/schurfer/runtime/research/b1/minutes-7260e55.jsonl.gz"), b1.MINUTES_SHA256))
+extra = b1.load_minutes(verified(Path("runtime/research/b1/prior-only-4h/supplement.jsonl.gz"), b1.MINUTES_EXTRA_SHA256))
+minutes = b1.merge_minutes(original, extra)
+candidates, _ = b1.report_scope(index)
+times = {symbol: sorted(index.instruments[symbol].funding) for symbol in {iv.symbol for iv in candidates}}
+events = {}
+counts = {}
+for d in b1.DECISION_OFFSETS_MIN:
+    key = f"d{d}"
+    selected, status = [], Counter()
+    for iv in candidates:
+        label, _ = b1.classify(index, iv, minutes.closes.get(iv.symbol, {}), d, times[iv.symbol])
+        status[label] += 1
+        if label == "admitted":
+            selected.append(iv)
+    expected = report["s3"][key]["by_interval"]["4h"]
+    # JSON object keys are strings: normalize interval-minute integer keys in
+    # the in-memory counts before comparing to the frozen JSON result.
+    counted = json.loads(json.dumps(b1.event_counts(selected)))
+    if counted != expected["admitted"] or dict(sorted(status.items())) != expected["status"]:
+        raise SystemExit(f"S3 identity derivation does not reproduce accepted counts: {key}")
+    rows = [{"symbol": iv.symbol, "interval_start_ms": iv.s1,
+             "forecast_settlement_ms": iv.predicted,
+             "decision_ms": iv.predicted - d * MINUTE_MS,
+             "premium_observed_until_ms": iv.predicted - d * MINUTE_MS - b1.PUBLICATION_LAG_MS,
+             "interval_minutes": iv.n_min} for iv in selected]
+    rows.sort(key=lambda row: (row["decision_ms"], row["symbol"], row["interval_start_ms"]))
+    if len({(row["symbol"], row["interval_start_ms"]) for row in rows}) != len(rows):
+        raise SystemExit("duplicate native event identity")
+    events[key] = rows
+    counts[key] = {"events": len(rows), "symbol_days_at_decision": len({(r["symbol"], r["decision_ms"] // b1.DAY_MS) for r in rows})}
+payload = {"version": "b1_prior_only_4h_event_ids_v1", "report_sha256": report_sha,
+           "code_revision": revision, "events_by_decision": events,
+           "input_sha256": {"index": b1.INDEX_SHA256, "original_minutes": b1.MINUTES_SHA256, "supplement": b1.MINUTES_EXTRA_SHA256}}
+raw = gzip.compress((json.dumps(payload, sort_keys=True, separators=(",", ":")) + "\n").encode(), mtime=0)
+with (root / "events.json.gz").open("xb") as stream:
+    stream.write(raw)
+    stream.flush()
+    os.fsync(stream.fileno())
+run = {"started_at_utc": started_at, "finished_at_utc": datetime.now(UTC).isoformat(),
+       "code_revision": revision, "working_tree_dirty": bool(porcelain), "porcelain": porcelain,
+       "source_hashes_match_accepted_clean_report": True,
+       "count_comparison": "JSON-normalized dictionary keys; no numerical or selection tolerance",
+       "helper_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+       "classifier_sha256": hashlib.sha256(Path(b1.__file__).read_bytes()).hexdigest(),
+       "report_sha256": report_sha, "events_sha256": hashlib.sha256(raw).hexdigest(),
+       "counts": counts, "all_status_and_event_counts_match_accepted_report": True,
+       "elapsed_seconds": round(time.monotonic()-started, 3),
+       "max_rss_bytes_macos": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+       "scope": "same registered S3 identities only; no new feature, outcome, market request or selection rule"}
+publish_once(root / "events-run.json", run)
+print(json.dumps({"counts": counts, "events_sha256": run["events_sha256"], "elapsed_seconds": run["elapsed_seconds"]}))

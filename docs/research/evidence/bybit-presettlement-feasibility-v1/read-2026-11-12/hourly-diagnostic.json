@@ -1,0 +1,54 @@
+{
+  "scope": "existing B1 discovery premium snapshots only; no perpetual returns",
+  "counts": {
+    "hourly_rows_including_repeated_pages": 4373501,
+    "hourly_low_above_high": 0,
+    "hourly_open_outside_hilo": 1841269,
+    "hourly_close_outside_hilo": 0,
+    "minute_rows_unique": 19097622,
+    "comparable": 19085862,
+    "outside": 11362914,
+    "outside_with_invalid_hour_ohlc": 9351431,
+    "inside_shift_3600000": 6445316,
+    "inside_shift_-3600000": 7197497,
+    "hour_missing": 11760
+  },
+  "examples": [
+    {
+      "symbol": "0GUSDT",
+      "hour_start_ms": 1758538800000,
+      "hourly_ohlc": [
+        -0.07174612,
+        -0.03313479,
+        -0.04174112,
+        -0.04174112
+      ],
+      "minute_start_ms": 1758542220000,
+      "minute_close": -0.02015845
+    },
+    {
+      "symbol": "0GUSDT",
+      "hour_start_ms": 1758538800000,
+      "hourly_ohlc": [
+        -0.07174612,
+        -0.03313479,
+        -0.04174112,
+        -0.04174112
+      ],
+      "minute_start_ms": 1758542160000,
+      "minute_close": -0.02936885
+    },
+    {
+      "symbol": "0GUSDT",
+      "hour_start_ms": 1758538800000,
+      "hourly_ohlc": [
+        -0.07174612,
+        -0.03313479,
+        -0.04174112,
+        -0.04174112
+      ],
+      "minute_start_ms": 1758542040000,
+      "minute_close": -0.04719418
+    }
+  ]
+}

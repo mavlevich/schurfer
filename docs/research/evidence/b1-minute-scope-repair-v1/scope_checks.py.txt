@@ -1,0 +1,35 @@
+from __future__ import annotations
+import bisect,collections,gzip,json
+from pathlib import Path
+from schurfer_analytics import bybit_presettlement_feasibility as b1
+from schurfer_analytics.bybit_post_funding_screen import load_index,verified
+
+base=Path('/Users/mavlevich/Desktop/Projects/schurfer');out=Path('runtime/research/b1-verified-report/scope-repair')
+index=load_index(verified(base/'.claude/worktrees/hyp031-discovery/runtime/research/hyp031-discovery/index-d87b3a2.jsonl.gz',b1.INDEX_SHA256))
+all_ivs=b1.intervals(index)
+scope=json.loads(gzip.decompress((out/'proposed-scope.json.gz').read_bytes()))
+scoped={(r['symbol'],r['start_ms']):set(r['candidate_decision_offsets']) for r in scope}
+compared=0
+for iv in b1.validation_sample(all_ivs):
+ inst=index.instruments[iv.symbol]
+ for d in b1.DECISION_OFFSETS_MIN:
+  cut=iv.predicted-d*b1.MINUTE_MS
+  expected=not b1.superseded(sorted(inst.funding),iv,cut) and not iv.schedule_uncertain and b1.liquid_at(inst.turnover,cut) and b1.recent_extreme(inst.funding,cut)
+  actual=d in scoped.get(iv.key,set())
+  assert actual==expected,(iv.key,d)
+  compared+=1
+# A synthetic minute path can trigger while every reported hourly low is zero.
+# The new prior-only scope retains the interval regardless of that inconsistent
+# hourly envelope. No real strategy outcome is read by this boundary check.
+key=next(k for k,ds in sorted(scoped.items()) if ds)
+iv=next(iv for iv in all_ivs if iv.key==key)
+closes={m:-0.0045 for m in b1.minute_starts(iv)}
+assert not b1.in_superset(iv,{h:0.0 for h in range(iv.s1,iv.predicted,b1.HOUR_MS)})
+assert all(b1.classify(index,iv,closes,d)[0]=='admitted' for d in scoped[key])
+# Every future extreme must stay out of the recent-extreme condition at cut.
+future_cut=iv.predicted-30*b1.MINUTE_MS
+assert not b1.recent_extreme({future_cut+1:-0.1},future_cut)
+assert not b1.recent_extreme({future_cut:-0.1},future_cut)
+assert b1.recent_extreme({future_cut-1:-0.004},future_cut)
+result={'reference_prefilter_checks':compared,'reference_scope_match':True,'unreliable_hourly_low_counterexample_retained':True,'synthetic_trigger_admitted':True,'future_and_same_cut_funding_excluded':True,'real_strategy_returns_read':False}
+(out/'scope-checks.json').write_text(json.dumps(result,indent=2)+'\n');print(json.dumps(result,indent=2))

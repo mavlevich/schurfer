@@ -1,0 +1,15 @@
+{
+  "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+  "path": "runtime/research/b2/source-pilot/bodies/766ae1fbb6ff7c0174e3ce36b99c2f8a1c5619381cbfbb869c9b5ae0a66d406f.data.zip",
+  "recovered_after_publication": false,
+  "sha256": "694b2ead1bee53c9b3aefaf722be0a495e1da91d21981a0e05da584ad5226cd6",
+  "task": {
+    "bytes": 165443456,
+    "day": "2025-07-22",
+    "etag": "\"8db66846d86d116d28ec4e401baf3c8a\"",
+    "id": "766ae1fbb6ff7c0174e3ce36b99c2f8a1c5619381cbfbb869c9b5ae0a66d406f",
+    "kind": "ob500",
+    "symbol": "SPKUSDT",
+    "url": "https://quote-saver.bycsi.com/orderbook/linear/SPKUSDT/2025-07-22_SPKUSDT_ob500.data.zip"
+  }
+}

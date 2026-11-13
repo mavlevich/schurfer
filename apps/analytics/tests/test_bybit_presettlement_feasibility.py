@@ -331,6 +331,83 @@ def test_standard_cap_values_are_counted_not_excluded() -> None:
     assert report["relevant"] == 400
 
 
+def _event_world() -> tuple[Index, list[Interval]]:
+    """AAA passes every premium-free S2 condition; BBB is illiquid; CCC has no recent
+    extreme; DDD has an uncertain schedule."""
+    liquid = {T0 - (k + 1) * HOUR_MS: 200_000.0 for k in range(40)}
+    thin = {T0 - (k + 1) * HOUR_MS: 1_000.0 for k in range(40)}
+    proven = {T0 - DAY_MS: -0.004}
+    mild = {T0 - DAY_MS: -0.001}
+    index = Index(
+        "discovery",
+        {
+            "AAAUSDT": Instrument(b1.LAST_MS, dict(proven), dict(liquid)),
+            "BBBUSDT": Instrument(b1.LAST_MS, dict(proven), dict(thin)),
+            "CCCUSDT": Instrument(b1.LAST_MS, dict(mild), dict(liquid)),
+            "DDDUSDT": Instrument(b1.LAST_MS, dict(proven), dict(liquid)),
+        },
+        (),
+    )
+    rows = [
+        hour_interval("AAAUSDT"),
+        hour_interval("BBBUSDT"),
+        hour_interval("CCCUSDT"),
+        hour_interval("DDDUSDT", uncertain=True),
+    ]
+    return index, rows
+
+
+def test_event_superset_keeps_only_premium_free_passes() -> None:
+    index, rows = _event_world()
+    assert [iv.symbol for iv in b1.event_superset(index, rows)] == ["AAAUSDT"]
+
+
+def test_review_repro_event_superset_contains_every_admitted_event() -> None:
+    """Amendment 2: an event the hourly-low superset could miss (premium low only inside
+    the hour) is still in the event superset, because it is chosen without the premium."""
+    index, rows = _event_world()
+    minutes = MinutePremium({iv.symbol: closes_for(iv, -0.004, -0.004) for iv in rows}, ())
+    events = {iv.key for iv in b1.event_superset(index, rows)}
+    times = {s: sorted(i.funding) for s, i in index.instruments.items()}
+    for iv in rows:
+        for d in b1.DECISION_OFFSETS_MIN:
+            closes = minutes.closes[iv.symbol]
+            if b1.classify(index, iv, closes, d, times[iv.symbol])[0] == "admitted":
+                assert iv.key in events
+    hourly_low_above = {iv.symbol: {iv.s1: 0.001} for iv in rows}  # a misleading hour
+    assert not b1.in_superset(rows[0], hourly_low_above["AAAUSDT"])
+    assert rows[0].key in events
+
+
+def test_extra_todo_reuses_complete_four_hour_paths(monkeypatch: pytest.MonkeyPatch) -> None:
+    index, rows = _event_world()
+    iv = Interval("AAAUSDT", T0, T0 + 4 * HOUR_MS, 240, False, T0 + 4 * HOUR_MS)
+    index.instruments["AAAUSDT"].turnover.update({T0 + h * HOUR_MS: 200_000.0 for h in range(4)})
+    monkeypatch.setattr(b1, "intervals", lambda _index: [iv, *rows])
+    monkeypatch.setattr(b1, "validation_sample", lambda _every: [])
+    extra, counts = b1.extra_minute_todo(index, MinutePremium({}, ()))
+    assert [item.key for item in extra] == [iv.key]
+    assert counts == {"event_superset": 1, "s1_pool": 1, "already_complete": 0, "requests": 1}
+    existing = MinutePremium({iv.symbol: closes_for(iv, -0.004, -0.004)}, ())
+    assert b1.extra_minute_todo(index, existing)[0] == []
+    assert b1.extra_minute_todo(index, existing)[1]["already_complete"] == 1
+    del existing.closes[iv.symbol][iv.s1 + 5 * MINUTE_MS]
+    assert b1.extra_minute_todo(index, existing)[0] == [iv]
+
+
+def test_merge_minutes_unions_both_snapshots() -> None:
+    a = MinutePremium({"AAAUSDT": {1: -0.001}}, (("AAAUSDT", 5),))
+    b = MinutePremium({"AAAUSDT": {2: -0.002}, "BBBUSDT": {3: 0.0}}, ())
+    merged = b1.merge_minutes(a, b)
+    assert merged.closes == {"AAAUSDT": {1: -0.001, 2: -0.002}, "BBBUSDT": {3: 0.0}}
+    assert merged.failed == (("AAAUSDT", 5),)
+
+
+def test_unfetched_event_interval_blocks_a_pass() -> None:
+    assert b1._verdict({"status": "pass"}, ["d30"], complete=False) == "event_data_incomplete"
+    assert b1._verdict({"status": "pass"}, ["d30"]) == "pass"
+
+
 class FakeBybit:
     """Answers premium index kline requests like Bybit: newest first, capped at limit."""
 
@@ -357,14 +434,14 @@ class FakeBybit:
 def test_api_to_snapshot_to_report(tmp_path: Path) -> None:
     """The whole path on artificial responses: fetch, write, load, plan, report."""
     s1_time = T0
-    funding = {s1_time - 2 * HOUR_MS: -0.004, s1_time - HOUR_MS: -0.004, s1_time: -0.004,
-               s1_time + HOUR_MS: -0.004}  # fmt: skip
-    turnover = {s1_time - (k + 1) * HOUR_MS: 200_000.0 for k in range(40)}
+    funding = {s1_time - 8 * HOUR_MS: -0.004, s1_time - 4 * HOUR_MS: -0.004, s1_time: -0.004,
+               s1_time + 4 * HOUR_MS: -0.004}  # fmt: skip
+    turnover = {s1_time + 7 * HOUR_MS - (k + 1) * HOUR_MS: 200_000.0 for k in range(40)}
     index = Index("discovery", {"AAAUSDT": Instrument(b1.LAST_MS, funding, turnover)}, ())
-    hours = {h: (-0.004, -0.0039, -0.0041, -0.004) for h in range(s1_time - 3 * HOUR_MS,
-             s1_time + 2 * HOUR_MS, HOUR_MS)}  # fmt: skip
-    minutes = {s1_time - 3 * HOUR_MS + k * MINUTE_MS: (-0.004, -0.004, -0.004, -0.004)
-               for k in range(5 * 60)}  # fmt: skip
+    hours = {h: (-0.004, -0.0039, -0.0041, -0.004) for h in range(s1_time - 12 * HOUR_MS,
+             s1_time + 8 * HOUR_MS, HOUR_MS)}  # fmt: skip
+    minutes = {s1_time - 12 * HOUR_MS + k * MINUTE_MS: (-0.004, -0.004, -0.004, -0.004)
+               for k in range(20 * 60)}  # fmt: skip
     client = FakeBybit({("AAAUSDT", "60"): hours, ("AAAUSDT", "1"): minutes})
 
     hourly_path = tmp_path / "hourly.jsonl.gz"
@@ -383,7 +460,8 @@ def test_api_to_snapshot_to_report(tmp_path: Path) -> None:
     assert loaded.closes["AAAUSDT"][s1_time] == -0.004
 
     report = b1.build_report(index, hourly, loaded)
-    d30 = report["s3"]["d30"]
+    assert report["s3"]["d30"]["status"] == "not_fetched"
+    d30 = report["s3"]["d30"]["by_interval"]["4h"]
     assert d30["status"].get("admitted", 0) >= 1
     assert report["s1"]["status"] == "insufficient_data"  # four settlements cannot validate
     assert report["verdict"] == "insufficient_validation"

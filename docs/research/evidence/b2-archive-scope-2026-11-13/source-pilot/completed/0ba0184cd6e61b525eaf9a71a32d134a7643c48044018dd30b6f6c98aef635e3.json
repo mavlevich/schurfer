@@ -1,0 +1,15 @@
+{
+  "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+  "path": "runtime/research/b2/source-pilot/bodies/0ba0184cd6e61b525eaf9a71a32d134a7643c48044018dd30b6f6c98aef635e3.csv.gz",
+  "recovered_after_publication": false,
+  "sha256": "02d65a8ead4b458d186f131f3c30ef85bf5df8388c8363e5e076d664c93967a9",
+  "task": {
+    "bytes": 135832174,
+    "day": "2025-08-24",
+    "etag": "\"26d3a84f2478506ae136b605d89846d3-17\"",
+    "id": "0ba0184cd6e61b525eaf9a71a32d134a7643c48044018dd30b6f6c98aef635e3",
+    "kind": "trades",
+    "symbol": "PROMPTUSDT",
+    "url": "https://public.bybit.com/trading/PROMPTUSDT/PROMPTUSDT2025-08-24.csv.gz"
+  }
+}

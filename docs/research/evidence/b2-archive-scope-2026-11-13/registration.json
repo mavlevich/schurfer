@@ -1,0 +1,35 @@
+{
+  "files": {
+    "direct-html-attempts.json": {
+      "bytes": 713,
+      "sha256": "6011e6b790d9d8aa0d2aebfb3e919c4480733d361663879cd0f1bda16ed94b5b"
+    },
+    "history-script-metadata.json": {
+      "bytes": 263,
+      "sha256": "c1ba5f7b10c8050e07256105171bc93b57009dcb69ec8afd6c8f6c0c480b1a2b"
+    },
+    "official-file-head.json": {
+      "bytes": 368,
+      "sha256": "8bfd65adfee0cd354f35c1dc46b511f755052930c54231d1a1ecef35aec1601f"
+    },
+    "official-source-proof.json": {
+      "bytes": 1551,
+      "sha256": "822d06552b5a8c1fd4c0fe32342b46db8c5fd96550c6384e8e8a18e8828839e1"
+    },
+    "scope.json.gz": {
+      "bytes": 18152,
+      "sha256": "44180260e256b8ff1f438bdf734d87b4d93c7614c84aaa4e13a53d775158e7a6"
+    },
+    "source-pilot.json": {
+      "bytes": 2939,
+      "sha256": "d8ccb23daccde8b53c07cbdb6617d7e316f18ccb40e9ffaa8257bfee15bf43de"
+    }
+  },
+  "max_attempts": 4344,
+  "pilot_ids_fixed_before_headers": true,
+  "rate_per_second": 3,
+  "recorded_at_utc": "2026-11-13T07:53:50.241185+00:00",
+  "requests": 2172,
+  "scope": "metadata first; no book or trade body, fill result or strategy outcome",
+  "serialization_note": "Before the first HEAD/commit, the hash field was named selection_sha256 to distinguish it from a credential in secret scanning. All pilot IDs and hash values unchanged."
+}

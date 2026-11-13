@@ -1,0 +1,15 @@
+{
+  "binding": "b3346d69cc05dd5173366d2950071624f3870661355ff59d0b43bf75d49b890a",
+  "path": "runtime/research/b2/source-pilot/bodies/fc8b04e6168b07d5d45513a27f5e4b875043c8f1981261fa3814b82c5522c73b.csv.gz",
+  "recovered_after_publication": false,
+  "sha256": "c10a40d85b1602b555811fa319b08f844d4f2fb404b796a20243e46b0ddca03e",
+  "task": {
+    "bytes": 2806012,
+    "day": "2025-02-18",
+    "etag": "\"deb077accaffd6ede94f2cc644e06e7f\"",
+    "id": "fc8b04e6168b07d5d45513a27f5e4b875043c8f1981261fa3814b82c5522c73b",
+    "kind": "trades",
+    "symbol": "STMXUSDT",
+    "url": "https://public.bybit.com/trading/STMXUSDT/STMXUSDT2025-02-18.csv.gz"
+  }
+}
