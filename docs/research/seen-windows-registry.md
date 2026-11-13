@@ -214,3 +214,31 @@ No new market request, premium value, price or strategy return is read. Level:
 **coverage / synthetic code check**. The real classifier-containment evidence and
 report thresholds are unchanged. The bounded pilot has not run; a separate fetch
 go and review remain required. See [runbook](b1-bounded-fetch-runbook-v1.md).
+
+## B1 bounded supplemental premium fetch registration, 2026-11-13
+
+Registered before the first request, following the owner's instruction to continue
+and subsequent request, "может хватит ревью ?", to stop adding review rounds.
+Operational interpretation: waive another code-review round, run the already frozen
+64-ID pilot, and continue the same supplemental scope only if its unchanged gate
+passes. This is not permission to relax a data gate or open B2/outcome reading.
+
+- Venue/market: Bybit linear perpetual **premium index**, native symbol and minute
+  timestamp, existing discovery bounds 2024-09-30 through 2025-09-30 only.
+- Level: **features**, historical minute premium; this can overlap the hypothetical
+  holding path. No perpetual prices, trade returns, test year or blind window.
+- Frozen scope SHA-256:
+  `0b11db40c505452e05620c22d1aa9aa3038cd95c6ae3ce2e524f232d8168ab6a`.
+  Frozen pilot SHA-256:
+  `cab2d6d09ce986e1408b9ea298822a203d87ca20708fd28a8c7a9f3e71b82855`.
+- 64 fixed pilot IDs; at least 61 complete and no integrity failure, no replacement.
+  Up to 11,660 supplemental 4h intervals in total, with successful pilot reuse.
+- Persisted limits remain 128 attempts / 10 MiB for the pilot, 23,320 attempts /
+  512 MiB globally including the pilot and retries; at most 3 requests per second.
+- Run from the clean committed transport revision following `23d8177`. Immutable
+  `run.json` binds that exact revision, source/input hashes, IDs and limits before
+  HTTP. Retain native-response receipts, the SQLite ledger and eventual manifest.
+
+The [transport runbook](b1-bounded-fetch-runbook-v1.md) and report thresholds are
+unchanged. The later result must distinguish pilot transport success from S1/S3
+acceptance; a successful download alone releases no strategy stage.
