@@ -33,7 +33,7 @@ from .bybit_carry_feasibility import publish_once
 from .bybit_post_funding_screen import DAY_MS, MINUTE_MS, verified
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+    from collections.abc import Callable, Iterator, Sequence
 
 RULES = "b1_prior_only_4h_bounded_transport_v1"
 ENDPOINT = "https://api.bybit.com/v5/market/premium-index-price-kline"
@@ -135,7 +135,7 @@ def fsync_dir(path: Path) -> None:
 
 
 def prepare(
-    root: Path, contract: dict[str, Any], requests: list[Request], pilot: list[str]
+    root: Path, contract: dict[str, Any], requests: Sequence[Request], pilot: list[str]
 ) -> None:
     """Publish a complete offline run directory, never repair an incomplete existing one."""
     if len({r.key for r in requests}) != len(requests) or not set(pilot) <= {
@@ -225,8 +225,15 @@ class Run:
         *,
         now: Callable[[], float] = time.time,
         sleep: Callable[[float], None] = time.sleep,
+        request_factory: Callable[..., Request] = Request,
+        validator: Callable[[Request, bytes, int, str | None], str] = validate,
+        endpoint: Callable[[Request], str] | None = None,
     ) -> None:
         self.root, self.now, self.sleep = root, now, sleep
+        # B1 premium and B3 price/mark share the durable transport, not decoders.
+        # Defaults preserve old request identities and receipts byte for byte.
+        self.validator = validator
+        self.endpoint = endpoint or (lambda _: ENDPOINT)
         run_path, ledger = root / "run.json", root / "ledger.sqlite"
         if not run_path.is_file() or not ledger.is_file():
             raise ValueError("missing run binding or ledger; do not reinitialize")
@@ -235,7 +242,9 @@ class Run:
         if run["contract"] != contract:
             raise ValueError("run binding differs; resume cannot change code, scope or limits")
         self.sha = digest(raw)
-        self.requests = {r.key: r for row in run["requests"] for r in [Request(**row)]}
+        self.requests = {r.key: r for row in run["requests"] for r in [request_factory(**row)]}
+        if len(self.requests) != len(run["requests"]):
+            raise ValueError("repeated request identity in run binding")
         self.pilot = run["pilot"]
         self.limits = Limits(**contract["limits"])
         self.lock = (root / "writer.lock").open("a")
@@ -334,7 +343,8 @@ class Run:
             or receipt["phase"] != row["phase"]
             or digest(body) != receipt["body_sha256"]
             or len(body) > row["reserved"]
-            or receipt["outcome"] != validate(r, body, receipt["http_status"], receipt["error"])
+            or receipt["outcome"]
+            != self.validator(r, body, receipt["http_status"], receipt["error"])
         ):
             raise ValueError("receipt identity, bytes or validation differs")
 
@@ -357,7 +367,7 @@ class Run:
             "error": error,
             "body_base64": base64.b64encode(body).decode(),
             "body_sha256": digest(body),
-            "outcome": validate(self.requests[key], body, status, error),
+            "outcome": self.validator(self.requests[key], body, status, error),
         }
         sha = publish_once(self._path(key, n), receipt)
         self._commit_receipt(key, n, receipt, sha)
@@ -408,7 +418,7 @@ class Run:
         try:
             with client.stream(
                 "GET",
-                ENDPOINT,
+                self.endpoint(self.requests[key]),
                 params=self.requests[key].params,
                 headers={"Accept-Encoding": "identity"},
             ) as response:
