@@ -137,7 +137,9 @@ def test_engine_timestamp_cannot_make_future_publication_available_at_decision(
     assert t.limit == 100
 
 
-@pytest.mark.parametrize("bad", ["gap", "truncated", "reset", "same_id_conflict"])
+@pytest.mark.parametrize(
+    "bad", ["gap", "truncated", "reset", "same_id_conflict", "future_engine", "stale_engine_at_end"]
+)
 def test_bad_wait_path_remains_in_denominator_as_incomplete(tmp_path: Path, bad: str) -> None:
     rows = frames()
     if bad == "gap":
@@ -147,10 +149,15 @@ def test_bad_wait_path_remains_in_denominator_as_incomplete(tmp_path: Path, bad:
     elif bad == "reset":
         rows[4]["type"] = "snapshot"
         rows[4]["data"]["b"], rows[4]["data"]["a"] = [["100", "3"]], [["101", "3"]]
-    else:
+    elif bad == "same_id_conflict":
         rows[4]["data"]["u"] = rows[3]["data"]["u"]
         rows[4]["data"]["seq"] = rows[3]["data"]["seq"]
         rows[4]["data"]["b"] = [["100", "1"]]
+    elif bad == "future_engine":
+        rows[4]["cts"] = rows[4]["ts"] + 1
+    else:
+        for row in rows:
+            row["cts"] = D - 520
     t = trial()
     p.reconstruct(book_file(tmp_path, rows), "TESTUSDT", "2024-10-01", [t], InflatedBudget())
     t.consume(sell("100", "999"))

@@ -91,6 +91,8 @@ class Trial:
             not book.valid
             or public_at is None
             or at - public_at > GAP_MS
+            or book.ts is None
+            or not 0 <= at - book.ts <= GAP_MS
             or book.best_bid is None
             or book.best_ask is None
             or book.best_bid >= book.best_ask
@@ -194,8 +196,12 @@ def reconstruct(
                     index += 1
                 if last is not None and (at < last or at - last > GAP_MS):
                     poison(min(last, at), max(last, at))
+                engine_at = int(message["cts"])
+                if at - engine_at > GAP_MS:
+                    poison(engine_at + GAP_MS, at + 1)
                 if at > maximum:
                     break
+                unsupported_clock = engine_at > at
                 data = message["data"]
                 current = (int(data["u"]), int(data["seq"]))
                 conflicting = current == key and payload != (message["type"], data)
@@ -205,7 +211,7 @@ def reconstruct(
                 before = book.counts["clock_regressions"] + book.counts["sequence_regressions"]
                 book.apply(message)
                 after = book.counts["clock_regressions"] + book.counts["sequence_regressions"]
-                if after != before or conflicting or system_regressed:
+                if after != before or conflicting or system_regressed or unsupported_clock:
                     poison(at - 1, at + 1)
                     book.valid = False
                 key, payload = current, (message["type"], data)
@@ -216,7 +222,12 @@ def reconstruct(
         index += 1
     for t in trials:
         required = t.arrival if t.reason == "post_only_rejected" else t.end
-        if covered_through is None or covered_through < required:
+        if (
+            covered_through is None
+            or covered_through < required
+            or book.ts is None
+            or required - book.ts > GAP_MS
+        ):
             t.reason = "incomplete_book_data"
 
 

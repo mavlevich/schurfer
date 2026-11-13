@@ -17,6 +17,11 @@ flow, clock ties, publication versus engine time, gaps, EOF, resets, same-ID
 conflicts, post-only rejection, registration gating, real ZIP/CSV paths and receipt
 relocation. Freeze this revision before seeing pilot fill statistics.
 
+The fixed two-second gap/staleness limit is checked on both public generation
+and engine timestamps. An engine timestamp later than its generated publication
+is unsupported clock evidence; affected paths remain unresolved. These checks
+were implemented before any pilot fill statistics, not selected from coverage.
+
 ## Run after publication
 
 ```sh
