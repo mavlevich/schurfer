@@ -451,3 +451,33 @@ nomination gates, frozen requests and the two exits are unchanged. #593 was
 closed after premature publication; the correction remains local for targeted
 review before a PR is reopened or created. No native requests or returns
 have been read by this implementation.
+
+### B3a native fetch and formal read completed, 2026-11-14
+
+#593 merged as `45fc1a14d0d4ccc70175439505b7b36eb4662a0e` before native
+requests. The owner separately authorized the fetch, then the formal read with
+"Да, рассчитать оба выхода". Both actions used clean main and the unchanged
+4,200-key scope `c199994e...`, run binding `c4563c48...`. All 4,200 windows are
+complete; 4,206 attempts include six recovered retries. Sealed native snapshot
+SHA `d952ecf2b22d3ede3b393347dda51f12a518b3601b5537bb9842a383be29740d`.
+
+**Level: strategy outcomes, discovery only.** [Result](b3a-discovery-result-2026-11-14.md),
+original JSON SHA `4d4f6f1adc18bda779c48aa78bf7ea997f34f47b79bf602e5f32e3cd87444b33`.
+Both fixed taker exits fail: cluster mean net30 -26.03 / -20.43 bps, with
+1,626 / 1,628 complete events and 708 / 710 complete clusters. Zero-volume
+execution bars account for 11 / 9 unresolved events. Funding is an accounting
+input, not a future-known signal feature. Both exits were read together, seed
+3103, 20,000 whole-calendar-week draws; no parameter or code change followed.
+
+The budget diagnostic is `maker_source_review_needed`: upper favorable
+pre-cost price-plus-funding bounds 21.68 / 26.08 bps do not meet the fixed
+both-below-15 pause rule. This is no maker pass, exam release or new archive
+go. All taker nomination failures are retained. The one-slot known prefix
+ends before its first unresolved selection on 2025-06-07; full ending cash
+stays unknown, with no zero/skip substitution. Independent arithmetic checked
+the registered report only, without extra cuts, seeds or data.
+
+The earlier exploratory selection history remains. No test year, backward
+holdout, HYP-012 v2 blind-window, native reserved tape, new venue, production
+or order is opened. Both original outputs and all native receipts are retained;
+publication of this completion record does not rewrite the prior registrations.

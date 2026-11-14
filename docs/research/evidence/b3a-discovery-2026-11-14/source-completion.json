@@ -1,0 +1,19 @@
+{
+  "attempts_and_reserved_bytes": [
+    4206,
+    15728640
+  ],
+  "binding": "c4563c4877fb2f4b592f6b14b92809db02612eb4e72eb16136e2372b9d7082fc",
+  "complete": 4200,
+  "counts": {
+    "complete": 4200
+  },
+  "fixed_intervals": 4200,
+  "passed": true,
+  "phase": "pilot",
+  "pilot_attempts_and_reserved_bytes": [
+    4206,
+    15728640
+  ],
+  "terminal_intervals": 4200
+}

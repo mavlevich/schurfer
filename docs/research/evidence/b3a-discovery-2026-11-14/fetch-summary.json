@@ -1,0 +1,33 @@
+{
+  "all_attempt_outcomes": {
+    "complete": 4200,
+    "retry": 6
+  },
+  "complete": 4200,
+  "created_at_utc": "2026-11-13T23:51:33.968376+00:00",
+  "economic_report_run": false,
+  "execution_price_evidence": "bar_price_proxy_not_observed_fills",
+  "extra_attempts": 6,
+  "final_outcomes": {
+    "complete": 4200
+  },
+  "native_body_bytes_all_attempts": 9997957,
+  "native_path_class": "exact_native_bybit_klines",
+  "pilot_sha256": "15f0d593c8c500352025211302410dacb69eb3f453e6ab43fcf4af5ec059a1e3",
+  "pr": 593,
+  "request_kinds": {
+    "mark": 1637,
+    "price": 2563
+  },
+  "requests": 4200,
+  "reserved_body_bytes": 15728640,
+  "revision": "45fc1a14d0d4ccc70175439505b7b36eb4662a0e",
+  "run_sha256": "c4563c4877fb2f4b592f6b14b92809db02612eb4e72eb16136e2372b9d7082fc",
+  "scope_sha256": "c199994e706ae956ed454682a757c867fab187581a233c7d3d5b3897bdb56213",
+  "sealed_file_bytes": 15318056,
+  "sealed_sha256": "d952ecf2b22d3ede3b393347dda51f12a518b3601b5537bb9842a383be29740d",
+  "seconds_first_to_last_receipt": 1460.9431264400482,
+  "stage": "B3a_fetch_and_seal_complete",
+  "test_or_blind_window_read": false,
+  "total_attempts": 4206
+}

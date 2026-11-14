@@ -1,0 +1,29 @@
+{
+  "command": [
+    ".venv/bin/python",
+    "-m",
+    "schurfer_analytics.bybit_presettlement_economic_report",
+    "--root",
+    "/Users/mavlevich/Desktop/Projects/schurfer/runtime/research/b3a-v1",
+    "--sealed-sha256",
+    "d952ecf2b22d3ede3b393347dda51f12a518b3601b5537bb9842a383be29740d",
+    "--index",
+    "/Users/mavlevich/Desktop/Projects/schurfer/.claude/worktrees/hyp031-discovery/runtime/research/hyp031-discovery/index-d87b3a2.jsonl.gz",
+    "--output",
+    "/Users/mavlevich/Desktop/Projects/schurfer/runtime/research/b3a-v1/result.json"
+  ],
+  "completed_at_utc": "2026-11-14T09:38:56.968194+00:00",
+  "dirty": false,
+  "new_market_requests": 0,
+  "report_stdout": {
+    "budget_verdict": "maker_source_review_needed",
+    "policies": {
+      "before": "fail",
+      "through": "fail"
+    },
+    "sha256": "4d4f6f1adc18bda779c48aa78bf7ea997f34f47b79bf602e5f32e3cd87444b33"
+  },
+  "result_sha256": "4d4f6f1adc18bda779c48aa78bf7ea997f34f47b79bf602e5f32e3cd87444b33",
+  "retained_source_root": "/Users/mavlevich/Desktop/Projects/schurfer/runtime/research/b3a-v1",
+  "revision": "45fc1a14d0d4ccc70175439505b7b36eb4662a0e"
+}

@@ -1,0 +1,15 @@
+{
+  "owner_client_date": "2026-11-14",
+  "recorded_at_utc": "2026-11-13T23:07:38.854886+00:00",
+  "owner_fetch_go": "ну го",
+  "context": "Reply after download duration and separate fetch-go requirement were explained.",
+  "scope": "B3a frozen 4200 native price/mark/BTC requests, fetch and seal only, after main publication",
+  "reviewed_revision": "338d8d0dce02b4d00d69515e54d2f169c8fba2d0",
+  "reviewed_range": "1033ca9..338d8d0",
+  "review_verdict": "approve, forwarded by owner",
+  "events_sha256": "4f1554108d6da503630d24d5b123d8000532b7bb3decb33f033e57dab65711f7",
+  "scope_sha256": "c199994e706ae956ed454682a757c867fab187581a233c7d3d5b3897bdb56213",
+  "body_reservation_cap_bytes": 268435456,
+  "authorizes_economic_report": false,
+  "authorizes_exam_or_orders": false
+}

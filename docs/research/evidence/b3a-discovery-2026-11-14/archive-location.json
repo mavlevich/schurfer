@@ -1,0 +1,12 @@
+{
+  "funding_index_bytes": 112108847,
+  "funding_index_original_invocation_path": "/Users/mavlevich/Desktop/Projects/schurfer/.claude/worktrees/hyp031-discovery/runtime/research/hyp031-discovery/index-d87b3a2.jsonl.gz",
+  "funding_index_retained_path": "/Users/mavlevich/Desktop/Projects/schurfer/runtime/research/b3a-v1/inputs/index-d87b3a2.jsonl.gz",
+  "funding_index_sha256": "f48fe09f7023a476e524cf70c6ec1b629eee30a9a07cff41c9d149dfb59e0cf5",
+  "native_sealed_path": "/Users/mavlevich/Desktop/Projects/schurfer/runtime/research/b3a-v1/sealed.json",
+  "native_sealed_sha256": "d952ecf2b22d3ede3b393347dda51f12a518b3601b5537bb9842a383be29740d",
+  "outside_disposable_worktrees": true,
+  "recorded_at_utc": "2026-11-14T09:49:54.715292+00:00",
+  "retention_method": "hard link of the same immutable input; no new request",
+  "source_root": "/Users/mavlevich/Desktop/Projects/schurfer/runtime/research/b3a-v1"
+}

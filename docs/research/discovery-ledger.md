@@ -205,3 +205,43 @@ its parameters. The 4h post-selection and at least 124 exploratory variants
 plus eight B2 execution configurations remain part of any later confirmation.
 No outcome, candidate nomination, test expenditure or native market request
 is recorded yet. HYP-037 stays closed.
+
+### HYP-031 family: B3a two-exit result, 2026-11-14
+
+[Result and evidence](b3a-discovery-result-2026-11-14.md). Clean main `45fc1a1`,
+unchanged pre-read contract, separately recorded owner report go. Two selectable
+taker exits read together on the original 1,637 d30 opportunities. Both are
+`fail` on mature negative net30: -26.03 / -20.43 bps, weekly upper bounds
+-8.32 / -4.06 bps. Complete clusters 708 / 710; symbols 150; event weeks 46;
+coverage 99.33% / 99.45%. Data/diversity floors pass; the negative result is
+not relabeled insufficient power.
+
+Price-only return before/through settlement is +3.97 / -60.69 bps; funding is
+0 / +70.26 bps. The receipt does not cover both the price move and the fixed
+costs. BTC adjustment, halves and top-five removals remain negative. Both
+current taker variants stop; no exit/filter/cost tuning follows this result.
+
+The fixed spending rule returns `maker_source_review_needed`, because the
+upper favorable pre-cost price-plus-funding diagnostics are 21.68 / 26.08 bps,
+not both below 15. This permits no large download or promotion. Ordinary-flow
+eligibility, native sizing and exit-source feasibility remain unresolved for
+the already frozen maker version. The test year remains closed.
+
+The portfolio is diagnostic only; its known 640-trade prefix loses USD 36.69 /
+35.75 from initial USD 50 and ends before the first unresolved selection. The
+full-cohort balance is unknown. No unknown tail is replaced with cash or zero.
+Stress costs, bootstrap sensitivity and BTC are the original diagnostics, not
+new selectable policies. Preserve all previous exploratory multiplicity and
+the result hash `4d4f6f1a...`; HYP-037 stays closed.
+
+### HYP-031 family: track B closed, 2026-11-14
+
+[Closure](track-b-closure-2026-11-14.md). The maker review that B3a's
+`maker_source_review_needed` permits ends in no budget. At B3a's central
+price-plus-funding estimates (+3.97 / +9.57 bps), a maker entry at 2 bps with a
+taker exit at 5.5 bps is at best -3.5 / +2.1 bps before adverse selection, exit
+slippage and native sizing. B3a's diagnostic MDE is about 23 bps, so such an
+effect cannot be confirmed on a test year of similar size. Taker v1 is closed
+on its negative result; the frozen maker version is not run. The HYP-031 test
+year stays unread and unassigned. Reopen only on new independent evidence of
+an execution edge, not a repeat on the discovery year.
