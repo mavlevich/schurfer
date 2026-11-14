@@ -1,0 +1,12 @@
+{
+  "dirty": false,
+  "exam_or_orders_authorized": false,
+  "fetch_summary_sha256": "000d0fc396d6f5321ec83e1e2c39841ae9d4b3467b9ec9a07d87971d02a5525e",
+  "new_market_requests_authorized": false,
+  "owner_answer": "\u0414\u0430, \u0440\u0430\u0441\u0441\u0447\u0438\u0442\u0430\u0442\u044c \u043e\u0431\u0430 \u0432\u044b\u0445\u043e\u0434\u0430",
+  "owner_client_date": "2026-11-14",
+  "recorded_at_utc": "2026-11-14T09:38:47.045892+00:00",
+  "revision": "45fc1a14d0d4ccc70175439505b7b36eb4662a0e",
+  "scope": "Formal B3a discovery report, both predeclared exits on sealed existing data",
+  "sealed_sha256": "d952ecf2b22d3ede3b393347dda51f12a518b3601b5537bb9842a383be29740d"
+}

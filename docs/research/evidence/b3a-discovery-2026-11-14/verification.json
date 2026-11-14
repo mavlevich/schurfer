@@ -1,0 +1,28 @@
+{
+  "checks": {
+    "before": {
+      "budget_upper_bps": 21.67955733957819,
+      "cluster_aggregation_matches": true,
+      "cluster_mean_tolerance_bps": 1e-10,
+      "full_portfolio_cash_unknown": true,
+      "funding_cost_identity_matches": true,
+      "funding_identity_tolerance_bps": 1e-09,
+      "known_prefix_ending_cash_usd": 13.313880907332518,
+      "known_prefix_pnl_usd": -36.68611909266748
+    },
+    "through": {
+      "budget_upper_bps": 26.079483171051372,
+      "cluster_aggregation_matches": true,
+      "cluster_mean_tolerance_bps": 1e-10,
+      "full_portfolio_cash_unknown": true,
+      "funding_cost_identity_matches": true,
+      "funding_identity_tolerance_bps": 1e-09,
+      "known_prefix_ending_cash_usd": 14.250316248685102,
+      "known_prefix_pnl_usd": -35.7496837513149
+    }
+  },
+  "code_changed_after_read": false,
+  "report_sha256": "4d4f6f1adc18bda779c48aa78bf7ea997f34f47b79bf602e5f32e3cd87444b33",
+  "verification_kind": "independent arithmetic on the existing registered output, no new market data or variants",
+  "verified_at_utc": "2026-11-14T09:45:52.090694+00:00"
+}

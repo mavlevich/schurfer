@@ -83,6 +83,14 @@ before a larger corpus or B3. The [power-method note](power-design-budget-2026-1
 opens no new candidate and does not reopen track A. HYP-038 radar cases remain
 intake-only until v2's terminal state under their separate recorded boundary.
 
+**B3a completed 2026-11-14:** both fixed taker policies fail on mature negative
+net30 (-26.03 / -20.43 bps), after the owner separately authorized the formal
+read from published clean `45fc1a1`. [Result](b3a-discovery-result-2026-11-14.md).
+These taker variants stop. The fixed budget verdict is
+`maker_source_review_needed`, not a maker pass or the both-below-15 spending
+pause. Any next work must first resolve maker source/sizing/exit feasibility
+under the already frozen model; no larger archive, exam or order is released.
+
 **Question.** On Bybit USDT perpetuals with extreme negative funding, does a long opened
 by a resting limit order about 30 minutes before settlement and closed at or just before
 settlement earn more than its costs, on the test year?

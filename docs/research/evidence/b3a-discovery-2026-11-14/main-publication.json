@@ -1,0 +1,13 @@
+{
+  "observed_at_utc": "2026-11-13T23:24:59.981605+00:00",
+  "pr": "https://github.com/mavlevich/schurfer/pull/593",
+  "merge_commit": "45fc1a14d0d4ccc70175439505b7b36eb4662a0e",
+  "merged_at_utc": "2026-11-13T23:23:15Z",
+  "reviewed_head": "338d8d0dce02b4d00d69515e54d2f169c8fba2d0",
+  "ci_run": "43525335997",
+  "ci_observed": "six checks completed SUCCESS on reviewed head",
+  "run_sha256": "c4563c4877fb2f4b592f6b14b92809db02612eb4e72eb16136e2372b9d7082fc",
+  "owner_fetch_go_sha256": "bf0ced008dfed153c288c611d3f1dd0d391193c1989667ce8ecaf390ee280737",
+  "stage": "fetch_and_seal_only",
+  "economic_report_authorized": false
+}

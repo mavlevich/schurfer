@@ -205,3 +205,31 @@ its parameters. The 4h post-selection and at least 124 exploratory variants
 plus eight B2 execution configurations remain part of any later confirmation.
 No outcome, candidate nomination, test expenditure or native market request
 is recorded yet. HYP-037 stays closed.
+
+### HYP-031 family: B3a two-exit result, 2026-11-14
+
+[Result and evidence](b3a-discovery-result-2026-11-14.md). Clean main `45fc1a1`,
+unchanged pre-read contract, separately recorded owner report go. Two selectable
+taker exits read together on the original 1,637 d30 opportunities. Both are
+`fail` on mature negative net30: -26.03 / -20.43 bps, weekly upper bounds
+-8.32 / -4.06 bps. Complete clusters 708 / 710; symbols 150; event weeks 46;
+coverage 99.33% / 99.45%. Data/diversity floors pass; the negative result is
+not relabeled insufficient power.
+
+Price-only return before/through settlement is +3.97 / -60.69 bps; funding is
+0 / +70.26 bps. The receipt does not cover both the price move and the fixed
+costs. BTC adjustment, halves and top-five removals remain negative. Both
+current taker variants stop; no exit/filter/cost tuning follows this result.
+
+The fixed spending rule returns `maker_source_review_needed`, because the
+upper favorable pre-cost price-plus-funding diagnostics are 21.68 / 26.08 bps,
+not both below 15. This permits no large download or promotion. Ordinary-flow
+eligibility, native sizing and exit-source feasibility remain unresolved for
+the already frozen maker version. The test year remains closed.
+
+The portfolio is diagnostic only; its known 640-trade prefix loses USD 36.69 /
+35.75 from initial USD 50 and ends before the first unresolved selection. The
+full-cohort balance is unknown. No unknown tail is replaced with cash or zero.
+Stress costs, bootstrap sensitivity and BTC are the original diagnostics, not
+new selectable policies. Preserve all previous exploratory multiplicity and
+the result hash `4d4f6f1a...`; HYP-037 stays closed.

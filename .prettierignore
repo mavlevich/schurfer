@@ -47,3 +47,5 @@ docs/research/evidence/b1-review-2026-11-13/classify-containment.json
 docs/research/evidence/b1-prior-only-4h-2026-11-13/**/*.json
 # Immutable source and archive metadata for B2.
 docs/research/evidence/b2-archive-scope-2026-11-13/**/*.json
+# Immutable B3a read and source/provenance receipts.
+docs/research/evidence/b3a-discovery-2026-11-14/*.json
