@@ -135,7 +135,9 @@ and funding settlement **timestamps** only; no rate, price or return was read:
     incomplete; it is not a reason to change the sample.
 
 **Request list.** It is computed from metadata only and frozen as
-`requests.json.gz`, with its hash published before the first request.
+[`requests.json.gz`](evidence/hyp036-economic-pilot-v1/requests.json.gz), SHA-256
+`1cc29544b3d7928e3a99c34c906801f1c0aae9153d34a7ef3a8d0c6ad3a785b0`, named in the
+[registry](seen-windows-registry.md) before the first request.
 
 | Data                                                        | Window per request           | Logical requests |
 | ----------------------------------------------------------- | ---------------------------- | ---------------: |

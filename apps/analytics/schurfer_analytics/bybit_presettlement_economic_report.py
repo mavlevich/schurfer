@@ -369,9 +369,9 @@ def portfolio_notional(cash: float) -> float | None:
     return notional if notional >= PORTFOLIO_MIN_MODEL_USD else None
 
 
-def portfolio(rows: list[dict[str, Any]]) -> dict[str, Any]:
+def portfolio(rows: list[dict[str, Any]], *, tag: str = "b3a-v1") -> dict[str, Any]:
     def order(row: dict[str, Any]) -> tuple[int, str]:
-        key = f"b3a-v1|{row['symbol']}|{row['decision_ms']}".encode()
+        key = f"{tag}|{row['symbol']}|{row['decision_ms']}".encode()
         return row["entry_ms"], hashlib.sha256(key).hexdigest()
 
     cash, peak, drawdown = 50.0, 50.0, 0.0

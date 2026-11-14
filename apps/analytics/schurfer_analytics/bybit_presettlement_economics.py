@@ -198,14 +198,33 @@ def binding(events: Path, scope: Path) -> dict[str, Any]:
     }
 
 
-def run(root: Path, contract: dict[str, Any], **kwargs: Any) -> transport.Run:
+def run(
+    root: Path,
+    contract: dict[str, Any],
+    *,
+    request_factory: type[Request] = Request,
+    **kwargs: Any,
+) -> transport.Run:
+    """Later price/mark studies pass their own Request subclass and request identity."""
     return transport.Run(
-        root, contract, request_factory=Request, validator=validate, endpoint=endpoint, **kwargs
+        root,
+        contract,
+        request_factory=request_factory,
+        validator=validate,
+        endpoint=endpoint,
+        **kwargs,
     )
 
 
-def sealed(root: Path, contract: dict[str, Any], requests: list[Request]) -> dict[str, Any]:
-    with run(root, contract) as state:
+def sealed(
+    root: Path,
+    contract: dict[str, Any],
+    requests: list[Request],
+    *,
+    request_factory: type[Request] = Request,
+    version: str = VERSION,
+) -> dict[str, Any]:
+    with run(root, contract, request_factory=request_factory) as state:
         if set(state.requests) != {r.key for r in requests}:
             raise ValueError("run request set differs from frozen scope")
         records = []
@@ -218,7 +237,7 @@ def sealed(root: Path, contract: dict[str, Any], requests: list[Request]) -> dic
                 raise ValueError("unfinished native input")
             if last["error"] == "budget_exhausted":
                 raise ValueError("budget stopped; cannot seal")
-            request = Request(**last["request"])
+            request = request_factory(**last["request"])
             observed: dict[int, tuple[float, ...]] = {}
             for attempt in attempts:
                 if attempt["outcome"] not in ("complete", "incomplete"):
@@ -241,7 +260,7 @@ def sealed(root: Path, contract: dict[str, Any], requests: list[Request]) -> dic
                 }
             )
         return {
-            "version": VERSION,
+            "version": version,
             "binding": state.sha,
             "contract": contract,
             "reserved_attempts_bytes": state.totals(),
