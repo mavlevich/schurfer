@@ -512,3 +512,24 @@ Only the fixed summaries and sensitivities were computed; no event holding
 return, funding outcome, mean or PnL. Exam power remains unknown. This was
 locally registered before calculation, not retrospectively claimed as a
 publication in main before it.
+
+## HYP-036 economic pilot `hyp036-econ-v1`, registered 2026-11-14
+
+[Contract](hyp036-economic-pilot-v1.md), reviewed by the colleague 2026-11-14.
+This row, the code and the frozen request list must be in main before the first
+request; the fetch and the read each need the owner's go. One spending decision on
+the frozen 784 pilot events (`338b6e38...`), never a test, an exam or a strategy
+registration. HYP-036 v1 stays stopped.
+
+**Level: outcome-level native price paths, discovery year only.** Bybit V5 1-minute
+perp klines for each event hold [t + 1 min, t + 4 h + 1 min), 1-minute mark-price
+klines over the same window for the 546 events with a funding settlement inside it,
+and 1-minute BTCUSDT klines per distinct decision hour (393). Request list
+`docs/research/evidence/hyp036-economic-pilot-v1/requests.json.gz`, SHA-256
+`1cc29544b3d7928e3a99c34c906801f1c0aae9153d34a7ef3a8d0c6ad3a785b0`: 784 + 546 + 393 =
+1,723 requests, at most 3,446 attempts and 128 MiB of response bytes. Funding rates
+at the settlements inside the holds come from the pinned discovery index
+`f48fe09f...`. Windows: 2025-01-13T00:01Z to 2025-01-27T03:01Z and
+2025-07-07T00:01Z to 2025-07-21T03:01Z, only the listed holds. After the read these
+holds count as read at outcome level for this trigger. No holdout, HYP-031 test-year,
+HYP-012 v2 blind-window, tape or control input is requested.
