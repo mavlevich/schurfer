@@ -6,7 +6,13 @@ from typing import TYPE_CHECKING, Any
 import pytest
 from schurfer_analytics import bybit_absorbed_buying as ab
 from schurfer_analytics import bybit_absorbed_buying_power_audit as audit
-from schurfer_analytics.bybit_compressed_spring import DAY_MS, HOUR_MS, Features, Series
+from schurfer_analytics.bybit_compressed_spring import (
+    DAY_MS,
+    HOUR_MS,
+    WINDOW_END_MS,
+    Features,
+    Series,
+)
 from schurfer_analytics.bybit_squeeze_continuation import _iso
 
 if TYPE_CHECKING:
@@ -53,7 +59,7 @@ def synthetic_features() -> Features:
     instruments = {}
     spans = ((ab._ms(2024, 12, 1), ab.BLOCKS[0][1]), (ab._ms(2025, 6, 1), ab.BLOCKS[1][1]))
     for i, symbol in enumerate([ab.BENCHMARK, *(f"S{k}" for k in range(30))]):
-        series = Series(0, ab.WINDOW_END_MS - 1)
+        series = Series(0, WINDOW_END_MS - 1)
         for a, b in spans:
             for t in range(a, b, HOUR_MS):
                 k = t // HOUR_MS
