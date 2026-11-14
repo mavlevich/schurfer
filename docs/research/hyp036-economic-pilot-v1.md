@@ -2,6 +2,9 @@
 
 Study identifier: `hyp036-econ-v1`.
 
+**Result 2026-11-14: `stop_spending`** (cluster mean net at 30 bps -42.80 bps). See
+the [result](hyp036-economic-pilot-result-2026-11-14.md).
+
 Status: **contract reviewed by the colleague on 2026-11-14, with their three text
 fixes applied; it registers nothing yet, fetches nothing and reads no outcome.** It
 follows the [bounded power audit](hyp036-power-audit-result-2026-11-14.md) (merged

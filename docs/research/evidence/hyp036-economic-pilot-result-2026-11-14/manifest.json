@@ -1,0 +1,17 @@
+{
+  "code_revision": "af25f70c269b7368dae0cf50ddfdbcc54bce4c18",
+  "fetch_summary_sha256": "bcb2b22572dcaab60e280bc34d5ee65913fd15cd6aa6f8f59e441a9ef50f484f",
+  "index_sha256": "f48fe09f7023a476e524cf70c6ec1b629eee30a9a07cff41c9d149dfb59e0cf5",
+  "read_completed_at_utc": "2026-11-14T22:49:23.195413+00:00",
+  "read_started_at_utc": "2026-11-14T22:49:18.988629+00:00",
+  "request_list_sha256": "1cc29544b3d7928e3a99c34c906801f1c0aae9153d34a7ef3a8d0c6ad3a785b0",
+  "result_bytes": 820679,
+  "result_gz_sha256": "3c3149342678d06678c591c0658c981cf41434c961a18f993ef4201b4b054685",
+  "result_sha256": "6acc6544fbb6c3e8b082d5cfe323237258be538c93a65e4c5cb7223d9f684baf",
+  "run_binding_sha256": "8bb4a9d842ee3f474a331027b340e5980c7ed8ac24a1dfabf57897df040ed429",
+  "runtime_location": "runtime/research/hyp036-econ-v1/ in the main checkout, outside Git",
+  "sealed_bytes": 40160113,
+  "sealed_sha256": "f038532eb4b9b0bccbb3128df4181d54978a31750cd2d363e016cc277a21b220",
+  "study": "hyp036-econ-v1",
+  "verdict": "stop_spending"
+}
