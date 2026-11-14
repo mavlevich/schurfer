@@ -1,8 +1,9 @@
 # Program plan after the method retrospective (proposal, 2026-11-11)
 
-Status, updated 2026-11-13: **B1 and bounded B2 continuation authorized by the owner;
-the owner accepted the revised B3a design on 2026-11-13; code review and main
-publication still precede native B3a reads. Test and live stages remain separately gated.** The original
+Status, updated 2026-11-14: **track B is closed after B3a: both fixed taker exits
+fail and the frozen maker stage gets no budget ([closure](track-b-closure-2026-11-14.md)).
+Track A was closed earlier, so no candidate is active. The HYP-031 test year stays unread
+and unassigned.** The original
 2026-11-11 proposal follows the [2026-11-09 program review](program-review-2026-11-09.md),
 which stopped the program, and amends [strategy v2](research-strategy-v2.md) only
 within the specifically accepted research scope. It follows the
@@ -66,7 +67,7 @@ A second series followed the same night: 54 configurations of pump long, post-pu
 - **Track A is closed, as a priority decision.** No HYP-033 successor is registered on the discovery year after 33 variants of its returns were seen; its best cell (F < 0 without high G, +81 bps) is carried by 19
   market-wide hours, isolated impulses lose, and a one-slot book loses 61 bps per trade.
   HYP-034 and HYP-032 are closed too. The holdout batch is not spent on any of them. These reads do not by themselves rule out a future protocol on a clean, unseen window; the budget simply goes to track B.
-- **Track B is the only track, on 4-hour contracts.** With a decision-time signal
+- **Track B was the only track, on 4-hour contracts (closed 2026-11-14, section 3).** With a decision-time signal
   (F_hat at t - 1 h from hourly premium) the long into settlement made +55.3 bps gross on
   4-hour contracts (1,026 clusters, 206 symbols), +25.3 +- 19.8 after a 30 bps taker
   round trip, but -2.0 without the top 5 symbols; on 8-hour contracts it lost before
@@ -90,6 +91,12 @@ These taker variants stop. The fixed budget verdict is
 `maker_source_review_needed`, not a maker pass or the both-below-15 spending
 pause. Any next work must first resolve maker source/sizing/exit feasibility
 under the already frozen model; no larger archive, exam or order is released.
+
+**Track B closed 2026-11-14.** The maker review required by that verdict ends
+in no budget: at B3a's central estimates the frozen maker version is at best
+-3.5 / +2.1 bps before adverse selection, below what a test year can confirm.
+See the [closure](track-b-closure-2026-11-14.md). Sections below keep the
+original track B plan as a record; B3b, B4 and later stages do not run.
 
 **Question.** On Bybit USDT perpetuals with extreme negative funding, does a long opened
 by a resting limit order about 30 minutes before settlement and closed at or just before
@@ -230,10 +237,10 @@ checkpoints mostly test costs and risk, so the first steps are slow by design.
 | When           | What                                                                                                   |
 | -------------- | ------------------------------------------------------------------------------------------------------ |
 | 11-11 to 11-17 | this plan reviewed and decided; 11-15 restore drill; ~11-17 disk growth reading                        |
-| 11-12 to 12-01 | B1 fetches and report; B2 maker fill model for 4-hour contracts if B1 passes                           |
+| 11-12 to 11-14 | B1, B2 pilot and B3a done; track B closed 11-14                                                        |
 | 11-30 00:00    | HYP-012 v2 checkpoint; evaluated from 12-01 as that cut, with the registered command on the owner's go |
-| 12-01 to 12-15 | B3 laboratory read (maker and taker, 4-hour contracts); B4 protocol frozen                             |
-| 12-15 to 01-15 | B4 exam read; a pass goes to the shadow run, then LIVE_PROBE at USD 50                                 |
+| 12-01 to 12-15 | (track B closed; no B3b or B4)                                                                         |
+| 12-15 to 01-15 | (no exam read; the HYP-031 test year stays unread)                                                     |
 | by 2027-02-11  | gate: a candidate in paper or live, or maintenance until March                                         |
 
 ## 8. Approvals and what does not change
