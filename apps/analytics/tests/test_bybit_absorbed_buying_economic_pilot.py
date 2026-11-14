@@ -341,3 +341,36 @@ def test_publication_guard_runs_before_any_native_io(monkeypatch: Any, tmp_path:
     monkeypatch.setattr(b3, "publication", refuse)
     with pytest.raises(ValueError, match="published in main"):
         pilot.binding(tmp_path / "e", tmp_path / "i", tmp_path / "s")
+
+
+def test_net_without_funding_pays_the_cost_and_is_not_gross() -> None:
+    e = ev()
+    hist = history(e, rate=0.0001)
+    [row] = rows_for([e], hist, {("AAAUSDT", "price"): {"first": 100.0, "last": 99.0}})
+    assert row["gross_bps"] == pytest.approx(100.0)
+    assert row["net30_without_funding_bps"] == pytest.approx(70.0)
+    out = pilot.summary([row])
+    assert out["cluster_mean_net30_without_funding_bps"] == pytest.approx(
+        out["cluster_mean_gross_bps"] - 30
+    )
+    assert "cluster_mean_net_without_funding_bps" not in out
+    january = out["by_block"]["january"]
+    assert january["cluster_mean_net30_without_funding_bps"] == pytest.approx(70.0)
+    assert january["funding_share_of_net30"] == pytest.approx(1.0 / 71.0)
+    assert out["by_block"]["july"]["funding_share_of_net30"] is None
+
+
+@pytest.mark.parametrize("command", ["prepare", "fetch", "seal", "read"])
+def test_cli_refuses_native_io_before_publication(
+    command: str, monkeypatch: Any, tmp_path: Path
+) -> None:
+    def refuse(paths: list[str]) -> dict[str, str]:
+        raise ValueError("current revision has not been published in main")
+
+    monkeypatch.setattr(b3, "publication", refuse)
+    monkeypatch.setattr(httpx, "Client", lambda *a, **k: pytest.fail("network client opened"))
+    root = tmp_path / "run"
+    argv = [command, "--index", str(tmp_path / "missing.gz"), "--root", str(root)]
+    with pytest.raises(ValueError, match="published in main"):
+        pilot.main(argv)
+    assert not root.exists()

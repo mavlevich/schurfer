@@ -256,6 +256,7 @@ def evaluate(
         "entry_price": opened,
         "exit_price": closed,
         "gross_bps": 10_000 * gross,
+        "net30_without_funding_bps": 10_000 * gross - COSTS_BPS[0],
         "funding_bps": 10_000 * funding,
         "pre_cost_bps": 10_000 * (gross + funding),
         "net30_bps": net30,
@@ -270,6 +271,7 @@ def evaluate(
 
 FIELDS: Final = (
     "gross_bps",
+    "net30_without_funding_bps",
     "funding_bps",
     "pre_cost_bps",
     "net30_bps",
@@ -346,13 +348,19 @@ def decide(rows: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def funding_share(rows: list[dict[str, Any]]) -> float | None:
+    """Mean funding over mean net at 30 bps; undefined when either is missing or net is 0."""
+    net, fund = mean(rows), mean(rows, "funding_bps")
+    return None if not net or fund is None else fund / net
+
+
 def summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
     grouped = clusters(rows)
     symbols = Counter(r["symbol"] for r in grouped)
     top_share = (
         sum(n for _, n in symbols.most_common(TOP_REMOVED)) / len(grouped) if grouped else None
     )
-    net, pre, fund = mean(grouped), mean(grouped, "pre_cost_bps"), mean(grouped, "funding_bps")
+    pre = mean(grouped, "pre_cost_bps")
     values = [r["net30_bps"] for r in grouped]
     cluster_se = statistics.stdev(values) / len(values) ** 0.5 if len(values) > 1 else None
     btc_rows = [r for r in grouped if r["btc_adjusted_bps"] is not None]
@@ -362,6 +370,7 @@ def summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         by_block[block] = {
             "clusters": len(part),
             **{f"cluster_mean_{f}": mean(part, f) for f in FIELDS},
+            "funding_share_of_net30": funding_share(part),
         }
     return {
         "events": len(rows),
@@ -375,8 +384,7 @@ def summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "weeks": len({r["week"] for r in grouped}),
         "top5_symbol_share": top_share,
         **{f"cluster_mean_{f}": mean(grouped, f) for f in FIELDS},
-        "cluster_mean_net_without_funding_bps": mean(grouped, "gross_bps"),
-        "funding_share_of_net30": None if not net or fund is None else fund / net,
+        "funding_share_of_net30": funding_share(grouped),
         "break_even_round_trip_bps": pre,
         "by_block": by_block,
         "btc_diagnostic": {
@@ -464,8 +472,11 @@ def main(argv: list[str] | None = None) -> int:
         saved = json.loads(verified(args.root / "sealed.json", args.sealed_sha256).read_bytes())
         if saved != json.loads(json.dumps(sealed(args.root, contract, requests))):
             raise ValueError("sealed artifact differs from durable receipts")
+        started = datetime.now(UTC).isoformat()
         result = report(load_events(args.events), saved, b3report.funding(args.index))
         result["provenance"] = {
+            "started_at_utc": started,
+            "completed_at_utc": datetime.now(UTC).isoformat(),
             "contract": contract,
             "sealed_sha256": args.sealed_sha256,
             "index_sha256": INDEX_SHA256,
