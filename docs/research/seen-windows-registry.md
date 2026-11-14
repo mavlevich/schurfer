@@ -502,3 +502,13 @@ loaded. Historical values can follow an earlier event; this is feature-level
 exposure, not a claim of disjoint untouched price windows. Only fixed
 dependence sensitivities and calendar projections follow. No new hypothesis,
 exam assignment, full archive fetch or promotion is authorized.
+
+Completed from clean `de499aa` on 2026-11-14, 12:30:02 to 12:30:22 UTC.
+Raw original MDE reproduced: conditional discovery projection 19.88 bps;
+BTC-adjusted event-price projection 14.61 bps. Actual 28-day sample MDE is
+68.65 / 50.48 bps. [Result](hyp036-power-audit-result-2026-11-14.md), original
+JSON SHA `5bf24449cb3c0455fae7dd329ea60a36c24cf8b710b66ed7e42ea2feef631f0f`.
+Only the fixed summaries and sensitivities were computed; no event holding
+return, funding outcome, mean or PnL. Exam power remains unknown. This was
+locally registered before calculation, not retrospectively claimed as a
+publication in main before it.

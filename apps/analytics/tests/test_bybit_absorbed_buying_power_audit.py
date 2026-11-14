@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from schurfer_analytics import bybit_absorbed_buying as ab
 from schurfer_analytics import bybit_absorbed_buying_power_audit as audit
 from schurfer_analytics.bybit_compressed_spring import DAY_MS, HOUR_MS, Features, Series
 from schurfer_analytics.bybit_squeeze_continuation import _iso
+
+if TYPE_CHECKING:
+    from pathlib import Path
 
 
 def payload(rows: list[tuple[str, int]]) -> dict[str, Any]:
@@ -125,3 +128,42 @@ def test_missing_scale_cannot_turn_into_a_favorable_substitution() -> None:
     features.instruments["S0"].bars.clear()
     with pytest.raises(ValueError, match="no substitution"):
         audit.build(features, events, old)
+
+
+def test_cli_rejects_dirty_code_before_opening_data(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(audit, "_source_binding", lambda **kw: {"working_tree_dirty": True})
+    with pytest.raises(SystemExit, match="commit contract"):
+        audit.main(
+            [
+                "--features",
+                "absent",
+                "--counts",
+                "absent",
+                "--events",
+                "absent",
+                "--output",
+                "absent",
+            ]
+        )
+
+
+def test_cli_rejects_wrong_snapshot_before_loading_prices(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(audit, "_source_binding", lambda **kw: {"working_tree_dirty": False})
+    wrong = tmp_path / "wrong.gz"
+    wrong.write_bytes(b"not the registered discovery snapshot")
+    with pytest.raises(SystemExit, match="sha256"):
+        audit.main(
+            [
+                "--features",
+                str(wrong),
+                "--counts",
+                "absent",
+                "--events",
+                "absent",
+                "--output",
+                str(tmp_path / "output.json"),
+            ]
+        )
+    assert not (tmp_path / "output.json").exists()

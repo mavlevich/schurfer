@@ -1,0 +1,17 @@
+{
+  "audit.json.gz": {
+    "sha256": "bed5de3ee89f49bb5262550ff82483db075ae05563111e0457ed5e6437d9a49d",
+    "uncompressed_bytes": 10155,
+    "uncompressed_sha256": "5bf24449cb3c0455fae7dd329ea60a36c24cf8b710b66ed7e42ea2feef631f0f"
+  },
+  "counts.json.gz": {
+    "sha256": "125489067036424305edbe62317652c1b10b7b0ce76cf41cff50f1b84a16ba10",
+    "uncompressed_bytes": 5774,
+    "uncompressed_sha256": "db24fde0daa8c148cf64a2e7597bca5e7cce5c414e58e4a6b9632c83734ba86b"
+  },
+  "pairs.json.gz": {
+    "sha256": "1f7858e7f756a8bfd42e54c055d653c8683961d1e0549862a75d9cfdd4593a8b",
+    "uncompressed_bytes": 98181,
+    "uncompressed_sha256": "338b6e3811bbeb95312e4bb17dd0ff5b1f6b8acfbd3dff8cd7a090fe07a5cba4"
+  }
+}

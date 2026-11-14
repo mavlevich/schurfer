@@ -6,6 +6,11 @@ the [seen-windows registry](seen-windows-registry.md). The owner asked for it
 after [track B closed](track-b-closure-2026-11-14.md), to decide between a new
 attempt and maintenance until HYP-012 v2's read.
 
+Follow-up: the separately frozen [bounded audit](hyp036-power-audit-result-2026-11-14.md)
+reproduced raw projected MDE 19.88 bps; the BTC-adjusted event diagnostic is
+14.61 bps. These are conditional discovery projections from four observed
+weeks. No exam power or strategy outcome was read, and no full fetch is released.
+
 ## What changed since the families were stopped
 
 1. **A new design can make controls diagnostic.** Under the [program plan](program-plan-2026-11.md),
