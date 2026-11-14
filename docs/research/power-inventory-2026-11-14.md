@@ -8,11 +8,12 @@ attempt and maintenance until HYP-012 v2's read.
 
 ## What changed since the families were stopped
 
-1. **Controls no longer gate.** Under the [program plan](program-plan-2026-11.md),
+1. **A new design can make controls diagnostic.** Under the [program plan](program-plan-2026-11.md),
    rule 2, the primary measure is net as traded; "a matched control and its excess
    are diagnostics and gate nothing". Several families stopped before that rule,
-   on control coverage or balance, not on the power of their net.
-2. **Two exam windows are free.** The backward holdout (2023-02-01 to 2024-09-15)
+   on control coverage or balance, not on the power of their net. This does not
+   retroactively pass their old contracts or authorize a new strategy read.
+2. **Two calendars are unassigned; they are not two clean exams.** The backward holdout (2023-02-01 to 2024-09-15)
    has only coverage read. The HYP-031 test year (2025-10-01 to 2026-09-28) is
    unassigned again, but it is not fully clean:
    - 2026-07-22 to 2026-09-28 is the own-capture period, read at outcome level by
@@ -29,39 +30,46 @@ attempt and maintenance until HYP-012 v2's read.
 MDE is the registered planning MDE of the net leg (a) on the discovery year, with
 each study's own inflation and design effect. "Returns read" means on any window.
 
-| Line                              | Stopped at                    | MDE (a) net, bps | Returns read                      | Usable now                              |
-| --------------------------------- | ----------------------------- | ---------------: | --------------------------------- | --------------------------------------- |
-| HYP-036 absorbed buying, short 4h | control coverage 56.4 / 73.2% |         **19.9** | **no** (features of pilot blocks) | **yes, the only clear fit**             |
-| HYP-034 premium discount, long 4h | (b) excess MDE 50.13          |             38.9 | yes, 16 exploratory variants      | no: laboratory spent, track A closed    |
-| HYP-033 squeeze continuation, 4h  | control share 61.2%, (b) 61.5 |             43.7 | yes, 33 exploratory variants      | no: laboratory spent, track A closed    |
-| Majors, top 10 (pilot)            | MDE 48.4 / 46.8 against 45    |             48.4 | no                                | borderline; only with both exam windows |
-| HYP-035 relative strength (daily) | balance 0.132, MDE            |             88.7 | no                                | no: net power fails on its own          |
-| HYP-037 impulse policies A / B    | calibrated power gate         |     123.0 / 73.2 | yes, exploratory                  | no                                      |
-| Family 5, post-pump short OI turn | MDE on paper                  |            110.8 | partly (54-config pump lab)       | no                                      |
-| HYP-032 compressed spring         | insufficient power            |   34 to 130 by H | yes, 6 exploratory variants       | no                                      |
-| BTC long/cash trend               | MDE 31 to 50% a year          |              n/a | no                                | no                                      |
-| Carry, HYP-031 family             | economics fail                |              n/a | yes                               | no: closed on money                     |
+| Line                              | Stopped at                                  |    MDE (a) net, bps | Returns read                      | Usable now                                        |
+| --------------------------------- | ------------------------------------------- | ------------------: | --------------------------------- | ------------------------------------------------- |
+| HYP-036 absorbed buying, short 4h | control coverage 56.4 / 73.2%               | **19.9, projected** | **no** (features of pilot blocks) | candidate for a bounded planning audit            |
+| HYP-034 premium discount, long 4h | (b) excess MDE 50.13                        |                38.9 | yes, 16 exploratory variants      | no: laboratory spent, track A closed              |
+| HYP-033 squeeze continuation, 4h  | control share 61.2%, (b) 61.5               |                43.7 | yes, 33 exploratory variants      | no: laboratory spent, track A closed              |
+| Majors, top 10 (pilot)            | MDE 48.4 / 46.8 against 45                  |                48.4 | no                                | borderline; independent exam power unknown        |
+| HYP-035 relative strength (daily) | balance 0.132, MDE                          |                88.7 | no                                | no: net power fails on its own                    |
+| HYP-037 impulse policies A / B    | calibrated power gate                       |        123.0 / 73.2 | yes, exploratory                  | no                                                |
+| Family 5, post-pump short OI turn | MDE on paper                                |               110.8 | partly (54-config pump lab)       | no                                                |
+| HYP-032 compressed spring         | (b) not estimable, then concentrated losses | 44.7 / 85.0 / 130.1 | yes, 6 exploratory variants       | closed priority; 4h (a) passed its old power gate |
+| BTC long/cash trend               | MDE 31 to 50% a year                        |                 n/a | no                                | no                                                |
+| Carry, HYP-031 family             | economics fail                              |                 n/a | yes                               | no: closed on money                               |
 
 Exam power scales roughly with the square root of the window length at an
 unchanged event rate: about x0.78 on the holdout (19.5 months), x1.0 on the whole
 test year, x1.11 on its part before the own-capture period (9.7 months) and x0.62
-on holdout and test year together. Event rates in 2023 are uncertain: the
+on holdout and test year together. These are calendar-only scenarios, not
+empirical exam power. Combining exposed and clean periods does not make the
+combined sample a clean exam. Event rates in 2023 are uncertain: the
 registry's coverage table lists 182 instruments in 2023-01 against 397 in 2024-07,
 and a top-150 pool is thinner then.
 
-## HYP-036 is the only clear candidate
+## HYP-036 merits a bounded planning audit
 
-- **Power without controls.** The pilot projects 9,312 events after the
-  independence rule (194 symbols, top five 6.8% of clusters). Its net leg MDE of
+- **Projected power without controls.** Observed: 784 events, 750 symbol-day
+  clusters, 194 symbols, four ISO weeks and 28 decision days. The pilot projects
+  9,312 events after the independence rule; top five symbols are 6.8% of observed clusters. Its net leg MDE of
   19.9 bps already counts same-hour dependence: the block model uses the measured
   common share rho of 0.39 to 0.57 by month, plus inflation 1.5 and design effect
   1.2. Both pilot gates that failed (coverage and balance) concern the controls,
-  which now gate nothing.
+  which would become diagnostics in a new design. The 19.9 bps estimate scales
+  variance by 28/334 and assumes the pilot's dependence per day transfers to the
+  year. It is about 68.7 bps at the pilot's own size. Four observed weeks cannot
+  establish the dependence of a full year or of an exam in 2023.
 - **Unread returns on every window.** Only the two pilot blocks' features were
   seen (2024-12-29 to 2025-01-26 and 2025-06-22 to 2025-07-20).
-- **A mechanism, not a price pattern.** Heavy taker buying that fails to move the
-  price means passive sellers absorbed it. The treatment is flow, so ordinary
-  hours share its price path.
+- **A proposed mechanism.** Heavy taker buying with little price response might
+  reflect absorption. It does not establish that price will fall afterward.
+  Ordinary hours sharing a price path were not sufficient to produce usable
+  matched controls in the old designs.
 - **Bybit only, public data back to 2023:** trade archive, 1-minute klines,
   funding and mark klines. No open interest is needed, so the holdout can be built.
 
@@ -73,9 +81,14 @@ and a top-150 pool is thinner then.
    would partly mirror that known result. Different window and different trigger,
    but the selection history must say so, and the excess stays a reported
    diagnostic.
-2. **The 19.9 bps leg is BTC-adjusted.** HYP-036 measured each leg as its hold
-   minus BTCUSDT. The program's primary is net as traded, with BTC adjustment as a
-   guard. The MDE of the unadjusted net is not computed yet and will be larger.
+2. **The 19.9 bps planning leg is already unadjusted.** In the actual pilot code
+   (`0564134`), `a_net` uses `relative=False`; only matched `b_excess` uses BTC-relative
+   scales. The old reading text describes both legs as BTC-relative, so its
+   estimand and power proxy disagree. A successor must resolve that explicitly.
+   This price-dispersion proxy does not measure net outcomes including variable
+   funding. A BTC-adjusted event leg is a separate diagnostic, not `b_excess`.
+   For a short, adjustment against a short BTC benchmark is short-asset return
+   plus BTC's underlying return. No executed BTC hedge is assumed.
 3. **Data size.** The full top-150 tape for the discovery year is about 513 to 526
    GB, streamed and reduced to per-minute parts (HYP-032 measured 11 MB/s, about 13
    hours). The holdout needs its own fetch later.
@@ -84,11 +97,13 @@ and a top-150 pool is thinner then.
 
 ## Proposed order
 
-1. **Outcome-blind power recheck on the pilot blocks already held.** Compute the
-   MDE of the unadjusted net and of the BTC-adjusted net with HYP-036's block model
-   (pre-t scales only), for discovery and for each exam window above. No fetch, no
-   return. Gate: unadjusted net MDE at most 30 bps on the discovery year and on the
-   chosen exam window.
+1. **Bounded planning audit on the pilot blocks already held.** Reproduce the
+   existing unadjusted planning MDE, compute the BTC-adjusted event diagnostic,
+   report each block separately and fixed dependence sensitivities. The
+   [audit contract](hyp036-power-audit-v1.md) is fixed before that calculation.
+   No fetch, strategy outcome or exam read. A 30 bps comparison applies only to
+   the conditional discovery projection; it cannot certify exam power or release
+   a larger fetch. The four observed weeks leave longer dependence unidentified.
 2. **Design discussion with the colleague**, then a new registration (a new
    hypothesis ID, HYP-036's event definition unchanged): net as traded primary,
    matched excess as a diagnostic, abnormal-flow v1 in the selection history, and
@@ -100,6 +115,10 @@ and a top-150 pool is thinner then.
    bootstrap, halves, top-five removals, BTC guard, portfolio report.
 5. **Exam** only on a laboratory pass, as one frozen batch.
 
-If step 1 fails, no family fits the money question on the free windows, and the
-honest move is maintenance until the v2 read in March. The majors line is the
-only fallback, and only with both exam windows spent on it together.
+If this audit is unfavorable, do not change its model to obtain a pass. Return
+to the owner with the budget result. This inventory does not prove that all
+possible strategies fail; it compares the listed designs under different
+planning models. A cheap economic read on the existing pilot could be proposed
+under a separate fixed contract before buying the full tape. It would be
+discovery screening, not confirmation, and is not authorized by this note.
+No exam is assigned or combined here.

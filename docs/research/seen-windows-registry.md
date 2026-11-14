@@ -481,3 +481,24 @@ The earlier exploratory selection history remains. No test year, backward
 holdout, HYP-012 v2 blind-window, native reserved tape, new venue, production
 or order is opened. Both original outputs and all native receipts are retained;
 publication of this completion record does not rewrite the prior registrations.
+
+## HYP-036 bounded planning audit, registered locally 2026-11-14
+
+Owner accepted the limited next step with "го го го" after the inventory review.
+The [contract](hyp036-power-audit-v1.md), code and this row are committed locally
+before calculation. They are not claimed to have been in main before the audit.
+There is no network request or strategy outcome read in this step.
+
+**Level: pre-decision feature summaries.** Existing discovery-only features
+`a3b54d6c...` and the frozen pilot identities `338b6e38...`, original counts
+`db24fde0...`. Decisions remain 2025-01-13 to 2025-01-26 and 2025-07-07 to
+2025-07-20. Reproduce the original raw-price planning MDE and add the
+BTC-adjusted event-price diagnostic; compute historical four-hour scales over
+336 hourly ends at/before each t and pool correlations before January/July.
+Earliest required price bar is 2024-12-01 00:00 UTC for January's monthly pool
+and correlation; no event hold return, mean, PnL or funding outcome is output.
+The existing feature container is parsed whole, but no holdout or test input is
+loaded. Historical values can follow an earlier event; this is feature-level
+exposure, not a claim of disjoint untouched price windows. Only fixed
+dependence sensitivities and calendar projections follow. No new hypothesis,
+exam assignment, full archive fetch or promotion is authorized.
