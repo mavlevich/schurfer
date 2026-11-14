@@ -10,20 +10,21 @@ is listed explicitly so historical plans cannot be mistaken for deployed behavio
 
 ## Start here
 
-| Need                                           | Read                                                               |
-| ---------------------------------------------- | ------------------------------------------------------------------ |
-| Install and run locally                        | [Root README](../README.md)                                        |
-| Current priorities and research gates          | [ROADMAP](../ROADMAP.md)                                           |
-| Browse uncommitted ideas                       | [IDEAS](../IDEAS.md), which is not an implementation queue         |
-| Current service overview                       | [Architecture](../ARCHITECTURE.md) and the deployed Compose files  |
-| Deploy, recover, inspect production            | [Runbooks](runbooks/README.md)                                     |
-| Understand an accepted design decision         | [ADR index](adr/README.md)                                         |
-| Review frozen research methods and results     | [Research](#research)                                              |
-| Review engineering findings and verification   | [Engineering findings register](engineering/findings-register.md)  |
-| Review strategy lifecycle and production rules | [Strategies](strategies/README.md)                                 |
-| Review interface and delivery contracts        | [Contracts](contracts/)                                            |
-| Understand the reviewed platform direction     | [Target platform architecture](architecture/target-platform-v1.md) |
-| Plan UI evolution                              | [Web UI evolution plan](architecture/web-ui-evolution-v1.md)       |
+| Need                                           | Read                                                                        |
+| ---------------------------------------------- | --------------------------------------------------------------------------- |
+| Install and run locally                        | [Root README](../README.md)                                                 |
+| Current priorities and research gates          | [ROADMAP](../ROADMAP.md)                                                    |
+| Browse uncommitted ideas                       | [IDEAS](../IDEAS.md), which is not an implementation queue                  |
+| Current service overview                       | [Architecture](../ARCHITECTURE.md) and the deployed Compose files           |
+| Deploy, recover, inspect production            | [Runbooks](runbooks/README.md)                                              |
+| Understand an accepted design decision         | [ADR index](adr/README.md)                                                  |
+| Review frozen research methods and results     | [Research](#research)                                                       |
+| Review engineering findings and verification   | [Engineering findings register](engineering/findings-register.md)           |
+| Review strategy lifecycle and production rules | [Strategies](strategies/README.md)                                          |
+| Review interface and delivery contracts        | [Contracts](contracts/)                                                     |
+| Understand the reviewed platform direction     | [Target platform architecture](architecture/target-platform-v1.md)          |
+| Plan UI evolution                              | [Web UI evolution plan](architecture/web-ui-evolution-v1.md)                |
+| Track improvements and learning PRs            | [Improvement & learning roadmap v3](architecture/improvement-roadmap-v3.md) |
 
 ## Source-of-truth map
 
