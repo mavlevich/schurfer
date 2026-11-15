@@ -43,7 +43,8 @@ read, because it was never part of these reads.
    - C1 uses every persisted radar signal in the window.
    - C2 uses every pump event of the existing detector.
    - Selected cases are never the sample.
-4. **Known cases.** STAMP, PUSSY, POD and SPACEHOOD, and any other token the owner viewed,
+4. **Known cases.** STAMP, PUSSY, POD and SPACEHOOD, AKE, FRONG and EVAA (added
+   2026-11-15), and any other token the owner or the colleague viewed,
    are diagnostic only. They are reported apart and do not count toward a verdict. The owner's viewing dates are unknown, so until they are pinned down each viewed asset is excluded from the verdict for the whole window; unknown viewing dates are never declared clean afterwards.
 5. **Protocol first.** Before any read, a written protocol fixes:
    - the outcome contract, from HYP-017 for C1;
@@ -61,3 +62,12 @@ read, because it was never part of these reads.
 6. **Exposure.** The owner's viewing of these charts is recorded in the
    [seen-windows registry](seen-windows-registry.md). It changes no v2 decision: v2's
    rules are frozen and run automatically.
+
+## Addendum 2026-11-15: three more viewed cases
+
+AKE, FRONG and EVAA were named as recent radar cases in the owner and colleague's
+direction discussion on 2026-11-15. Who viewed them, on which venue and on which dates
+is not recorded. They are diagnostic only under item 4, reported apart and excluded from
+any verdict for the whole window until their viewing dates are pinned down. The research
+process read no price, signal or score about them; this addendum adds only their names.
+The exposure row is in the [seen-windows registry](seen-windows-registry.md).
