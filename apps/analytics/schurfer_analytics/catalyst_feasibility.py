@@ -63,6 +63,7 @@ MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 SPACING_S = 1.0
 ATTEMPTS_PER_PAGE = 3
 MAX_PAGES_PER_SERIES = 600
+COMPLETE_STOPS = ("empty", "time_boundary", "cursor_end")
 
 MIN_CLUSTERS = {"discovery": 40, "holdout": 30}
 MIN_ANNOUNCEMENTS = {"discovery": 40, "holdout": 30}
@@ -251,9 +252,13 @@ def cut_page(source: str, payload: Any) -> dict[str, Any]:
     items, cursor = raw_items(source, payload)
     kept: list[dict[str, Any]] = []
     dropped, oldest_reached = 0, False
-    for item in items:
+    for index, item in enumerate(items):
         ms = canonical_ms(source, item)
-        if ms < OLDEST_MS:
+        # The time boundary belongs to announcement feeds only, which run from the
+        # newest. It is read from the page's last item: an old notice pinned above
+        # newer ones must not end the series. A catalog of instruments has no time
+        # order at all and is followed by cursor to its end.
+        if source != "bybit_instruments" and index == len(items) - 1 and ms < OLDEST_MS:
             oldest_reached = True
         if source == "bybit_instruments":
             if ms >= CUT_MS:
@@ -330,7 +335,10 @@ class Fetcher:
         run = root / "run.json"
         if run.exists():
             if json.loads(run.read_text()) != contract:
-                raise ValueError("run binding differs; resume cannot change code or limits")
+                raise ValueError(
+                    "run binding differs; resume cannot change code or limits, "
+                    "a corrected revision starts a new run in a new root"
+                )
         else:
             publish_once(run, contract)
         self.last = -SPACING_S
@@ -420,14 +428,21 @@ class Fetcher:
             else:
                 if position in (1, ""):
                     receipt["schema"] = key_tree(payload)
-                terminal = (
-                    page["items"] == 0
-                    or page["oldest_reached"]
-                    or (series.paging == "cursor" and not page["next_cursor"])
-                    or (series.paging == "page" and int(position) >= MAX_PAGES_PER_SERIES)
-                )
+                # Why paging ends. Only the first three mean the series was read to
+                # its end; a page budget is a limit, not evidence of no more events.
+                stop: str | None = None
+                if page["items"] == 0:
+                    stop = "empty"
+                elif page["oldest_reached"]:
+                    stop = "time_boundary"
+                elif series.paging == "cursor" and not page["next_cursor"]:
+                    stop = "cursor_end"
+                elif series.paging == "page" and int(position) >= MAX_PAGES_PER_SERIES:
+                    stop = "page_budget"
+                terminal = stop is not None
                 receipt.update(
                     outcome="ok",
+                    stop=stop,
                     items=page["items"],
                     dropped=page["dropped"],
                     kept=page["kept"],
@@ -465,10 +480,16 @@ class Fetcher:
                 "kept": sum(len(r["kept"]) for r in ok),
                 "dropped": sum(r["dropped"] for r in ok),
                 "terminal": bool(ok and ok[-1]["terminal"]),
+                "stop": ok[-1]["stop"] if ok else None,
             }
         count, used = self._totals()
         out["attempts_and_reserved_bytes"] = [count, used]
-        out["complete"] = all(v["terminal"] for v in out["series"].values())
+        out["budget_exhausted"] = sorted(
+            name for name, v in out["series"].items() if v["stop"] == "page_budget"
+        )
+        out["complete"] = all(
+            v["terminal"] and v["stop"] in COMPLETE_STOPS for v in out["series"].values()
+        )
         return out
 
 
@@ -951,7 +972,10 @@ def main(argv: list[str] | None = None) -> int:
     if json.loads((args.root / "run.json").read_text())["revision"] != contract["revision"]:
         raise ValueError("report must run from the fetch revision")
     fetcher = Fetcher(args.root, contract)
-    if not fetcher.summary()["complete"]:
+    done = fetcher.summary()
+    if done["budget_exhausted"]:
+        raise ValueError(f"page budget reached before the end of {done['budget_exhausted']}")
+    if not done["complete"]:
         raise ValueError("fetch is not complete")
     public, sealed = report(fetcher.receipts())
     sealed_bytes = _canonical(sealed)

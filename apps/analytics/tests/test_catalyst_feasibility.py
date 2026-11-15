@@ -67,6 +67,18 @@ def test_cut_marks_the_oldest_page_terminal() -> None:
     assert out["kept"] == []
 
 
+def test_a_pinned_old_notice_does_not_end_the_series() -> None:
+    page = binance_page(
+        [
+            {"id": 1, "title": "Binance Will List Old (OLD)", "releaseDate": TOO_OLD},
+            {"id": 9, "title": "Binance Will List Kept (KEPT)", "releaseDate": IN_DISCOVERY},
+        ]
+    )
+    out = cf.cut_page("binance", page)
+    assert not out["oldest_reached"]  # only the page's last item sets the boundary
+    assert [a["id"] for a in out["kept"]] == [9]
+
+
 def test_instruments_keep_no_status_and_no_late_symbols() -> None:
     items = [
         {
@@ -558,7 +570,10 @@ def test_fetch_paginates_and_never_persists_bodies(tmp_path: Path) -> None:
         "kept": 2,
         "dropped": 2,
         "terminal": True,
+        "stop": "time_boundary",
     }
+    assert summary["series"]["bybit_inst:Trading"]["stop"] == "cursor_end"
+    assert summary["budget_exhausted"] == []
     assert summary["series"]["bybit_inst:Trading"]["kept"] == 1
     stored = "".join(p.read_text() for p in tmp_path.rglob("*.json"))
     assert "ZZZBLIND" not in stored
@@ -591,8 +606,61 @@ def test_fetch_stops_on_schema_mismatch_with_keys_only(tmp_path: Path) -> None:
     assert receipt["outcome"] == "schema_mismatch"
     assert "data.rows[].t:str" in receipt["schema"]
     assert "ZZZBLIND" not in json.dumps(receipt)
+    # A stopped run stays stopped, on the same revision as well as on a corrected one:
+    # the correction starts a new run in a new root (contract, section 6).
     with pytest.raises(cf.FetchStoppedError):
         fetcher(tmp_path).fetch(httpx.Client(transport=handler(PAGES)))
+    with pytest.raises(ValueError, match="starts a new run in a new root"):
+        cf.Fetcher(tmp_path, {"rules": "corrected"})
+    with httpx.Client(transport=handler(PAGES)) as client:
+        assert fetcher(tmp_path / "second-run").fetch(client)["complete"]
+
+
+@pytest.mark.usefixtures("small")
+def test_old_instrument_does_not_end_the_catalog(tmp_path: Path) -> None:
+    # The catalog has no time order: an instrument launched before the oldest window
+    # sits on the first page, an eligible one on the next.
+    pages = dict(PAGES) | {
+        "/i?": bybit_page([instrument("OLDUSDT", TOO_OLD)], "c2"),
+        "/i?c2": bybit_page([instrument("AUSDT", IN_HOLDOUT)], ""),
+    }
+    with httpx.Client(transport=handler(pages)) as client:
+        summary = fetcher(tmp_path).fetch(client)
+    assert summary["complete"]
+    assert summary["series"]["bybit_inst:Trading"] == {
+        "attempts": 2,
+        "pages_ok": 2,
+        "kept": 2,
+        "dropped": 0,
+        "terminal": True,
+        "stop": "cursor_end",
+    }
+
+
+@pytest.mark.usefixtures("small")
+def test_page_budget_is_not_a_complete_fetch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # One page allowed, and it is newer than both windows: nothing was covered.
+    monkeypatch.setattr(cf, "MAX_PAGES_PER_SERIES", 1)
+    bound = {"rules": "test", "revision": "r1"}
+    monkeypatch.setattr(cf, "binding", lambda: bound)
+    pages = dict(PAGES) | {
+        "/b?1": binance_page(
+            [{"id": 9, "title": "Binance Will List Blind (ZZZBLIND)", "releaseDate": BLIND}]
+        )
+    }
+    clock = iter(float(i) for i in range(10_000))
+    budgeted = cf.Fetcher(tmp_path, bound, now=lambda: next(clock), sleep=lambda _: None)
+    with httpx.Client(transport=handler(pages)) as client:
+        summary = budgeted.fetch(client)
+    assert summary["series"]["binance:48"]["terminal"]
+    assert summary["series"]["binance:48"]["stop"] == "page_budget"
+    assert summary["budget_exhausted"] == ["binance:48"]
+    assert not summary["complete"]
+    with pytest.raises(ValueError, match="page budget reached"):
+        cf.main(["report", "--root", str(tmp_path), "--out", str(tmp_path / "r.json")])
+    assert not (tmp_path / "r.json").exists()
 
 
 @pytest.mark.usefixtures("small")

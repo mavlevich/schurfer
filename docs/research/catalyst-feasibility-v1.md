@@ -191,8 +191,11 @@ are therefore expected shapes, not confirmed ones. The guards:
 - the first page of every series records a **schema probe**: the key paths and value
   types of the response, never a value;
 - any mismatch stops the whole fetch closed, with the same key-only record;
-- the fix is a reviewed code change, and the fetch then resumes from where it
-  stopped;
+- the fix is a reviewed code change. A stopped run does not resume: its run binding
+  holds the code revision, so a corrected revision starts a **new run in a new root**,
+  from the first page. The stopped run's receipts are kept and named in the report's
+  evidence. Each run has its own budget below; a transport failure on the same
+  revision does resume, up to three attempts per page;
 - for edits, the order check (section 4) is the evidence, and the report says so.
 
 **Blind window and other windows.** The announcement lists have no time filter, so
@@ -222,7 +225,15 @@ pages dated on or after 2026-09-29 pass through pagination. The guards:
 
 - At most **3,000 requests** in total, **64 MiB** of response bytes and **1 request per
   second** per host.
-- Pagination stops once a page's oldest item is older than 2023-02-01.
+- An announcement series ends in one of three ways that count as read to its end: an
+  empty page, the time boundary, or the end of a cursor. The time boundary is reached
+  when the **last** item of a page is older than 2023-02-01; the feeds run from the
+  newest, and an old notice pinned above newer ones must not end a series.
+- The instrument catalog has no time order. It is followed by cursor to its end and
+  never stops on a launch time.
+- 600 pages per series is a limit, not an end. A series that reaches it is
+  `page_budget`: the fetch is not complete and the report refuses to run. Missing
+  history must never be counted as missing events.
 - No market-data endpoint is called.
 - A seen-windows registry row (`event metadata, coverage`) and the request rules are on
   main before the first request.
@@ -419,6 +430,24 @@ count:
    reads only after the key phrase, drops a fixed list of acronyms and is counted in
    the report (section 7). A ticker that is also a word (`ID`, `AI`) is not put on the
    stop list: it is a real listed asset and must stay readable.
+
+**Second review of the code PR, 2026-11-15 (participant C, at `17e8f3b`).** Three
+findings, all confirmed in the code and fixed before any fetch:
+
+1. **An old instrument ended the catalog.** The time boundary of the announcement
+   feeds was also applied to instruments, so one perp launched before 2023-02-01 on
+   the first page stopped the cursor. Later instruments would have been counted as
+   `no_live_perp`. The catalog now runs to the end of its cursor (section 6).
+2. **A page budget was reported as a complete fetch.** Reaching 600 pages set the same
+   terminal state as the end of history. It is now its own stop reason, the fetch is
+   not complete and the report refuses (section 6).
+3. **The promised resume after a schema fix did not exist.** The run binding forbids
+   another revision, and a stopped run stays stopped. The code is right and the
+   contract was wrong; it now says a corrected revision starts a new run (section 6).
+
+One more change by the author, found while fixing the first: the time boundary is read
+from a page's last item only, so an old notice pinned at the top of a feed cannot end
+it early. It can only make the fetch read more pages, never fewer.
 
 **Changes made while writing the code.** These come after the design discussion and
 are for the colleague's review of the code PR:
