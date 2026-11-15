@@ -65,3 +65,6 @@ from B, awaiting C's check on `a18f2c0`) and drafted [`plan.md`](plan.md) for re
 
 2026-11-15, A: [review of the draft plan](positions/a-plan-review-2026-11-15.md): order
 of stages agreed; exam window and minimums corrected in `plan.md`; five points open.
+
+2026-11-15, B: updated [`plan.md`](plan.md) to **Draft v2**, resolving A's five points and
+C's P1/P2 findings (`state.md` section 13).

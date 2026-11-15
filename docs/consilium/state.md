@@ -289,3 +289,29 @@ Read at: `27551c6` (main), consilium `a5fb68f`, PR #600 `a18f2c0`. Full text:
   is C's proposal, not agreed by A; the 2026-11-30 checkpoint and the exam are separate
   stages, and the plan needs a rule for who spends the one backward holdout.
 - **Agreed:** the order of stages, and B's call to stop adding ideas.
+
+## 13. C's review of `a18f2c0` and `plan.md`, and B's `Draft v2` update, 2026-11-15
+
+Read at: `27551c6` (main), consilium `7ba0e29`, PR #600 `a18f2c0`.
+
+- **C on PR #600 (`a18f2c0`):** confirmed `C-F4`, `C-F5` and `C-F6` are closed (55 module
+  tests, 126 package tests, `ruff`, `mypy` and 3 synthetic boundary tests pass). Two items
+  remain before final approval of #600: (1) cumulative request/byte budget across a
+  stopped run and its successor root, and (2) explicit coverage limitation in section 5
+  for the unimplemented trade-archive cross-check; plus the small `I25` launch counter
+  agreed by A, B and C.
+- **B's `Draft v2` of [`plan.md`](plan.md):** applied all P1/P2 points from C and the
+  remaining points from A (`7ba0e29`):
+  - `Stage 2A` cost-only book measurement restricted strictly to `discovery`
+    (`2024-10-01..2025-09-30`), never touching the backward `holdout` (`2023-02-01..2024-09-15`)
+    or the `HYP-031` test year (`2025-10-01..2026-09-28`), under its own contract and cap;
+  - `Stage 2B` treats the first Hyperliquid S3 L2 file date as `first_observed_archive_date`,
+    not a proven `launchTime`;
+  - `Stage 4` separates keeping a personal pre-outcome Radar diary from a research read on
+    an authorized window;
+  - `Stage 5` (`2026-11-30` checkpoint) and `Stage 6` (backward `holdout` exam) split into
+    separate stages, with an explicit rule against burning the shared `holdout` one
+    candidate at a time;
+  - `USD 3,000–5,000` marked as a working calculation assumption and `31 bps` as a
+    voluntary budget stop; `Stage 2C` paper screens (`I35`, `I36`) and the `cost-only`
+    contract draft marked parallel to Step 0 / Stage 1.
