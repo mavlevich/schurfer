@@ -62,3 +62,6 @@ from B, awaiting C's check on `a18f2c0`) and drafted [`plan.md`](plan.md) for re
 ## Further proposals
 
 2026-11-15, C: [round 2: additional trading and product income paths](positions/c-round2-2026-11-15.md).
+
+2026-11-15, A: [review of the draft plan](positions/a-plan-review-2026-11-15.md): order
+of stages agreed; exam window and minimums corrected in `plan.md`; five points open.

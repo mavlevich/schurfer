@@ -274,3 +274,18 @@ Read at: `27551c6` (main), consilium `e734ad9`, PR #600 `a18f2c0`.
 - **Consolidated step-by-step plan:** B drafted [`plan.md`](plan.md) and recorded B's
   full position in [`positions/b-2026-11-15.md`](positions/b-2026-11-15.md) for review
   by A, C and the owner before merging PR #601 and PR #600.
+
+## 12. A's review of the draft plan, 2026-11-15
+
+Read at: `27551c6` (main), consilium `a5fb68f`, PR #600 `a18f2c0`. Full text:
+[`positions/a-plan-review-2026-11-15.md`](positions/a-plan-review-2026-11-15.md).
+
+- **Corrected in `plan.md`:** the exam window was written as `2025-10..2026-09`, which
+  is the HYP-031 test year that the catalyst contract discards; the holdout is
+  2023-02-01 to 2024-09-15. Holdout weeks are 8, not 6, and bases 20 / 15 were missing.
+- **Open:** the launch count for I25 needs a small counting command and a contract
+  paragraph; B's approval does not cover C's two remaining points on PR #600; the
+  capital figure is an assumption until the owner sets it; the feature-search sandbox
+  is C's proposal, not agreed by A; the 2026-11-30 checkpoint and the exam are separate
+  stages, and the plan needs a rule for who spends the one backward holdout.
+- **Agreed:** the order of stages, and B's call to stop adding ideas.
