@@ -307,17 +307,63 @@ def limits() -> dict[str, Any]:
     }
 
 
-def binding() -> dict[str, Any]:
+def _ledger_usage(root: Path) -> tuple[str, int, int, list[dict[str, Any]]]:
+    run_file = root / "run.json"
+    if not run_file.exists():
+        raise ValueError(f"prior root has no run.json: {root}")
+    run_bytes = run_file.read_bytes()
+    run_data = json.loads(run_bytes)
+    attempts = [json.loads(p.read_text()) for p in sorted((root / "attempts").glob("*.json"))]
+    receipts = [json.loads(p.read_text()) for p in sorted((root / "receipts").glob("*.json"))]
+    if [a["seq"] for a in attempts] != list(range(1, len(attempts) + 1)):
+        raise ValueError("attempt reservations are not a contiguous sequence")
+    if not {r["seq"] for r in receipts} <= {a["seq"] for a in attempts}:
+        raise ValueError("receipt without a charged attempt")
+    done = {r["seq"]: int(r["body_bytes"]) for r in receipts}
+    used = sum(done.get(a["seq"], MAX_RESPONSE_BYTES) for a in attempts)
+    inherited = list(run_data.get("prior", {}).get("runs", []))
+    return digest(run_bytes), len(attempts), used, inherited
+
+
+def prior_usage(roots: Iterable[Path] = ()) -> dict[str, Any]:
+    seen: dict[str, dict[str, Any]] = {}
+    for root in roots:
+        sha, count, used, inherited = _ledger_usage(root)
+        for entry in inherited:
+            key = str(entry["run_binding_sha256"])
+            seen[key] = {
+                "run_binding_sha256": key,
+                "attempts": int(entry["attempts"]),
+                "bytes": int(entry["bytes"]),
+            }
+        seen[sha] = {
+            "run_binding_sha256": sha,
+            "attempts": count,
+            "bytes": used,
+        }
+    runs = [seen[k] for k in sorted(seen)]
+    return {
+        "attempts": sum(int(r["attempts"]) for r in runs),
+        "bytes": sum(int(r["bytes"]) for r in runs),
+        "runs": runs,
+    }
+
+
+def binding(prior_roots: Iterable[Path] = ()) -> dict[str, Any]:
     published = b3.publication(list(PUBLISHED))
     if f"`{STUDY_ID}`" not in Path(REGISTRY).read_text():
         raise ValueError("no seen-windows registry row names this study")
-    return {
+    out: dict[str, Any] = {
         "rules": VERSION,
         "revision": transport.clean_revision(),
         "publication": published,
         "limits": limits(),
         "series": [asdict(s) for s in SERIES],
     }
+    prior = prior_usage(prior_roots)
+    if prior["runs"]:
+        out["prior"] = prior
+    return out
 
 
 class Fetcher:
@@ -331,7 +377,7 @@ class Fetcher:
         now: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
-        self.root, self.now, self.sleep = root, now, sleep
+        self.root, self.contract, self.now, self.sleep = root, contract, now, sleep
         run = root / "run.json"
         if run.exists():
             if json.loads(run.read_text()) != contract:
@@ -357,9 +403,12 @@ class Fetcher:
         return list(self._receipts)
 
     def _totals(self) -> tuple[int, int]:
+        prior = self.contract.get("prior", {})
+        prior_attempts = int(prior.get("attempts", 0))
+        prior_bytes = int(prior.get("bytes", 0))
         done = {r["seq"]: r["body_bytes"] for r in self._receipts}
-        used = sum(done.get(a["seq"], MAX_RESPONSE_BYTES) for a in self._attempts)
-        return len(self._attempts), used
+        used = prior_bytes + sum(done.get(a["seq"], MAX_RESPONSE_BYTES) for a in self._attempts)
+        return prior_attempts + len(self._attempts), used
 
     def _state(self, series: Series) -> tuple[bool, int | str, int]:
         """(terminal, next page or cursor, failed attempts on that position)."""
@@ -391,7 +440,7 @@ class Fetcher:
         delay = self.last + SPACING_S - self.now()
         if delay > 0:
             self.sleep(delay)
-        seq = count + 1
+        seq = len(self._attempts) + 1
         base = {"seq": seq, "series": series.name, "position": position}
         publish_once(self.root / "attempts" / f"{seq:05d}.json", base)  # charge before I/O
         self._attempts.append(base)
@@ -666,6 +715,23 @@ def instruments(receipts: Iterable[dict[str, Any]]) -> dict[str, list[dict[str, 
     return {k: list(v.values()) for k, v in out.items()}
 
 
+def launch_counts(perps: dict[str, list[dict[str, Any]]], window: str) -> dict[str, int]:
+    """Count distinct linear USDT perpetual launches, bases and ISO weeks in a window."""
+    by_symbol: dict[str, tuple[str, int]] = {}
+    for base, records in perps.items():
+        for row in records:
+            symbol = str(row["symbol"])
+            ms = int(row["launch_ms"])
+            if symbol not in by_symbol or ms < by_symbol[symbol][1]:
+                by_symbol[symbol] = (base, ms)
+    launched = [(base, ms) for base, ms in by_symbol.values() if window_of(ms) == window]
+    return {
+        "launches": len(launched),
+        "bases": len({base for base, _ in launched}),
+        "weeks": len({iso_week(ms) for _, ms in launched}),
+    }
+
+
 def articles(receipts: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
     seen: dict[tuple[str, str], dict[str, Any]] = {}
     sources = {s.name: s.source for s in SERIES}
@@ -924,6 +990,7 @@ def report(receipts: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[st
             "source_quality": public_quality,
             "unrequested_sources": UNREQUESTED_SOURCES,
             "instrument_assets": len(perps),
+            "instrument_launches": {w: launch_counts(perps, w) for w in ("discovery", "holdout")},
             "discovery_events": sorted(
                 discovery_events, key=lambda e: (e["bucket"], e["announced_ms"], e["base"])
             ),
@@ -946,6 +1013,7 @@ def main(argv: list[str] | None = None) -> int:
     sub.add_parser("plan")
     fetch = sub.add_parser("fetch")
     fetch.add_argument("--root", type=Path, required=True)
+    fetch.add_argument("--prior-root", action="append", type=Path, default=[])
     read = sub.add_parser("report")
     read.add_argument("--root", type=Path, required=True)
     read.add_argument("--out", type=Path, required=True)
@@ -963,15 +1031,17 @@ def main(argv: list[str] | None = None) -> int:
             )
         )
         return 0
-    contract = binding()
     if args.command == "fetch":
+        contract = binding(args.prior_root)
         fetcher = Fetcher(args.root, contract)
         with httpx.Client(timeout=30.0) as client:
             _emit(json.dumps(fetcher.fetch(client), indent=2, sort_keys=True))
         return 0
-    if json.loads((args.root / "run.json").read_text())["revision"] != contract["revision"]:
+    contract = binding()
+    saved = json.loads((args.root / "run.json").read_text())
+    if saved["revision"] != contract["revision"]:
         raise ValueError("report must run from the fetch revision")
-    fetcher = Fetcher(args.root, contract)
+    fetcher = Fetcher(args.root, saved)
     done = fetcher.summary()
     if done["budget_exhausted"]:
         raise ValueError(f"page budget reached before the end of {done['budget_exhausted']}")
@@ -985,11 +1055,14 @@ def main(argv: list[str] | None = None) -> int:
     if not sealed_path.exists():
         sealed_path.write_bytes(sealed_bytes)
     public["holdout_events_sha256"] = digest(sealed_bytes)
-    public["provenance"] = {
+    provenance: dict[str, Any] = {
         "revision": contract["revision"],
         "run_binding_sha256": digest((args.root / "run.json").read_bytes()),
         "generated_at_utc": datetime.now(UTC).isoformat(timespec="seconds"),
     }
+    if saved.get("prior", {}).get("runs"):
+        provenance["prior_runs"] = saved["prior"]["runs"]
+    public["provenance"] = provenance
     args.out.write_bytes(_canonical(public))
     _emit(
         json.dumps(

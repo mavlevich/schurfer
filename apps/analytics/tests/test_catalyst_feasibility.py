@@ -479,6 +479,39 @@ def test_report_counts_ambiguous_and_missing_perps() -> None:
     assert stats["ambiguous_share"] == pytest.approx(0.5)
 
 
+def test_report_counts_instrument_launches_per_window_deduplicated() -> None:
+    w1 = ms("2024-10-07T00:00:00")
+    w2 = ms("2024-10-14T00:00:00")
+    receipts = receipts_for(
+        {},
+        [
+            perp("NEW1USDT", w1),
+            perp("1000NEW1USDT", w1),
+            perp("NEW2USDT", w2),
+            perp("HOLD1USDT", IN_HOLDOUT),
+            perp("OLD1USDT", TOO_OLD),
+        ],
+    )
+    # Duplicate NEW1USDT in Closed status must not inflate the launch count.
+    receipts.append(
+        {
+            "seq": 99,
+            "series": "bybit_inst:Closed",
+            "position": "",
+            "outcome": "ok",
+            "stop": "cursor_end",
+            "kept": [perp("NEW1USDT", w1)],
+            "dropped": 0,
+            "terminal": True,
+        }
+    )
+    public, _ = cf.report(receipts)
+    assert public["instrument_launches"] == {
+        "discovery": {"launches": 3, "bases": 2, "weeks": 2},
+        "holdout": {"launches": 1, "bases": 1, "weeks": 1},
+    }
+
+
 def test_report_refuses_an_unclassified_source() -> None:
     rows = [
         {"id": i + 1, "title": "Something else", "releaseDate": IN_DISCOVERY + i * 1_000}
@@ -669,6 +702,38 @@ def test_fetch_budget(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     with httpx.Client(transport=handler(PAGES)) as client, pytest.raises(cf.BudgetExceededError):
         fetcher(tmp_path).fetch(client)
     assert len(list((tmp_path / "attempts").glob("*.json"))) == 1
+
+
+@pytest.mark.usefixtures("small")
+def test_prior_root_budget_carries_across_stopped_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = tmp_path / "run1"
+    second = tmp_path / "run2"
+    bad_pages = dict(PAGES) | {"/b?1": {"code": "000000", "data": {"rows": []}}}
+    with httpx.Client(transport=handler(bad_pages)) as client, pytest.raises(cf.FetchStoppedError):
+        fetcher(first).fetch(client)
+    prior = cf.prior_usage([first])
+    assert prior["attempts"] == 1
+    assert len(prior["runs"]) == 1
+    # SMALL needs 4 requests; with 1 already spent in run1, a cap of 4 blocks run2.
+    monkeypatch.setattr(cf, "MAX_REQUESTS", 4)
+    clock = iter(float(i) for i in range(10_000))
+    succ = cf.Fetcher(
+        second,
+        {"rules": "test", "revision": "r2", "prior": prior},
+        now=lambda: next(clock),
+        sleep=lambda _: None,
+    )
+    with httpx.Client(transport=handler(PAGES)) as client, pytest.raises(cf.BudgetExceededError):
+        succ.fetch(client)
+    assert len(list((second / "attempts").glob("*.json"))) == 3
+    # Raise cap to 5: the remaining 1 request completes run2 and records cumulative total 5.
+    monkeypatch.setattr(cf, "MAX_REQUESTS", 5)
+    with httpx.Client(transport=handler(PAGES)) as client:
+        summary = succ.fetch(client)
+    assert summary["complete"]
+    assert summary["attempts_and_reserved_bytes"][0] == 5
 
 
 def test_run_binding_cannot_change(tmp_path: Path) -> None:

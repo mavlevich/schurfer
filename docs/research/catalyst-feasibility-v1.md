@@ -144,9 +144,11 @@ A base has a live Bybit USDT perp at `announced_at` if a linear USDT contract fo
 - launched at least 24 hours before `announced_at`, by the instrument's `launchTime`;
 - had not been delivered or closed by then, by `deliveryTime` for closed instruments.
 
-The universe is all linear USDT instruments in every status. The cross-check is the
-first and last dates of the public trade archive's file listings, already registered
-at coverage level.
+The universe is all linear USDT instruments returned by `instruments-info` across
+`Trading`, `Delivering` and `Closed`. The public trade archive's file listings are not
+an input to this module: this study measures the coverage of Bybit's API catalog, and
+any reconciliation against the trade archive remains a separate step before a
+laboratory protocol relies on catalog completeness.
 
 Instruments are cut the same way as announcements (section 6), so no symbol that
 appeared in or near the blind window is kept.
@@ -193,9 +195,10 @@ are therefore expected shapes, not confirmed ones. The guards:
 - any mismatch stops the whole fetch closed, with the same key-only record;
 - the fix is a reviewed code change. A stopped run does not resume: its run binding
   holds the code revision, so a corrected revision starts a **new run in a new root**,
-  from the first page. The stopped run's receipts are kept and named in the report's
-  evidence. Each run has its own budget below; a transport failure on the same
-  revision does resume, up to three attempts per page;
+  from the first page. The stopped run's receipts are kept, passed to the new run via
+  `--prior-root` so their requests and bytes count against the same 3,000-request and
+  64 MiB study budget, and named in the report's provenance. A transport failure on the
+  same revision does resume, up to three attempts per page;
 - for edits, the order check (section 4) is the evidence, and the report says so.
 
 **Blind window and other windows.** The announcement lists have no time filter, so
@@ -248,7 +251,10 @@ Per bucket, source and window, the report gives:
 - the counts for `not_timed`, `no_live_perp` and `identity_ambiguous`;
 - the precision, edit, order and effective-time shares from section 4.
 
-The report shows no market value.
+The report shows no market value. Because the fetch already reads the Bybit linear
+USDT instrument catalog, the report also records `instrument_launches` per window
+(distinct symbols, bases and ISO launch weeks from the deduplicated catalog) so the
+post-listing drift screen (`I25`) is sized without a second fetch.
 
 **Holdout privacy.** For the backward holdout the report gives only these aggregate
 counts and shares: no list of tickers and no calendar distribution, such as events by
@@ -448,6 +454,19 @@ findings, all confirmed in the code and fixed before any fetch:
 One more change by the author, found while fixing the first: the time boundary is read
 from a page's last item only, so an old notice pinned at the top of a feed cannot end
 it early. It can only make the fetch read more pages, never fewer.
+
+**Third review pass before first fetch, 2026-11-15.** Three pre-fetch items closed:
+
+1. **Cumulative budget across a stopped run and its successor.** Passing `--prior-root`
+   to `fetch` carries the stopped run's attempts and bytes into the new run binding,
+   deducts them from the study's 3,000-request and 64 MiB caps, and records the prior
+   run in `provenance.prior_runs` (section 6).
+2. **Catalog coverage limitation.** Section 5 states explicitly that the trade-archive
+   file listing is not an input to this module; the counts reflect Bybit's
+   `instruments-info` catalog across `Trading`, `Delivering` and `Closed`.
+3. **New-perp launch counts (`instrument_launches`).** The report records aggregate
+   launch counts (symbols, bases and ISO weeks per window) from the deduplicated
+   instrument catalog (section 7).
 
 **Changes made while writing the code.** These come after the design discussion and
 are for the colleague's review of the code PR:
