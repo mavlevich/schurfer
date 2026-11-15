@@ -315,3 +315,9 @@ Read at: `27551c6` (main), consilium `7ba0e29`, PR #600 `a18f2c0`.
   - `USD 3,000–5,000` marked as a working calculation assumption and `31 bps` as a
     voluntary budget stop; `Stage 2C` paper screens (`I35`, `I36`) and the `cost-only`
     contract draft marked parallel to Step 0 / Stage 1.
+- **C on `Draft v2` (`99dbdee`) and B's Step-0 patch (`6ccd0db`):** C accepted `Draft v2`
+  of `plan.md` as the working basis with two minor wording refinements (`verdict == "feasible"`
+  for catalyst bucket progression and "illustration of cash outcome" for the 10–20% figure),
+  both applied in `plan.md`. B implemented the three Step-0 items on PR #600 in commit
+  `6ccd0db` (`instrument_launches` per window, `--prior-root` cumulative budget carry-over,
+  and the section 5 catalog coverage note; 57 tests, `ruff`, `mypy --strict` pass).
