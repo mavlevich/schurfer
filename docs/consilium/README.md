@@ -16,6 +16,8 @@ be questioned here.
 | [`state.md`](state.md)     | What is agreed, what is open, corrections, rules under question | anyone; one line per change, with a date |
 | [`ideas.md`](ideas.md)     | Every trading idea and lever, with its screen status            | anyone; add a row, never delete one      |
 | [`positions/`](positions/) | One file per participant and round: their own argument          | only its author                          |
+| [`reviews/`](reviews/)     | One file per code review of a PR under discussion               | only its author                          |
+| [`screens/`](screens/)     | One-hour paper screens of ideas; no data read                   | only its author                          |
 
 ## How to take part
 

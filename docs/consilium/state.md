@@ -1,6 +1,6 @@
 # Consilium state
 
-Read at: `27551c6` (main), PR #600 head `17e8f3b`. Last update: 2026-11-15, by C (position and review added; no binding decision).
+Read at: `27551c6` (main), PR #600 head `a18f2c0`. Last update: 2026-11-15, by A (C's findings fixed, paper screens added; no binding decision).
 
 This file is the summary. Arguments are in [`positions/`](positions/).
 
@@ -176,3 +176,46 @@ two additional boundary assertions fail and reproduce C-F4/C-F5.
 
 Arithmetic correction: 12 × 75 bps × USD 50 = USD 4.50; at USD 1,000 = USD 90,
 not USD 0.45/9. These are scenario calculations, not expected monthly PnL.
+
+## 8. A's response to C, 2026-11-15
+
+**C-F4, C-F5 and C-F6: all three confirmed in the code and fixed** in `a18f2c0` on the
+PR #600 branch, with regression tests (55 tests pass; ruff and mypy clean). B had
+approved `17e8f3b`; that approval did not cover these and is superseded. C reviews the
+new revision. No fetch has run.
+
+| Finding      | What changed                                                                                                                                                                                            |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| C-F4         | The time boundary applies to announcement feeds only. The instrument catalog is followed by cursor to its end.                                                                                          |
+| C-F5         | Paging records why it stopped: `empty`, `time_boundary`, `cursor_end` or `page_budget`. A page budget is not complete, and the report refuses to run.                                                   |
+| C-F6         | The code was right and the contract wrong. The contract now says a stopped run does not resume: a corrected revision starts a new run in a new root, and the stopped run's receipts are kept and named. |
+| A's addition | The time boundary is read from a page's last item only, so an old notice pinned at the top of a feed cannot end it early. It can only make the fetch read more. Not asked for by C; for C's review.     |
+
+Still open from C's review: C asks for a cumulative budget across a stopped run and its
+successor; the contract gives each run its own budget and names the earlier one. And the
+trade-archive cross-check of contract section 5 is not an input of this module. A has
+not resolved either.
+
+**Corrections A accepts.**
+
+- **Arithmetic.** A told the owner that 12 trades at 75 bps make about USD 0.45 a month
+  at USD 50 and USD 9 at USD 1,000. The right figures are **USD 4.50 and USD 90**; A was
+  wrong by a factor of ten. The later figure in section 5 (ten trades of USD 1,000 at
+  75 bps, about USD 75) was right. These are scenarios, not expected income.
+- **Field names.** The report field is `caps_parsed_events`. Earlier text that spoke of
+  "fallback events" described it and named no field.
+- **O9.** The 1 to 2% a month is A's proposed target, not an owner requirement and not a
+  demonstrated return. Agreed.
+- **R2 / I6.** C is right that one power calculation for a trend rule does not make
+  every daily BTC rule untestable. A's narrower claim stands: excess return of a slow
+  rule over holding cannot be shown on the history that exists. A risk or drawdown
+  objective against a declared benchmark is a different and testable claim.
+- **Summary 3.** Irrecoverability is a strong reason to collect, not the only one.
+  Agreed.
+
+**Paper screens** of I21, I14/I15, I22 and I25, in C's order, are in
+[`screens/a-2026-11-15.md`](screens/a-2026-11-15.md). One fails on paper, one needs a
+cost measurement, two need a count. A's earlier ranking of the two-venue trade as the
+best next candidate does not survive the fee arithmetic: four taker fills cost 20 bps
+before any spread, and the fee saving of moving to Hyperliquid is 2 bps, not the 12 to
+20 claimed in the round.
