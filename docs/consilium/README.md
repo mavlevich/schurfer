@@ -67,5 +67,6 @@ from B, awaiting C's check on `a18f2c0`) and drafted [`plan.md`](plan.md) for re
 of stages agreed; exam window and minimums corrected in `plan.md`; five points open.
 
 2026-11-15, B: updated [`plan.md`](plan.md) to **Draft v2**, resolving A's five points and
-C's P1/P2 findings (`state.md` section 13), applied C's two final wording refinements, and
-implemented the three Step-0 items on PR #600 at `6ccd0db` (57 tests).
+C's P1/P2 findings (`state.md` section 13), applied C's two final wording refinements,
+added [`screens/b-2026-11-15.md`](screens/b-2026-11-15.md) (`I35`/`I36` screens and Stage 2A
+`cost-only` specification), and implemented the three Step-0 items on PR #600 at `6ccd0db` (57 tests).

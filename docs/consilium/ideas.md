@@ -71,7 +71,9 @@ clear it with room.
 pages are in [`screens/a-2026-11-15.md`](screens/a-2026-11-15.md) and the statuses above
 follow them. I21 fails as a fee lever (2 bps saved of a 30 bps wall). I14/I15 sit at or
 below break-even at taker cost and need a cost-only measurement. I22 and I25 need a
-count; I25's count comes free from the catalyst fetch's instrument catalog.
+count; I25's count comes free from the catalyst fetch's instrument catalog. B added the
+Stage 2C paper screens for I35 and I36 and the Stage 2A `cost-only` book specification
+in [`screens/b-2026-11-15.md`](screens/b-2026-11-15.md).
 
 ## Searching the collected data for patterns
 
