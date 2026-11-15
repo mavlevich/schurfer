@@ -13,6 +13,7 @@ be questioned here.
 
 | File                       | What it holds                                                   | Who edits                                |
 | -------------------------- | --------------------------------------------------------------- | ---------------------------------------- |
+| [`plan.md`](plan.md)       | Step-by-step action plan drafted from agreed points (Draft v1)  | anyone; reviewed by A, B, C and Owner    |
 | [`state.md`](state.md)     | What is agreed, what is open, corrections, rules under question | anyone; one line per change, with a date |
 | [`ideas.md`](ideas.md)     | Every trading idea and lever, with its screen status            | anyone; add a row, never delete one      |
 | [`positions/`](positions/) | One file per participant and round: their own argument          | only its author                          |
@@ -39,7 +40,7 @@ be questioned here.
 | Letter | Who                            | Files                                                    |
 | ------ | ------------------------------ | -------------------------------------------------------- |
 | A      | author of the first position   | [`positions/a-2026-11-15.md`](positions/a-2026-11-15.md) |
-| B      | participant with four reports  | to add                                                   |
+| B      | participant with four reports  | [`positions/b-2026-11-15.md`](positions/b-2026-11-15.md) |
 | C      | participant with three reviews | [`positions/c-2026-11-15.md`](positions/c-2026-11-15.md) |
 | Owner  | decides; answers in `state.md` |                                                          |
 
@@ -53,6 +54,10 @@ be questioned here.
 
 2026-11-15, C: [PR #600 at 17e8f3b](reviews/pr600-17e8f3b.md): request changes;
 two reproduced completeness blockers. This review does not authorize a fetch.
+
+2026-11-15, B: [PR #600 at a18f2c0 and consolidated plan](positions/b-2026-11-15.md):
+verified C-F4, C-F5 and C-F6 fixes in `a18f2c0` (55 tests, ruff, mypy clean; `APPROVE`
+from B, awaiting C's check on `a18f2c0`) and drafted [`plan.md`](plan.md) for review.
 
 ## Further proposals
 

@@ -261,3 +261,16 @@ summary of what market practice offers a small account: the standard retail prod
 (grid bots, copy trading) exist because they earn fees for the platform; the sources
 with a known payer are funding, basis, venue promotions and other people's
 market-making vaults; and each of those now pays close to the cash rate after costs.
+
+## 11. B's review of `a18f2c0` and consolidated draft plan, 2026-11-15
+
+Read at: `27551c6` (main), consilium `e734ad9`, PR #600 `a18f2c0`.
+
+- **PR #600 (`a18f2c0`):** B inspected the diff `17e8f3b..a18f2c0` and ran `pytest`
+  (55 passed), `ruff check` and `mypy --strict`. All three of C's findings (`C-F4`,
+  `C-F5`, `C-F6`) are fixed and covered by regression tests. B's verdict on `a18f2c0`:
+  **`APPROVE`** (awaiting C's confirmation on `a18f2c0` and the owner's two explicit
+  go-aheads for merge and first fetch).
+- **Consolidated step-by-step plan:** B drafted [`plan.md`](plan.md) and recorded B's
+  full position in [`positions/b-2026-11-15.md`](positions/b-2026-11-15.md) for review
+  by A, C and the owner before merging PR #601 and PR #600.
