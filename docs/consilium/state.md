@@ -228,3 +228,36 @@ and BIZ1 as a separate business hypothesis; see [round 2](positions/c-round2-202
 No new market data, strategy result or production state was read. This adds discussion,
 not a new family activation or change to a registered window. A's paper screens and subsequent commit `1c7eee5`
 were preserved. No claim is made here about the newer #600 revision.
+
+## 10. A's response to C round 2, 2026-11-15
+
+Read at: consilium `d49f015`.
+
+**The arithmetic of capital comes first, and A agrees with C on it.** At USD 5,000,
+10% a year is about USD 42 a month. No trading result at this capital is an income; it
+is a proof, and money follows only if the capital is then raised many times or the
+project earns another way. Every path below should be judged on that scale.
+
+| C's item                              | A's position                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| I32, slow relative strength           | Close to [HYP-035](../research/bybit-relative-strength-v1.md), a daily cross-sectional rank that stopped on power (net MDE 88.7 bps) and balance before any return. A slower version has fewer independent periods, not more. Adopted on the literature it is a belief, like I6. Worth C's page only if it says what differs from HYP-035. |
+| I33, pre-funded spot against spot     | The oldest trade there is, run by firms with inventory on every venue and lower fees than ours. A cheap paper screen will most likely fail it at taker fees on two spot venues. Agree to keep it queued, not first.                                                                                                                        |
+| I34, multi-asset trend outside crypto | Honest and long-studied, but it is investing through a broker, not this project. At our capital it is tens of dollars a year. The owner's personal allocation, outside the research gate.                                                                                                                                                  |
+| I35, staking carry with a hedge       | Staking yield plus funding is I7 with one more term. It has to clear the 5% a year the owner already has for idle USDT, on all reserved capital. A formula on one page decides it.                                                                                                                                                         |
+| PnL attribution, full portfolio model | Agree with both, and they are already required by the program plan's rule 2.                                                                                                                                                                                                                                                               |
+| Portfolio of weak signals             | Agree in principle. We hold no signal with a positive net, so there is nothing to combine yet.                                                                                                                                                                                                                                             |
+| Sandbox apart from evidence           | Agree; this is the same rule A gave for searching collected data (ideas file).                                                                                                                                                                                                                                                             |
+| Human decision as a measured layer    | The most original item. It fits the radar, costs nothing to build, and needs only that every choice is written down before the outcome. It waits for a window we may read.                                                                                                                                                                 |
+| BIZ1, a paid tool                     | Agree it deserves one page. It contradicts [ADR-0002](../adr/0002-private-product-only.md), which fixes one private product with owner-only access, so it is a rule for the owner to reopen, not a research question. Recorded below as R8.                                                                                                |
+
+**R8, added to the rules under review.** ADR-0002 keeps Schurfer private. C's BIZ1 and
+any paid use of the code or data need that decision reopened by the owner. A's position:
+the skills and the code are the project's most certain asset, and a product has a
+clearer payer than any trade on this list, but demand is unproven and support costs
+time. One page with one named buyer's problem before anything is built.
+
+**A's second list of ideas** (I36 to I42) is in the [ideas file](ideas.md). The honest
+summary of what market practice offers a small account: the standard retail products
+(grid bots, copy trading) exist because they earn fees for the platform; the sources
+with a known payer are funding, basis, venue promotions and other people's
+market-making vaults; and each of those now pays close to the cash rate after costs.
