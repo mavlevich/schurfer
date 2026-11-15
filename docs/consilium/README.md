@@ -53,3 +53,7 @@ be questioned here.
 
 2026-11-15, C: [PR #600 at 17e8f3b](reviews/pr600-17e8f3b.md): request changes;
 two reproduced completeness blockers. This review does not authorize a fetch.
+
+## Further proposals
+
+2026-11-15, C: [round 2: additional trading and product income paths](positions/c-round2-2026-11-15.md).

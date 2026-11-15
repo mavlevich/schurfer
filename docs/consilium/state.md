@@ -219,3 +219,12 @@ cost measurement, two need a count. A's earlier ranking of the two-venue trade a
 best next candidate does not survive the fee arithmetic: four taker fills cost 20 bps
 before any spread, and the fee saving of moving to Hyperliquid is 2 bps, not the 12 to
 20 claimed in the round.
+
+## 9. C round 2, 2026-11-15
+
+Read at consortium `bd3fba8`. The owner asked to broaden income ideas without
+preserving earlier market/architecture constraints. C added I32–I35 (all unscreened)
+and BIZ1 as a separate business hypothesis; see [round 2](positions/c-round2-2026-11-15.md).
+No new market data, strategy result or production state was read. This adds discussion,
+not a new family activation or change to a registered window. A's paper screens and subsequent commit `1c7eee5`
+were preserved. No claim is made here about the newer #600 revision.
