@@ -65,6 +65,7 @@ ATTEMPTS_PER_PAGE = 3
 MAX_PAGES_PER_SERIES = 600
 
 MIN_CLUSTERS = {"discovery": 40, "holdout": 30}
+MIN_ANNOUNCEMENTS = {"discovery": 40, "holdout": 30}
 MIN_BASES = {"discovery": 20, "holdout": 15}
 MIN_WEEKS = {"discovery": 8, "holdout": 8}
 MIN_TIMED_SHARE = 0.90
@@ -501,6 +502,28 @@ STOP = frozenset(
         "BUSD",
     }
 )
+# All-caps tokens of exchange titles that are never an asset. Applied only to the
+# free-text parser below; a ticker in parentheses or in a ...USDT pair is explicit.
+CAPS_STOP = STOP | frozenset(
+    {
+        "AMA",
+        "APR",
+        "APY",
+        "CEX",
+        "DEX",
+        "EEA",
+        "ETF",
+        "EU",
+        "FAQ",
+        "KYC",
+        "OTC",
+        "P2P",
+        "UAE",
+        "UID",
+        "UK",
+        "US",
+    }
+)
 MULTIPLIER_PREFIX = re.compile(r"(?:10{2,}|1M)([A-Z0-9]+)")
 MULTIPLIER_SUFFIX = re.compile(r"([A-Z0-9]+?)10{2,}")
 
@@ -520,7 +543,7 @@ def _pairs(title: str) -> list[str]:
 
 def _caps(title: str) -> list[str]:
     tokens = {t[:-4] if t.endswith("USDT") and len(t) > 4 else t for t in CAPS.findall(title)}
-    return sorted({asset(t) for t in tokens if t not in STOP and not t.isdigit()})
+    return sorted({asset(t) for t in tokens if t not in CAPS_STOP and not t.isdigit()})
 
 
 def _parens(title: str) -> list[str]:
@@ -529,39 +552,57 @@ def _parens(title: str) -> list[str]:
 
 def classify(source: str, series: str, item: dict[str, Any]) -> tuple[str, list[str]]:
     """Bucket (or 'other') and the base assets. Patterns are fixed before any count."""
+    bucket, bases, _ = classify_parsed(source, series, item)
+    return bucket, bases
+
+
+def classify_parsed(source: str, series: str, item: dict[str, Any]) -> tuple[str, list[str], str]:
+    """As classify, plus how the bases were read: 'explicit' or 'caps'.
+
+    'explicit' is a ticker in parentheses or a ...USDT pair. 'caps' is the free-text
+    parser, which reads every all-caps token after the title's key phrase and can
+    therefore take an ordinary word for a ticker; the report counts its events.
+    """
     title = str(item.get("title", ""))
     if source == "binance":
         catalog = series.split(":", 1)[1]
         if catalog == "48":
             if re.search(r"\bWill List\b", title):
-                return "A1", _parens(title) or _caps(title.split("Will List", 1)[1])
+                explicit = _parens(title)
+                if explicit:
+                    return "A1", explicit, "explicit"
+                return "A1", _caps(title.split("Will List", 1)[1]), "caps"
             if re.search(r"Futures Will Launch", title) and "Perpetual" in title:
-                return "A2", _pairs(title)
+                return "A2", _pairs(title), "explicit"
         elif catalog == "161":
             if re.search(r"\bWill Delist\b", title):
-                return "A3", _pairs(title) or _caps(title.split("Will Delist", 1)[1])
+                explicit = _pairs(title)
+                if explicit:
+                    return "A3", explicit, "explicit"
+                return "A3", _caps(title.split("Will Delist", 1)[1]), "caps"
         elif catalog == "49" and "Monitoring Tag" in title and not re.search(r"Remov", title):
-            return "A3", _caps(title)
-        return "other", []
+            # Only the text after the phrase: the words before it are never the list.
+            return "A3", _caps(title.split("Monitoring Tag", 1)[1]), "caps"
+        return "other", [], "explicit"
     if source == "upbit":
         listing = "디지털 자산 추가" in title or "신규 거래지원" in title
         market = "원화" in title or "KRW" in title or "USDT" in title
         if listing and market:
-            return "A1", _parens(title)
+            return "A1", _parens(title), "explicit"
         warning = ("유의 종목 지정" in title or "유의종목 지정" in title) and "해제" not in title
         if "거래지원 종료" in title or warning:
-            return "A3", _parens(title)
-        return "other", []
+            return "A3", _parens(title), "explicit"
+        return "other", [], "explicit"
     if source == "bybit":
         kind = series.split(":", 1)[1]
         if kind == "delistings" and re.search(r"perpetual|contract", title, re.I):
-            return "A4d", _pairs(title)
+            return "A4d", _pairs(title), "explicit"
         if kind == "product_updates":
             if re.search(r"funding (rate |fee )?(settlement )?(interval|frequency)", title, re.I):
-                return "A4f", _pairs(title)
+                return "A4f", _pairs(title), "explicit"
             if re.search(r"risk limit|leverage", title, re.I):
-                return "A4r", _pairs(title)
-        return "other", []
+                return "A4r", _pairs(title), "explicit"
+        return "other", [], "explicit"
     raise ValueError(source)
 
 
@@ -616,14 +657,16 @@ def articles(receipts: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
             if key in seen:
                 continue
             ms = canonical_ms(source, item)
-            bucket, bases = classify(source, r["series"], item)
+            bucket, bases, parser = classify_parsed(source, r["series"], item)
             seen[key] = {
                 "source": source,
+                "series": r["series"],
                 "id": key[1],
                 "announced_ms": ms,
                 "window": window_of(ms),
                 "bucket": bucket,
                 "bases": bases,
+                "parser": parser,
                 "effective_ms": effective_ms(str(item.get("title", ""))),
                 "machine_ms": other_machine_ms(source, item),
                 "author_ms": author_ms(source, item),
@@ -677,11 +720,17 @@ def source_quality(rows: list[dict[str, Any]]) -> dict[str, Any]:
     effective = [a for a in rows if a["effective_ms"] is not None]
     whole_share = whole / n if n else None
     edit_share = edits / len(with_other) if with_other else None
-    discord = discordant_share(rows)
+    # Ids are compared only within one catalog: a draft of one catalog can be created
+    # long before another catalog's article that is published first.
+    by_series: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for a in rows:
+        by_series[a["series"]].append(a)
+    discord_by_series = {k: discordant_share(v) for k, v in sorted(by_series.items())}
+    observed = [d for d in discord_by_series.values() if d is not None]
+    order_check_failed = any(d > MAX_DISCORDANT_SHARE for d in observed)
     timed = bool(n) and whole_share is not None and whole_share <= MAX_WHOLE_MINUTE_SHARE
-    provenance_ok = (edit_share is None or edit_share <= MAX_EDIT_SHARE) and (
-        discord is None or discord <= MAX_DISCORDANT_SHARE
-    )
+    edit_check_failed = edit_share is not None and edit_share > MAX_EDIT_SHARE
+    provenance_ok = not edit_check_failed and not order_check_failed
     return {
         "articles": n,
         "whole_minute_share": whole_share,
@@ -689,7 +738,11 @@ def source_quality(rows: list[dict[str, Any]]) -> dict[str, Any]:
         "machine_edit_share": edit_share,
         "machine_edit_observable": bool(with_other),
         "author_time_differs_share": author_diff / len(authored) if authored else None,
-        "id_order_discordant_share": discord,
+        "id_order_discordant_share": max(observed) if observed else None,
+        "id_order_discordant_by_series": discord_by_series,
+        "id_order_discordant_pooled": discordant_share(rows),
+        "edit_check_failed": edit_check_failed,
+        "order_check_failed": order_check_failed,
         "effective_before_announced_share": (
             sum(1 for a in effective if a["effective_ms"] < a["announced_ms"]) / len(effective)
             if effective
@@ -741,6 +794,7 @@ def bucket_window(
                         "base": base,
                         "symbol": symbol,
                         "bucket": bucket,
+                        "parser": a["parser"],
                     }
                 )
     clusters = {(e["base"], e["announced_ms"] // DAY_MS) for e in events}
@@ -754,6 +808,8 @@ def bucket_window(
         "events": len(events),
         "events_by_source": dict(Counter(e["source"] for e in events)),
         "clusters": len(clusters),
+        "announcements": len({(e["source"], e["id"]) for e in events}),
+        "caps_parsed_events": sum(1 for e in events if e["parser"] == "caps"),
         "bases": len({e["base"] for e in events}),
         "weeks": len({iso_week(e["announced_ms"]) for e in events}),
         "ambiguous_share": status["identity_ambiguous"] / denominator if denominator else None,
@@ -766,6 +822,7 @@ def bucket_window(
 def passes(stats: dict[str, Any], window: str) -> bool:
     return (
         stats["clusters"] >= MIN_CLUSTERS[window]
+        and stats["announcements"] >= MIN_ANNOUNCEMENTS[window]
         and stats["bases"] >= MIN_BASES[window]
         and stats["weeks"] >= MIN_WEEKS[window]
         and (stats["timed_share"] or 0.0) >= MIN_TIMED_SHARE
@@ -791,6 +848,8 @@ HOLDOUT_FIELDS = (
     "status",
     "events",
     "clusters",
+    "announcements",
+    "caps_parsed_events",
     "bases",
     "weeks",
     "ambiguous_share",

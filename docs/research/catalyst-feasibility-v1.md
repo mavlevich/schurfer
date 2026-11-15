@@ -75,12 +75,17 @@ must not hide a small number of real delistings, so each has its own verdict.
 - events on a base with no live Bybit USDT perp at announcement time;
 - launchpools, airdrops, competitions, earn and campaign notices, unless the same
   article is itself a listing in A1 or A2;
-- articles that list several bases count once per base. Each base is a separate event;
-  the cluster rule below keeps them from counting as independent.
+- articles that list several bases count once per base. Each base is a separate event
+  and its own cluster, but the bases of one article are one announcement (below).
 
 **Clusters.** One cluster per base asset and UTC day, within a bucket. If Binance and
-Upbit list the same base on the same day, that is two events and one cluster. All
-minimums are on clusters.
+Upbit list the same base on the same day, that is two events and one cluster.
+
+**Announcements.** One announcement per article (`source`, article id), within a
+bucket. One article about 25 perps is 25 events, 25 clusters and one announcement: it
+is one piece of news at one moment. Clusters guard against one base counted twice;
+announcements guard against one article counted many times. The minimums are on both
+(section 7).
 
 ## 4. Timestamps and provenance
 
@@ -113,7 +118,13 @@ For every source the study reports, per window:
    than 60 s. Only machine-set times gate the verdict (section 7); author-filled times
    are reported only.
 3. **Order consistency.** The share of article pairs where id order and `announced_at`
-   order disagree. Backdated or republished articles show up here.
+   order disagree. Backdated or republished articles show up here. Pairs are compared
+   only within one catalog or type of a source (for Binance: 48, 161 and 49 apart). Ids
+   of different catalogs need not follow publication order: if an id is set when a
+   draft is created, a notice drafted days ahead would disagree with a later listing
+   without any backdating. How the publisher assigns ids is not known, so this is a
+   precaution, not a finding. The gate is the largest per-catalog share; the pooled
+   share is reported beside it and gates nothing.
 4. **Effective after announced.** The share of events with `effective_at` before
    `announced_at`; such events are flagged, not dropped.
 
@@ -220,7 +231,8 @@ pages dated on or after 2026-09-29 pass through pagination. The guards:
 
 Per bucket, source and window, the report gives:
 
-- articles, events and clusters;
+- articles, events, clusters and announcements;
+- the number of events whose bases came from the free-text title parser (below);
 - distinct bases and ISO weeks;
 - the counts for `not_timed`, `no_live_perp` and `identity_ambiguous`;
 - the precision, edit, order and effective-time shares from section 4.
@@ -243,6 +255,7 @@ candidate at all are `no_live_perp` and are outside this denominator.
 | Per bucket                                     | Discovery year | Backward holdout |
 | ---------------------------------------------- | -------------: | ---------------: |
 | Countable clusters                             |           ≥ 40 |             ≥ 30 |
+| Distinct announcements                         |           ≥ 40 |             ≥ 30 |
 | Distinct bases                                 |           ≥ 20 |             ≥ 15 |
 | ISO weeks with at least one cluster            |            ≥ 8 |              ≥ 8 |
 | Share of articles `timed`                      |          ≥ 90% |            ≥ 90% |
@@ -261,8 +274,13 @@ at discovery-year titles only.
 1. `not_reconstructible`: no source of the bucket is `timed` in the discovery year.
 2. `provenance_unproven`: every `timed` source of the bucket fails provenance in the
    discovery year. A source fails if its canonical time differs from another
-   machine-set time of the same article by more than 60 s in over 10% of articles, or
-   if id order and time order disagree in over 5% of article pairs.
+   machine-set time of the same article by more than 60 s in over 10% of articles
+   (`edit_check_failed`), or if id order and time order disagree in over 5% of article
+   pairs within any one catalog (`order_check_failed`). The report names which check
+   failed. A failed order check is evidence that ids and times disagree, not proof of
+   an edit. The source is still dropped from this study; whether a second check on a
+   fixed sample of articles may readmit it is a separate amendment, written before
+   that check is run.
 3. `insufficient_events`: the discovery-year minimums fail.
 4. `lab_only`: the discovery-year minimums pass but the holdout minimums fail. A
    laboratory read could then be confirmed only on forward data after v2's terminal
@@ -275,6 +293,15 @@ at discovery-year titles only.
 - `stop_direction_a` otherwise.
 
 A `lab_only` bucket goes forward only on the owner's separate decision.
+
+**Title parsing.** A base is read in one of two ways, fixed in the code. `explicit`: a
+ticker in parentheses or a `...USDT` pair. `caps`: every all-caps token after the
+title's key phrase (`Will List`, `Will Delist`, `Monitoring Tag`), used where the title
+has no explicit form. The free-text parser can take an ordinary all-caps word for a
+ticker, and that word becomes an event if a live Bybit perp has the same name. Three
+limits: it reads only the text after the key phrase; non-asset acronyms are dropped by
+a fixed list; and the report counts its events per bucket and marks them in the
+discovery-year list, so its exposure is visible before any verdict is trusted.
 
 **Corrections.** One corrective recount is allowed after the verdict, for a parser or
 identity defect only. It is disclosed, and it must not change the minimums.
@@ -291,6 +318,12 @@ identity defect only. It is disclosed, and it must not change the minimums.
   effect of that size, so the bucket is `lab_only`.
 - **The 300 bps standard deviation** is a planning assumption, not a measurement. The
   laboratory protocol replaces it with one fixed before its read.
+- **Announcements.** The same floors as clusters. A bucket of bulk service articles
+  (A4r, A4f, monitoring tags) can reach 40 clusters from a handful of moments; the
+  planning MDE above assumes 40 independent observations, which only distinct
+  announcements can supply. This is a floor on the material, not a claim that 40
+  announcements are independent of the market day; the laboratory protocol fixes its
+  own dependence model.
 - **Bases and weeks.** These guard against one hot coin or one hot month.
 
 ## 9. What happens next
@@ -369,6 +402,23 @@ what changed:
 
 The delay grid for a later laboratory read (1 to 5 s on the trade tape against 5, 30
 and 60 s) stays for the protocol discussion.
+
+**Review of the code PR, 2026-11-15.** Three findings, all fixed before any fetch or
+count:
+
+1. **Bulk articles counted as independent clusters.** Section 3 said the cluster rule
+   kept the bases of one article from counting as independent; it did not. Added the
+   announcement count and its floors (sections 3, 7 and 8). The reviewer's example of
+   two or three articles passing was too strong, since 8 ISO weeks were already
+   required, but eight bulk articles over eight weeks did pass.
+2. **Order check pooled across catalogs.** It compared ids of all three Binance
+   catalogs with each other. Now per catalog (section 4). The reviewer proposed
+   lowering it to a diagnostic; it stays a gate, because for a source with one machine
+   time it is the only evidence on edits.
+3. **Free-text title parser.** For monitoring tags it read the whole title. Now it
+   reads only after the key phrase, drops a fixed list of acronyms and is counted in
+   the report (section 7). A ticker that is also a word (`ID`, `AI`) is not put on the
+   stop list: it is a real listed asset and must stay readable.
 
 **Changes made while writing the code.** These come after the design discussion and
 are for the colleague's review of the code PR:

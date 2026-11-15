@@ -233,6 +233,24 @@ def test_classify(source: str, series: str, title: str, bucket: str, bases: list
     assert cf.classify(source, series, {"title": title}) == (bucket, bases)
 
 
+def test_free_text_parser_reads_only_after_the_key_phrase() -> None:
+    # An all-caps word before the phrase is never part of the list, and a non-asset
+    # acronym after it is dropped. Both would otherwise match a live perp by name.
+    title = "Binance AI Desk Will Extend Monitoring Tag to Include AERGO and ALPACA for EEA Users"
+    assert cf.classify_parsed("binance", "binance:49", {"title": title}) == (
+        "A3",
+        ["AERGO", "ALPACA"],
+        "caps",
+    )
+    listed = cf.classify_parsed("binance", "binance:48", {"title": "Binance Will List Sonic (S)"})
+    assert listed == ("A1", ["S"], "explicit")
+    spot = {"title": "Binance Will Delist ANT, MULTI, VAI on 2024-02-20"}
+    assert cf.classify_parsed("binance", "binance:161", spot)[2] == "caps"
+    # A real ticker that is also a word stays readable where the form is explicit.
+    explicit = cf.classify_parsed("binance", "binance:48", {"title": "Binance Will List ID (ID)"})
+    assert explicit == ("A1", ["ID"], "explicit")
+
+
 @pytest.mark.parametrize(
     ("ticker", "base"),
     [("1000PEPE", "PEPE"), ("1000000MOG", "MOG"), ("SHIB1000", "SHIB"), ("1INCH", "1INCH")],
@@ -267,6 +285,7 @@ def test_live_status() -> None:
 def article(**kw: Any) -> dict[str, Any]:
     base = {
         "source": "binance",
+        "series": "binance:48",
         "id": "1",
         "announced_ms": IN_DISCOVERY,
         "window": "discovery",
@@ -275,6 +294,7 @@ def article(**kw: Any) -> dict[str, Any]:
         "effective_ms": None,
         "machine_ms": [],
         "author_ms": None,
+        "parser": "explicit",
     }
     return base | kw
 
@@ -305,6 +325,32 @@ def test_source_quality_whole_minutes_edits_and_order() -> None:
         for i in range(5)
     ]
     assert cf.source_quality(authored)["provenance_ok"]  # author times never gate
+
+
+def test_order_check_compares_ids_only_within_one_catalog() -> None:
+    # Catalog 161 drafts carry low ids but are published after catalog 48's articles.
+    # Each catalog is in order; only the pooled comparison disagrees.
+    listings = [
+        article(series="binance:48", id=str(100 + i), announced_ms=IN_DISCOVERY + i * 1_000)
+        for i in range(6)
+    ]
+    delistings = [
+        article(series="binance:161", id=str(i), announced_ms=IN_DISCOVERY + DAY + i * 1_000)
+        for i in range(6)
+    ]
+    quality = cf.source_quality(listings + delistings)
+    assert quality["id_order_discordant_pooled"] == pytest.approx(36 / 66)
+    assert quality["id_order_discordant_by_series"] == {"binance:161": 0.0, "binance:48": 0.0}
+    assert quality["id_order_discordant_share"] == 0.0
+    assert not quality["order_check_failed"]
+    assert quality["provenance_ok"]
+
+    delistings[0] = delistings[0] | {"id": "99"}  # disorder inside one catalog still fails
+    failed = cf.source_quality(listings + delistings)
+    assert failed["id_order_discordant_by_series"]["binance:161"] == pytest.approx(5 / 15)
+    assert failed["order_check_failed"]
+    assert not failed["edit_check_failed"]
+    assert not failed["provenance_ok"]
 
 
 # ---------------------------------------------------------------- report
@@ -347,6 +393,8 @@ def test_report_feasible_lab_only_and_holdout_privacy() -> None:
     a2 = public["buckets"]["A2"]
     assert a2["verdict"] == "feasible"
     assert a2["discovery"]["clusters"] == 40
+    assert a2["discovery"]["announcements"] == 40
+    assert a2["discovery"]["caps_parsed_events"] == 0
     assert set(a2["holdout"]) == set(cf.HOLDOUT_FIELDS)
     assert a2["holdout"]["clusters"] == 30
     assert public["outcome"] == "continue_to_lab_protocol"
@@ -363,6 +411,47 @@ def test_report_feasible_lab_only_and_holdout_privacy() -> None:
     public, _ = cf.report(receipts_for({"binance:48": short_holdout + discovery}, perps))
     assert public["buckets"]["A2"]["verdict"] == "lab_only"
     assert public["outcome"] == "stop_direction_a"
+
+
+def test_bulk_articles_do_not_pass_as_independent_announcements() -> None:
+    # Eight articles over eight weeks, five perps each: 40 clusters, 40 bases and 8
+    # weeks all pass, but there are only eight independent announcements.
+    start = ms("2024-10-07T00:00:00")
+    rows = [
+        {
+            "id": 1_000 + week,
+            "title": "Binance Futures Will Launch USDⓈ-M "
+            + " and ".join(f"B{week * 5 + k}USDT" for k in range(5))
+            + " Perpetual Contracts",
+            "releaseDate": start + week * 7 * DAY + 1_234 + week,
+        }
+        for week in range(8)
+    ]
+    perps = [perp(f"B{i}USDT", ms("2022-01-01T00:00:00")) for i in range(40)]
+    public, _ = cf.report(receipts_for({"binance:48": rows}, perps))
+    a2 = public["buckets"]["A2"]
+    assert a2["discovery"]["clusters"] == 40
+    assert a2["discovery"]["bases"] == 40
+    assert a2["discovery"]["weeks"] == 8
+    assert a2["discovery"]["announcements"] == 8
+    assert a2["verdict"] == "insufficient_events"
+
+
+def test_report_counts_events_read_by_the_free_text_parser() -> None:
+    rows = [
+        {
+            "id": 1,
+            "title": "Binance Will Extend Monitoring Tag to Include B0 and B1",
+            "releaseDate": ms("2024-10-07T00:00:00") + 1_234,
+        }
+    ]
+    perps = [perp(f"B{i}USDT", ms("2022-01-01T00:00:00")) for i in range(2)]
+    public, _ = cf.report(receipts_for({"binance:49": rows}, perps))
+    a3 = public["buckets"]["A3"]["discovery"]
+    assert a3["events"] == 2
+    assert a3["announcements"] == 1
+    assert a3["caps_parsed_events"] == 2
+    assert {e["parser"] for e in public["discovery_events"]} == {"caps"}
 
 
 def test_report_counts_ambiguous_and_missing_perps() -> None:
