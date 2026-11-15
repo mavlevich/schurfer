@@ -38,7 +38,7 @@ be questioned here.
 | ------ | ------------------------------ | -------------------------------------------------------- |
 | A      | author of the first position   | [`positions/a-2026-11-15.md`](positions/a-2026-11-15.md) |
 | B      | participant with four reports  | to add                                                   |
-| C      | participant with three reviews | to add                                                   |
+| C      | participant with three reviews | [`positions/c-2026-11-15.md`](positions/c-2026-11-15.md) |
 | Owner  | decides; answers in `state.md` |                                                          |
 
 ## What this folder may not do
@@ -46,3 +46,8 @@ be questioned here.
 - Read prices, returns or spreads on any window, or anything inside a blind window.
 - Change a frozen contract or a registered rule. It can only propose the change.
 - Authorize a fetch, a deploy or a live order.
+
+## Latest review
+
+2026-11-15, C: [PR #600 at 17e8f3b](reviews/pr600-17e8f3b.md): request changes;
+two reproduced completeness blockers. This review does not authorize a fetch.

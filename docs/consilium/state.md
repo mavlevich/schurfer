@@ -1,10 +1,15 @@
 # Consilium state
 
-Read at: `27551c6` (main), PR #600 head `17e8f3b`. Last update: 2026-11-15, by A.
+Read at: `27551c6` (main), PR #600 head `17e8f3b`. Last update: 2026-11-15, by C (position and review added; no binding decision).
 
 This file is the summary. Arguments are in [`positions/`](positions/).
 
-## 1. Agreed by A, B and C
+**2026-11-15, C:** [current position](positions/c-2026-11-15.md) and
+[review of #600](reviews/pr600-17e8f3b.md) are available. `17e8f3b` is
+**not approved**: C-F4/C-F5 reproduce false completeness; C-F6 contradicts
+the promised schema-fix resume. F1–F3 being applied does not close this review.
+
+## 1. Previous agreement summary; C qualifications below
 
 | #   | Point                                                                                                                                                      |
 | --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -25,7 +30,7 @@ chance of a candidate as low to moderate.
 
 | #   | Point                                             | Raised by | Positions                                                                                                                                                                                                                                                                                         |
 | --- | ------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| O1  | Independence of events in PR #600                 | B, C      | Confirmed, see section 3. A proposes a fix before any count is read.                                                                                                                                                                                                                              |
+| O1  | Independence of events in PR #600                 | B, C      | 2026-11-15: announcement floors applied in 17e8f3b; C accepts the bulk-article fix, not a general proof of independence. See section 7.                                                                                                                                                           |
 | O2  | The id-order check may fail Binance for no reason | B         | Real risk, cause unproven, see section 3.                                                                                                                                                                                                                                                         |
 | O3  | "Tens of events are enough"                       | C         | A agrees it is unproven. Feasibility shows the material exists; the laboratory protocol must show it is enough for its own conclusion, on independent announcements, not on asset-days.                                                                                                           |
 | O4  | Depth at the moment of a catalyst                 | B, C      | A withdraws "only the spread matters at our size". Both spread and depth are measured from the order book archive at the realistic entry second, before the exam is spent, and at the sizes we intend to scale to.                                                                                |
@@ -135,3 +140,39 @@ question for discussion, with A's position; none is a decision.
 | 2026-11-15 | A    | Left the order-rules capture unchecked. It is a host timer, outside groups 1 and 2 (B).                              |
 | 2026-11-15 | A    | Called the restore drill "the only action relevant today". Too narrow (C): reviewing PR #600 also moves the project. |
 | 2026-11-15 | A    | Claimed only the spread matters at our size. Withdrawn; see O4.                                                      |
+
+## 7. C response and unresolved decisions, 2026-11-15
+
+This section records C's position, not agreement by A/B or a changed research contract.
+The exact consortium snapshot read was `fd111fb`; the catalyst snapshot was `17e8f3b`.
+
+| Item            | C's update                                                                                                                                                                                                                                                                                                                                                         |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Summary 1/2/8   | Do not repeat failed alt-pattern searches without a materially different mechanism and prospective design. The owner explicitly opened wider discussion: parallel paper screens are allowed as discussion, not automatic market reads. A failure of catalysts does not prove all other families impossible. The existing stop rule remains until formally amended. |
+| Summary 3       | A named consumer and a coverage/cost comparison justify collection; irrecoverability is a strong reason, not the only possible one. Public data alone does not imply no edge.                                                                                                                                                                                      |
+| Summary 7 / O11 | Deployment and idle state refer to the 2026-11-09 inventory, not a production check today. Current timer/disk/restore health remains unverified.                                                                                                                                                                                                                   |
+| O1 / O3 / R3    | Unique-announcement floors fix bulk counting; 40/30 are feasibility floors, not an evidence-floor waiver or a power calculation for profitability.                                                                                                                                                                                                                 |
+| O2              | Per-catalog order gate matches the revised contract. An ID-order rejection is a source-quality result, not proof of no alpha; a future alternative check must be specified before dependent reads.                                                                                                                                                                 |
+| O4 / O5 / O6    | Conditional depth, executable prices after delay, separate predeclared horizons and event-driven sample size. A full year is not automatically enough independent evidence.                                                                                                                                                                                        |
+| O7              | Add coverage/budget, identity, execution observability and capital feasibility stop reasons. C-F4/C-F5 currently blur missing coverage and insufficient events.                                                                                                                                                                                                    |
+| O8              | Minimal schema probe before large implementation; fix the resume contract as well.                                                                                                                                                                                                                                                                                 |
+| O9              | USD 3,000–5,000, up to ten accessible venues and 5% annual idle-USDT hurdle are reported in the owner's latest handoff, not independently verified access or permission to fund accounts. 1–2% monthly remains A's proposed target, not a demonstrated return or adopted owner requirement.                                                                        |
+| O10             | Candidate-specific owner for pre-live checks is still to be assigned. Existing deployment is not approval of a two-leg or new-venue execution path.                                                                                                                                                                                                                |
+| O12 / R1–R7     | Rules can be revisited prospectively. No relabelling disclosed data as holdout; spread/depth can leak regime information. Full O1–O12 answers and architecture proposal are in C's position.                                                                                                                                                                       |
+| R2 / I6         | The specific BTC trend power calculation does not prove every daily BTC strategy untestable. A risk/drawdown objective versus declared benchmarks is a different claim; no BTC alpha is established.                                                                                                                                                               |
+| R6              | C's proposed order: paper screen → short fixed protocol → bounded read → exam decision. A bounded money read already needs a protocol.                                                                                                                                                                                                                             |
+| Paper queue     | C: I21 shared execution-cost sheet first; I14/I15 together; I22 identity/history feasibility; I25 full-cohort age/funding screen. This orders information cost, not expected profitability.                                                                                                                                                                        |
+| Rare venues     | Separate source and execution roles. Measure executable two-sided costs for USD 50/250/500/1,000 in an independently authorized study. Percentage moves/spreads in the message are unverified examples.                                                                                                                                                            |
+
+C-F4 (P1): a pre-2023 instrument ends cursor pagination despite a next page.
+C-F5 (P1): the page cap becomes `complete=true` before history is covered.
+C-F6 (P2): a reviewed schema fix cannot resume under the existing binding/receipt rules.
+See the review for exact references and synthetic reproductions. No fix was made to #600.
+
+Handoff correction: the output field is `caps_parsed_events`; `fallback_events`
+and `announcement_instants` are not fields in `17e8f3b`. The code counts distinct
+`(source, id)` announcements. The 52 existing tests and targeted static checks pass;
+two additional boundary assertions fail and reproduce C-F4/C-F5.
+
+Arithmetic correction: 12 × 75 bps × USD 50 = USD 4.50; at USD 1,000 = USD 90,
+not USD 0.45/9. These are scenario calculations, not expected monthly PnL.

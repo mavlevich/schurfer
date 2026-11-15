@@ -1,6 +1,6 @@
 # Consilium ideas and levers
 
-Read at: `27551c6` (main). Last update: 2026-11-15, by A.
+Read at: `27551c6` (main). Last update: 2026-11-15, by C (qualifications and I30/I31 added).
 
 One row per idea. Add a row; never delete one, change its status. Every idea goes
 through the same one-hour paper screen before anything is built:
@@ -8,7 +8,7 @@ through the same one-hour paper screen before anything is built:
 1. **Mechanism:** who loses the money we would make, and why they keep losing it.
 2. **Size:** expected gross effect per trade against the cost, as a multiple.
 3. **Count:** independent events per year and the resulting MDE.
-4. **Ours:** why this is reachable at retail latency, on Bybit, at our size.
+4. **Ours:** why this is reachable at retail latency, on the proposed accessible venue(s), at our size.
 5. **Data:** what it needs and whether an archive already has it.
 
 Status values: `unscreened`, `paper_fail`, `paper_pass`, `active`, `read_fail`,
@@ -47,6 +47,8 @@ Status values: `unscreened`, `paper_fail`, `paper_pass`, `active`, `read_fail`,
 | I27 | A3: same asset, USDT perp against USDC perp on Bybit                                 | Traders confined to one margin currency                                            | Small effect, one venue, almost no market risk. Two legs of cost.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | `unscreened`        |
 | I28 | A4: passive quotes on Hyperliquid's long tail                                        | Impatient takers pay the spread                                                    | A different game: earning the spread, not predicting direction. Main risk is being filled when the price runs away.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `unscreened`        |
 | I29 | A5: neutral turnover for token distributions                                         | Venues pay for activity                                                            | Not a trading edge and not predictable. Listed because money has been there.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | `parked`            |
+| I30 | C: announced index constituent changes                                               | Index-following portfolios trade to meet a deadline                                | `2026-11-15, C`: unmeasured hypothesis; first establish an official schedule, tradable constituents and material tracking capital. Effect and annual independent-event count unknown. See C's position.                                                                                                                                                                                                                                                                                                                                                                                                     | `unscreened`        |
+| I31 | C: calendar spread between dated futures                                             | Different hedging and roll demand across maturities                                | `2026-11-15, C`: distinct from I26 spot/future carry; four fills, term-basis and settlement risk. Quarterly roll design offers four windows per asset/year if available, not four independent profitable opportunities. Access/archives unknown.                                                                                                                                                                                                                                                                                                                                                            | `unscreened`        |
 
 Rows I15 to I24 are participant B's blind-round list (B1 to B10), I25 to I29 are
 participant A's. The effect sizes in both lists are the authors' estimates. A's comment
@@ -79,3 +81,41 @@ Asked by the owner on 2026-11-15. A's position:
 | Longer horizon    | Shrink the cost relative to the move                                       | Be tested on two clean years                                                   |
 | More data capture | Preserve what no archive holds (delivery times, own fills, catalog states) | Find an edge in data everyone already has                                      |
 | Machine learning  | Add to a simple rule that already passes                                   | Replace one; more flexibility on a year seen 124 times raises the overfit risk |
+
+## C qualifications and screening order, 2026-11-15
+
+The rows above retain A/B's original claims and recorded failures. The following
+qualifications are part of the current state, not optional evidence of profitability.
+C's six candidates/refinements, including mechanisms, cost hurdles, event-count
+unknowns and data needs, are in [C's position](positions/c-2026-11-15.md).
+This was not a blind brainstorm: C had read I1–I29.
+
+| Rows      | Qualification                                                                                                                                                                                                             |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| I3        | Publicly scheduled does not mean impossible alpha. Some projects publish primary unlock information; provenance must be checked per candidate. No new unlock study is authorized.                                         |
+| I6        | `untestable` is the earlier position about the cited trend test. C disputes extending it to every daily BTC rule. A risk-management goal versus cash/BTC is a different test, not proof of excess return.                 |
+| I7 / I19  | Keep the recorded screen failure. Do not silently extend it to all fee tiers, funding mechanisms, venues or capital structures; any materially new proposal needs its own prospective screen.                             |
+| I14 / I15 | Treat as one family for attempt budgeting. Access is now reported by the owner; margin, native identity, synchronized fills and forward funding remain unverified.                                                        |
+| I17       | A shorter interval does not alone multiply daily funding. Normalize the actual rate and payment schedule; the rate can change with the interval.                                                                          |
+| I21       | Shared cost lever, not a standalone signal. Compare actual account/instrument fees and native executable prices. Replacing Bybit's fee inside a Bybit backtest is not a Hyperliquid backtest.                             |
+| I22 / I25 | Annual independent-event counts and expected direction remain unknown. Large realised swings do not establish attainable return. Include failed/delisted instruments and funding; distinct tickers can share one episode. |
+| I23       | No historical positions endpoint is not proof that every relevant historical artifact is absent. Official HL docs describe L2/fills archives; whether they reconstruct this mechanism remains unverified.                 |
+| I26 / I27 | Convergence/collateral structure is not risk-free. Include both legs, settlement, collateral currency, margin, forced exits and venue failure; lack of directional delta does not eliminate these risks.                  |
+| I28       | Count inventory losses, adverse selection and missed fills. Maker is a separately testable execution design; prior momentum failures are not a universal impossibility theorem.                                           |
+
+C proposes paper-screen order **I21 → I14/I15 → I22 → I25**, prioritizing cheap
+feasibility questions, not ranking expected profits. I30/I31 stay in the backlog.
+Expected effect and independent-event counts must remain `unknown` until supported;
+provide a break-even hurdle and the smallest authorized measurement instead of a
+fabricated expected bps number.
+
+Qualifications to the lever table: capital can change fixed-cost share, minimum
+feasible position and sometimes fee tier; impact can worsen. Longer horizons and
+public data are not inherently untestable/useless. ML need not wait for a profitable
+simple signal, but requires a mechanism, bounded search, simple benchmarks and honest
+untouched evaluation. None of these qualifications rescues an already failed test.
+
+For less common venues, first assign a role (source, price reference, execution leg),
+then specify a bounded, permitted-window VWAP/depth/latency/funding study at
+USD 50/250/500/1,000. A paper screen reads documentation; actual spread measurements
+are a new data read requiring their own contract. See C's position for the design.
