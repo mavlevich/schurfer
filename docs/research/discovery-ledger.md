@@ -245,3 +245,15 @@ effect cannot be confirmed on a test year of similar size. Taker v1 is closed
 on its negative result; the frozen maker version is not run. The HYP-031 test
 year stays unread and unassigned. Reopen only on new independent evidence of
 an execution edge, not a repeat on the discovery year.
+
+### HYP-036 economic pilot `hyp036-econ-v1`: stop spending, 2026-11-14
+
+[Result](hyp036-economic-pilot-result-2026-11-14.md), one configuration (+1). A
+spending screen on the 784 frozen HYP-036 pilot events, under a contract fixed and
+reviewed before the read. Short at t + 1 min, exit after 4 h, actual funding, 30 bps.
+Of 784 events, 777 are complete. The cluster mean net is -42.80 bps, and -51.19
+without the top five symbols. Before costs it is -12.80 bps, so the price moved
+against the short on average. The BTC-adjusted net is -33.11, and both blocks are
+negative. Verdict `stop_spending`: the rest of the discovery tape is not bought, and
+no variant, horizon, filter, mirror or subgroup is read on these events. HYP-036 v1
+stays stopped. Not a proof that the absorbed-flow family has no edge.

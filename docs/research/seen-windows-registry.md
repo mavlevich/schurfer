@@ -533,3 +533,12 @@ at the settlements inside the holds come from the pinned discovery index
 2025-07-07T00:01Z to 2025-07-21T03:01Z, only the listed holds. After the read these
 holds count as read at outcome level for this trigger. No holdout, HYP-031 test-year,
 HYP-012 v2 blind-window, tape or control input is requested.
+
+Completed on the owner's go, 2026-11-14:
+
+- **Fetch** from clean `af25f70`: all 1,723 requests complete on the first attempt
+  (30.6 MiB). Sealed receipts `f038532e...`, outside Git.
+- **Read** at 22:49 UTC: result `6acc6544...`, verdict `stop_spending`.
+  [Result](hyp036-economic-pilot-result-2026-11-14.md).
+- **Now read at outcome level for this trigger:** only the listed hold windows of
+  the two pilot blocks. No other window was opened.

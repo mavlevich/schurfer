@@ -2,8 +2,9 @@
 
 Status, updated 2026-11-14: **track B is closed after B3a: both fixed taker exits
 fail and the frozen maker stage gets no budget ([closure](track-b-closure-2026-11-14.md)).
-Track A was closed earlier, so no candidate is active. The HYP-031 test year stays unread
-and unassigned.** The original
+Track A was closed earlier. The HYP-036 economic pilot then returned `stop_spending`
+([result](hyp036-economic-pilot-result-2026-11-14.md)), so no candidate is active. The
+HYP-031 test year and the backward holdout stay unread and unassigned.** The original
 2026-11-11 proposal follows the [2026-11-09 program review](program-review-2026-11-09.md),
 which stopped the program, and amends [strategy v2](research-strategy-v2.md) only
 within the specifically accepted research scope. It follows the
@@ -238,6 +239,7 @@ checkpoints mostly test costs and risk, so the first steps are slow by design.
 | -------------- | ------------------------------------------------------------------------------------------------------ |
 | 11-11 to 11-17 | this plan reviewed and decided; 11-15 restore drill; ~11-17 disk growth reading                        |
 | 11-12 to 11-14 | B1, B2 pilot and B3a done; track B closed 11-14                                                        |
+| 11-14          | HYP-036 power audit and economic pilot: `stop_spending`                                                |
 | 11-30 00:00    | HYP-012 v2 checkpoint; evaluated from 12-01 as that cut, with the registered command on the owner's go |
 | 12-01 to 12-15 | (track B closed; no B3b or B4)                                                                         |
 | 12-15 to 01-15 | (no exam read; the HYP-031 test year stays unread)                                                     |
