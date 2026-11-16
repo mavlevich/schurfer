@@ -600,3 +600,14 @@ Completed on the owner's go, 2026-11-16:
   (HTTP 429, 400, 429), so no page of it was read.
 - **Not requested:** Bybit `product_updates` (no machine publication time on its first
   page) and Coinbase (no second-precision listing history is known).
+- **Structural look at the A2 holdout titles, 2026-11-16, on the owner's approval
+  ("Да, разрешаю").** One run of a read-only command over the kept receipts classified
+  the 134 holdout A2 articles that gave no base into eight shape classes fixed in
+  advance and printed only the total and the count per class: 134 total, 134 `other`, 0
+  in every named class. No title text, ticker, article id, date or calendar distribution
+  was printed or stored, and no return was read. `other` means the
+  classes did not recognise the title format; it is not evidence that no events or no
+  edge exist. The cause of the lost bases is not established and A2 stays `lab_only`.
+  No second class selection on the holdout titles is allowed now. It is a disclosed look
+  at the holdout titles of A2, not a confirmation read. The backward holdout keeps its
+  registered status. [Diagnostic](catalyst-feasibility-a2-diagnostic-2026-11-16.md), section 6.
