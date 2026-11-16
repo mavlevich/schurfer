@@ -1,10 +1,11 @@
 # Catalyst feasibility v1: A2 base-extraction diagnostic (2026-11-16)
 
 Status: **diagnostic only. No fix, no amendment, no recount.** It reads no market value,
-fetches nothing and contacts no exchange. It opens no holdout title, ticker, date or
-monthly count. It reads discovery-year titles only, which the
+fetches nothing and contacts no exchange. Sections 1 to 5 open no holdout title,
+ticker, date or monthly count; they read discovery-year titles only, which the
 [contract](catalyst-feasibility-v1.md) (section 7, "Source gating") allows for a parser
-fix.
+fix. Section 6 records one owner-approved structural look at the holdout titles that
+printed shape-class counts and nothing else.
 
 Context: the [count result](catalyst-feasibility-v1-result-2026-11-16.md) left bucket A2
 (Binance USDⓈ-M futures listing of a base with a live Bybit USDT perp) at `lab_only`:
@@ -15,11 +16,14 @@ candidate, not whether its number can be improved.
 
 ## 1. Outcome
 
-**A limit of the code is confirmed on synthetic titles. Its effect on the holdout is not
-proven, and cannot be told without a structural look at the holdout titles.** No defect
-in the sense of the contract's correction clause (a parser or identity defect that
-changed a counted result) is established. So this note proposes no fix and writes no
-amendment. The next step is the owner's decision in section 6.
+**A limit of the code is confirmed on synthetic titles. The one holdout structural look
+found that none of the 134 no-base holdout titles has any of the seven fixed shapes
+(parenthesised ticker, slash pair, spaced pair, USDC pair, `Multiple`, index, or a
+`...USDT` pair): all 134 are `other`.** So the parenthesis hypothesis is not
+supported, neither is the `Multiple` or index hypothesis, and the real shape is still
+unknown. No defect in the sense of the contract's correction clause is established.
+This note proposes no fix and writes no amendment, and A2 stays `lab_only`. Any
+further look at the holdout titles is a separate decision of the owner.
 
 ## 2. What the A2 branch does
 
@@ -96,7 +100,7 @@ USDC-only titles (`AAVEUSDC and UNIUSDC`, `BIOUSDC`, `WLFIUSDC`) and 1 index pro
 (`ALL Composite Index`). A parenthesis rule would recover none of them: adding
 `_parens` to the A2 branch changes **0 of 106** discovery events. So the discovery
 year can neither show nor refute a need for it, and any evidence for a rule change has
-to come from the holdout's title shape, which this note does not open.
+to come from the holdout's title shape (section 6 records the one look taken).
 
 ## 5. What the public aggregates say about the holdout
 
@@ -116,22 +120,67 @@ shape. Hypotheses, none of them tested:
 Only hypothesis 1 is fixable by a parser change inside the contract. Hypotheses 2 and 3
 are data-class limits and would keep A2's holdout at `lab_only` whatever the parser does.
 
-## 6. Decision needed from the owner (not taken here)
+## 6. The holdout structural look (approved by the owner, run once)
 
-Telling the hypotheses apart needs one structural check of the 134 holdout titles. The
-smallest version that opens no ticker, date or distribution: a local script that, per
-holdout A2 article, outputs only a **shape class** and the count per class, with these
-fixed classes and nothing else: `usdt_pair`, `paren_ticker`, `slash_pair`, `spaced_pair`,
-`usdc_pair`, `multiple_no_ticker`, `index`, `other`. No title text, no id, no
-`announced_at`, no counts by month. It would run only on the owner's go and its output
-would be recorded as a disclosed holdout look. It is not implemented in this PR.
+**Approval.** The owner approved one structural check of the 134 holdout A2 titles on
+2026-11-16 ("Да, разрешаю"), relayed through the coordinating session, under these
+limits: classes fixed in advance; output only the total (asserted to equal 134) and one
+count per class; no title text, ticker, article id, date or count by month or week; no
+intermediate file; run exactly once; no iteration on the classes after the counts.
 
-If the owner declines the check, the honest status is "cannot be told", and A2 stays
-`lab_only` as recorded.
+**Order.** The class rules, the classifier and its synthetic tests were committed and
+pushed first (`026902d`, `catalyst_a2_shape.py`, `test_catalyst_a2_shape.py`), then the
+command was run once.
+
+**Classes, in this precedence.** `usdt_pair` (a `...USDT` token the current A2 rule
+reads), `paren_ticker`, `slash_pair` (`AAA/USDT`), `spaced_pair` (`AAA USDT`),
+`usdc_pair` (`AAAUSDC` or `AAA/USDC`), `multiple_no_ticker`, `index`, `other` (everything
+else, including coin-margined and any other quote asset).
+
+**Command and result.** Read-only on the kept receipts of run 5 (nothing under
+`schurfer-runs/` was written):
+
+```text
+python -m schurfer_analytics.catalyst_a2_shape --root <run 5 root> --window holdout --expect-total 134
+```
+
+| Class                | Count |
+| -------------------- | ----: |
+| `usdt_pair`          |     0 |
+| `paren_ticker`       |     0 |
+| `slash_pair`         |     0 |
+| `spaced_pair`        |     0 |
+| `usdc_pair`          |     0 |
+| `multiple_no_ticker` |     0 |
+| `index`              |     0 |
+| `other`              |   134 |
+| **Total**            |   134 |
+
+**What the counts allow, and no more.**
+
+- `usdt_pair = 0` is the consistency check: these are the articles the rule read no base
+  from.
+- No parenthesis, slash, spaced or USDC rule would recover a single one of the 134. The
+  hypothesis that the loss is the missing parenthesis form (section 5, hypothesis 1) is
+  not supported.
+- The `Multiple` and index shapes are not what lost them either (both 0).
+- `other` is 100% and so the look did not identify the shape. The classes cannot tell
+  whether a parser could read these titles, so no parser change is shown to matter and
+  none is proposed. The look does not show that they are unreadable either.
+- Not tested, and not claimed: that the titles are of a coin-margined product, use another
+  quote asset such as `BUSD` or `USD`, or are another article type matched by the
+  `Futures Will Launch` and `Perpetual` pattern. The classes were fixed before the run and
+  are not changed after it. Looking further would be a second disclosed look and needs
+  its own decision of the owner.
+
+**Status of A2.** It stays `lab_only` as recorded. This look is logged in the
+[registry](seen-windows-registry.md) as a structural look at the holdout titles of A2
+(shape-class counts only, no returns).
 
 ## 7. If a parser defect is later confirmed (design only, nothing implemented)
 
-Sketched so that the decision is not slowed by design work. None of it is in force.
+Sketched so that the decision is not slowed by design work. None of it is in force, and
+after the look in section 6 there is no confirmed defect to apply it to.
 
 - **Amendment, written before any recount.** It fixes exactly the A2 base rule (which
   forms are explicit) and states that minimums, windows, other buckets and the USDC
@@ -157,19 +206,19 @@ Sketched so that the decision is not slowed by design work. None of it is in for
 
 ## 8. Open questions for the colleague
 
-1. **Holdout status.** If the A2 rule is amended after the holdout was counted, is the
-   recount still a holdout read under the [registry](seen-windows-registry.md), or does
-   knowing that the holdout had 134 no-base articles already make the holdout "looked
-   at" for A2? Proposed answer: the window stays at coverage level only if the
-   amendment is written from synthetic and discovery-year evidence plus the fixed shape
-   classes of section 6, and is recorded as a disclosed look otherwise.
+1. **Holdout status.** The holdout titles of A2 have now had one structural look
+   (section 6, counts only). If the A2 rule is ever amended and recounted, is that a
+   holdout read under the [registry](seen-windows-registry.md)? Proposed: only if the
+   amendment rests on evidence that does not come from the holdout titles beyond the
+   disclosed look, and the recount is recorded as a disclosed look.
 2. **Sealed list hash.** The holdout events hash `52baf153...` covers 2 events. A
    recount that finds more events must produce a new sealed list and a new hash. Should
    the original hash stay the evidence of the first count and the new one be added as a
    second entry (proposed), never a replacement?
-3. **Is the shape check (section 6) acceptable at all**, given that holdout privacy
-   forbids lists and calendar distributions? Proposed: yes, as classes and counts only.
-4. **A definition question, separate from the parser:** should a `...USDC` perp
+3. **A definition question, separate from the parser:** should a `...USDC` perp
    listing ever be an A2 event? Proposed: no.
-5. **If hypothesis 2 or 3 is true,** is A2 simply closed as `lab_only` for good, with no
-   body fetch to chase it?
+4. **Next step.** The look found all 134 titles outside the seven fixed shapes. Is A2
+   closed as `lab_only` for good (proposed, since no parser change is shown to matter),
+   or does the owner want a second disclosed look with new classes (for example other
+   quote assets or coin-margined products), accepting that it is another look at the
+   holdout?
