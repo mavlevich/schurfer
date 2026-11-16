@@ -93,6 +93,15 @@ BUCKET_SOURCES = {
 }
 # No public history with a second-precision listing time is known (contract section 6).
 UNREQUESTED_SOURCES = {"coinbase": "not_reconstructible"}
+# The newest page of Bybit's product_updates announcements carries no `publishTime`
+# key at all (live fetch of 2026-11-16, first page, key tree only). The author-filled
+# `dateTimestamp` is never a fallback, so no machine publication time exists for this
+# feed and its buckets cannot be reconstructed. The finding rests on that first page.
+UNREQUESTED_SERIES = {"bybit_ann:product_updates": "no machine publication time"}
+UNRECONSTRUCTIBLE_BUCKETS = {
+    "A4f": "bybit_ann:product_updates",
+    "A4r": "bybit_ann:product_updates",
+}
 
 
 @dataclass(frozen=True)
@@ -111,15 +120,12 @@ BINANCE_CMS = "https://www.binance.com/bapi/composite/v1/public/cms/article/list
 UPBIT_NOTICES = "https://api-manager.upbit.com/api/v1/announcements"
 
 SERIES: tuple[Series, ...] = (
-    *(
-        Series(
-            f"bybit_ann:{kind}",
-            "bybit",
-            BYBIT_ANN,
-            (("locale", "en-US"), ("type", kind), ("limit", "20")),
-            "page",
-        )
-        for kind in ("delistings", "product_updates")
+    Series(
+        "bybit_ann:delistings",
+        "bybit",
+        BYBIT_ANN,
+        (("locale", "en-US"), ("type", "delistings"), ("limit", "20")),
+        "page",
     ),
     *(
         Series(
@@ -539,6 +545,12 @@ class Fetcher:
         used = prior_bytes + sum(done.get(a["seq"], MAX_RESPONSE_BYTES) for a in self._attempts)
         return prior_attempts + len(self._attempts), used
 
+    def _schema_stopped(self, series: Series) -> bool:
+        return any(
+            r["series"] == series.name and r["outcome"] in ("schema_mismatch", "too_large")
+            for r in self._receipts
+        )
+
     def _state(self, series: Series) -> tuple[bool, int | str, int]:
         """(terminal, next page or cursor, failed attempts on that position)."""
         own = [r for r in self._receipts if r["series"] == series.name]
@@ -661,6 +673,22 @@ class Fetcher:
         return receipt
 
     def fetch(self, client: httpx.Client) -> dict[str, Any]:
+        stopped = [s.name for s in SERIES if self._schema_stopped(s)]
+        if stopped:
+            raise FetchStoppedError(f"{', '.join(stopped)}: stopped on a schema or size failure")
+        # Pass 1: the first page of every series not yet started, so one endpoint whose
+        # schema does not match cannot hide the key trees of the others. Every first page
+        # is requested before a stop is raised.
+        failures: list[str] = []
+        for series in SERIES:
+            if any(r["series"] == series.name for r in self._receipts):
+                continue
+            receipt = self._one(client, series, 1 if series.paging == "page" else "")
+            if receipt["outcome"] in ("schema_mismatch", "too_large"):
+                failures.append(f"{series.name}: {receipt['outcome']}")
+        if failures:
+            raise FetchStoppedError("; ".join(failures))
+        # Pass 2: the remaining pages of each series until it is terminal.
         for series in SERIES:
             while True:
                 terminal, position, failed = self._state(series)
@@ -1202,8 +1230,10 @@ def report(receipts: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[st
         )
         discovery_events += d_events
         holdout_events += h_events
+        forced = UNRECONSTRUCTIBLE_BUCKETS.get(bucket)
         buckets[bucket] = {
-            "verdict": verdict(disc, hold),
+            "verdict": "not_reconstructible" if forced else verdict(disc, hold),
+            **({"reason": f"{forced}: {UNREQUESTED_SERIES[forced]}"} if forced else {}),
             "discovery": disc,
             "holdout": {k: hold[k] for k in HOLDOUT_FIELDS},
         }
@@ -1220,6 +1250,7 @@ def report(receipts: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[st
             "buckets": buckets,
             "source_quality": public_quality,
             "unrequested_sources": UNREQUESTED_SOURCES,
+            "unrequested_series": UNREQUESTED_SERIES,
             "untimed_without_machine_time": untimed,
             "series_coverage": coverage,
             "instrument_assets": len(perps),
