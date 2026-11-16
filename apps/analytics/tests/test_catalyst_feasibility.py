@@ -1,16 +1,15 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import Any
 
 import httpx
 import pytest
 from schurfer_analytics import bybit_presettlement_economics as b3
 from schurfer_analytics import catalyst_feasibility as cf
-
-if TYPE_CHECKING:
-    from pathlib import Path
 
 DAY = cf.DAY_MS
 
@@ -1072,6 +1071,332 @@ def test_product_updates_is_not_requested_and_its_buckets_are_not_reconstructibl
     assert public["buckets"]["A2"]["verdict"] == "feasible"
 
 
+# ---------------------------------------------------------------- backoff, reuse, unreachable
+
+
+def scripted(script: dict[str, list[Any]]) -> httpx.MockTransport:
+    """Responses per request key, consumed in order; the last one repeats."""
+    calls: dict[str, int] = {}
+
+    def respond(request: httpx.Request) -> httpx.Response:
+        params = request.url.params
+        key = (
+            request.url.path
+            + "?"
+            + (params.get("pageNo") or params.get("page") or params.get("cursor") or "")
+        )
+        steps = script[key]
+        step = steps[min(calls.get(key, 0), len(steps) - 1)]
+        calls[key] = calls.get(key, 0) + 1
+        if isinstance(step, Exception):
+            raise step
+        if isinstance(step, tuple):
+            return httpx.Response(step[0], headers=step[1], content=b"limited")
+        if isinstance(step, int):
+            return httpx.Response(step, content=b"limited")
+        return httpx.Response(200, json=step)
+
+    return httpx.MockTransport(respond)
+
+
+def recording(root: Path, sleeps: list[float], **kwargs: Any) -> cf.Fetcher:
+    clock = iter(float(i) for i in range(10_000))
+    return cf.Fetcher(
+        root, {"rules": "test"}, now=lambda: next(clock), sleep=sleeps.append, **kwargs
+    )
+
+
+@pytest.mark.usefixtures("small")
+@pytest.mark.parametrize(
+    ("failures", "expected"),
+    [
+        ([500, 502], [10.0, 30.0]),  # the ladder, with no Retry-After
+        ([(429, {"Retry-After": "7"}), 500], [7.0, 30.0]),  # a sane Retry-After wins
+        ([(429, {"Retry-After": "9999"}), (429, {"Retry-After": "soon"})], [10.0, 30.0]),
+        ([httpx.ConnectError("down"), httpx.ReadTimeout("slow")], [10.0, 30.0]),
+    ],
+)
+def test_a_failed_page_is_retried_after_a_pause(
+    tmp_path: Path, failures: list[Any], expected: list[float]
+) -> None:
+    script: dict[str, list[Any]] = {k: [v] for k, v in PAGES.items()}
+    script["/b?2"] = [*failures, PAGES["/b?2"]]
+    sleeps: list[float] = []
+    with httpx.Client(transport=scripted(script)) as client:
+        summary = recording(tmp_path, sleeps).fetch(client)
+    assert summary["complete"]
+    assert [x for x in sleeps if x >= 5] == expected
+
+
+@pytest.mark.usefixtures("small")
+def test_three_failures_still_stop_a_series_that_has_pages(tmp_path: Path) -> None:
+    script: dict[str, list[Any]] = {k: [v] for k, v in PAGES.items()} | {"/b?2": [429]}
+    sleeps: list[float] = []
+    with (
+        httpx.Client(transport=scripted(script)) as client,
+        pytest.raises(cf.FetchStoppedError, match="binance:48: page attempts exhausted"),
+    ):
+        recording(tmp_path, sleeps).fetch(client)
+    assert [x for x in sleeps if x >= 5] == [10.0, 30.0]  # the pause is before a retry only
+    failed = [r for r in recording(tmp_path, []).receipts() if r["outcome"] != "ok"]
+    assert [r["http_status"] for r in failed] == [429, 429, 429]
+
+
+def upbit(optional: bool = True) -> cf.Series:
+    return cf.Series(
+        "upbit:notices",
+        "upbit",
+        "https://example.test/u",
+        (("per_page", "20"),),
+        "page",
+        optional=optional,
+    )
+
+
+def upbit_page(*at: int) -> dict[str, Any]:
+    items = [
+        {"id": i + 1, "title": "x", "first_listed_at": upbit_iso(a), "listed_at": upbit_iso(a)}
+        for i, a in enumerate(at)
+    ]
+    return {"success": True, "data": {"notices": items}}
+
+
+def with_upbit(monkeypatch: pytest.MonkeyPatch, optional: bool = True) -> None:
+    monkeypatch.setattr(cf, "SERIES", (*SMALL, upbit(optional)))
+
+
+def test_an_optional_series_that_never_answers_ends_as_unreachable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with_upbit(monkeypatch)
+    script: dict[str, list[Any]] = {k: [v] for k, v in PAGES.items()} | {"/u?1": [429]}
+    sleeps: list[float] = []
+    with httpx.Client(transport=scripted(script)) as client:
+        fetch = recording(tmp_path, sleeps)
+        summary = fetch.fetch(client)
+    assert summary["complete"]
+    assert summary["series"]["upbit:notices"]["stop"] == "unreachable"
+    assert summary["series"]["upbit:notices"]["terminal"]
+    assert [x for x in sleeps if x >= 5] == [10.0, 30.0]
+    assert cf.series_coverage(fetch.receipts())["upbit:notices"] == {
+        "read_to": "unreachable",
+        "covered_from_ms": None,
+    }
+    marker = json.loads(next((tmp_path / "unreachable").glob("*.json")).read_text())
+    assert [a["http_status"] for a in marker["attempts"]] == [429, 429, 429]
+    # The state survives a restart and makes no new request.
+    seen: list[str] = []
+
+    def refuse(request: httpx.Request) -> httpx.Response:
+        seen.append(str(request.url))
+        return httpx.Response(500)
+
+    with httpx.Client(transport=httpx.MockTransport(refuse)) as client:
+        again = recording(tmp_path, []).fetch(client)
+    assert again["complete"]
+    assert seen == []
+
+
+def test_an_optional_series_that_fails_after_a_page_still_stops(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with_upbit(monkeypatch)
+    page = upbit_page(IN_DISCOVERY, IN_DISCOVERY + 1)
+    script: dict[str, list[Any]] = {k: [v] for k, v in PAGES.items()} | {
+        "/u?1": [page],
+        "/u?2": [429],
+    }
+    with (
+        httpx.Client(transport=scripted(script)) as client,
+        pytest.raises(cf.FetchStoppedError, match="upbit:notices: page attempts exhausted"),
+    ):
+        recording(tmp_path, []).fetch(client)
+    assert not (tmp_path / "unreachable").exists()
+
+
+def test_a_required_series_that_never_answers_stops_the_fetch(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    with_upbit(monkeypatch, optional=False)
+    script: dict[str, list[Any]] = {k: [v] for k, v in PAGES.items()} | {"/u?1": [429]}
+    with (
+        httpx.Client(transport=scripted(script)) as client,
+        pytest.raises(cf.FetchStoppedError, match="upbit:notices: page attempts exhausted"),
+    ):
+        recording(tmp_path, []).fetch(client)
+
+
+def test_unreachable_source_is_named_in_the_report_and_the_bucket_still_counts() -> None:
+    holdout = with_ids(futures_listings(ms("2023-03-06T00:00:00"), 30, 15, 8), 1)
+    discovery = with_ids(futures_listings(ms("2024-10-07T00:00:00"), 40, 20, 8), 1_000)
+    perps = [perp(f"B{i}USDT", ms("2022-01-01T00:00:00")) for i in range(20)]
+    receipts = receipts_for({"binance:48": holdout + discovery}, perps)
+    receipts.append(
+        {"series": "upbit:notices", "outcome": "unreachable", "position": 1, "stop": "unreachable"}
+    )
+    public, _ = cf.report(receipts)
+    assert public["series_coverage"]["upbit:notices"] == {
+        "read_to": "unreachable",
+        "covered_from_ms": None,
+    }
+    assert public["unreachable_sources"] == ["upbit"]
+    assert public["buckets"]["A1"]["discovery"]["unreachable_sources"] == ["upbit"]
+    assert public["buckets"]["A2"]["discovery"]["unreachable_sources"] == []
+    assert public["buckets"]["A2"]["verdict"] == "feasible"  # Binance alone still counts
+    assert set(public["buckets"]["A1"]["holdout"]) == set(cf.HOLDOUT_FIELDS)
+
+
+def test_ok_chain_is_the_unbroken_run_from_the_first_page() -> None:
+    series = cf.Series("s", "binance", "u", (), "page", "pageNo")
+
+    def page(
+        seq: int, position: int, terminal: bool = False, outcome: str = "ok"
+    ) -> dict[str, Any]:
+        return {"seq": seq, "position": position, "outcome": outcome, "terminal": terminal}
+
+    chain = cf.ok_chain(
+        series, [page(1, 1), page(2, 2), page(3, 3, outcome="http_error"), page(4, 5)]
+    )
+    assert [r["position"] for r in chain] == [1, 2]
+    assert [
+        r["position"] for r in cf.ok_chain(series, [page(1, 1), page(2, 2, True), page(3, 3)])
+    ] == [1, 2]
+    assert cf.ok_chain(series, [page(1, 2)]) == []
+    by_cursor = cf.Series("c", "bybit_instruments", "u", (), "cursor")
+    rows = [
+        {"seq": 1, "position": "", "outcome": "ok", "terminal": False, "next_cursor": "a"},
+        {"seq": 2, "position": "a", "outcome": "ok", "terminal": False, "next_cursor": "b"},
+        {"seq": 3, "position": "zzz", "outcome": "ok", "terminal": True, "next_cursor": ""},
+    ]
+    assert [r["position"] for r in cf.ok_chain(by_cursor, rows)] == ["", "a"]
+
+
+def test_parser_text_ignores_layout_and_sees_a_changed_rule() -> None:
+    base = "MAX_UNTIMED_SHARE = 10\n\ndef cut_page(source, payload):\n    return 1  # note\n"
+    spaced = "MAX_UNTIMED_SHARE   =  10\ndef cut_page( source,payload ):\n\n    return 1\n"
+    changed = base.replace("= 10", "= 20")
+    other = base + "\ndef not_parsing():\n    return 2\n"
+    assert cf.parser_text(base) == cf.parser_text(spaced)
+    assert cf.parser_text(base) != cf.parser_text(changed)
+    assert cf.parser_text(base) == cf.parser_text(other)
+
+
+def prior_run(root: Path, pages: dict[str, Any], *, stop_binance: bool) -> None:
+    """An earlier run under a pinned revision, read as far as the pages allow."""
+    contract = {
+        "rules": cf.VERSION,
+        "revision": "a" * 40,
+        "series": [asdict(s) for s in cf.SERIES],
+    }
+    clock = iter(float(i) for i in range(10_000))
+    fetch = cf.Fetcher(root, contract, now=lambda: next(clock), sleep=lambda _: None)
+    script: dict[str, list[Any]] = {k: [v] for k, v in pages.items()}
+    if stop_binance:
+        script["/b?2"] = [500]
+    with httpx.Client(transport=scripted(script)) as client:
+        try:
+            fetch.fetch(client)
+        except cf.FetchStoppedError:
+            assert stop_binance
+
+
+def continuing_run(root: Path, prior: Path, plan: dict[str, Any]) -> cf.Fetcher:
+    contract = {
+        "rules": cf.VERSION,
+        "revision": "b" * 40,
+        "series": [asdict(s) for s in cf.SERIES],
+        "prior": cf.prior_usage([prior]),
+        "reuse": {"series": plan["series"], "skipped": plan["skipped"]},
+    }
+    clock = iter(float(i) for i in range(10_000))
+    return cf.Fetcher(
+        root, contract, now=lambda: next(clock), sleep=lambda _: None, inherited=plan["chains"]
+    )
+
+
+@pytest.mark.usefixtures("small")
+def test_a_new_run_continues_from_the_ok_pages_of_a_prior_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cf, "source_at", lambda _: Path(cf.__file__).read_text())
+    prior = tmp_path / "prior"
+    prior_run(prior, PAGES, stop_binance=True)
+    plan = cf.reuse_plan([prior])
+    assert plan["series"]["binance:48"]["pages"] == 1
+    assert plan["series"]["bybit_inst:Trading"]["pages"] == 1  # the run stopped before its 2nd
+    assert plan["skipped"] == []
+    # Anything already read would fail if it were requested again.
+    script: dict[str, list[Any]] = {
+        "/b?1": [500],
+        "/b?2": [PAGES["/b?2"]],
+        "/i?": [500],
+        "/i?c2": [PAGES["/i?c2"]],
+    }
+    fetch = continuing_run(tmp_path / "next", prior, plan)
+    with httpx.Client(transport=scripted(script)) as client:
+        summary = fetch.fetch(client)
+    assert summary["complete"]
+    assert summary["reused_pages"] == {"binance:48": 1, "bybit_inst:Trading": 1}
+    own = [(r["series"], r["position"]) for r in fetch._receipts]
+    # Two requests, each from the first page not yet read, and no first page again.
+    assert own == [("binance:48", 2), ("bybit_inst:Trading", "c2")]
+    assert [(r["series"], r["position"]) for r in fetch.receipts()] == [
+        ("binance:48", 1),
+        ("bybit_inst:Trading", ""),
+        ("binance:48", 2),
+        ("bybit_inst:Trading", "c2"),
+    ]
+    # The attempts and bytes of the prior run still count against the budget.
+    assert summary["attempts_and_reserved_bytes"][0] == cf.prior_usage([prior])["attempts"] + 2
+    # A restart loads the copied pages from this run's own folder, not from the prior root.
+    again = continuing_run(tmp_path / "next", prior, plan)
+    assert again.summary()["reused_pages"] == {"binance:48": 1, "bybit_inst:Trading": 1}
+    # The copies are bound by hash: a changed copy is refused.
+    copy = next((tmp_path / "next" / "inherited").glob("binance*.json"))
+    copy.write_text(copy.read_text().replace('"position": 1', '"position": 9', 1))
+    with pytest.raises(ValueError, match="do not match the run binding"):
+        continuing_run(tmp_path / "next", prior, plan)
+
+
+@pytest.mark.usefixtures("small")
+def test_pages_are_not_reused_when_the_parse_definitions_differ(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    changed = (
+        Path(cf.__file__).read_text().replace("MAX_UNTIMED_SHARE = 10", "MAX_UNTIMED_SHARE = 30")
+    )
+    monkeypatch.setattr(cf, "source_at", lambda _: changed)
+    prior = tmp_path / "prior"
+    prior_run(prior, PAGES, stop_binance=True)
+    plan = cf.reuse_plan([prior])
+    assert plan["series"] == {}
+    assert plan["skipped"][0]["reason"] == "parse definitions differ"
+    fetch = continuing_run(tmp_path / "next", prior, plan)
+    with httpx.Client(transport=scripted({k: [v] for k, v in PAGES.items()})) as client:
+        summary = fetch.fetch(client)
+    assert summary["complete"]
+    assert summary["reused_pages"] == {}
+    assert len(fetch._receipts) == 4  # every page read again
+
+
+@pytest.mark.usefixtures("small")
+def test_each_series_continues_from_one_prior_run_not_a_mix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cf, "source_at", lambda _: Path(cf.__file__).read_text())
+    short, long = tmp_path / "short", tmp_path / "long"
+    prior_run(short, PAGES, stop_binance=True)  # binance: 1 page
+    prior_run(long, PAGES, stop_binance=False)  # binance: 2 pages, complete
+    plan = cf.reuse_plan([short, long])
+    assert plan["series"]["binance:48"]["pages"] == 2
+    assert plan["series"]["binance:48"]["from"] == cf.digest((long / "run.json").read_bytes())
+    # On a tie the later root, the fresher snapshot, is used.
+    again = tmp_path / "again"
+    prior_run(again, PAGES, stop_binance=False)
+    tie = cf.reuse_plan([long, again])
+    assert tie["series"]["binance:48"]["from"] == cf.digest((again / "run.json").read_bytes())
+
+
 @pytest.mark.usefixtures("small")
 def test_old_instrument_does_not_end_the_catalog(tmp_path: Path) -> None:
     # The catalog has no time order: an instrument launched before the oldest window
@@ -1158,6 +1483,16 @@ def test_prior_root_budget_carries_across_stopped_run(
         summary = succ.fetch(client)
     assert summary["complete"]
     assert summary["attempts_and_reserved_bytes"][0] == 6
+
+
+def test_a_run_can_be_reopened_with_the_real_series_definitions(tmp_path: Path) -> None:
+    # Regression: a series definition holds tuples, run.json holds lists, so a fresh
+    # contract never equalled its own run.json and no real run could resume.
+    contract = {"rules": "test", "series": [asdict(s) for s in cf.SERIES]}
+    cf.Fetcher(tmp_path, contract)
+    cf.Fetcher(tmp_path, contract)  # reopens without raising
+    with pytest.raises(ValueError, match="run binding differs"):
+        cf.Fetcher(tmp_path, {**contract, "rules": "other"})
 
 
 def test_run_binding_cannot_change(tmp_path: Path) -> None:

@@ -9,10 +9,13 @@ response body is ever persisted (blind-window guards, contract section 6).
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 import math
 import re
+import shutil
+import subprocess
 import sys
 import time
 from collections import Counter, defaultdict
@@ -64,11 +67,17 @@ MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 SPACING_S = 1.0
 ATTEMPTS_PER_PAGE = 3
 MAX_PAGES_PER_SERIES = 600
-# Four ways a series counts as read to its end. `untimed_era` is the first page on which
+# Five ways a series counts as read to its end. `untimed_era` is the first page on which
 # more than MAX_UNTIMED_SHARE percent of the articles have no machine time: older history
 # of that feed cannot be timed, so the series is read as far back as it can be, and the
 # report states where that is (`series_coverage`) instead of treating the rest as empty.
-COMPLETE_STOPS = ("empty", "time_boundary", "cursor_end", "untimed_era")
+# `unreachable` is only for an optional series whose first page failed every attempt.
+COMPLETE_STOPS = ("empty", "time_boundary", "cursor_end", "untimed_era", "unreachable")
+# Pause before the 2nd and 3rd attempt on one page after an HTTP error or a transport
+# failure: the server's Retry-After if it is a sane number of seconds, else this ladder.
+BACKOFF_S = (10, 30, 60)
+MAX_RETRY_AFTER_S = 300
+MODULE_PATH = "apps/analytics/schurfer_analytics/catalyst_feasibility.py"
 
 MIN_CLUSTERS = {"discovery": 40, "holdout": 30}
 MIN_ANNOUNCEMENTS = {"discovery": 40, "holdout": 30}
@@ -112,6 +121,9 @@ class Series:
     params: tuple[tuple[str, str], ...]
     paging: str  # "page" or "cursor"
     page_param: str = "page"
+    # An optional series may end as `unreachable` when its first page fails every
+    # attempt. Any other series that fails stops the whole fetch.
+    optional: bool = False
 
 
 BYBIT_ANN = "https://api.bybit.com/v5/announcements/index"
@@ -148,7 +160,14 @@ SERIES: tuple[Series, ...] = (
         )
         for catalog in ("48", "161", "49")
     ),
-    Series("upbit:notices", "upbit", UPBIT_NOTICES, (("os", "web"), ("per_page", "20")), "page"),
+    Series(
+        "upbit:notices",
+        "upbit",
+        UPBIT_NOTICES,
+        (("os", "web"), ("per_page", "20")),
+        "page",
+        optional=True,
+    ),
 )
 
 
@@ -484,7 +503,134 @@ def prior_usage(roots: Iterable[Path] = ()) -> dict[str, Any]:
     }
 
 
-def binding(prior_roots: Iterable[Path] = ()) -> dict[str, Any]:
+# ---------------------------------------------------------------- reuse of prior pages
+
+# What turns a response into a receipt. A page read by an earlier revision may be reused
+# only if these definitions are identical in that revision and in this one.
+PARSER_NAMES = frozenset(
+    {
+        "_ms",
+        "WINDOWS",
+        "OLDEST_MS",
+        "CUT_MS",
+        "MAX_UNTIMED_SHARE",
+        "TIME_FIELDS",
+        "UNTIMED_SOURCES",
+        "UNTIMED_REASONS",
+        "_get",
+        "raw_items",
+        "_int_ms",
+        "_iso_ms",
+        "canonical_ms",
+        "window_of",
+        "explain_time_failure",
+        "is_untimed",
+        "instrument_record",
+        "cut_page",
+    }
+)
+
+
+def parser_text(source: str) -> str:
+    """Normalized text of the parse definitions in a module's source."""
+    parts: list[str] = []
+    for node in ast.parse(source).body:
+        names: set[str] = set()
+        if isinstance(node, ast.FunctionDef):
+            names = {node.name}
+        elif isinstance(node, ast.Assign):
+            names = {t.id for t in node.targets if isinstance(t, ast.Name)}
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            names = {node.target.id}
+        if names & PARSER_NAMES:
+            parts.append(ast.unparse(node))
+    return "\n".join(parts)
+
+
+def source_at(revision: str) -> str:
+    git = shutil.which("git")
+    if git is None or not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise ValueError("cannot read a prior revision")
+    # Fixed argv; the revision was checked to be a full commit hash.
+    return subprocess.check_output(  # noqa: S603
+        [git, "show", f"{revision}:{MODULE_PATH}"], text=True
+    )
+
+
+def series_key(entry: dict[str, Any]) -> tuple[Any, ...]:
+    return (
+        entry["source"],
+        entry["url"],
+        [list(p) for p in entry["params"]],
+        entry["paging"],
+        entry["page_param"],
+    )
+
+
+def ok_chain(series: Series, receipts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The unbroken run of ok pages from the first page, stopping after a terminal page."""
+    ok = sorted((r for r in receipts if r["outcome"] == "ok"), key=lambda r: r["seq"])
+    chain: list[dict[str, Any]] = []
+    expected: int | str = 1 if series.paging == "page" else ""
+    while True:
+        hit = next((r for r in ok if r["position"] == expected), None)
+        if hit is None:
+            return chain
+        chain.append(hit)
+        if hit["terminal"]:
+            return chain
+        expected = hit["position"] + 1 if series.paging == "page" else hit["next_cursor"]
+
+
+def reuse_plan(prior_roots: Iterable[Path]) -> dict[str, Any]:
+    """Which ok pages of earlier runs this run continues from, and what was skipped.
+
+    A prior root is reusable only for the series whose definition matches and only if
+    the parse definitions of its revision equal this revision's. Each series continues
+    from one prior run, never a mix of runs.
+    """
+    current = parser_text(Path(__file__).read_text())
+    now = {s.name: series_key(asdict(s)) for s in SERIES}
+    chosen: dict[str, dict[str, Any]] = {}
+    skipped: list[dict[str, str]] = []
+    for root in prior_roots:
+        run_bytes = (root / "run.json").read_bytes()
+        run = json.loads(run_bytes)
+        sha = digest(run_bytes)
+        try:
+            same_parser = (
+                run.get("rules") == VERSION and parser_text(source_at(run["revision"])) == current
+            )
+        except (ValueError, KeyError, SyntaxError, subprocess.CalledProcessError):
+            same_parser = False
+        if not same_parser:
+            skipped.append({"run_binding_sha256": sha, "reason": "parse definitions differ"})
+            continue
+        defined = {e["name"]: series_key(e) for e in run["series"]}
+        receipts = [json.loads(p.read_text()) for p in sorted((root / "receipts").glob("*.json"))]
+        for series in SERIES:
+            if defined.get(series.name) != now[series.name]:
+                continue
+            chain = ok_chain(series, [r for r in receipts if r["series"] == series.name])
+            # The longer chain wins; on a tie the later root, which is the fresher snapshot.
+            if chain and len(chain) >= len(chosen.get(series.name, {}).get("receipts", [])):
+                chosen[series.name] = {"from": sha, "revision": run["revision"], "receipts": chain}
+    return {
+        "series": {
+            name: {
+                "from": c["from"],
+                "revision": c["revision"],
+                "pages": len(c["receipts"]),
+                "receipts_sha256": digest(_canonical(c["receipts"])),
+            }
+            for name, c in sorted(chosen.items())
+        },
+        "skipped": skipped,
+        "chains": {name: c["receipts"] for name, c in chosen.items()},
+    }
+
+
+def binding(prior_roots: Iterable[Path] = (), plan: dict[str, Any] | None = None) -> dict[str, Any]:
     published = b3.publication(list(PUBLISHED))
     if f"`{STUDY_ID}`" not in Path(REGISTRY).read_text():
         raise ValueError("no seen-windows registry row names this study")
@@ -495,9 +641,12 @@ def binding(prior_roots: Iterable[Path] = ()) -> dict[str, Any]:
         "limits": limits(),
         "series": [asdict(s) for s in SERIES],
     }
-    prior = prior_usage(prior_roots)
+    roots = list(prior_roots)
+    prior = prior_usage(roots)
     if prior["runs"]:
         out["prior"] = prior
+        found = plan if plan is not None else reuse_plan(roots)
+        out["reuse"] = {"series": found["series"], "skipped": found["skipped"]}
     return out
 
 
@@ -511,7 +660,11 @@ class Fetcher:
         *,
         now: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
+        inherited: dict[str, list[dict[str, Any]]] | None = None,
     ) -> None:
+        # The contract is compared as stored: JSON turns the tuples of a series definition
+        # into lists, so a fresh contract would otherwise never equal its own run.json.
+        contract = json.loads(json.dumps(contract))
         self.root, self.contract, self.now, self.sleep = root, contract, now, sleep
         run = root / "run.json"
         if run.exists():
@@ -523,6 +676,8 @@ class Fetcher:
         else:
             publish_once(run, contract)
         self.last = -SPACING_S
+        self._inherited = self._load_inherited(inherited)
+        self._unreachable = {r["series"]: r for r in self._files("unreachable")}
         self._attempts = self._files("attempts")
         self._receipts = self._files("receipts")
         if [a["seq"] for a in self._attempts] != list(range(1, len(self._attempts) + 1)):
@@ -534,8 +689,40 @@ class Fetcher:
         folder = self.root / kind
         return [json.loads(p.read_text()) for p in sorted(folder.glob("*.json"))]
 
+    def _load_inherited(
+        self, given: dict[str, list[dict[str, Any]]] | None
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Ok pages continued from earlier runs, copied into this run's own folder."""
+        folder = self.root / "inherited"
+        bound = self.contract.get("reuse", {}).get("series", {})
+        if not folder.exists():
+            for name, chain in (given or {}).items():
+                publish_once(
+                    folder / f"{name.replace(':', '_')}.json", {"series": name, "receipts": chain}
+                )
+        loaded = {e["series"]: e["receipts"] for e in self._files("inherited")}
+        for name, chain in loaded.items():
+            if name not in bound or digest(_canonical(chain)) != bound[name]["receipts_sha256"]:
+                raise ValueError(f"inherited pages of {name} do not match the run binding")
+        if set(loaded) != set(bound):
+            raise ValueError("inherited pages do not match the run binding")
+        return loaded
+
+    def _of(self, series: Series) -> list[dict[str, Any]]:
+        """Inherited ok pages, then this run's own receipts, for one series."""
+        return [
+            *self._inherited.get(series.name, []),
+            *(r for r in self._receipts if r["series"] == series.name),
+        ]
+
     def receipts(self) -> list[dict[str, Any]]:
-        return list(self._receipts)
+        out = [r for s in SERIES for r in self._inherited.get(s.name, [])]
+        out += self._receipts
+        out += [
+            {"series": name, "outcome": "unreachable", "position": 1, "stop": "unreachable"}
+            for name in sorted(self._unreachable)
+        ]
+        return out
 
     def _totals(self) -> tuple[int, int]:
         prior = self.contract.get("prior", {})
@@ -553,10 +740,12 @@ class Fetcher:
 
     def _state(self, series: Series) -> tuple[bool, int | str, int]:
         """(terminal, next page or cursor, failed attempts on that position)."""
-        own = [r for r in self._receipts if r["series"] == series.name]
+        own = self._of(series)
         ok = [r for r in own if r["outcome"] == "ok"]
         if any(r["outcome"] in ("schema_mismatch", "too_large") for r in own):
             raise FetchStoppedError(f"{series.name}: stopped on a schema or size failure")
+        if series.name in self._unreachable:
+            return True, 0, 0
         if ok and ok[-1]["terminal"]:
             return True, 0, 0
         if series.paging == "page":
@@ -565,6 +754,32 @@ class Fetcher:
             position = ok[-1]["next_cursor"] if ok else ""
         failed = sum(1 for r in own if r["position"] == position and r["outcome"] != "ok")
         return False, position, failed
+
+    def _retry_delay(self, series: Series, position: int | str, failed: int) -> float:
+        """Pause before the next attempt at a position that already failed `failed` times."""
+        last = [
+            r for r in self._receipts if r["series"] == series.name and r["position"] == position
+        ]
+        asked = last[-1].get("retry_after_s") if last else None
+        if isinstance(asked, int) and 0 < asked <= MAX_RETRY_AFTER_S:
+            return float(asked)
+        return float(BACKOFF_S[min(failed, len(BACKOFF_S)) - 1])
+
+    def _give_up(self, series: Series) -> None:
+        """Attempts on a page are spent. Only an optional series with no ok page may end."""
+        if series.optional and not any(r["outcome"] == "ok" for r in self._of(series)):
+            tries = [
+                {"seq": r["seq"], "outcome": r["outcome"], "http_status": r["http_status"]}
+                for r in self._receipts
+                if r["series"] == series.name
+            ]
+            marker = {"series": series.name, "attempts": tries}
+            publish_once(
+                self.root / "unreachable" / f"{series.name.replace(':', '_')}.json", marker
+            )
+            self._unreachable[series.name] = marker
+            return
+        raise FetchStoppedError(f"{series.name}: page attempts exhausted")
 
     def _params(self, series: Series, position: int | str) -> dict[str, str]:
         params = dict(series.params)
@@ -577,10 +792,8 @@ class Fetcher:
     def _has_timed_page(self, series: Series) -> bool:
         """True once a page of this series has delivered at least one machine-timed article."""
         return any(
-            r["series"] == series.name
-            and r["outcome"] == "ok"
-            and r["items"] - r.get("untimed", 0) - r.get("era_untimed", 0) > 0
-            for r in self._receipts
+            r["outcome"] == "ok" and r["items"] - r.get("untimed", 0) - r.get("era_untimed", 0) > 0
+            for r in self._of(series)
         )
 
     @staticmethod
@@ -624,9 +837,12 @@ class Fetcher:
         self._attempts.append(base)
         self.last = self.now()
         body, status, error = bytearray(), 0, None
+        retry_after: int | None = None
         try:
             with client.stream("GET", series.url, params=self._params(series, position)) as resp:
                 status = resp.status_code
+                header = resp.headers.get("retry-after", "")
+                retry_after = int(header) if header.isdigit() else None
                 for chunk in resp.iter_bytes():
                     body.extend(chunk)
                     if len(body) > MAX_RESPONSE_BYTES:
@@ -668,6 +884,8 @@ class Fetcher:
                     receipt.update(self._page_outcome(series, position, page))
         if error is not None:
             receipt["outcome"] = error
+            if error == "http_error" and retry_after is not None:
+                receipt["retry_after_s"] = retry_after
         publish_once(self.root / "receipts" / f"{seq:05d}.json", receipt)
         self._receipts.append(receipt)
         return receipt
@@ -681,7 +899,7 @@ class Fetcher:
         # is requested before a stop is raised.
         failures: list[str] = []
         for series in SERIES:
-            if any(r["series"] == series.name for r in self._receipts):
+            if self._of(series) or series.name in self._unreachable:
                 continue
             receipt = self._one(client, series, 1 if series.paging == "page" else "")
             if receipt["outcome"] in ("schema_mismatch", "too_large"):
@@ -695,7 +913,10 @@ class Fetcher:
                 if terminal:
                     break
                 if failed >= ATTEMPTS_PER_PAGE:
-                    raise FetchStoppedError(f"{series.name}: page attempts exhausted")
+                    self._give_up(series)
+                    continue
+                if failed:
+                    self.sleep(self._retry_delay(series, position, failed))
                 receipt = self._one(client, series, position)
                 if receipt["outcome"] in ("schema_mismatch", "too_large"):
                     raise FetchStoppedError(f"{series.name}: {receipt['outcome']}")
@@ -703,19 +924,20 @@ class Fetcher:
 
     def summary(self) -> dict[str, Any]:
         out: dict[str, Any] = {"series": {}}
-        receipts = self.receipts()
         for series in SERIES:
-            own = [r for r in receipts if r["series"] == series.name]
+            own = self._of(series)
             ok = [r for r in own if r["outcome"] == "ok"]
+            unreachable = series.name in self._unreachable
             out["series"][series.name] = {
-                "attempts": len(own),
+                "attempts": sum(1 for r in self._receipts if r["series"] == series.name),
                 "pages_ok": len(ok),
                 "kept": sum(len(r["kept"]) for r in ok),
                 "dropped": sum(r["dropped"] for r in ok),
                 "untimed": sum(r.get("untimed", 0) for r in ok),
-                "terminal": bool(ok and ok[-1]["terminal"]),
-                "stop": ok[-1]["stop"] if ok else None,
+                "terminal": unreachable or bool(ok and ok[-1]["terminal"]),
+                "stop": "unreachable" if unreachable else (ok[-1]["stop"] if ok else None),
             }
+        out["reused_pages"] = {n: len(c) for n, c in sorted(self._inherited.items())}
         count, used = self._totals()
         out["attempts_and_reserved_bytes"] = [count, used]
         out["budget_exhausted"] = sorted(
@@ -1038,6 +1260,7 @@ def bucket_window(
     perps: dict[str, list[dict[str, Any]]],
     untimed: dict[str, int],
     covered_from: dict[str, int],
+    unreachable: set[str],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     sources = BUCKET_SOURCES[bucket]
     # Articles with no machine time have no window and no bucket. Any of them may belong
@@ -1090,6 +1313,7 @@ def bucket_window(
         "timed_share_among_placed": timed_articles / len(mine) if mine else None,
         "untimed_possible": unknown,
         "uncovered_sources": uncovered,
+        "unreachable_sources": sorted(set(sources) & unreachable),
         "status": dict(status),
         "events": len(events),
         "events_by_source": dict(Counter(e["source"] for e in events)),
@@ -1135,6 +1359,7 @@ HOLDOUT_FIELDS = (
     "timed_share_among_placed",
     "untimed_possible",
     "uncovered_sources",
+    "unreachable_sources",
     "status",
     "events",
     "clusters",
@@ -1170,6 +1395,9 @@ def series_coverage(receipts: list[dict[str, Any]]) -> dict[str, dict[str, Any]]
     out: dict[str, dict[str, Any]] = {}
     for series in SERIES:
         if series.source == "bybit_instruments":
+            continue
+        if any(r["series"] == series.name and r["outcome"] == "unreachable" for r in receipts):
+            out[series.name] = {"read_to": "unreachable", "covered_from_ms": None}
             continue
         ok = [r for r in receipts if r["series"] == series.name and r["outcome"] == "ok"]
         if not ok:
@@ -1218,15 +1446,25 @@ def report(receipts: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[st
     untimed = untimed_by_source(receipts)
     coverage = series_coverage(receipts)
     covered_from = source_covered_from(coverage)
+    # A source is unreachable if every series requested from it ended as unreachable.
+    unreachable = {
+        src
+        for src in {s.source for s in SERIES}
+        if all(
+            coverage.get(s.name, {}).get("read_to") == "unreachable"
+            for s in SERIES
+            if s.source == src
+        )
+    }
     buckets: dict[str, Any] = {}
     discovery_events: list[dict[str, Any]] = []
     holdout_events: list[dict[str, Any]] = []
     for bucket in BUCKETS:
         disc, d_events = bucket_window(
-            bucket, "discovery", rows, quality, perps, untimed, covered_from
+            bucket, "discovery", rows, quality, perps, untimed, covered_from, unreachable
         )
         hold, h_events = bucket_window(
-            bucket, "holdout", rows, quality, perps, untimed, covered_from
+            bucket, "holdout", rows, quality, perps, untimed, covered_from, unreachable
         )
         discovery_events += d_events
         holdout_events += h_events
@@ -1253,6 +1491,7 @@ def report(receipts: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[st
             "unrequested_series": UNREQUESTED_SERIES,
             "untimed_without_machine_time": untimed,
             "series_coverage": coverage,
+            "unreachable_sources": sorted(unreachable),
             "instrument_assets": len(perps),
             "instrument_launches": {w: launch_counts(perps, w) for w in ("discovery", "holdout")},
             "discovery_events": sorted(
@@ -1296,8 +1535,9 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
     if args.command == "fetch":
-        contract = binding(args.prior_root)
-        fetcher = Fetcher(args.root, contract)
+        plan = reuse_plan(args.prior_root)
+        contract = binding(args.prior_root, plan)
+        fetcher = Fetcher(args.root, contract, inherited=plan["chains"])
         with httpx.Client(timeout=30.0) as client:
             _emit(json.dumps(fetcher.fetch(client), indent=2, sort_keys=True))
         return 0
@@ -1326,6 +1566,7 @@ def main(argv: list[str] | None = None) -> int:
     }
     if saved.get("prior", {}).get("runs"):
         provenance["prior_runs"] = saved["prior"]["runs"]
+        provenance["reused_pages"] = saved.get("reuse", {})
     public["provenance"] = provenance
     args.out.write_bytes(_canonical(public))
     _emit(
