@@ -543,3 +543,40 @@ Completed on the owner's go, 2026-11-14:
   [Result](hyp036-economic-pilot-result-2026-11-14.md).
 - **Now read at outcome level for this trigger:** only the listed hold windows of
   the two pilot blocks. No other window was opened.
+
+## Catalyst feasibility `catalyst-feasibility-v1`, registered 2026-11-15
+
+[Contract](catalyst-feasibility-v1.md), design discussed with the colleague on
+2026-11-15. This row and the code must be in main before the first request; the
+fetch and the report each need the owner's go. Counts and timestamps only, no HYP
+id, no strategy registration.
+
+**Level: coverage (event metadata) in both windows.** Requests:
+
+- Bybit V5 announcements, types `delistings` and `product_updates`;
+- Bybit V5 linear `instruments-info`, statuses `Trading`, `Delivering` and `Closed`;
+- Binance's public announcement list, catalogs 48, 161 and 49;
+- Upbit's public notice list.
+
+At most 3,000 requests, 64 MiB of response bytes and one request per second. No
+market-data endpoint is called.
+
+**What is kept:**
+
+- announcement items whose canonical machine time is in 2023-02-01 to 2024-09-15
+  or 2024-10-01 to 2025-09-30;
+- instruments launched before 2025-10-01, with symbol, launch time and a delivery
+  time only if it is before 2025-10-01.
+
+Every other item, including the HYP-031 test year and the v2 blind window, is dropped
+after only its machine timestamp is read. No response body is persisted. The
+backward holdout appears in Git only as aggregate counts; its event list is sealed
+outside Git. The discovery year's event list (time, source, article id, base,
+bucket) is published and holds no market value.
+
+**Incidental exposure during design, 2026-11-15.** Two web searches for
+documentation of the Binance and Upbit announcement endpoints found none. They
+returned news headlines about Upbit listings, at least one in the discovery year
+and some possibly dated in 2026, inside the v2 blind window. These were titles only,
+with no market values. They are recorded conservatively, like the 2026-11-13
+search, and are not used in any rule or count.
