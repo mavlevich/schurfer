@@ -198,12 +198,47 @@ are therefore expected shapes, not confirmed ones. The guards:
   key tree is a union over the items of a page, so one malformed item leaves it
   unchanged; the `failure` record is what names it. It holds no value, title or symbol;
 - the fix is a reviewed code change. A stopped run does not resume: its run binding
-  holds the code revision, so a corrected revision starts a **new run in a new root**,
-  from the first page. The stopped run's receipts are kept, passed to the new run via
-  `--prior-root` so their requests and bytes count against the same 3,000-request and
-  64 MiB study budget, and named in the report's provenance. A transport failure on the
-  same revision does resume, up to three attempts per page;
+  holds the code revision, so a corrected revision starts a **new run in a new root**.
+  The stopped run's receipts are kept, passed to the new run via `--prior-root` so
+  their requests and bytes count against the same 3,000-request and 64 MiB study
+  budget, and named in the report's provenance. The new run does not read again the
+  pages that are already in hand: see "Pages continued from earlier runs" below. A
+  transport failure on the same revision does resume, up to three attempts per page;
 - for edits, the order check (section 4) is the evidence, and the report says so.
+
+**Pages continued from earlier runs.** The fourth live fetch was stopped by a rate limit
+after 152 pages had been read. Reading them again would cost the budget and, on a
+rate-limited host, the same limit. A new run therefore continues each series from the
+unbroken run of `ok` pages of one prior root, from the first page, and requests only
+the pages after it. A prior root is used only if its `rules` equal this study's, its
+series definition (URL, parameters, paging) is the same, and the definitions that turn a
+response into a receipt (the window cut, the canonical time, the untimed rules, the
+instrument record) are identical in its revision and in this one. The comparison is
+made on the normalized syntax tree of those definitions, read from the prior revision in
+git, so a change of layout or of any other function does not matter and a change of any
+parsing rule does. Each series continues from exactly one prior root (the longest chain;
+the later root on a tie), never from a mix. The copied pages go into the new run's own
+folder, are bound to the run by hash, and are named in the report's provenance, with the
+roots that were skipped. Attempts and bytes of every prior root still count against the
+budget, reused or not. **Limit:** a feed moves while it is read. Pages read at one time
+and pages read later can overlap or, if an article is withdrawn, miss one at the seam.
+Articles are counted once by id, so an overlap changes nothing; a withdrawn article is
+not recoverable.
+
+**Retries.** After an HTTP error or a transport failure, the pause before the second and
+third attempt on a page is the server's `Retry-After` if it is a whole number of seconds
+no larger than 300, otherwise 10 s and then 30 s. The
+header value is the only part of a failed response kept. A schema mismatch or an
+oversized response is never retried. The limit of three attempts per page is unchanged.
+
+**Unreachable optional series.** The Upbit notice list is the only optional series. If
+its first page fails every attempt (so no page of it was ever read), the series ends as
+`unreachable`, which counts as read to its end, and the report states
+`read_to: unreachable` for it and lists the source under `unreachable_sources`, for the
+study and for each bucket that names it. `A1` and `A3` are then counted from the other
+sources only; that can only lower their counts. Every other series that fails all
+attempts, and an optional series that fails after at least one page was read, stops the
+fetch, so a partial read is never taken for a complete one.
 
 **Product updates (not requested).** The first page of the live `product_updates`
 feed, read on 2026-11-16 by the third fetch, had no `result.list[].publishTime` key at
@@ -276,8 +311,9 @@ pages dated on or after 2026-09-29 pass through pagination. The guards:
   stop is raised once all of them are in, naming each failed series. A stopped run stays
   stopped. If every first page passes, the remaining pages follow series by series. A
   schema failure of one endpoint therefore cannot hide the key trees of the others.
-- An announcement series ends in one of four ways that count as read to its end: an
-  empty page, the time boundary, the end of a cursor, or the untimed era (section 6). The time boundary is reached
+- An announcement series ends in one of five ways that count as read to its end: an
+  empty page, the time boundary, the end of a cursor, the untimed era, or, for an
+  optional series only, being unreachable (section 6). The time boundary is reached
   when the **last** item of a page is older than 2023-02-01; the feeds run from the
   newest, and an old notice pinned above newer ones must not end a series.
 - The instrument catalog has no time order. It is followed by cursor to its end and
@@ -558,6 +594,13 @@ on the first page of `product_updates`, which has no `publishTime` key. The seri
 longer requested and `A4f` and `A4r` are `not_reconstructible` (section 6). The fetch
 order now requests every first page before any deeper page. Both are written before any
 count is read. The rerun passes the three stopped run roots with `--prior-root`.
+
+**Fourth live fetch stop, 2026-11-16.** The fetch of revision `893384b` passed every first
+page except Upbit's (HTTP 429), read the delistings, instrument, `binance:48` and
+`binance:161` series to their end and `binance:49` to page 44, then stopped on three
+HTTP 429 in a row on its page 45. The retries had been one second apart. This
+amendment adds the pauses, the continuation from prior pages and the unreachable rule
+above, before any count is read. The rerun passes all four stopped roots with `--prior-root`.
 
 **Changes made while writing the code.** These come after the design discussion and
 are for the colleague's review of the code PR:
