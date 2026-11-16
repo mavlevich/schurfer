@@ -321,3 +321,42 @@ Read at: `27551c6` (main), consilium `7ba0e29`, PR #600 `a18f2c0`.
   both applied in `plan.md`. B implemented the three Step-0 items on PR #600 in commit
   `6ccd0db` (`instrument_launches` per window, `--prior-root` cumulative budget carry-over,
   and the section 5 catalog coverage note; 57 tests, `ruff`, `mypy --strict` pass).
+
+## 14. Status sync, `I43` (`spot -> perp`) screen, and `I44` (`CryptoAttack`), 2026-11-17
+
+Read at: `e3f323d` (`origin/main`), PR #601 (`bccb6ee`), PR #606 (`da22081`), PR #607 (`e3f323d`).
+
+- **Catalyst count status update (PR #606, `da22081`, 2026-11-16):** The catalyst
+  feasibility v1 count run is completed and merged (`stop_direction_a`: no catalyst
+  bucket is feasible; A2/A4d are `lab_only`, A1/A3 `insufficient_events` on Binance
+  alone, A4f/A4r not reconstructible). `I25` (new perp launches) passed its planned
+  **event-count threshold** (263 launches, 53 weeks); passing a count gate does not
+  establish profitability or statistical power.
+- **No general perp flow radar or broad multi-exchange WebSocket capture:** Broad
+  short-horizon order-flow radars on alt perpetuals remain closed under section 1
+  (`abnormal-flow v1`, `WATCH`, `net-buy v1`, `HYP-024`, `HYP-032`, `HYP-036`), and
+  order-book history (`ob200`/`ob500`) is reserved for execution-cost evaluation rather
+  than building a multi-exchange L2/trade WebSocket collector.
+- **Added [`I43`](ideas.md) and [`screens/owner-2026-11-17.md`](screens/owner-2026-11-17.md):**
+  - Mechanism 1 (directional Bybit USDT perp long after spot lead; excluding two-leg
+    `I7`/`I19` carry) is recorded as `needs_measurement`, queued behind `I25` and
+    Stage 2A, gated on one bounded 1–2 week discovery-window lead-lag and post-delay
+    perp return check against a concrete 30.0 bps Bybit taker round-trip hurdle.
+  - Mechanism 2 (spot-flow continuation) is recorded as `parked` as a current budget
+    decision (not claiming refutation), reopening only if a specific informational edge
+    absent from `abnormal-flow v1` and `HYP-036` is demonstrated.
+- **Added [`I44`](ideas.md) (`CryptoAttack` / `CEXTrack`) as `needs_rule_change`:**
+  Evaluating an external notification stream as data or labels is currently blocked by
+  the project rule that external Telegram channels are reference-only
+  (`catalyst-feasibility-v1.md`, `2026-09-06/colleague-audit.txt`). No paper screen or
+  collector design is opened unless the owner explicitly decides to reopen that rule
+  (if reopened, any future screen must separate historical archives without local
+  receive times or deleted messages from prospective full-stream capture of `CEXTrack`
+  with raw payloads, first-receive timestamps, edits, and parser errors).
+- **Separated follow-ups (explicitly outside this PR):**
+  - `O11` (live production verification of Group 1, disk, timers, and backups) remains
+    an independent read-only operational check with an observed date.
+  - Reconciliation/transfer of any unmerged items from the stale local
+    `docs/improvement-roadmap-v3` draft (such as intraday BTC/ETH `P-03`, which is not
+    currently separated from `I6` in `ideas.md`) is deferred to a separate PR; those
+    untracked local files are left untouched.
