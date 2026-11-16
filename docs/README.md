@@ -84,6 +84,8 @@ Research documents have different roles and must not be blended:
 - [`architecture/`](architecture/) contains reviewed current or target architecture
   plans. Each document must say which one it is.
 - [`adr/`](adr/) preserves durable decisions and supersession history.
+- [`consilium/`](consilium/) is the working folder for open discussion of plans, ideas
+  and rules; it decides nothing until a point is written into its own authority.
 - [`contracts/`](contracts/) contains versioned wire, persistence, and delivery rules.
 - [`engineering/`](engineering/) contains the evidence-backed findings register; it
   is an intake and verification surface, not an implementation queue.
