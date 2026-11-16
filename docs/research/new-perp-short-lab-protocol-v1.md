@@ -1016,11 +1016,14 @@ contract converts at day 10, 12:00. The conversion is a confirmed event after en
   episode **is not deleted**. Had the same announcement been published at day 6.0, before
   `E`, the launch would be `change_known_at_entry`, excluded before entry and counted in
   M3 (no episode exists, so nothing is scored).
-- **Scoring.** Last trade before the event `F_last = 92`. Three settlements before it,
-  marks 99, 97 and 95: `funding_usd = 0.0001 * 10 * (99 + 97 + 95) = +0.291`.
+- **Scoring.** Entry at day 7.0 and the event at day 10, 12:00 are 84 hours apart, so on
+  the 8-hour schedule of A3 the settlements at hours 8, 16, ..., 80 count (**10**; the next,
+  at hour 88, is after `t_exit`). Marks at those settlements: 99, 99, 98, 98, 97, 97, 96,
+  96, 95, 95 (sum 970). `funding_usd = 0.0001 * 10 * 970 = +0.97`. Last trade before the
+  event `F_last = 92`.
   - **L:** price `10 * (100 - 92) = +80`; fee `1.1 + 0.0011 * 10 * 92 = 2.112`; net
-    `80 + 0.291 - 2.112 = +78.179` USD, **+781.79 bps** (labelled non-executable).
-  - **H:** whole margin lost: `-500 + 0.291 - 1.1 = -500.809` USD, **-5,008.09 bps**.
+    `80 + 0.97 - 2.112 = +78.858` USD, **+788.58 bps** (labelled non-executable).
+  - **H:** whole margin lost: `-500 + 0.97 - 1.1 = -500.13` USD, **-5,001.3 bps**.
 - **Verdict effect.** If this were the whole cohort, L is positive and H is negative:
   `scenario_dependent` (A5 explains the label). It is neither dropped nor a pass.
 
