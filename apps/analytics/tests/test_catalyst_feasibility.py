@@ -128,9 +128,7 @@ def test_instruments_keep_no_status_and_no_late_symbols() -> None:
 @pytest.mark.parametrize(
     ("source", "payload"),
     [
-        ("binance", {"code": "000000", "data": {"catalogs": [{"articles": [{"id": 1}]}]}}),
         ("binance", {"code": "1", "data": {}}),
-        ("bybit", {"retCode": 0, "result": {"list": [{"title": "x"}]}}),
         ("bybit", {"retCode": 10001, "result": {"list": []}}),
         ("upbit", {"success": True, "data": {"notices": [{"listed_at": "2025-01-01"}]}}),
         ("upbit", {"success": True, "data": {"list": []}}),
@@ -243,16 +241,28 @@ def test_untimed_articles_do_not_set_the_time_boundary() -> None:
     assert not only_untimed["oldest_reached"]
 
 
-def test_too_many_untimed_articles_stop_the_fetch() -> None:
-    items = [good_article("bybit")] * 17 + [{"title": "a"}, {"title": "b"}, {"title": "c"}]
-    with pytest.raises(cf.SchemaMismatchError) as caught:
-        cf.cut_page("bybit", bybit_page(items))
-    assert (caught.value.index, caught.value.reason) == (17, "untimed_share_above_limit")
-    # Exactly at the limit still passes: 2 of 20 is 10%.
-    out = cf.cut_page(
-        "bybit", bybit_page([*items[:17], {"title": "a"}, {"title": "b"}, good_article("bybit")])
-    )
-    assert out["untimed"] == 2
+def test_too_many_untimed_articles_end_the_series_in_the_untimed_era() -> None:
+    timed: list[dict[str, Any]] = [{"publishTime": IN_HOLDOUT + i} for i in range(17)]
+    items: list[dict[str, Any]] = [*timed, {"title": "a"}, {"title": "b"}, {"title": "c"}]
+    out = cf.cut_page("bybit", bybit_page(items))
+    # Nothing on the era page is counted, and its untimed articles are not added to the
+    # worst case of any window: they lie beyond the coverage the report states.
+    assert out["untimed_era"]
+    assert (out["kept"], out["dropped"], out["untimed"], out["era_untimed"]) == ([], 0, 0, 3)
+    assert out["oldest_ms"] is None
+    assert not out["oldest_reached"]
+    # Exactly at the limit is still an ordinary page: 2 of 20 is 10%.
+    ordinary = cf.cut_page("bybit", bybit_page([*timed, {"title": "a"}, {"title": "b"}, timed[0]]))
+    assert not ordinary["untimed_era"]
+    assert ordinary["untimed"] == 2
+
+
+def test_oldest_ms_never_records_a_blind_or_test_year_date() -> None:
+    items = [{"publishTime": BLIND}, {"publishTime": TEST_YEAR}, {"publishTime": IN_DISCOVERY}]
+    out = cf.cut_page("bybit", bybit_page(items))
+    assert out["oldest_ms"] == IN_DISCOVERY
+    only_blind = cf.cut_page("bybit", bybit_page([{"publishTime": BLIND}]))
+    assert only_blind["oldest_ms"] is None
 
 
 @pytest.mark.parametrize(
@@ -670,16 +680,24 @@ def test_report_counts_instrument_launches_per_window_deduplicated() -> None:
     }
 
 
-def paged_receipts(known: list[dict[str, Any]], untimed_total: int) -> list[dict[str, Any]]:
+def paged_receipts(
+    known: list[dict[str, Any]], untimed_total: int, era: bool = False
+) -> list[dict[str, Any]]:
     """Binance:48 receipts built by the real page cut, spreading untimed articles at
-    no more than the 10% page limit."""
+    no more than the 10% page limit; `era` appends a page that ends in the untimed era."""
     out: list[dict[str, Any]] = []
     left = untimed_total
+    pages = []
     for i in range(0, len(known), 18):
         chunk = known[i : i + 18]
         here = min(left, 2, len(chunk) // 9)
         left -= here
-        cut = cf.cut_page("binance", binance_page([*chunk, *([{"title": "no time"}] * here)]))
+        pages.append([*chunk, *([{"title": "no time"}] * here)])
+    assert left == 0
+    if era:
+        pages.append([{"title": "old, no time"}] * 5 + known[:3])
+    for page in pages:
+        cut = cf.cut_page("binance", binance_page(page))
         out.append(
             {
                 "seq": len(out) + 1,
@@ -687,21 +705,59 @@ def paged_receipts(known: list[dict[str, Any]], untimed_total: int) -> list[dict
                 "outcome": "ok",
                 "kept": cut["kept"],
                 "untimed": cut["untimed"],
+                "era_untimed": cut["era_untimed"],
+                "oldest_ms": cut["oldest_ms"],
+                "stop": "untimed_era" if cut["untimed_era"] else None,
             }
         )
-    assert left == 0
     return out
 
 
-def a2_report(untimed_total: int) -> dict[str, Any]:
+def a2_report(
+    untimed_total: int, era: bool = False, windows: tuple[str, ...] = ("holdout", "discovery")
+) -> dict[str, Any]:
     holdout = with_ids(futures_listings(ms("2023-03-06T00:00:00"), 30, 15, 8), 1)
     discovery = with_ids(futures_listings(ms("2024-10-07T00:00:00"), 40, 20, 8), 1_000)
+    known = (holdout if "holdout" in windows else []) + (
+        discovery if "discovery" in windows else []
+    )
     perps = [perp(f"B{i}USDT", ms("2022-01-01T00:00:00")) for i in range(20)]
-    receipts = paged_receipts(holdout + discovery, untimed_total)
+    receipts = paged_receipts(known, untimed_total, era)
     receipts.append({"seq": 99, "series": "bybit_inst:Trading", "outcome": "ok", "kept": perps})
     public, _ = cf.report(receipts)
     result: dict[str, Any] = public
     return result
+
+
+def test_a_feed_that_ends_in_the_untimed_era_cannot_confirm_an_uncovered_holdout() -> None:
+    # Coverage reaches back to the oldest machine time before the era (2023-03-06 here),
+    # which is after the holdout starts on 2023-02-01: the holdout is partly unread.
+    public = a2_report(untimed_total=0, era=True)
+    a2 = public["buckets"]["A2"]
+    assert public["series_coverage"]["binance:48"] == {
+        "read_to": "untimed_era",
+        "covered_from_ms": ms("2023-03-06T00:00:00") + 1_234,
+    }
+    assert a2["holdout"]["uncovered_sources"] == ["binance"]
+    assert a2["discovery"]["uncovered_sources"] == []
+    assert a2["verdict"] == "lab_only"
+    # The era page's untimed articles lie beyond the coverage and are not a worst case.
+    assert public["untimed_without_machine_time"]["binance"] == 0
+    assert a2["discovery"]["timed_share"] == 1.0
+    assert set(a2["holdout"]) == set(cf.HOLDOUT_FIELDS)
+
+
+def test_a_feed_that_ends_in_the_untimed_era_inside_discovery_is_not_feasible() -> None:
+    public = a2_report(untimed_total=0, era=True, windows=("discovery",))
+    a2 = public["buckets"]["A2"]
+    assert a2["discovery"]["uncovered_sources"] == ["binance"]
+    assert a2["verdict"] == "insufficient_events"
+
+
+def test_a_series_read_to_its_end_has_no_coverage_gap() -> None:
+    public = a2_report(untimed_total=0)
+    assert public["series_coverage"]["binance:48"] == {"read_to": "end", "covered_from_ms": None}
+    assert public["buckets"]["A2"]["holdout"]["uncovered_sources"] == []
 
 
 def test_unplaced_articles_cannot_be_shown_to_meet_the_timed_gate() -> None:
@@ -875,12 +931,11 @@ def test_fetch_stops_on_schema_mismatch_with_keys_only(tmp_path: Path) -> None:
 
 @pytest.mark.usefixtures("small")
 def test_item_level_mismatch_with_an_unchanged_key_tree_records_its_reason(tmp_path: Path) -> None:
-    # One article without its time among well-formed ones: the union key tree equals a
-    # good page's, so only the failure record can say what broke (regression: the
-    # first live run stopped on such a page with nothing to diagnose it).
-    good = {"id": 8, "title": "Binance Will List Kept (KEPT)", "releaseDate": IN_DISCOVERY}
-    odd = {"id": 7, "title": "Binance Will List Hold (ZZZBLIND)"}
-    pages = dict(PAGES) | {"/b?2": binance_page([good, odd])}
+    # One catalog item without its symbol among well-formed ones: the union key tree
+    # equals a good page's, so only the failure record can say what broke (regression:
+    # the first live run stopped on such a page with nothing to diagnose it).
+    odd = {"contractType": "LinearPerpetual", "settleCoin": "USDT", "launchTime": str(IN_HOLDOUT)}
+    pages = dict(PAGES) | {"/i?": bybit_page([instrument("AUSDT", IN_HOLDOUT), odd], "c2")}
     with httpx.Client(transport=handler(pages)) as client, pytest.raises(cf.FetchStoppedError):
         fetcher(tmp_path).fetch(client)
     stopped = fetcher(tmp_path).receipts()[-1]
@@ -889,9 +944,42 @@ def test_item_level_mismatch_with_an_unchanged_key_tree_records_its_reason(tmp_p
         "class": "SchemaMismatchError",
         "stage": "item",
         "item_index": 1,
-        "reason": "untimed_share_above_limit",
+        "reason": "missing:symbol",
     }
-    assert "ZZZBLIND" not in json.dumps(stopped)
+    assert "symbol" in "".join(stopped["schema"])
+
+
+@pytest.mark.usefixtures("small")
+def test_the_untimed_era_ends_a_series_after_timed_pages(tmp_path: Path) -> None:
+    timed = [
+        {"id": i, "title": "Binance Will List Kept (KEPT)", "releaseDate": IN_DISCOVERY + i}
+        for i in range(20)
+    ]
+    era = [{"id": 99, "title": "ZZZBLIND old"}] * 4 + timed[:16]
+    pages = dict(PAGES) | {"/b?1": binance_page(timed), "/b?2": binance_page(era)}
+    with httpx.Client(transport=handler(pages)) as client:
+        fetch = fetcher(tmp_path)
+        summary = fetch.fetch(client)
+    assert summary["complete"]
+    assert summary["series"]["binance:48"]["stop"] == "untimed_era"
+    assert summary["series"]["binance:48"]["kept"] == 20  # the era page counts nothing
+    assert cf.series_coverage(fetch.receipts())["binance:48"] == {
+        "read_to": "untimed_era",
+        "covered_from_ms": IN_DISCOVERY,
+    }
+    assert "ZZZBLIND" not in json.dumps(fetch.receipts())
+
+
+@pytest.mark.usefixtures("small")
+def test_an_untimed_first_page_is_a_schema_change_not_an_era(tmp_path: Path) -> None:
+    # A renamed time field makes every article untimed from page 1. That must stop the
+    # fetch as a mismatch, not read as an era of old articles with nothing covered.
+    pages = dict(PAGES) | {"/b?1": binance_page([{"id": i, "title": "x"} for i in range(5)])}
+    with httpx.Client(transport=handler(pages)) as client, pytest.raises(cf.FetchStoppedError):
+        fetcher(tmp_path).fetch(client)
+    stopped = fetcher(tmp_path).receipts()[-1]
+    assert stopped["outcome"] == "schema_mismatch"
+    assert stopped["failure"]["reason"] == "untimed_era_before_any_timed_page"
 
 
 @pytest.mark.usefixtures("small")

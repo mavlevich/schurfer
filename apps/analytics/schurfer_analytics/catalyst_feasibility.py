@@ -64,7 +64,11 @@ MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 SPACING_S = 1.0
 ATTEMPTS_PER_PAGE = 3
 MAX_PAGES_PER_SERIES = 600
-COMPLETE_STOPS = ("empty", "time_boundary", "cursor_end")
+# Four ways a series counts as read to its end. `untimed_era` is the first page on which
+# more than MAX_UNTIMED_SHARE percent of the articles have no machine time: older history
+# of that feed cannot be timed, so the series is read as far back as it can be, and the
+# report states where that is (`series_coverage`) instead of treating the rest as empty.
+COMPLETE_STOPS = ("empty", "time_boundary", "cursor_end", "untimed_era")
 
 MIN_CLUSTERS = {"discovery": 40, "holdout": 30}
 MIN_ANNOUNCEMENTS = {"discovery": 40, "holdout": 30}
@@ -263,7 +267,7 @@ def explain_time_failure(source: str, item: dict[str, Any]) -> str:
 # and still stops the fetch.
 UNTIMED_SOURCES = frozenset({"bybit", "binance"})
 UNTIMED_REASONS = ("missing:", "non_positive_number:")
-MAX_UNTIMED_SHARE = 10  # percent of one page's items; above it the fetch stops
+MAX_UNTIMED_SHARE = 10  # percent of one page's items; above it the series ends (untimed_era)
 
 
 def is_untimed(source: str, item: dict[str, Any]) -> bool:
@@ -344,8 +348,9 @@ def cut_page(source: str, payload: Any) -> dict[str, Any]:
     """Apply the window cut to one parsed page. Raises on any schema mismatch."""
     items, cursor = raw_items(source, payload)
     kept: list[dict[str, Any]] = []
-    dropped, untimed, first_untimed = 0, 0, -1
+    dropped, untimed = 0, 0
     last_ms: int | None = None
+    oldest_ms: int | None = None
     for index, item in enumerate(items):
         try:
             ms = canonical_ms(source, item)
@@ -353,9 +358,12 @@ def cut_page(source: str, payload: Any) -> dict[str, Any]:
             if not is_untimed(source, item):
                 raise SchemaMismatchError(index, explain_time_failure(source, item)) from exc
             untimed += 1
-            first_untimed = first_untimed if first_untimed >= 0 else index
             continue
         last_ms = ms
+        # Coverage start of a feed. Only dates before the blind and test years are kept,
+        # so no timestamp of an excluded period reaches a receipt.
+        if ms < CUT_MS and (oldest_ms is None or ms < oldest_ms):
+            oldest_ms = ms
         if source == "bybit_instruments":
             if ms >= CUT_MS:
                 dropped += 1
@@ -373,21 +381,33 @@ def cut_page(source: str, payload: Any) -> dict[str, Any]:
             dropped += 1
             continue
         kept.append(item)
-    if untimed * 100 > MAX_UNTIMED_SHARE * len(items):
-        raise SchemaMismatchError(first_untimed, "untimed_share_above_limit")
-    # The time boundary belongs to announcement feeds only, which run from the newest.
-    # It is read from the page's last item that has a machine time: an old notice
-    # pinned above newer ones must not end the series. A catalog of instruments has no
-    # time order at all and is followed by cursor to its end.
-    oldest_reached = source != "bybit_instruments" and last_ms is not None and last_ms < OLDEST_MS
-    return {
+    page: dict[str, Any] = {
         "items": len(items),
         "kept": kept,
         "dropped": dropped,
         "untimed": untimed,
-        "oldest_reached": oldest_reached,
+        "era_untimed": 0,
+        "untimed_era": False,
+        "oldest_ms": oldest_ms,
+        "oldest_reached": False,
         "next_cursor": cursor,
     }
+    if untimed * 100 > MAX_UNTIMED_SHARE * len(items):
+        # The feed has left the era of machine-timed articles. Nothing on this page is
+        # counted and the series ends here; its articles are beyond the coverage the
+        # report states, so they are not added to the unplaced-article worst case.
+        page.update(
+            kept=[], dropped=0, untimed=0, era_untimed=untimed, untimed_era=True, oldest_ms=None
+        )
+        return page
+    # The time boundary belongs to announcement feeds only, which run from the newest.
+    # It is read from the page's last item that has a machine time: an old notice
+    # pinned above newer ones must not end the series. A catalog of instruments has no
+    # time order at all and is followed by cursor to its end.
+    page["oldest_reached"] = (
+        source != "bybit_instruments" and last_ms is not None and last_ms < OLDEST_MS
+    )
+    return page
 
 
 # ---------------------------------------------------------------- bounded fetch
@@ -542,6 +562,43 @@ class Fetcher:
             params["cursor"] = str(position)
         return params
 
+    def _has_timed_page(self, series: Series) -> bool:
+        """True once a page of this series has delivered at least one machine-timed article."""
+        return any(
+            r["series"] == series.name
+            and r["outcome"] == "ok"
+            and r["items"] - r.get("untimed", 0) - r.get("era_untimed", 0) > 0
+            for r in self._receipts
+        )
+
+    @staticmethod
+    def _page_outcome(series: Series, position: int | str, page: dict[str, Any]) -> dict[str, Any]:
+        # Why paging ends. Only the first four mean the series was read to its end;
+        # a page budget is a limit, not evidence of no more events.
+        stop: str | None = None
+        if page["items"] == 0:
+            stop = "empty"
+        elif page["untimed_era"]:
+            stop = "untimed_era"
+        elif page["oldest_reached"]:
+            stop = "time_boundary"
+        elif series.paging == "cursor" and not page["next_cursor"]:
+            stop = "cursor_end"
+        elif series.paging == "page" and int(position) >= MAX_PAGES_PER_SERIES:
+            stop = "page_budget"
+        return {
+            "outcome": "ok",
+            "stop": stop,
+            "items": page["items"],
+            "dropped": page["dropped"],
+            "untimed": page["untimed"],
+            "era_untimed": page["era_untimed"],
+            "oldest_ms": page["oldest_ms"],
+            "kept": page["kept"],
+            "next_cursor": page["next_cursor"] if series.paging == "cursor" else "",
+            "terminal": stop is not None,
+        }
+
     def _one(self, client: httpx.Client, series: Series, position: int | str) -> dict[str, Any]:
         count, used = self._totals()
         if count >= MAX_REQUESTS or used + MAX_RESPONSE_BYTES > MAX_BYTES:
@@ -585,30 +642,18 @@ class Fetcher:
                 except ValueError:
                     receipt["schema"] = ["<not json>"]
             else:
-                if position in (1, ""):
+                if page["untimed_era"] and not self._has_timed_page(series):
+                    # No page of this series ever carried a machine time: that is a
+                    # renamed or removed time field, not an era of old articles.
+                    error = "schema_mismatch"
+                    receipt["failure"] = failure_record(
+                        SchemaMismatchError(0, "untimed_era_before_any_timed_page")
+                    )
                     receipt["schema"] = key_tree(payload)
-                # Why paging ends. Only the first three mean the series was read to
-                # its end; a page budget is a limit, not evidence of no more events.
-                stop: str | None = None
-                if page["items"] == 0:
-                    stop = "empty"
-                elif page["oldest_reached"]:
-                    stop = "time_boundary"
-                elif series.paging == "cursor" and not page["next_cursor"]:
-                    stop = "cursor_end"
-                elif series.paging == "page" and int(position) >= MAX_PAGES_PER_SERIES:
-                    stop = "page_budget"
-                terminal = stop is not None
-                receipt.update(
-                    outcome="ok",
-                    stop=stop,
-                    items=page["items"],
-                    dropped=page["dropped"],
-                    untimed=page["untimed"],
-                    kept=page["kept"],
-                    next_cursor=page["next_cursor"] if series.paging == "cursor" else "",
-                    terminal=terminal,
-                )
+                else:
+                    if position in (1, ""):
+                        receipt["schema"] = key_tree(payload)
+                    receipt.update(self._page_outcome(series, position, page))
         if error is not None:
             receipt["outcome"] = error
         publish_once(self.root / "receipts" / f"{seq:05d}.json", receipt)
@@ -964,12 +1009,18 @@ def bucket_window(
     quality: dict[tuple[str, str], dict[str, Any]],
     perps: dict[str, list[dict[str, Any]]],
     untimed: dict[str, int],
+    covered_from: dict[str, int],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     sources = BUCKET_SOURCES[bucket]
     # Articles with no machine time have no window and no bucket. Any of them may belong
     # to this bucket and window, so in the worst case each is an untimed article here:
     # the 90% gate cannot be shown to pass unless it passes with all of them counted.
     unknown = sum(untimed.get(s, 0) for s in sources)
+    # A feed that ended in the untimed era covers only the dates after `covered_from`.
+    # A source that does not reach the start of this window leaves it partly unread.
+    uncovered = sorted(
+        s for s in sources if s in covered_from and covered_from[s] > WINDOWS[window][0]
+    )
     mine = [a for a in rows if a["bucket"] == bucket and a["window"] == window]
     usable = {
         s for s in sources if (q := quality.get((s, window))) and q["timed"] and q["provenance_ok"]
@@ -1010,6 +1061,7 @@ def bucket_window(
         "timed_share": timed_articles / (len(mine) + unknown) if mine or unknown else None,
         "timed_share_among_placed": timed_articles / len(mine) if mine else None,
         "untimed_possible": unknown,
+        "uncovered_sources": uncovered,
         "status": dict(status),
         "events": len(events),
         "events_by_source": dict(Counter(e["source"] for e in events)),
@@ -1031,6 +1083,7 @@ def passes(stats: dict[str, Any], window: str) -> bool:
         and stats["announcements"] >= MIN_ANNOUNCEMENTS[window]
         and stats["bases"] >= MIN_BASES[window]
         and stats["weeks"] >= MIN_WEEKS[window]
+        and not stats["uncovered_sources"]
         and (stats["timed_share"] or 0.0) >= MIN_TIMED_SHARE
         and (stats["ambiguous_share"] or 0.0) <= MAX_AMBIGUOUS_SHARE
     )
@@ -1053,6 +1106,7 @@ HOLDOUT_FIELDS = (
     "timed_share",
     "timed_share_among_placed",
     "untimed_possible",
+    "uncovered_sources",
     "status",
     "events",
     "clusters",
@@ -1078,6 +1132,43 @@ def untimed_by_source(receipts: list[dict[str, Any]]) -> dict[str, int]:
     return out
 
 
+def series_coverage(receipts: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """Where each announcement series was read back to.
+
+    `covered_from_ms` is None when the series was read to its end (empty page, time
+    boundary or cursor end). When it ended in the untimed era it is the oldest machine
+    time on the pages before that era; the era page itself is not counted.
+    """
+    out: dict[str, dict[str, Any]] = {}
+    for series in SERIES:
+        if series.source == "bybit_instruments":
+            continue
+        ok = [r for r in receipts if r["series"] == series.name and r["outcome"] == "ok"]
+        if not ok:
+            continue
+        if ok[-1].get("stop") == "untimed_era":
+            olds = [r["oldest_ms"] for r in ok if r.get("oldest_ms") is not None]
+            out[series.name] = {
+                "read_to": "untimed_era",
+                "covered_from_ms": min(olds, default=CUT_MS),
+            }
+        else:
+            out[series.name] = {"read_to": "end", "covered_from_ms": None}
+    return out
+
+
+def source_covered_from(coverage: dict[str, dict[str, Any]]) -> dict[str, int]:
+    """Per source, the latest start among its partly covered series (the worst one)."""
+    source_of = {s.name: s.source for s in SERIES}
+    out: dict[str, int] = {}
+    for name, entry in coverage.items():
+        start = entry["covered_from_ms"]
+        if start is not None:
+            source = source_of[name]
+            out[source] = max(out.get(source, start), start)
+    return out
+
+
 def report(receipts: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Return the publishable report and the holdout events to seal outside Git."""
     rows = articles(receipts)
@@ -1097,12 +1188,18 @@ def report(receipts: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[st
     if unclassified:
         raise ValueError(f"no discovery-year article classified for {unclassified}")
     untimed = untimed_by_source(receipts)
+    coverage = series_coverage(receipts)
+    covered_from = source_covered_from(coverage)
     buckets: dict[str, Any] = {}
     discovery_events: list[dict[str, Any]] = []
     holdout_events: list[dict[str, Any]] = []
     for bucket in BUCKETS:
-        disc, d_events = bucket_window(bucket, "discovery", rows, quality, perps, untimed)
-        hold, h_events = bucket_window(bucket, "holdout", rows, quality, perps, untimed)
+        disc, d_events = bucket_window(
+            bucket, "discovery", rows, quality, perps, untimed, covered_from
+        )
+        hold, h_events = bucket_window(
+            bucket, "holdout", rows, quality, perps, untimed, covered_from
+        )
         discovery_events += d_events
         holdout_events += h_events
         buckets[bucket] = {
@@ -1124,6 +1221,7 @@ def report(receipts: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[st
             "source_quality": public_quality,
             "unrequested_sources": UNREQUESTED_SOURCES,
             "untimed_without_machine_time": untimed,
+            "series_coverage": coverage,
             "instrument_assets": len(perps),
             "instrument_launches": {w: launch_counts(perps, w) for w in ("discovery", "holdout")},
             "discovery_events": sorted(

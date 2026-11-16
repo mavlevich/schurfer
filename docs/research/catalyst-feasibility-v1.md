@@ -216,9 +216,21 @@ differed from `publishTime` by up to 92 days. Infinity, NaN and every other malf
 value (a string, null or bool) still stop the fetch. The count per source is reported
 as `untimed_without_machine_time`. These articles may hold real events and cannot be
 assigned to a bucket or a window, so the `timed` gate (section 7) counts them against
-every bucket of their source, in both windows. The fetch stops if more than 10% of one
-page's articles are untimed (reason `untimed_share_above_limit`), which also caps the
-total at 10%.
+every bucket of their source, in both windows.
+
+**The untimed era.** The second live fetch showed that the Bybit delistings feed stops
+carrying machine times from about April 2024 back: page 24 had more than 10% untimed
+articles, after 23 pages with none. A page on which more than 10% of the articles are
+untimed therefore ends its series with the stop `untimed_era`, which counts as read to
+its end. Nothing on that page is counted (its untimed articles lie beyond the coverage
+and are not added to the worst case above), and the series is not read further. The
+stop is allowed only after a page of the same series carried at least one machine-timed
+article; if none did, a renamed or removed time field is the likelier cause and the
+fetch stops as a schema mismatch (`untimed_era_before_any_timed_page`). The report
+states, per series, where it was read back to (`series_coverage`: `read_to` is `end` or
+`untimed_era`, and `covered_from_ms` is the oldest machine time before the era page).
+The feed order follows publication only roughly, so this start is approximate and is
+taken as the oldest time actually read, which can only make coverage look smaller.
 
 **Blind window and other windows.** The announcement lists have no time filter, so
 pages dated on or after 2026-09-29 pass through pagination. The guards:
@@ -247,8 +259,8 @@ pages dated on or after 2026-09-29 pass through pagination. The guards:
 
 - At most **3,000 requests** in total, **64 MiB** of response bytes and **1 request per
   second** per host.
-- An announcement series ends in one of three ways that count as read to its end: an
-  empty page, the time boundary, or the end of a cursor. The time boundary is reached
+- An announcement series ends in one of four ways that count as read to its end: an
+  empty page, the time boundary, the end of a cursor, or the untimed era (section 6). The time boundary is reached
   when the **last** item of a page is older than 2023-02-01; the feeds run from the
   newest, and an old notice pinned above newer ones must not end a series.
 - The instrument catalog has no time order. It is followed by cursor to its end and
@@ -290,6 +302,14 @@ visible as `timed_share` below 0.9 with `timed_share_among_placed` at or above i
 ambiguous share is `identity_ambiguous / (matched_live_perp + identity_ambiguous)`,
 counted on `timed` events whose base has a Bybit USDT ticker candidate. Events with no
 candidate at all are `no_live_perp` and are outside this denominator.
+
+**Coverage.** A window counts only if every requested source of the bucket reaches back
+to its start. A source whose series ended in the untimed era and whose `covered_from_ms`
+is after the window's first day is listed in the bucket's `uncovered_sources`, and the
+window then fails its minimums: a discovery gap gives `insufficient_events`, a holdout gap
+gives `lab_only`. This is judged per source, not per series, so one partly covered Bybit
+series limits all three Bybit buckets. The reason is visible in `uncovered_sources` and
+in `series_coverage`; no verdict name is added.
 
 **Minimums.** Fixed now. They are not tuned after counting.
 
@@ -504,6 +524,16 @@ of that change found that unplaced articles would bypass the 90% `timed` gate, a
 corrupt number (infinity, NaN) could be taken for a missing time. Both are fixed before
 any count: unplaced articles now count against the gate in the worst case (section 7), and
 only an absent field or a finite number of zero or below is tolerated (section 6).
+
+**Second live fetch stop, 2026-11-16.** The fetch of revision `dcb2475` stopped on the
+same page 24 of `bybit_ann:delistings`, now with the reason `untimed_share_above_limit`
+(more than 10% of its articles untimed, none on pages 1 to 23). The Bybit delistings feed
+therefore has no machine time for its older articles, and its machine-timed history ends
+about April 2024, inside the holdout. The untimed era stop and the coverage rule
+(sections 6 and 7) are the amendment for this, written before any count is read. They
+leave the discovery year readable and make a Bybit-sourced holdout unconfirmable unless
+the feed reaches back to 2023-02-01. The remaining series had not been requested when it
+stopped. The rerun passes both stopped run roots with `--prior-root`.
 
 **Changes made while writing the code.** These come after the design discussion and
 are for the colleague's review of the code PR:
