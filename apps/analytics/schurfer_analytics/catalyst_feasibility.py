@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import re
 import sys
 import time
@@ -210,6 +211,98 @@ def canonical_ms(source: str, item: dict[str, Any]) -> int:
     raise ValueError(source)
 
 
+TIME_FIELDS = {
+    "bybit": ("publishTime",),
+    "bybit_instruments": ("launchTime",),
+    "binance": ("releaseDate",),
+    "upbit": ("first_listed_at", "listed_at"),
+}
+
+
+class SchemaMismatchError(ValueError):
+    """One item broke the expected shape. Carries a fixed-vocabulary reason, never a value."""
+
+    def __init__(self, index: int, reason: str) -> None:
+        super().__init__(f"item {index}: {reason}")
+        self.index, self.reason = index, reason
+
+
+def explain_time_failure(source: str, item: dict[str, Any]) -> str:
+    """Name why an item's machine time is unusable, from key presence and types only.
+
+    The vocabulary is fixed here: field names come from the code and Python type
+    names from the value, so no value, title or symbol can reach a receipt.
+    """
+    for field in TIME_FIELDS[source]:
+        if field not in item:
+            return f"missing:{field}"
+        value = item[field]
+        if isinstance(value, bool):
+            return f"bool:{field}"
+        if source == "upbit":
+            if not isinstance(value, str):
+                return f"type_{type(value).__name__}:{field}"
+            try:
+                _iso_ms(value)
+            except (ValueError, TypeError, OverflowError):
+                return f"bad_iso_time:{field}"
+            continue
+        if isinstance(value, int | float):
+            if isinstance(value, float) and not math.isfinite(value):
+                return f"non_finite_number:{field}"
+            return f"non_positive_number:{field}" if value <= 0 else f"unusable_number:{field}"
+        if isinstance(value, str):
+            return f"str_not_positive_integer:{field}"
+        return f"type_{type(value).__name__}:{field}"
+    return "unusable_time"
+
+
+# Numeric-time announcement feeds only. An article with no machine time at all (key
+# absent, or zero or negative) cannot be placed in a window, so it is counted and
+# dropped unparsed. Any other malformed time (a string, null, bool) is a schema change
+# and still stops the fetch.
+UNTIMED_SOURCES = frozenset({"bybit", "binance"})
+UNTIMED_REASONS = ("missing:", "non_positive_number:")
+MAX_UNTIMED_SHARE = 10  # percent of one page's items; above it the fetch stops
+
+
+def is_untimed(source: str, item: dict[str, Any]) -> bool:
+    return source in UNTIMED_SOURCES and explain_time_failure(source, item).startswith(
+        UNTIMED_REASONS
+    )
+
+
+ENVELOPE_REASONS = frozenset(
+    {
+        "retCode",
+        "code",
+        "catalogs",
+        "success",
+        "cursor",
+        "items",
+        "result",
+        "result.list",
+        "data",
+        "data.catalogs",
+        "data.notices",
+        "articles",
+        "list",
+    }
+)
+
+
+def failure_record(exc: BaseException) -> dict[str, Any]:
+    """Key-only account of a schema failure: exception class and a fixed reason."""
+    record: dict[str, Any] = {"class": type(exc).__name__}
+    if isinstance(exc, SchemaMismatchError):
+        record.update(stage="item", item_index=exc.index, reason=exc.reason)
+        return record
+    first = exc.args[0] if exc.args else None
+    record["stage"] = "envelope"
+    record["reason"] = first if isinstance(first, str) and first in ENVELOPE_REASONS else "other"
+    return record
+
+
 def window_of(ms: int) -> str | None:
     for name, (first, end) in WINDOWS.items():
         if first <= ms < end:
@@ -251,20 +344,28 @@ def cut_page(source: str, payload: Any) -> dict[str, Any]:
     """Apply the window cut to one parsed page. Raises on any schema mismatch."""
     items, cursor = raw_items(source, payload)
     kept: list[dict[str, Any]] = []
-    dropped, oldest_reached = 0, False
+    dropped, untimed, first_untimed = 0, 0, -1
+    last_ms: int | None = None
     for index, item in enumerate(items):
-        ms = canonical_ms(source, item)
-        # The time boundary belongs to announcement feeds only, which run from the
-        # newest. It is read from the page's last item: an old notice pinned above
-        # newer ones must not end the series. A catalog of instruments has no time
-        # order at all and is followed by cursor to its end.
-        if source != "bybit_instruments" and index == len(items) - 1 and ms < OLDEST_MS:
-            oldest_reached = True
+        try:
+            ms = canonical_ms(source, item)
+        except (KeyError, ValueError, TypeError, OverflowError) as exc:
+            if not is_untimed(source, item):
+                raise SchemaMismatchError(index, explain_time_failure(source, item)) from exc
+            untimed += 1
+            first_untimed = first_untimed if first_untimed >= 0 else index
+            continue
+        last_ms = ms
         if source == "bybit_instruments":
             if ms >= CUT_MS:
                 dropped += 1
                 continue
-            record = instrument_record(item, ms)
+            try:
+                record = instrument_record(item, ms)
+            except KeyError as exc:
+                raise SchemaMismatchError(index, f"missing:{exc.args[0]}") from exc
+            except (ValueError, TypeError, OverflowError) as exc:
+                raise SchemaMismatchError(index, "bad_instrument_field") from exc
             if record is not None:
                 kept.append(record)
             continue
@@ -272,10 +373,18 @@ def cut_page(source: str, payload: Any) -> dict[str, Any]:
             dropped += 1
             continue
         kept.append(item)
+    if untimed * 100 > MAX_UNTIMED_SHARE * len(items):
+        raise SchemaMismatchError(first_untimed, "untimed_share_above_limit")
+    # The time boundary belongs to announcement feeds only, which run from the newest.
+    # It is read from the page's last item that has a machine time: an old notice
+    # pinned above newer ones must not end the series. A catalog of instruments has no
+    # time order at all and is followed by cursor to its end.
+    oldest_reached = source != "bybit_instruments" and last_ms is not None and last_ms < OLDEST_MS
     return {
         "items": len(items),
         "kept": kept,
         "dropped": dropped,
+        "untimed": untimed,
         "oldest_reached": oldest_reached,
         "next_cursor": cursor,
     }
@@ -468,8 +577,9 @@ class Fetcher:
             try:
                 payload = json.loads(bytes(body))
                 page = cut_page(series.source, payload)
-            except (ValueError, TypeError, KeyError, OverflowError):
+            except (ValueError, TypeError, KeyError, OverflowError) as exc:
                 error = "schema_mismatch"
+                receipt["failure"] = failure_record(exc)
                 try:
                     receipt["schema"] = key_tree(json.loads(bytes(body)))
                 except ValueError:
@@ -494,6 +604,7 @@ class Fetcher:
                     stop=stop,
                     items=page["items"],
                     dropped=page["dropped"],
+                    untimed=page["untimed"],
                     kept=page["kept"],
                     next_cursor=page["next_cursor"] if series.paging == "cursor" else "",
                     terminal=terminal,
@@ -528,6 +639,7 @@ class Fetcher:
                 "pages_ok": len(ok),
                 "kept": sum(len(r["kept"]) for r in ok),
                 "dropped": sum(r["dropped"] for r in ok),
+                "untimed": sum(r.get("untimed", 0) for r in ok),
                 "terminal": bool(ok and ok[-1]["terminal"]),
                 "stop": ok[-1]["stop"] if ok else None,
             }
@@ -851,8 +963,13 @@ def bucket_window(
     rows: list[dict[str, Any]],
     quality: dict[tuple[str, str], dict[str, Any]],
     perps: dict[str, list[dict[str, Any]]],
+    untimed: dict[str, int],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     sources = BUCKET_SOURCES[bucket]
+    # Articles with no machine time have no window and no bucket. Any of them may belong
+    # to this bucket and window, so in the worst case each is an untimed article here:
+    # the 90% gate cannot be shown to pass unless it passes with all of them counted.
+    unknown = sum(untimed.get(s, 0) for s in sources)
     mine = [a for a in rows if a["bucket"] == bucket and a["window"] == window]
     usable = {
         s for s in sources if (q := quality.get((s, window))) and q["timed"] and q["provenance_ok"]
@@ -890,7 +1007,9 @@ def bucket_window(
     stats = {
         "articles": len(mine),
         "articles_by_source": dict(Counter(a["source"] for a in mine)),
-        "timed_share": timed_articles / len(mine) if mine else None,
+        "timed_share": timed_articles / (len(mine) + unknown) if mine or unknown else None,
+        "timed_share_among_placed": timed_articles / len(mine) if mine else None,
+        "untimed_possible": unknown,
         "status": dict(status),
         "events": len(events),
         "events_by_source": dict(Counter(e["source"] for e in events)),
@@ -932,6 +1051,8 @@ def verdict(discovery: dict[str, Any], holdout: dict[str, Any]) -> str:
 HOLDOUT_FIELDS = (
     "articles",
     "timed_share",
+    "timed_share_among_placed",
+    "untimed_possible",
     "status",
     "events",
     "clusters",
@@ -943,6 +1064,18 @@ HOLDOUT_FIELDS = (
     "timed_sources",
     "usable_sources",
 )
+
+
+def untimed_by_source(receipts: list[dict[str, Any]]) -> dict[str, int]:
+    """Articles with no machine time, dropped unparsed; they may include real events."""
+    source_of = {s.name: s.source for s in SERIES}
+    out = {s: 0 for s in sorted({x.source for x in SERIES if x.source != "bybit_instruments"})}
+    for r in receipts:
+        if r["outcome"] == "ok" and r["series"] in source_of:
+            source = source_of[r["series"]]
+            if source in out:
+                out[source] += int(r.get("untimed", 0))
+    return out
 
 
 def report(receipts: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
@@ -963,12 +1096,13 @@ def report(receipts: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[st
     ]
     if unclassified:
         raise ValueError(f"no discovery-year article classified for {unclassified}")
+    untimed = untimed_by_source(receipts)
     buckets: dict[str, Any] = {}
     discovery_events: list[dict[str, Any]] = []
     holdout_events: list[dict[str, Any]] = []
     for bucket in BUCKETS:
-        disc, d_events = bucket_window(bucket, "discovery", rows, quality, perps)
-        hold, h_events = bucket_window(bucket, "holdout", rows, quality, perps)
+        disc, d_events = bucket_window(bucket, "discovery", rows, quality, perps, untimed)
+        hold, h_events = bucket_window(bucket, "holdout", rows, quality, perps, untimed)
         discovery_events += d_events
         holdout_events += h_events
         buckets[bucket] = {
@@ -989,6 +1123,7 @@ def report(receipts: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[st
             "buckets": buckets,
             "source_quality": public_quality,
             "unrequested_sources": UNREQUESTED_SOURCES,
+            "untimed_without_machine_time": untimed,
             "instrument_assets": len(perps),
             "instrument_launches": {w: launch_counts(perps, w) for w in ("discovery", "holdout")},
             "discovery_events": sorted(

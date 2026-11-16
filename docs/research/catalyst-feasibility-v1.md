@@ -192,7 +192,11 @@ are therefore expected shapes, not confirmed ones. The guards:
 
 - the first page of every series records a **schema probe**: the key paths and value
   types of the response, never a value;
-- any mismatch stops the whole fetch closed, with the same key-only record;
+- any mismatch stops the whole fetch closed, with the same key-only record and a
+  `failure` record: the exception class, the stage (`envelope` or `item`), the item
+  index and a reason from a fixed vocabulary (for example `missing:publishTime`). The
+  key tree is a union over the items of a page, so one malformed item leaves it
+  unchanged; the `failure` record is what names it. It holds no value, title or symbol;
 - the fix is a reviewed code change. A stopped run does not resume: its run binding
   holds the code revision, so a corrected revision starts a **new run in a new root**,
   from the first page. The stopped run's receipts are kept, passed to the new run via
@@ -200,6 +204,21 @@ are therefore expected shapes, not confirmed ones. The guards:
   64 MiB study budget, and named in the report's provenance. A transport failure on the
   same revision does resume, up to three attempts per page;
 - for edits, the order check (section 4) is the evidence, and the report says so.
+
+**Articles with no machine time.** The first live fetch stopped on a Bybit
+announcements page with an article that has no usable `publishTime`. For the numeric-time
+announcement feeds (Bybit and Binance only) an article whose canonical time field is
+absent, or is a finite number of zero or below, is not a schema change: it is counted
+per page and dropped unparsed. It is placed in no window, because a window needs a
+machine time, and it never sets the time boundary of a feed. An author-filled time
+(`dateTimestamp`, `startDateTimestamp`) is never used as a fallback: on one early page it
+differed from `publishTime` by up to 92 days. Infinity, NaN and every other malformed
+value (a string, null or bool) still stop the fetch. The count per source is reported
+as `untimed_without_machine_time`. These articles may hold real events and cannot be
+assigned to a bucket or a window, so the `timed` gate (section 7) counts them against
+every bucket of their source, in both windows. The fetch stops if more than 10% of one
+page's articles are untimed (reason `untimed_share_above_limit`), which also caps the
+total at 10%.
 
 **Blind window and other windows.** The announcement lists have no time filter, so
 pages dated on or after 2026-09-29 pass through pagination. The guards:
@@ -262,7 +281,12 @@ month or week. The holdout's event list is sealed outside Git, and only its hash
 into the evidence manifest. The discovery year's event list (time, source, article id,
 base, bucket) is published, since it is the laboratory.
 
-**Denominators.** `timed` is a share of all in-window articles of the bucket. The
+**Denominators.** `timed` is a share of all in-window articles of the bucket, plus, in
+the worst case, every article of the bucket's sources that has no machine time (section
+6): they have no window, so each may belong to this bucket and window. The report gives
+this conservative `timed_share`, the share among placed articles beside it, and
+`untimed_possible`; a bucket that fails the 90% gate only because of unplaced articles is
+visible as `timed_share` below 0.9 with `timed_share_among_placed` at or above it. The
 ambiguous share is `identity_ambiguous / (matched_live_perp + identity_ambiguous)`,
 counted on `timed` events whose base has a Bybit USDT ticker candidate. Events with no
 candidate at all are `no_live_perp` and are outside this denominator.
@@ -467,6 +491,19 @@ it early. It can only make the fetch read more pages, never fewer.
 3. **New-perp launch counts (`instrument_launches`).** The report records aggregate
    launch counts (symbols, bases and ISO weeks per window) from the deduplicated
    instrument catalog (section 7).
+
+**First live fetch stop, 2026-11-16.** The fetch of revision `3c974cc` stopped on page
+24 of `bybit_ann:delistings` with `schema_mismatch`, after 23 pages and 24 requests. The
+receipt's key tree equalled page 1's, so it could not name the cause; no body is stored.
+The corrected revision adds the `failure` record (section 6) and the untimed-article rule
+above. Whether page 24 holds articles with a missing or zero `publishTime` is a
+hypothesis until the rerun; a different cause stops the rerun again, now with a reason.
+The rerun passes `--prior-root`, so the 24 requests count against the same budget. The
+untimed rule and the 10% limit amend sections 4 and 6 before any count is read. Review
+of that change found that unplaced articles would bypass the 90% `timed` gate, and that a
+corrupt number (infinity, NaN) could be taken for a missing time. Both are fixed before
+any count: unplaced articles now count against the gate in the worst case (section 7), and
+only an absent field or a finite number of zero or below is tolerated (section 6).
 
 **Changes made while writing the code.** These come after the design discussion and
 are for the colleague's review of the code PR:

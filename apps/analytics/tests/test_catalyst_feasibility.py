@@ -142,6 +142,163 @@ def test_schema_mismatch_raises(source: str, payload: dict[str, Any]) -> None:
         cf.cut_page(source, payload)
 
 
+def announcement_page(source: str, items: list[dict[str, Any]]) -> dict[str, Any]:
+    if source == "bybit":
+        return bybit_page(items)
+    if source == "binance":
+        return binance_page(items)
+    return {"success": True, "data": {"notices": items}}
+
+
+def good_article(source: str) -> dict[str, Any]:
+    if source == "bybit":
+        return {"publishTime": IN_DISCOVERY}
+    if source == "binance":
+        return {"releaseDate": IN_DISCOVERY}
+    return {"first_listed_at": upbit_iso(IN_DISCOVERY), "listed_at": upbit_iso(IN_DISCOVERY)}
+
+
+@pytest.mark.parametrize(
+    ("source", "bad", "reason"),
+    [
+        ("bybit", {"title": "ZZZBLIND", "publishTime": ""}, "str_not_positive_integer:publishTime"),
+        ("bybit", {"title": "ZZZBLIND", "publishTime": None}, "type_NoneType:publishTime"),
+        ("bybit", {"title": "ZZZBLIND", "publishTime": True}, "bool:publishTime"),
+        (
+            "upbit",
+            {"title": "ZZZBLIND", "first_listed_at": "x", "listed_at": 7},
+            "bad_iso_time:first_listed_at",
+        ),
+        (
+            "upbit",
+            {"title": "ZZZBLIND", "first_listed_at": upbit_iso(IN_DISCOVERY), "listed_at": 7},
+            "type_int:listed_at",
+        ),
+        (
+            "upbit",
+            {"title": "ZZZBLIND", "listed_at": upbit_iso(IN_DISCOVERY)},
+            "missing:first_listed_at",
+        ),
+    ],
+)
+def test_item_failure_names_the_reason_without_values(
+    source: str, bad: dict[str, Any], reason: str
+) -> None:
+    items = [good_article(source), good_article(source), bad]
+    with pytest.raises(cf.SchemaMismatchError) as caught:
+        cf.cut_page(source, announcement_page(source, items))
+    assert (caught.value.index, caught.value.reason) == (2, reason)
+    assert "ZZZBLIND" not in json.dumps(cf.failure_record(caught.value))
+
+
+@pytest.mark.parametrize(
+    ("source", "bad"),
+    [
+        ("bybit", {"title": "ZZZBLIND"}),
+        ("bybit", {"title": "ZZZBLIND", "publishTime": 0, "dateTimestamp": IN_DISCOVERY}),
+        ("binance", {"title": "ZZZBLIND", "releaseDate": -5}),
+    ],
+)
+def test_article_without_a_machine_time_is_counted_and_dropped_unparsed(
+    source: str, bad: dict[str, Any]
+) -> None:
+    # Regression: the first live run stopped on a Bybit page holding such an article.
+    # An author-filled time is never a fallback: the article is placed in no window.
+    items = [good_article(source)] * 19 + [bad]
+    out = cf.cut_page(source, announcement_page(source, items))
+    assert out["untimed"] == 1
+    assert len(out["kept"]) == 19
+    assert out["dropped"] == 0
+    assert not out["oldest_reached"]
+    assert "ZZZBLIND" not in json.dumps(out)
+
+
+@pytest.mark.parametrize("source", ["bybit", "binance"])
+@pytest.mark.parametrize(
+    ("raw", "reason"),
+    [
+        ("1e400", "non_finite_number"),
+        ("-1e400", "non_finite_number"),
+        ("NaN", "non_finite_number"),
+        ("Infinity", "non_finite_number"),
+    ],
+)
+def test_a_corrupt_number_is_not_a_missing_time(source: str, raw: str, reason: str) -> None:
+    # Only an absent field or a finite number <= 0 is "no machine time". A value that
+    # decodes to infinity or NaN is a corrupt feed and stops the fetch.
+    field = "publishTime" if source == "bybit" else "releaseDate"
+    bad = json.loads(f'{{"title": "ZZZBLIND", "{field}": {raw}}}')
+    with pytest.raises(cf.SchemaMismatchError) as caught:
+        cf.cut_page(source, announcement_page(source, [*([good_article(source)] * 19), bad]))
+    assert caught.value.reason == f"{reason}:{field}"
+    assert "ZZZBLIND" not in json.dumps(cf.failure_record(caught.value))
+
+
+def test_untimed_articles_do_not_set_the_time_boundary() -> None:
+    old = {"publishTime": TOO_OLD}
+    out = cf.cut_page("bybit", bybit_page([old] * 10 + [{"title": "x"}] * 1))
+    assert out["untimed"] == 1
+    assert out["oldest_reached"]  # read from the last item that has a machine time
+    only_untimed = cf.cut_page("bybit", bybit_page([good_article("bybit")] * 19 + [{"x": 1}]))
+    assert not only_untimed["oldest_reached"]
+
+
+def test_too_many_untimed_articles_stop_the_fetch() -> None:
+    items = [good_article("bybit")] * 17 + [{"title": "a"}, {"title": "b"}, {"title": "c"}]
+    with pytest.raises(cf.SchemaMismatchError) as caught:
+        cf.cut_page("bybit", bybit_page(items))
+    assert (caught.value.index, caught.value.reason) == (17, "untimed_share_above_limit")
+    # Exactly at the limit still passes: 2 of 20 is 10%.
+    out = cf.cut_page(
+        "bybit", bybit_page([*items[:17], {"title": "a"}, {"title": "b"}, good_article("bybit")])
+    )
+    assert out["untimed"] == 2
+
+
+@pytest.mark.parametrize(
+    ("record", "reason"),
+    [
+        ({"contractType": "LinearPerpetual", "settleCoin": "USDT"}, "missing:symbol"),
+        (
+            {
+                "symbol": "AUSDT",
+                "contractType": "LinearPerpetual",
+                "settleCoin": "USDT",
+                "deliveryTime": "ZZZBLIND",
+            },
+            "bad_instrument_field",
+        ),
+    ],
+)
+def test_instrument_record_failure_is_an_item_stage_failure(
+    record: dict[str, Any], reason: str
+) -> None:
+    item = {"launchTime": str(IN_HOLDOUT), **record}
+    with pytest.raises(cf.SchemaMismatchError) as caught:
+        cf.cut_page("bybit_instruments", bybit_page([item]))
+    assert cf.failure_record(caught.value) == {
+        "class": "SchemaMismatchError",
+        "stage": "item",
+        "item_index": 0,
+        "reason": reason,
+    }
+
+
+def test_envelope_failure_record_never_echoes_exception_text() -> None:
+    with pytest.raises(ValueError, match="retCode") as caught:
+        cf.cut_page("bybit", {"retCode": 10001, "result": {"list": []}})
+    assert cf.failure_record(caught.value) == {
+        "class": "ValueError",
+        "stage": "envelope",
+        "reason": "retCode",
+    }
+    assert cf.failure_record(ValueError("ZZZBLIND")) == {
+        "class": "ValueError",
+        "stage": "envelope",
+        "reason": "other",
+    }
+
+
 def test_upbit_canonical_time_is_the_earliest_machine_time() -> None:
     item = {
         "id": 1,
@@ -506,10 +663,76 @@ def test_report_counts_instrument_launches_per_window_deduplicated() -> None:
         }
     )
     public, _ = cf.report(receipts)
+    assert public["untimed_without_machine_time"] == {"binance": 0, "bybit": 0, "upbit": 0}
     assert public["instrument_launches"] == {
         "discovery": {"launches": 3, "bases": 2, "weeks": 2},
         "holdout": {"launches": 1, "bases": 1, "weeks": 1},
     }
+
+
+def paged_receipts(known: list[dict[str, Any]], untimed_total: int) -> list[dict[str, Any]]:
+    """Binance:48 receipts built by the real page cut, spreading untimed articles at
+    no more than the 10% page limit."""
+    out: list[dict[str, Any]] = []
+    left = untimed_total
+    for i in range(0, len(known), 18):
+        chunk = known[i : i + 18]
+        here = min(left, 2, len(chunk) // 9)
+        left -= here
+        cut = cf.cut_page("binance", binance_page([*chunk, *([{"title": "no time"}] * here)]))
+        out.append(
+            {
+                "seq": len(out) + 1,
+                "series": "binance:48",
+                "outcome": "ok",
+                "kept": cut["kept"],
+                "untimed": cut["untimed"],
+            }
+        )
+    assert left == 0
+    return out
+
+
+def a2_report(untimed_total: int) -> dict[str, Any]:
+    holdout = with_ids(futures_listings(ms("2023-03-06T00:00:00"), 30, 15, 8), 1)
+    discovery = with_ids(futures_listings(ms("2024-10-07T00:00:00"), 40, 20, 8), 1_000)
+    perps = [perp(f"B{i}USDT", ms("2022-01-01T00:00:00")) for i in range(20)]
+    receipts = paged_receipts(holdout + discovery, untimed_total)
+    receipts.append({"seq": 99, "series": "bybit_inst:Trading", "outcome": "ok", "kept": perps})
+    public, _ = cf.report(receipts)
+    result: dict[str, Any] = public
+    return result
+
+
+def test_unplaced_articles_cannot_be_shown_to_meet_the_timed_gate() -> None:
+    # Regression: untimed articles used to be left out of the share, so 40 known A2
+    # articles beside unreadable ones reported timed_share 100% and `feasible`, with
+    # every page within the 10% page limit. The unreadable ones may belong to A2 in
+    # either window, so the gate must fail on the worst case.
+    public = a2_report(untimed_total=7)
+    a2 = public["buckets"]["A2"]
+    assert public["untimed_without_machine_time"]["binance"] == 7
+    assert a2["discovery"]["untimed_possible"] == 7
+    assert a2["discovery"]["timed_share_among_placed"] == 1.0
+    assert a2["discovery"]["timed_share"] == pytest.approx(40 / 47)
+    assert a2["holdout"]["timed_share"] == pytest.approx(30 / 37)
+    assert a2["verdict"] == "insufficient_events"
+    assert public["outcome"] == "stop_direction_a"
+
+
+def test_few_unplaced_articles_keep_the_bucket_feasible_when_the_gate_still_passes() -> None:
+    # 3 untimed: 40/43 and 30/33 are both at least 90%.
+    a2 = a2_report(untimed_total=3)["buckets"]["A2"]
+    assert a2["discovery"]["timed_share"] == pytest.approx(40 / 43)
+    assert a2["holdout"]["timed_share"] == pytest.approx(30 / 33)
+    assert a2["verdict"] == "feasible"
+
+
+def test_no_unplaced_articles_leaves_the_gate_unchanged() -> None:
+    a2 = a2_report(untimed_total=0)["buckets"]["A2"]
+    assert a2["discovery"]["untimed_possible"] == 0
+    assert a2["discovery"]["timed_share"] == 1.0
+    assert a2["verdict"] == "feasible"
 
 
 def test_report_refuses_an_unclassified_source() -> None:
@@ -602,6 +825,7 @@ def test_fetch_paginates_and_never_persists_bodies(tmp_path: Path) -> None:
         "pages_ok": 2,
         "kept": 2,
         "dropped": 2,
+        "untimed": 0,
         "terminal": True,
         "stop": "time_boundary",
     }
@@ -650,6 +874,46 @@ def test_fetch_stops_on_schema_mismatch_with_keys_only(tmp_path: Path) -> None:
 
 
 @pytest.mark.usefixtures("small")
+def test_item_level_mismatch_with_an_unchanged_key_tree_records_its_reason(tmp_path: Path) -> None:
+    # One article without its time among well-formed ones: the union key tree equals a
+    # good page's, so only the failure record can say what broke (regression: the
+    # first live run stopped on such a page with nothing to diagnose it).
+    good = {"id": 8, "title": "Binance Will List Kept (KEPT)", "releaseDate": IN_DISCOVERY}
+    odd = {"id": 7, "title": "Binance Will List Hold (ZZZBLIND)"}
+    pages = dict(PAGES) | {"/b?2": binance_page([good, odd])}
+    with httpx.Client(transport=handler(pages)) as client, pytest.raises(cf.FetchStoppedError):
+        fetcher(tmp_path).fetch(client)
+    stopped = fetcher(tmp_path).receipts()[-1]
+    assert stopped["outcome"] == "schema_mismatch"
+    assert stopped["failure"] == {
+        "class": "SchemaMismatchError",
+        "stage": "item",
+        "item_index": 1,
+        "reason": "untimed_share_above_limit",
+    }
+    assert "ZZZBLIND" not in json.dumps(stopped)
+
+
+@pytest.mark.usefixtures("small")
+def test_fetch_survives_an_untimed_article_and_the_report_discloses_it(tmp_path: Path) -> None:
+    # Regression for the first live stop: one article without a machine time among
+    # well-formed ones no longer ends the run, and its count reaches the report.
+    good = [
+        {"id": i, "title": "Binance Will List Kept (KEPT)", "releaseDate": IN_DISCOVERY + i}
+        for i in range(19)
+    ]
+    odd = {"id": 99, "title": "Binance Will List Odd (ZZZBLIND)"}
+    pages = dict(PAGES) | {"/b?1": binance_page([*good, odd])}
+    with httpx.Client(transport=handler(pages)) as client:
+        fetch = fetcher(tmp_path)
+        summary = fetch.fetch(client)
+    assert summary["series"]["binance:48"]["untimed"] == 1
+    assert summary["series"]["binance:48"]["kept"] == 19 + 1  # page 2 keeps one holdout item
+    assert cf.untimed_by_source(fetch.receipts()) == {"binance": 1}
+    assert "ZZZBLIND" not in json.dumps(fetch.receipts())
+
+
+@pytest.mark.usefixtures("small")
 def test_old_instrument_does_not_end_the_catalog(tmp_path: Path) -> None:
     # The catalog has no time order: an instrument launched before the oldest window
     # sits on the first page, an eligible one on the next.
@@ -665,6 +929,7 @@ def test_old_instrument_does_not_end_the_catalog(tmp_path: Path) -> None:
         "pages_ok": 2,
         "kept": 2,
         "dropped": 0,
+        "untimed": 0,
         "terminal": True,
         "stop": "cursor_end",
     }
