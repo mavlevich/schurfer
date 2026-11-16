@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import re
 import sys
 import time
@@ -247,7 +248,9 @@ def explain_time_failure(source: str, item: dict[str, Any]) -> str:
                 return f"bad_iso_time:{field}"
             continue
         if isinstance(value, int | float):
-            return f"non_positive_or_unusable_number:{field}"
+            if isinstance(value, float) and not math.isfinite(value):
+                return f"non_finite_number:{field}"
+            return f"non_positive_number:{field}" if value <= 0 else f"unusable_number:{field}"
         if isinstance(value, str):
             return f"str_not_positive_integer:{field}"
         return f"type_{type(value).__name__}:{field}"
@@ -259,7 +262,7 @@ def explain_time_failure(source: str, item: dict[str, Any]) -> str:
 # dropped unparsed. Any other malformed time (a string, null, bool) is a schema change
 # and still stops the fetch.
 UNTIMED_SOURCES = frozenset({"bybit", "binance"})
-UNTIMED_REASONS = ("missing:", "non_positive_or_unusable_number:")
+UNTIMED_REASONS = ("missing:", "non_positive_number:")
 MAX_UNTIMED_SHARE = 10  # percent of one page's items; above it the fetch stops
 
 
@@ -960,8 +963,13 @@ def bucket_window(
     rows: list[dict[str, Any]],
     quality: dict[tuple[str, str], dict[str, Any]],
     perps: dict[str, list[dict[str, Any]]],
+    untimed: dict[str, int],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     sources = BUCKET_SOURCES[bucket]
+    # Articles with no machine time have no window and no bucket. Any of them may belong
+    # to this bucket and window, so in the worst case each is an untimed article here:
+    # the 90% gate cannot be shown to pass unless it passes with all of them counted.
+    unknown = sum(untimed.get(s, 0) for s in sources)
     mine = [a for a in rows if a["bucket"] == bucket and a["window"] == window]
     usable = {
         s for s in sources if (q := quality.get((s, window))) and q["timed"] and q["provenance_ok"]
@@ -999,7 +1007,9 @@ def bucket_window(
     stats = {
         "articles": len(mine),
         "articles_by_source": dict(Counter(a["source"] for a in mine)),
-        "timed_share": timed_articles / len(mine) if mine else None,
+        "timed_share": timed_articles / (len(mine) + unknown) if mine or unknown else None,
+        "timed_share_among_placed": timed_articles / len(mine) if mine else None,
+        "untimed_possible": unknown,
         "status": dict(status),
         "events": len(events),
         "events_by_source": dict(Counter(e["source"] for e in events)),
@@ -1041,6 +1051,8 @@ def verdict(discovery: dict[str, Any], holdout: dict[str, Any]) -> str:
 HOLDOUT_FIELDS = (
     "articles",
     "timed_share",
+    "timed_share_among_placed",
+    "untimed_possible",
     "status",
     "events",
     "clusters",
@@ -1084,12 +1096,13 @@ def report(receipts: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[st
     ]
     if unclassified:
         raise ValueError(f"no discovery-year article classified for {unclassified}")
+    untimed = untimed_by_source(receipts)
     buckets: dict[str, Any] = {}
     discovery_events: list[dict[str, Any]] = []
     holdout_events: list[dict[str, Any]] = []
     for bucket in BUCKETS:
-        disc, d_events = bucket_window(bucket, "discovery", rows, quality, perps)
-        hold, h_events = bucket_window(bucket, "holdout", rows, quality, perps)
+        disc, d_events = bucket_window(bucket, "discovery", rows, quality, perps, untimed)
+        hold, h_events = bucket_window(bucket, "holdout", rows, quality, perps, untimed)
         discovery_events += d_events
         holdout_events += h_events
         buckets[bucket] = {
@@ -1110,7 +1123,7 @@ def report(receipts: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[st
             "buckets": buckets,
             "source_quality": public_quality,
             "unrequested_sources": UNREQUESTED_SOURCES,
-            "untimed_without_machine_time": untimed_by_source(receipts),
+            "untimed_without_machine_time": untimed,
             "instrument_assets": len(perps),
             "instrument_launches": {w: launch_counts(perps, w) for w in ("discovery", "holdout")},
             "discovery_events": sorted(

@@ -213,6 +213,27 @@ def test_article_without_a_machine_time_is_counted_and_dropped_unparsed(
     assert "ZZZBLIND" not in json.dumps(out)
 
 
+@pytest.mark.parametrize("source", ["bybit", "binance"])
+@pytest.mark.parametrize(
+    ("raw", "reason"),
+    [
+        ("1e400", "non_finite_number"),
+        ("-1e400", "non_finite_number"),
+        ("NaN", "non_finite_number"),
+        ("Infinity", "non_finite_number"),
+    ],
+)
+def test_a_corrupt_number_is_not_a_missing_time(source: str, raw: str, reason: str) -> None:
+    # Only an absent field or a finite number <= 0 is "no machine time". A value that
+    # decodes to infinity or NaN is a corrupt feed and stops the fetch.
+    field = "publishTime" if source == "bybit" else "releaseDate"
+    bad = json.loads(f'{{"title": "ZZZBLIND", "{field}": {raw}}}')
+    with pytest.raises(cf.SchemaMismatchError) as caught:
+        cf.cut_page(source, announcement_page(source, [*([good_article(source)] * 19), bad]))
+    assert caught.value.reason == f"{reason}:{field}"
+    assert "ZZZBLIND" not in json.dumps(cf.failure_record(caught.value))
+
+
 def test_untimed_articles_do_not_set_the_time_boundary() -> None:
     old = {"publishTime": TOO_OLD}
     out = cf.cut_page("bybit", bybit_page([old] * 10 + [{"title": "x"}] * 1))
@@ -647,6 +668,71 @@ def test_report_counts_instrument_launches_per_window_deduplicated() -> None:
         "discovery": {"launches": 3, "bases": 2, "weeks": 2},
         "holdout": {"launches": 1, "bases": 1, "weeks": 1},
     }
+
+
+def paged_receipts(known: list[dict[str, Any]], untimed_total: int) -> list[dict[str, Any]]:
+    """Binance:48 receipts built by the real page cut, spreading untimed articles at
+    no more than the 10% page limit."""
+    out: list[dict[str, Any]] = []
+    left = untimed_total
+    for i in range(0, len(known), 18):
+        chunk = known[i : i + 18]
+        here = min(left, 2, len(chunk) // 9)
+        left -= here
+        cut = cf.cut_page("binance", binance_page([*chunk, *([{"title": "no time"}] * here)]))
+        out.append(
+            {
+                "seq": len(out) + 1,
+                "series": "binance:48",
+                "outcome": "ok",
+                "kept": cut["kept"],
+                "untimed": cut["untimed"],
+            }
+        )
+    assert left == 0
+    return out
+
+
+def a2_report(untimed_total: int) -> dict[str, Any]:
+    holdout = with_ids(futures_listings(ms("2023-03-06T00:00:00"), 30, 15, 8), 1)
+    discovery = with_ids(futures_listings(ms("2024-10-07T00:00:00"), 40, 20, 8), 1_000)
+    perps = [perp(f"B{i}USDT", ms("2022-01-01T00:00:00")) for i in range(20)]
+    receipts = paged_receipts(holdout + discovery, untimed_total)
+    receipts.append({"seq": 99, "series": "bybit_inst:Trading", "outcome": "ok", "kept": perps})
+    public, _ = cf.report(receipts)
+    result: dict[str, Any] = public
+    return result
+
+
+def test_unplaced_articles_cannot_be_shown_to_meet_the_timed_gate() -> None:
+    # Regression: untimed articles used to be left out of the share, so 40 known A2
+    # articles beside unreadable ones reported timed_share 100% and `feasible`, with
+    # every page within the 10% page limit. The unreadable ones may belong to A2 in
+    # either window, so the gate must fail on the worst case.
+    public = a2_report(untimed_total=7)
+    a2 = public["buckets"]["A2"]
+    assert public["untimed_without_machine_time"]["binance"] == 7
+    assert a2["discovery"]["untimed_possible"] == 7
+    assert a2["discovery"]["timed_share_among_placed"] == 1.0
+    assert a2["discovery"]["timed_share"] == pytest.approx(40 / 47)
+    assert a2["holdout"]["timed_share"] == pytest.approx(30 / 37)
+    assert a2["verdict"] == "insufficient_events"
+    assert public["outcome"] == "stop_direction_a"
+
+
+def test_few_unplaced_articles_keep_the_bucket_feasible_when_the_gate_still_passes() -> None:
+    # 3 untimed: 40/43 and 30/33 are both at least 90%.
+    a2 = a2_report(untimed_total=3)["buckets"]["A2"]
+    assert a2["discovery"]["timed_share"] == pytest.approx(40 / 43)
+    assert a2["holdout"]["timed_share"] == pytest.approx(30 / 33)
+    assert a2["verdict"] == "feasible"
+
+
+def test_no_unplaced_articles_leaves_the_gate_unchanged() -> None:
+    a2 = a2_report(untimed_total=0)["buckets"]["A2"]
+    assert a2["discovery"]["untimed_possible"] == 0
+    assert a2["discovery"]["timed_share"] == 1.0
+    assert a2["verdict"] == "feasible"
 
 
 def test_report_refuses_an_unclassified_source() -> None:
