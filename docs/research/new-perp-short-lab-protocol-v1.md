@@ -108,12 +108,14 @@ on a further separate go, with a sealed output (aggregate counts and hashes). Th
 read **timestamps, file lists, catalog fields and announcements**, never returns.
 
 **Principle: no outcome-dependent exclusion.** Whether an episode is in the sample is
-decided only from information dated at or before its entry time `E`, plus
-identity evidence about the instrument that is not a price. Nothing the price did
-after `E` may remove an episode. A jump, a crash or a squeeze after entry is exactly
-what the strategy must survive, so a price move alone never removes a trade. A halt or
-a delisting after `E` is an outcome of the episode, handled in section 5.3, not an
-exclusion.
+decided only from information dated at or before its entry time `E`, plus non-price
+identity evidence that is **also dated at or before `E`**. Nothing the price did after
+`E` may remove an episode, and neither may non-price information that becomes known
+after `E`: an announcement on day 10 about a trade opened on day 7 describes an
+already open position. Such an event is scored in the result (section 5.3), not deleted. A jump, a crash
+or a squeeze after entry is exactly what the strategy must survive, so a price move
+alone never removes a trade. A halt or a delisting after `E` is an outcome of the
+episode, handled in section 5.3, not an exclusion.
 
 ### M1. What `launchTime` means versus the first public trade
 
@@ -153,9 +155,9 @@ The catalyst study states that the archive was not reconciled. This check does i
     the catalog set;
   - archive symbols that are absent from the catalog (typically delisted symbols that
     `Closed` no longer returns) are at most 5% of the union;
-  - symbols missing more than 5% of the days **inside their own trading life** (from
-    their first to their last file; days after the last file are a status exit, not a
-    coverage defect) are at most 5% of the catalog set.
+  - symbols missing more than 5% of the days of their planned path are at most 5% of the
+    catalog set. A missing last file is **not** taken as an end of trading: the days
+    after it are a data gap unless a separate source confirms an end (5.3, item 4).
 - **Fail code.** `incomplete_coverage`, with the three shares named. An archive-only
   symbol is **never** added to the cohort by hand after the check: the cohort is the
   catalog as registered. The share is reported because delisted perps are the likely
@@ -166,37 +168,45 @@ The catalyst study states that the archive was not reconciled. This check does i
   launched after 2025-09-30, which the fetch dropped by design, and from dated futures;
   it is not verified. M2 is exactly where it gets resolved, inside the window only.
 
-### M3. Identity per launch, by independent evidence
+### M3. Identity per launch, by independent evidence known at entry
 
 Under the [identity cases](instrument-identity-cases.md), a same-ticker match is not
 proof of the same asset. Identity is judged **only by evidence that is not a price**:
 catalog fields (symbol, base coin, contract size and quantity filters, where snapshots
 exist), Bybit announcements with a machine publication time, the trade-archive file
 list, and the Bybit spot catalog. A price series is never evidence of identity.
-Evidence dated after the end of the episode's path is not used. Each launch receives
-one status:
 
-| Status                        | Meaning                                                                                                                                                         |
-| ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `resolved`                    | one catalog symbol for the base during the path, no earlier Bybit linear perp of the same base, no contradicting independent evidence                           |
-| `relist`                      | the same base had an earlier Bybit linear USDT perp (any time, including before 2023); the launch is not new                                                    |
-| `multiplier_ambiguous`        | two catalog symbols map to one base with overlapping lifetimes (for example a `1000` prefix and a plain ticker)                                                 |
-| `ticker_reuse_suspected`      | a catalog row whose `launchTime` is months later than the symbol's first archive file, or a file-list gap longer than 30 days before the launch                 |
-| `instrument_change_evidenced` | independent evidence, dated inside the path, of a symbol, contract-size or multiplier change (an announcement with a machine time, or differing catalog fields) |
-| `identity_unverifiable`       | no independent source can speak for this launch (for example its announcements are untimed). **The episode stays in the sample** and is counted                 |
+**Timing rule.** Evidence counts only if it was **published or dated at or before
+`E`**, the entry time of the episode (known-at-entry evidence). Evidence that appears
+after `E` is never used to exclude the episode; it is an event of an open position and
+is scored (section 5.3, item 4). Each launch receives one status:
+
+| Status                   | Meaning (evidence known at `E`)                                                                                                                                   |
+| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resolved`               | one catalog symbol for the base at `E`, no earlier Bybit linear perp of the same base, no contradicting evidence                                                  |
+| `relist`                 | the same base had an earlier Bybit linear USDT perp (any time, including before 2023); the launch is not new                                                      |
+| `multiplier_ambiguous`   | two catalog symbols of one base existed at `E` (for example a `1000` prefix and a plain ticker)                                                                   |
+| `ticker_reuse_suspected` | a catalog row whose `launchTime` is months later than the symbol's first archive file, or a file-list gap longer than 30 days before the launch                   |
+| `change_known_at_entry`  | a machine-timed announcement **published at or before `E`**, or a catalog field at `E`, of a symbol, contract-size or multiplier change effective inside the path |
+| `identity_unverifiable`  | no independent source can speak for this launch (for example its announcements are untimed). **The episode stays in the sample** and is counted                   |
 
 - **Pass.** `identity_unverifiable` is at most 20% of the launches that survive M1 and
-  M2, the four contradicting statuses together are at most 10%, and at least 100
-  episodes remain.
+  M2, the four contradicting statuses (`relist`, `multiplier_ambiguous`,
+  `ticker_reuse_suspected`, `change_known_at_entry`) together are at most 10%, and at
+  least 100 episodes remain.
 - **Fail code.** `identity_unresolved`.
 - **Per-launch decision.** `resolved` and `identity_unverifiable` launches are traded in
-  the primary read. `relist`, `multiplier_ambiguous`, `ticker_reuse_suspected` and
-  `instrument_change_evidenced` are excluded from the primary cohort **because of
-  non-price evidence** and are counted by status. `relist` is not a new perp.
+  the primary read. The four contradicting statuses are excluded from the primary
+  cohort **before entry**, on evidence available at `E`, and counted by status.
+  `relist` is not a new perp.
+- **After `E`: events, not exclusions.** A contract conversion, symbol migration,
+  multiplier change, halt or delisting that becomes known after `E` is an
+  **instrument event after entry**. The episode stays in the sample and is scored by
+  the scenario rule of 5.3, item 4. It is never deleted afterwards.
 - **Known limit.** Catalog fields exist as a current snapshot, and the announcement feed
-  that carries contract changes (`product_updates`) has no machine publication time. An
-  unevidenced redenomination or contract change inside a path therefore stays in the
-  sample. This is accepted as a stated limit and is not repaired from prices.
+  that carries contract changes (`product_updates`) has no machine publication time. A
+  change that no source dates stays in the sample as an ordinary episode. This is
+  accepted as a stated limit and is not repaired from prices.
 - **Price diagnostic, outcome-level, gates nothing.** At stage 4 only, the report lists
   episodes whose 1-minute close ratio between consecutive bars falls outside [1/8, 8]
   after the first hour, with their share and their contribution to the result. It is
@@ -208,11 +218,11 @@ one status:
 
 ### M4 to M6. Coverage of what the net needs (also before any return)
 
-| Check | Method                                                                                                                                                                                                                                                               | Pass                                                   | Fail code             |
-| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | --------------------- |
-| M4    | Funding history coverage proven by pagination for the entry-to-planned-exit span of every episode (the HYP-036 rule: a full page covers only from its oldest row; a hold not inside one contiguous union of covered spans is incomplete).                            | at least 95% of resolved episodes covered              | `incomplete_coverage` |
-| M5    | 1-minute trade bars, 1-minute mark-price bars and hourly mark bars at settlements, listed by existence (no content), **inside the symbol's trading life**: from its first to its last file. Days after the last file are a status exit (5.3), not a coverage defect. | at least 95% of episodes have their bars and mark bars | `incomplete_coverage` |
-| M6    | Static capital feasibility known at `E`: contract minimum order value, quantity step, maximum leverage, risk limit and position cap of the symbol, from the catalog snapshot, for notional USD 50 per slot.                                                          | the order opens for at least 90% of episodes           | `capital_infeasible`  |
+| Check | Method                                                                                                                                                                                                                                                                                                        | Pass                                                   | Fail code             |
+| ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | --------------------- |
+| M4    | Funding history coverage proven by pagination for the entry-to-planned-exit span of every episode (the HYP-036 rule: a full page covers only from its oldest row; a hold not inside one contiguous union of covered spans is incomplete).                                                                     | at least 95% of resolved episodes covered              | `incomplete_coverage` |
+| M5    | 1-minute trade bars, 1-minute mark-price bars and hourly mark bars at settlements, listed by existence (no content), over the planned path. A missing last file is **not** an end of trading: bars missing after the last archive file are a data gap unless a separate source confirms an end (5.3, item 4). | at least 95% of episodes have their bars and mark bars | `incomplete_coverage` |
+| M6    | Static capital feasibility known at `E`: contract minimum order value, quantity step, maximum leverage, risk limit and position cap of the symbol, from the catalog snapshot, for notional USD 50 per slot.                                                                                                   | the order opens for at least 90% of episodes           | `capital_infeasible`  |
 
 **Order books are not a gate.** Existence and depth of the order-book archive are
 **recorded, not required**: the share of episodes with a book at entry and at exit, at
@@ -259,7 +269,7 @@ multiply variants on one path.)
 - **Planned exit:** a taker buy of the same `q` at the 1-minute bar that ends at
   `X = E + 7 days`. Reference price `P_x` is that bar's close.
 - **Actual exit.** The position ends at the first of: the planned exit, a stop, a
-  liquidation, or a status exit (5.3). Its time is `t_exit`: `X` for the planned exit,
+  liquidation, or an event after entry (5.3). Its time is `t_exit`: `X` for the planned exit,
   and the **end of the triggering bar** (`bar start + 1 minute`) for the other three.
   **Everything downstream is tied to `actual_exit`**: the exit fill and its fee (on
   the value of `q` at that fill), the funding settlements counted (`E < s < t_exit`,
@@ -273,37 +283,51 @@ A short has unbounded loss on paper; a new perp can pump several times in hours.
 is fixed now and is part of the strategy, not an overlay. **No loss ceiling is promised**:
 the rule defines what the model does, and the report measures the loss distribution.
 
-**What Bybit does (sources, and their limit).** For an isolated USDT perpetual, Bybit's
-help center states that liquidation is triggered when the **mark price** reaches the
-liquidation price, where position margin falls to the maintenance margin level; the
-maintenance rate depends on the risk-limit tier, and the formula includes a fee-to-close
-term. Liquidation may first be partial, to reduce the maintenance requirement; if the
-position still fails it, the whole position is closed at the **bankruptcy price**, the
-price at which the initial margin is lost; a result better than the bankruptcy price
-leaves the surplus with the insurance fund, a worse one is covered by it, and
-auto-deleveraging is the last resort.
-Sources consulted on 2026-11-16:
-[liquidation price, USDT contract](https://www.bybit.com/en/help-center/article/Liquidation-Price-USDT-Contract),
-[liquidation process, USDT contract](https://bybit.nl/en/help-center/article/Liquidation-Process-USDT-Contract),
-[bankruptcy price](https://bybit.nl/en/help-center/article/Bankruptcy-Price-USDT-Contract),
-[insurance fund](https://www.bybit.com/en/help-center/article/Insurance-Fund).
-**Limit:** from this session the official pages timed out, so these statements come from
-search-result summaries and must be re-read in full, and snapshotted with a hash, at
-stage 2 before the contract is frozen. The mechanics are mutable external data.
+**What Bybit's primary pages say (read in the browser pane on 2026-11-16).**
+
+- [The New Margin Calculation](https://www.bybit.com/en/help-center/article/Understanding-the-Adjustment-and-Impact-of-the-New-Margin-Calculation)
+  (last updated 2026-06-18). From 2025-09-02 the margin algorithm changes for perpetual
+  and expiry contracts, **rolled out gradually** (the page gives no per-account date).
+  For isolated margin, the maintenance margin uses the **mark price** and the initial
+  margin keeps the entry price; the risk-limit tier then moves **dynamically** with the
+  mark price. The short liquidation price **before** the change is
+  `E + (IM - MM) / q + extra margin / q`; **after** it, for a USDT contract,
+  `[E*q + E*q/lev + extra/(1+taker) + MM deduction] / [q + q*MMR]`. With no extra
+  margin and no deduction this is `E * (1 + 1/lev) / (1 + MMR)`: at 2x and an `MMR` of
+  0.5% about `1.4925 * E` after the change and about `1.495 * E` before it (the
+  fee terms cancel in the old formula). The maintenance rate sits in the
+  **denominator**, as the reviewer stated, and my earlier formula was not this.
+- [Insurance Fund](https://www.bybit.com/en/help-center/article/Insurance-Fund) (last
+  updated 2026-03-24). A liquidation is triggered when the **mark price** reaches the
+  liquidation price, and the position is **always settled at the bankruptcy price**, the
+  level where no initial margin is left, whatever the market price. A better market
+  execution leaves the surplus with the insurance fund, a worse one is covered by it,
+  and if the fund runs out the loss goes to auto-deleveraging.
+- Two older pages, "Liquidation Price, USDT Contract" and the isolated-mode page for the
+  unified account, answered "not supported on this site" and are **not cited**. The
+  partial-liquidation step I described earlier was not in the pages read and is **not
+  modelled**.
+
+**Consequence.** Liquidation here is a **scenario model**, not a reproduction of the
+exchange's engine. Reasons: the formula changed during the discovery year and the
+rollout date is unknown, so no single historical formula applies to every episode (the
+holdout is wholly under the old logic); the maintenance rate and deduction are
+symbol-and-tier specific and the tier now moves with the mark price; and the initial
+margin also reserves a closing-fee amount that the 50% simplification ignores.
 
 **The model.**
 
-1. **Isolated margin.** Each position holds its own margin, **50% of its notional** (2x
-   leverage per position). The liquidation price of a short is
-   `F_e * (1 + 1/leverage - mmr_tier - fee_term)` per the exchange formula, with the
-   symbol's own tier rate and fee term, computed at stage 2 for every symbol. With
-   2x and a rate of about 0.5% it lies near `F_e * 1.45`; that number is an
-   illustration, not a parameter. **Trigger: the 1-minute mark-price high reaches
-   the liquidation price.** Modelled result: the **whole position margin is lost**
-   (`-5,000 bps` of entry notional before funding and fees), whatever the fill. Partial
-   liquidation, the exact maintenance rate path and any separate liquidation fee are
-   not modelled beyond this. No separate fee is assumed; a third-party broker page says
-   Bybit charges none for USDT perpetuals, which is not verified from Bybit's own pages.
+1. **Isolated margin and the liquidation scenario.** Each position holds its own
+   margin, **50% of its notional** (2x leverage per position). The liquidation trigger
+   is a **scenario parameter** `T_liq`, applied to the **1-minute mark-price high**:
+   primary `T_liq = 1.49 * F_e` (between the two formulas at an `MMR` of 0.5%), and a
+   sensitivity `1.46 * F_e` (an `MMR` of 2.5%, plausible for a days-old perp). The
+   stage 2 contract records each symbol's maintenance rate and deduction as far as the
+   data show them; the scenario value is not claimed to be what the exchange computed.
+   Modelled result: the position settles at the bankruptcy price, so the **whole
+   position margin is lost** (`-5,000 bps` of entry notional before funding and
+   fees), whatever the fill. No separate liquidation fee is assumed; none is stated on
+   the pages read.
 2. **Stop.** A stop-market order on the **last trade price**, triggered when a 1-minute
    trade-price high reaches `S = P_e * 1.30`, from the entry bar onward. The fill is a
    **scenario assumption**, not a bound (6.2): scenario L fills at `max(S, bar open)`
@@ -314,19 +338,25 @@ stage 2 before the contract is frozen. The mechanics are mutable external data.
      **liquidation applies** (the worse outcome for the short);
    - if a bar **opens** at or beyond the stop level (a gap), the stop triggers at that
      bar, and the fill is `bar open` in L and `bar high` in H;
-   - if a bar's mark price opens at or beyond the liquidation price, liquidation
-     applies at once.
-4. **Status exit.** If the instrument leaves `Trading` before `X` (halt, delivery,
-   delisting), the episode is `status_exit`. **The last trade before a halt is not an
-   executable fill** and is never assumed to be one. Treatment: the episode stays in the
-   sample and is evaluated in two stated scenarios, **L:** the last trade price before
-   the status change, labelled non-executable; **H:** the whole margin lost. If the
-   exchange's delivery or settlement price is recorded in the data, it is reported
-   beside them. Their share is reported by reason.
-5. **Unresolved after `E`.** An episode whose bars are missing after `E` for a reason
-   other than a status exit is `unresolved`. It is counted in the denominator, never
-   dropped: **L** excludes it from the mean and **H** gives it the whole margin lost.
-   Their share must be at most 5%, else `incomplete_coverage`.
+   - if a bar's mark price opens at or beyond `T_liq`, liquidation applies at once.
+4. **Events after entry.** A halt, delivery, delisting, contract conversion or symbol
+   migration after `E` is an **event of an open position**, not an exclusion.
+   - **Confirmation.** The end of the archive is **not** the end of trading: a missing
+     last file may mean an incomplete archive. An instrument event is established only
+     by a **separate source**: the instrument's status in `instruments-info` (for
+     example `Delivering` or `Closed` with a delivery time) or a machine-timed Bybit
+     announcement. Without confirmation it is a **data gap**: the episode is
+     `unresolved` (item 5), counts against the 95% bars coverage of M5 and the 5% gate
+     below, and is never called a status exit.
+   - **Scoring of a confirmed event.** The last trade before a halt is **not an
+     executable fill** and is never assumed to be one. The episode stays in the sample
+     and is scored in two stated scenarios, **L:** the last trade price before the
+     event (labelled non-executable) and **H:** the whole margin lost. A recorded
+     delivery price is reported beside them. Their share is reported by event type.
+5. **Unresolved after `E`.** An episode whose bars are missing after `E` without a
+   confirmed event is `unresolved`. It is counted in the denominator, never dropped:
+   **L** excludes it from the mean and **H** gives it the whole margin lost. Their share
+   must be at most 5%, else `incomplete_coverage`.
 6. **Why +30% and 2x.** A 30% stop limits the typical loss of a squeeze and a 50%
    margin leaves a buffer so that the stop is expected to fire before the exchange
    liquidates. The values are chosen once, by that purpose and not by any price, and
@@ -335,7 +365,7 @@ stage 2 before the contract is frozen. The mechanics are mutable external data.
    diagnostic "no stop, liquidation only" beside the primary (section 7, component
    `STOP`).
 7. **Reported, not capped.** The report gives the distribution of per-episode loss
-   beyond 30%, the number of stops, liquidations and status exits, and **the worst
+   beyond 30%, the number of stops, liquidations and events after entry, and **the worst
    simultaneous stop-out observed**, with no hard cap assumed.
 
 **Tail at the portfolio level.** Young alts pump together. Sizing keeps gross notional at
@@ -394,36 +424,43 @@ net_bps     = 10,000 * net_usd / (q * F_e)            (bps of the entry notional
 - **Borrow and other short costs.** A linear perp short has no borrow fee on Bybit:
   `borrow_usd = 0`, written down as a stated zero with its reason, never an omission.
   The other short-specific costs are modelled where they are real: the stop and
-  liquidation rules (5.3), the status-exit scenarios (5.3), and the loss of the return
+  liquidation rules (5.3), the event-after-entry scenarios (5.3), and the loss of the return
   on reserved capital (6.4). A spot-margin short is a different instrument and is not
   part of this protocol.
 
 ### 6.2 Cost model and its two scenarios
 
-1. **Fee rate `phi`.** The Innovation Zone non-VIP **taker rate of 0.110% (11 bps) per
-   side** is assumed for every episode, as in the paper screen; the standard non-VIP
-   taker rate of 0.055% (5.5 bps) is a reported sensitivity. Sources:
+1. **Fee rate `phi`.** The Innovation Zone non-VIP **taker rate of 0.1100% (11 bps) per
+   side** and maker rate of 0.0400% are stated on Bybit's
    [Innovation Zone FAQ](https://www.bybit.com/en/help-center/article/FAQ-Perpetual-Trading-Innovation-Zone)
-   (rate as shown in a search summary; the page timed out, and its update date differs
-   between locales, so it is re-read at stage 2) and the
-   [fee group endpoint](https://bybit-exchange.github.io/docs/v5/market/fee-group-info),
-   which lists the zone's symbols but returns only the current membership and applies
-   to Pro and market-maker clients. Which launches sat in the zone, and for how long,
-   is not recoverable from history, so 11 bps is an assumed rate, not a bound. The fee schedule
-   is mutable external data: it is snapshotted durably with the run, and the owner's
-   own account tier is confirmed from the account. Maker fills are not modelled.
+   (read 2026-11-16, last updated 2026-08-07). The standard non-VIP taker rate of 0.055%
+   (5.5 bps) is a reported sensitivity. The same page says a contract can **migrate**
+   between the Innovation Zone and the main board in either direction, so which launches
+   sat in the zone, and for how long, is not recoverable from history; 11 bps per side
+   is an assumed rate for every episode, not a bound. The
+   [fee group endpoint](https://bybit-exchange.github.io/docs/v5/market/fee-group-info)
+   lists the zone's symbols but returns only the current membership and applies to Pro
+   and market-maker clients. The fee schedule is mutable external data: it is
+   snapshotted durably with the run, and the owner's own account tier is confirmed from
+   the account. Maker fills are not modelled.
 2. **Fill prices are scenario assumptions, not bounds.** A market order in a thin
    days-old book can fill worse than any figure computed from candles or a snapshot.
-   Two scenarios bracket the unknown, and the report shows both:
+   Two scenarios are fixed, and the report shows both:
 
-| Fill               | Scenario L, lower cost                                                                                                            | Scenario H, higher cost    |
+| Fill               | Scenario L (book, else allowance)                                                                                                 | Scenario H (bar extremes)  |
 | ------------------ | --------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
 | Entry (sell `q`)   | order-book **VWAP** for `q` from the bids at the entry instant, where a book exists; else `P_e` less a fixed allowance of 9.5 bps | the entry bar's **low**    |
 | Planned exit (buy) | order-book VWAP for `q` from the asks at the exit instant, where a book exists; else `P_x` plus 9.5 bps                           | the exit bar's **high**    |
 | Stop               | `max(S, bar open)`, plus 9.5 bps                                                                                                  | the trigger bar's **high** |
 | Liquidation        | whole margin lost                                                                                                                 | whole margin lost          |
-| Status exit        | last trade before the change (non-executable)                                                                                     | whole margin lost          |
+| Event after entry  | last trade before the event (non-executable)                                                                                      | whole margin lost          |
 
+- **Neither scenario dominates the other.** They are **independent assumptions**, and
+  neither is a bound. In a synthetic case with flat bars at 100 and no book, L sells at
+  99.905 and buys back at 100.095, while H sells at 100 and buys back at 100, so H is
+  better than L. In a wide bar H is worse. The document therefore never calls one
+  "the lower-cost scenario", and section 8 treats a disagreement in sign, in either
+  direction, as `scenario_dependent`.
 - **Allowance of 9.5 bps per side (19 bps round trip)** is the spread and slippage
   figure used for established perps in the
   [venue cost check](venue-cost-check-v1.md); days-old books are likely worse, so it is
@@ -433,18 +470,15 @@ net_bps     = 10,000 * net_usd / (q * F_e)            (bps of the entry notional
   than the size, that size is `depth_absent` for that fill and is **not extrapolated**.
   The USD 50 primary size takes the fixed allowance where no book exists; a larger size
   with no depth is left out of that size's net and counted.
-- **Scenario H is not an upper bound on cost**: a fill can be worse than the minute's
-  extreme. It is a deliberately pessimistic scenario, and it is never described as
-  a ceiling or a guarantee. Scenario L is not a lower bound either.
 - **Mixed cost sources.** Scenario L mixes book VWAP episodes and allowance episodes
   in one mean; the report therefore also gives L split by cost source, and the share
   of each. They are never presented as one evidence class.
 
-**How the scenarios decide.** Section 8: a net at or below zero in **L** is a fail;
-a net above zero in L that is not above zero in **H** is `positive_not_robust`
-(reason `execution_scenario_dependent`), neither a pass nor a fail; a pass needs both.
-Any pass is still a hypothesis: real spread and depth must be measured before any
-order.
+**How the scenarios decide.** Section 8. Both at or below zero is a fail **under the
+assumed costs**; opposite signs, in either direction, are `scenario_dependent`; both above
+zero opens the guards. A fail under assumed costs may stop spending, but it is **not
+proof that no edge exists**. Any pass is still a hypothesis: real spread and depth must be
+measured before any order.
 
 ### 6.3 Capacity
 
@@ -524,7 +558,7 @@ net = M + S + FND + STOP - EXE - FEE
 M    = -10,000 * beta * R_bench                           market (beta = 1 primary)
 S    = -10,000 * (R_ref - beta * R_bench)                 selection: the idiosyncratic drift of the coin
 FND  =  10,000 * funding_usd / (q * F_e)                  funding actually accrued, to actual_exit
-STOP =  10,000 * (pnl_ref_rules - (-R_ref))               effect of the stop, liquidation and status-exit rules
+STOP =  10,000 * (pnl_ref_rules - (-R_ref))               effect of the stop, liquidation and event-after-entry rules
 EXE  =  10,000 * (pnl_ref_rules - price_usd / (q * F_e))  execution: fills against the reference prices
 FEE  =  10,000 * fee_usd / (q * F_e)                      fees on each fill's value
 ```
@@ -587,34 +621,36 @@ next to the per-episode net.
 Checked in this order. The first that applies ends the study at that stage. Stages 1
 to 3 read no return.
 
-| Order | Code                       | Condition                                                                                                                                                                                                                                                                                                                                        | Stage |
-| ----- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----- |
-| 1     | `not_reconstructible`      | M1 fails (`launch_time_unverified`), or the lifecycle of a launch cannot be rebuilt from native data for more than 15% of episodes                                                                                                                                                                                                               | 1     |
-| 2     | `incomplete_coverage`      | M2, M4 or M5 fails (bars, mark bars and funding; **order-book coverage is not a gate**), or more than 5% of episodes are unresolved after `E`                                                                                                                                                                                                    | 1, 4  |
-| 3     | `identity_unresolved`      | M3 fails                                                                                                                                                                                                                                                                                                                                         | 1     |
-| 4     | `insufficient_events`      | fewer than 100 resolved episodes, or fewer than 26 weeks, after the stages above                                                                                                                                                                                                                                                                 | 1     |
-| 5     | `capital_infeasible`       | M6 fails, or the order cannot be opened within `C` (minimum order, quantity step, risk limit, or no depth at USD 50 **at entry** for more than 20% of episodes; depth at exit never removes an episode)                                                                                                                                          | 1     |
-| 6     | `insufficient_power`       | calibrated MDE above 400 bps (7.4), returns unread                                                                                                                                                                                                                                                                                               | 3     |
-| 7     | `negative_net_after_costs` | the V1 cluster-mean net in **scenario L** is at or below zero, on at least the evidence floor. A mature negative is a **fail** and is not masked by thin diversity                                                                                                                                                                               | 4     |
-| 8     | `positive_not_robust`      | L is above zero but: H is not above zero (`execution_scenario_dependent`); or market-adjusted net is not positive for both benchmarks; or a top-5 removal or half-year flips the sign; or the 90% bound is not above zero; or `roc_annual` is not above 5%; or the sign comes only from `M` or `FND`. Guards are evaluated in **both** scenarios | 4     |
-| 9     | `lab_positive_hypothesis`  | all of the above hold in both L and H                                                                                                                                                                                                                                                                                                            | 4     |
+| Order | Code                       | Condition                                                                                                                                                                                                                                                             | Stage |
+| ----- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| 1     | `not_reconstructible`      | M1 fails (`launch_time_unverified`), or the lifecycle of a launch cannot be rebuilt from native data for more than 15% of episodes                                                                                                                                    | 1     |
+| 2     | `incomplete_coverage`      | M2, M4 or M5 fails (bars, mark bars and funding; **order-book coverage is not a gate**), or more than 5% of episodes are `unresolved` after `E` (an end of archive without a confirming source counts here)                                                           | 1, 4  |
+| 3     | `identity_unresolved`      | M3 fails                                                                                                                                                                                                                                                              | 1     |
+| 4     | `insufficient_events`      | fewer than 100 resolved episodes, or fewer than 26 weeks, after the stages above                                                                                                                                                                                      | 1     |
+| 5     | `capital_infeasible`       | M6 fails, or the order cannot be opened within `C` (minimum order, quantity step, risk limit, or no depth at USD 50 **at entry** for more than 20% of episodes; depth at exit never removes an episode)                                                               | 1     |
+| 6     | `insufficient_power`       | calibrated MDE above 400 bps (7.4), returns unread                                                                                                                                                                                                                    | 3     |
+| 7     | `negative_net_after_costs` | the V1 cluster-mean net is at or below zero in **both** scenarios L and H, on at least the evidence floor. A mature negative is a **fail under the assumed costs** and is not masked by thin diversity; it is not proof that no edge exists                           | 4     |
+| 8     | `scenario_dependent`       | the sign of the V1 cluster-mean net **differs between L and H**, in either direction. Neither a pass nor a fail                                                                                                                                                       | 4     |
+| 9     | `positive_not_robust`      | net is above zero in both, but a guard fails in L or in H: market-adjusted net not positive for both benchmarks; a top-5 removal or half-year flips the sign; the 90% bound is not above zero; `roc_annual` is not above 5%; or the sign comes only from `M` or `FND` | 4     |
+| 10    | `lab_positive_hypothesis`  | all of the above hold in both L and H                                                                                                                                                                                                                                 | 4     |
 
 - **`lab_positive_hypothesis` is not confirmation.** It means only that the candidate may
   be considered for a frozen exam (section 9). The discovery year is open and about 124
   variants of other families were already read on it; a laboratory finding here has the
-  status of a hypothesis. It is not execution-validated: scenario H is not a bound.
-- **Two scenarios, one rule.** The fail is declared on the **lower-cost** scenario, so an
-  idea is not rejected only because an assumption is pessimistic. The pass requires
-  the **higher-cost** scenario too, so a profit is not an artifact of a generous fill.
-  Between the two the answer is `positive_not_robust`, an honest "scenario dependent".
-  Neither the book-versus-candle choice nor the stop fill may be picked after the read.
+  status of a hypothesis. It is not execution-validated: neither scenario is a bound.
+- **Two independent assumptions, no hierarchy.** L and H are not ordered by cost, so
+  neither is "the optimistic" nor "the conservative" case. An idea is rejected only
+  when it fails under both, and accepted for the guards only when it passes under
+  both. A disagreement is reported as such, and the report shows which fills (entry,
+  exit, stop) drive it. Neither the book-versus-candle choice nor the stop fill may be
+  picked after the read.
 - **Lower bound.** The block-bootstrap one-sided lower bound of the V1 cluster-mean net is
   taken at **90%** for the laboratory (stricter than a point estimate, laxer than the
   exam's 97.5%, because the laboratory is explicitly a filter before the exam; question
   Q6). It is evaluated in both scenarios.
 - **Reasons, not bare zeros.** Every stop reports its counters: launches by status,
   M1 classes, M2 shares, M3 statuses, unresolved episodes by reason, censored launches,
-  stops, liquidations and status exits, book coverage by size.
+  stops, liquidations and events after entry, book coverage by size.
 - **One corrective recomputation** is allowed after any first verdict: a proven defect
   against this contract, a regression test that fails on it, the same sealed inputs and
   no new request, both results kept. Changing the strategy, the rule or the sample after
@@ -720,57 +756,71 @@ nothing):
   relative to the drift, and in being a calendar event with no signal. It is not shown
   to differ in sign.
 
-## 13. Revision 2, and open design questions for the colleague
+## 13. Revisions, and open design questions for the colleague
 
-### 13.1 What changed after the colleague's review of `80802d3`
+### 13.1 Revision 3: what changed after the second review (`1f43ade`)
 
-Five defects in the experiment model were confirmed against the text and fixed. The aim
-of the revision is a model that can neither show an artificial profit nor reject a
-working idea by mistake.
+Four defects remained after revision 2. Where each is now handled:
 
-1. **Look-ahead selection in M3 (section 4).** The price-based `redenomination_flag` that
-   dropped launches is gone. Identity is judged by independent, non-price evidence:
-   catalog fields, machine-timed Bybit announcements, the archive file list and the
-   spot catalog. A launch no source can speak for stays in as `identity_unverifiable`.
-   A price-scale list remains only as an **outcome-level diagnostic that gates nothing
-   and never excludes an episode**. A general principle was added (section 4): no
-   outcome-dependent exclusion; inclusion uses only information at or before `E`.
-2. **Loss bound (section 5.3).** The "bounds one episode to about 3,000 bps" claim and
-   the `entry x 1.45` trade-price liquidation were removed. Liquidation follows the
-   exchange mechanism (mark price, tier maintenance margin, bankruptcy price, insurance
-   fund), with sources and the stated limit that the official pages must be re-read at
-   stage 2. The order of stop and liquidation inside one bar, gap handling and the fill
-   for each case are defined. No loss ceiling is promised; the report gives the loss
-   distribution beyond 30% and the worst simultaneous stop-out, uncapped.
-3. **One actual exit (sections 5.2, 5.3, 6.1).** `actual_exit` (planned exit, stop,
-   liquidation or status exit) now drives the funding window, the exit fill and fee, the
-   benchmark interval and slot release. A last trade before a halt is not an executable
-   fill: a status exit is a scenario (L: non-executable last trade, H: whole margin
-   lost), not an automatic fill.
-4. **Tape extreme is not a bound (sections 6.2, 8).** `tape_ceiling` is gone. Fills are
-   scenario assumptions in two scenarios, **L** and **H**, and the claim that a pass at
-   the ceiling is a strong pass was removed. The contradiction is resolved one way: **order-book
-   coverage is not a gate** (M5 gates only bars, mark bars and funding); it decides only
-   which cost source L uses per fill, and the report states the shares.
-5. **Fee on each fill (section 6.1).** The fixed 22 bps round trip is replaced by a fee
-   per fill on its own value, in quantity: `10,000 * phi * (1 + F_x / F_e)` bps of entry
+1. **Look-ahead survives without prices.** An evidenced change "dated inside the path"
+   removed the whole launch. Now (section 4, M3 and the principle at its start;
+   section 5.3, item 4): only evidence **published or dated at or before `E`** may
+   exclude a launch, before entry (`change_known_at_entry`). A change that becomes known
+   after `E` is an **event of an open position** and is scored in scenarios L and H,
+   never deleted.
+2. **Liquidation formula.** My formula was wrong. I read the primary pages myself
+   (section 5.3): in the short formula the maintenance rate sits in the **denominator**,
+   `E * (1 + 1/lev) / (1 + MMR)`, about `1.4925 * E` at 2x and 0.5%; Bybit changed the
+   margin calculation from 2025-09-02, rolled out gradually with no stated per-account
+   date, so no single historical formula applies. Liquidation is now stated plainly as a
+   **scenario model** with `T_liq = 1.49 * F_e` primary and `1.46 * F_e` sensitivity on
+   the mark-price high, without the words "per the exchange formula"; whole margin lost
+   follows from settlement at the bankruptcy price. No loss ceiling is promised.
+3. **Scenario H can be cheaper than L.** Right: a flat bar gives H a better fill. The
+   scenarios are now **independent assumptions with no ordering** (section 6.2, with the
+   synthetic example). Section 8 declares `negative_net_after_costs` only when both are
+   at or below zero, `scenario_dependent` when the sign differs in either direction, and
+   says a fail under assumed costs is not proof of no edge.
+4. **End of archive is not end of trading.** M2's missing-day count no longer treats days
+   after the last file as a status exit, M5 says a missing last file is not an end of
+   trading, and section 5.3, item 4 requires a **separate source** (instrument status
+   or a machine-timed announcement) before any halt or delisting is called an event.
+   Without it the episode is `unresolved`, counts against the 95% bars coverage and the
+   5% gate, and ends in `incomplete_coverage` when too many.
+
+Also corrected after reading the primary pages: the Innovation Zone fee page was opened
+(non-VIP taker 0.1100%, maker 0.0400%, updated 2026-08-07) and says a contract can
+migrate between zones in either direction (section 6.2). The earlier statement that
+the pages could not be read is replaced by the list of what was read and what was not
+(section 5.3).
+
+### 13.2 Revision 2: what changed after the first review (`80802d3`)
+
+1. **Look-ahead selection in M3.** The price-based flag is gone. Identity is judged by
+   non-price evidence, and a launch no source can speak for stays in. A price-scale list
+   remains only as an outcome-level diagnostic that gates nothing and never excludes.
+2. **Loss bound (section 5.3).** The "bounds one episode to about 3,000 bps" claim was
+   removed. No loss ceiling is promised; the loss distribution beyond 30% and the worst
+   simultaneous stop-out are reported without a cap.
+3. **One actual exit (sections 5.2, 6.1).** `actual_exit` drives the funding window, the
+   exit fill and fee, the benchmark interval and slot release.
+4. **Tape extreme is not a bound (sections 6.2, 8).** `tape_ceiling` is gone; fills are
+   scenario assumptions in L and H; order-book coverage is not a gate.
+5. **Fee on each fill (section 6.1).** `10,000 * phi * (1 + F_x / F_e)` bps of entry
    notional, so `11 + 11 * 1.3 = 25.3 bps` after a 30% rise.
 
-Also added, as the colleague asked: **staging.** Stage 1 is a data-recoverability check
-on the **discovery year only** (launch semantics, coverage, identity by independent
-evidence). The backward holdout is touched only by stage 1b, after stage 1 passes and
-with the owner's separate go (sections 2, 9, 10 and 11).
+Staging, as the colleague asked: stage 1 is a data-recoverability check on the
+**discovery year only**; the backward holdout is touched only by stage 1b, after stage 1
+passes and with the owner's separate go (sections 2, 9, 10 and 11).
 
-### 13.2 Open questions
-
-My position is given for each; the decision is for the discussion.
+### 13.3 Open questions
 
 1. **Q1. Age grid.** V1 at 7 days, V2 at 3, V3 at 14, hold fixed at 7 days. Is a fixed
    hold right, or should the primary be a longer hold (14 days) given funding and cost
    wall? My position: 7 and 7; a longer hold raises overlap and squeeze exposure.
 2. **Q2. Right-tail rule (changed).** Isolated margin at 50% of notional, a stop at +30%
-   on the last trade price, fills in scenarios L and H, liquidation by the mark-price
-   mechanism with tier parameters. Is the stop level right, and should a no-stop variant
+   on the last trade price, fills in scenarios L and H, liquidation as a **scenario
+   model** (`T_liq` of 1.49 or 1.46 times entry on the mark-price high). Is the stop level right, and should a no-stop variant
    be a counted variant instead of a diagnostic? Should the stop trigger on the mark
    price instead of the last price?
 3. **Q3. Eligibility.** All first perp launches (my position) or only new tokens (spot
@@ -793,26 +843,34 @@ My position is given for each; the decision is for the discussion.
    the owner and colleague's view that the test year could be reassigned to I25, with a
    new metadata count, or kept closed? Is a two-quarter forward cohort after v2
    terminal worth planning now, given it falls after the 2027-02-11 gate?
-9. **Q9. Costs (changed).** Is the pair of scenarios right: L (book VWAP, else a fixed 9.5
-   bps per side) and H (the minute's extreme), with fail on L and pass needing both?
-   Is 9.5 bps per side the right floor for a days-old perp? Is 11 bps per side the right
-   Innovation Zone assumption, given the zone membership of a historical launch is
-   unknown?
+9. **Q9. Costs (changed).** Are L (book VWAP, else a fixed 9.5 bps per side) and H (the
+   minute's extreme) the right pair of independent assumptions, with `negative_net` only
+   when both fail and `scenario_dependent` when the sign differs? Is 9.5 bps per side
+   the right floor for a days-old perp? Is 11 bps per side the right Innovation Zone
+   assumption, given that zone membership of a historical launch is unknown and a
+   contract can migrate?
 10. **Q10. Market adjustment.** `beta = 1` against BTCUSDT and the median of 20 liquid
     perps. Is a pool of 20 right, and is the pooled `beta_hat` enough as a check?
 11. **Q11. Staging (settled by the review).** Stage 1 on the discovery year only, then
     stage 1b on the holdout after a pass and a separate go. Open only: should stage 3
     (power calibration) wait for stage 1b, or run on the discovery year first?
-12. **Q12. Independent identity evidence (new).** Contract changes sit in a feed with no
+12. **Q12. Independent identity evidence.** Contract changes sit in a feed with no
     machine time, and catalog fields exist only as a current snapshot. Is
     `identity_unverifiable` staying in the sample (up to 20%) the right treatment, or is
     a larger unverifiable share a stop?
-13. **Q13. Status exits (new).** The scenario pair for a halt or delisting (last trade in
-    L, whole margin lost in H). Is that a fair bracket, or should a recorded
-    delivery price be the primary where it exists?
-14. **Q14. Exchange rules as sources (new).** The Bybit liquidation and fee pages could
-    not be opened from this session. Agree that stage 2 must re-read them in full and
-    snapshot them with a hash before the contract is frozen?
+13. **Q13. Events after entry.** The scenario pair for a confirmed halt, delisting or
+    conversion (last trade in L, whole margin lost in H), and the rule that an
+    unconfirmed end of archive is a data gap. Is a recorded delivery price better as
+    the primary where it exists?
+14. **Q14. Exchange rules as sources (changed).** The margin-change notice, the Insurance
+    Fund page and the Innovation Zone fee page were read in full; two older liquidation
+    pages are no longer served. Agree that stage 2 snapshots the pages with a hash, and
+    that the liquidation scenario is kept as a scenario model rather than reproduced from
+    a formula whose parameters vary by symbol, tier and date?
+15. **Q15. Liquidation scenario values.** `T_liq` of 1.49 (primary) and 1.46
+    (sensitivity). Is the maintenance rate assumption of 0.5% and 2.5% reasonable, and
+    should the stage 2 contract read the symbol's risk-limit tiers where they are
+    available?
 
 ## 14. Not in this document
 

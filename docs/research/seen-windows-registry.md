@@ -640,4 +640,6 @@ alone. Its launch list stays sealed outside Git, as in the catalyst study.
 [catalyst-feasibility-v1](catalyst-feasibility-v1-result-2026-11-16.md): 263 launches in
 53 ISO weeks (discovery) and 254 launches (holdout), coverage level, no price. No new
 exposure comes from this draft. The draft's only external reads were public Bybit
-help-center and API documentation pages, which hold no market value.
+help-center and API documentation pages (the margin-change notice, the Insurance Fund
+page, the Innovation Zone fee FAQ and the fee-group endpoint page), opened on
+2026-11-16 in the browser pane and by web search. They hold no market value.
