@@ -45,8 +45,9 @@ an exam or a strategy registration.
 
 Minimums are fixed in the contract and were not tuned: discovery 40 clusters, 40
 announcements, 20 bases, 8 ISO weeks; holdout 30, 30, 15, 8; timed share at least 90%;
-ambiguous share at most 10%. In every bucket and window the timed share is 100% and the
-ambiguous share is 0%, so only counts, coverage and reconstructibility decide.
+ambiguous share at most 10%. In every non-empty bucket and window the timed share is 100%
+and the ambiguous share is 0% (both are `null` for the empty `A4f` and `A4r`), so only
+counts, coverage and reconstructibility decide.
 
 ### Discovery year (2024-10-01 to 2025-09-30)
 
@@ -136,7 +137,7 @@ Binance only and the report names `unreachable_sources: [upbit]`.
 ## New perp launches (`I25`)
 
 Distinct linear USDT symbols from Bybit's `instruments-info` catalog (`Trading`,
-`Delivering` and `Closed`, 714 symbols in all) by `launchTime`:
+`Delivering` and `Closed`, 715 distinct symbols on 714 base assets) by `launchTime`:
 
 | Window    | Launches | Bases | ISO weeks with a launch |
 | --------- | -------: | ----: | ----------------------: |

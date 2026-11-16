@@ -591,9 +591,12 @@ Completed on the owner's go, 2026-11-16:
   `insufficient_events`, `A2` and `A4d` `lab_only`, `A4f` and `A4r` `not_reconstructible`.
   [Result](catalyst-feasibility-v1-result-2026-11-16.md).
 - **Now read at coverage level, as registered:** event counts and timestamps in both
-  windows. The backward holdout appears only as aggregate counts; its sealed event list
-  has SHA-256 `52baf153...`. No price, trade, spread, depth, funding rate, open interest
-  or return was read, and no holdout title, ticker or date was looked at. Both windows
-  stay usable for confirmation.
+  windows. This study read no returns. The backward holdout appears only as aggregate
+  counts; its sealed event list has SHA-256 `52baf153...`. No price, trade, spread,
+  depth, funding rate, open interest or return was read, and no holdout title, ticker or
+  date was looked at. The backward holdout keeps its registered status. The discovery
+  year was already open and is used for development; it is not a confirmation window.
+- **Requested, not read:** Upbit's notice list. Its first page failed all three attempts
+  (HTTP 429, 400, 429), so no page of it was read.
 - **Not requested:** Bybit `product_updates` (no machine publication time on its first
-  page) and Upbit's notice list (unreachable: HTTP 429, 400, 429).
+  page) and Coinbase (no second-precision listing history is known).
