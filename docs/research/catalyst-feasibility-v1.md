@@ -205,6 +205,19 @@ are therefore expected shapes, not confirmed ones. The guards:
   same revision does resume, up to three attempts per page;
 - for edits, the order check (section 4) is the evidence, and the report says so.
 
+**Articles with no machine time.** The first live fetch stopped on a Bybit
+announcements page with an article that has no usable `publishTime`. For the numeric-time
+announcement feeds (Bybit and Binance only) an article whose canonical time is absent,
+zero or negative is not a schema change: it is counted per page and dropped unparsed.
+It is placed in no window, because a window needs a machine time, and it never sets the
+time boundary of a feed. An author-filled time (`dateTimestamp`, `startDateTimestamp`)
+is never used as a fallback: on one early page it differed from `publishTime` by up to
+92 days. Any other malformed time (a string, null or bool) still stops the fetch. The
+count per source is reported as `untimed_without_machine_time`. It is the number of
+articles that may hold real events and could not be read, so a short count in a bucket
+must be read against it. The fetch stops if more than 10% of one page's articles are
+untimed (reason `untimed_share_above_limit`), which also caps the total at 10%.
+
 **Blind window and other windows.** The announcement lists have no time filter, so
 pages dated on or after 2026-09-29 pass through pagination. The guards:
 
@@ -471,6 +484,15 @@ it early. It can only make the fetch read more pages, never fewer.
 3. **New-perp launch counts (`instrument_launches`).** The report records aggregate
    launch counts (symbols, bases and ISO weeks per window) from the deduplicated
    instrument catalog (section 7).
+
+**First live fetch stop, 2026-11-16.** The fetch of revision `3c974cc` stopped on page
+24 of `bybit_ann:delistings` with `schema_mismatch`, after 23 pages and 24 requests. The
+receipt's key tree equalled page 1's, so it could not name the cause; no body is stored.
+The corrected revision adds the `failure` record (section 6) and the untimed-article rule
+above. Whether page 24 holds articles with a missing or zero `publishTime` is a
+hypothesis until the rerun; a different cause stops the rerun again, now with a reason.
+The rerun passes `--prior-root`, so the 24 requests count against the same budget. The
+untimed rule and the 10% limit amend sections 4 and 6 before any count is read.
 
 **Changes made while writing the code.** These come after the design discussion and
 are for the colleague's review of the code PR:

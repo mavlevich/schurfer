@@ -241,6 +241,10 @@ def explain_time_failure(source: str, item: dict[str, Any]) -> str:
         if source == "upbit":
             if not isinstance(value, str):
                 return f"type_{type(value).__name__}:{field}"
+            try:
+                _iso_ms(value)
+            except (ValueError, TypeError, OverflowError):
+                return f"bad_iso_time:{field}"
             continue
         if isinstance(value, int | float):
             return f"non_positive_or_unusable_number:{field}"
@@ -248,6 +252,21 @@ def explain_time_failure(source: str, item: dict[str, Any]) -> str:
             return f"str_not_positive_integer:{field}"
         return f"type_{type(value).__name__}:{field}"
     return "unusable_time"
+
+
+# Numeric-time announcement feeds only. An article with no machine time at all (key
+# absent, or zero or negative) cannot be placed in a window, so it is counted and
+# dropped unparsed. Any other malformed time (a string, null, bool) is a schema change
+# and still stops the fetch.
+UNTIMED_SOURCES = frozenset({"bybit", "binance"})
+UNTIMED_REASONS = ("missing:", "non_positive_or_unusable_number:")
+MAX_UNTIMED_SHARE = 10  # percent of one page's items; above it the fetch stops
+
+
+def is_untimed(source: str, item: dict[str, Any]) -> bool:
+    return source in UNTIMED_SOURCES and explain_time_failure(source, item).startswith(
+        UNTIMED_REASONS
+    )
 
 
 ENVELOPE_REASONS = frozenset(
@@ -322,23 +341,28 @@ def cut_page(source: str, payload: Any) -> dict[str, Any]:
     """Apply the window cut to one parsed page. Raises on any schema mismatch."""
     items, cursor = raw_items(source, payload)
     kept: list[dict[str, Any]] = []
-    dropped, oldest_reached = 0, False
+    dropped, untimed, first_untimed = 0, 0, -1
+    last_ms: int | None = None
     for index, item in enumerate(items):
         try:
             ms = canonical_ms(source, item)
         except (KeyError, ValueError, TypeError, OverflowError) as exc:
-            raise SchemaMismatchError(index, explain_time_failure(source, item)) from exc
-        # The time boundary belongs to announcement feeds only, which run from the
-        # newest. It is read from the page's last item: an old notice pinned above
-        # newer ones must not end the series. A catalog of instruments has no time
-        # order at all and is followed by cursor to its end.
-        if source != "bybit_instruments" and index == len(items) - 1 and ms < OLDEST_MS:
-            oldest_reached = True
+            if not is_untimed(source, item):
+                raise SchemaMismatchError(index, explain_time_failure(source, item)) from exc
+            untimed += 1
+            first_untimed = first_untimed if first_untimed >= 0 else index
+            continue
+        last_ms = ms
         if source == "bybit_instruments":
             if ms >= CUT_MS:
                 dropped += 1
                 continue
-            record = instrument_record(item, ms)
+            try:
+                record = instrument_record(item, ms)
+            except KeyError as exc:
+                raise SchemaMismatchError(index, f"missing:{exc.args[0]}") from exc
+            except (ValueError, TypeError, OverflowError) as exc:
+                raise SchemaMismatchError(index, "bad_instrument_field") from exc
             if record is not None:
                 kept.append(record)
             continue
@@ -346,10 +370,18 @@ def cut_page(source: str, payload: Any) -> dict[str, Any]:
             dropped += 1
             continue
         kept.append(item)
+    if untimed * 100 > MAX_UNTIMED_SHARE * len(items):
+        raise SchemaMismatchError(first_untimed, "untimed_share_above_limit")
+    # The time boundary belongs to announcement feeds only, which run from the newest.
+    # It is read from the page's last item that has a machine time: an old notice
+    # pinned above newer ones must not end the series. A catalog of instruments has no
+    # time order at all and is followed by cursor to its end.
+    oldest_reached = source != "bybit_instruments" and last_ms is not None and last_ms < OLDEST_MS
     return {
         "items": len(items),
         "kept": kept,
         "dropped": dropped,
+        "untimed": untimed,
         "oldest_reached": oldest_reached,
         "next_cursor": cursor,
     }
@@ -569,6 +601,7 @@ class Fetcher:
                     stop=stop,
                     items=page["items"],
                     dropped=page["dropped"],
+                    untimed=page["untimed"],
                     kept=page["kept"],
                     next_cursor=page["next_cursor"] if series.paging == "cursor" else "",
                     terminal=terminal,
@@ -603,6 +636,7 @@ class Fetcher:
                 "pages_ok": len(ok),
                 "kept": sum(len(r["kept"]) for r in ok),
                 "dropped": sum(r["dropped"] for r in ok),
+                "untimed": sum(r.get("untimed", 0) for r in ok),
                 "terminal": bool(ok and ok[-1]["terminal"]),
                 "stop": ok[-1]["stop"] if ok else None,
             }
@@ -1020,6 +1054,18 @@ HOLDOUT_FIELDS = (
 )
 
 
+def untimed_by_source(receipts: list[dict[str, Any]]) -> dict[str, int]:
+    """Articles with no machine time, dropped unparsed; they may include real events."""
+    source_of = {s.name: s.source for s in SERIES}
+    out = {s: 0 for s in sorted({x.source for x in SERIES if x.source != "bybit_instruments"})}
+    for r in receipts:
+        if r["outcome"] == "ok" and r["series"] in source_of:
+            source = source_of[r["series"]]
+            if source in out:
+                out[source] += int(r.get("untimed", 0))
+    return out
+
+
 def report(receipts: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Return the publishable report and the holdout events to seal outside Git."""
     rows = articles(receipts)
@@ -1064,6 +1110,7 @@ def report(receipts: list[dict[str, Any]]) -> tuple[dict[str, Any], list[dict[st
             "buckets": buckets,
             "source_quality": public_quality,
             "unrequested_sources": UNREQUESTED_SOURCES,
+            "untimed_without_machine_time": untimed_by_source(receipts),
             "instrument_assets": len(perps),
             "instrument_launches": {w: launch_counts(perps, w) for w in ("discovery", "holdout")},
             "discovery_events": sorted(

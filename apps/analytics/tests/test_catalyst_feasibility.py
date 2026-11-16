@@ -142,48 +142,125 @@ def test_schema_mismatch_raises(source: str, payload: dict[str, Any]) -> None:
         cf.cut_page(source, payload)
 
 
+def announcement_page(source: str, items: list[dict[str, Any]]) -> dict[str, Any]:
+    if source == "bybit":
+        return bybit_page(items)
+    if source == "binance":
+        return binance_page(items)
+    return {"success": True, "data": {"notices": items}}
+
+
+def good_article(source: str) -> dict[str, Any]:
+    if source == "bybit":
+        return {"publishTime": IN_DISCOVERY}
+    if source == "binance":
+        return {"releaseDate": IN_DISCOVERY}
+    return {"first_listed_at": upbit_iso(IN_DISCOVERY), "listed_at": upbit_iso(IN_DISCOVERY)}
+
+
 @pytest.mark.parametrize(
     ("source", "bad", "reason"),
     [
-        ("bybit", {"title": "ZZZBLIND"}, "missing:publishTime"),
-        (
-            "bybit",
-            {"title": "ZZZBLIND", "publishTime": 0},
-            "non_positive_or_unusable_number:publishTime",
-        ),
         ("bybit", {"title": "ZZZBLIND", "publishTime": ""}, "str_not_positive_integer:publishTime"),
         ("bybit", {"title": "ZZZBLIND", "publishTime": None}, "type_NoneType:publishTime"),
         ("bybit", {"title": "ZZZBLIND", "publishTime": True}, "bool:publishTime"),
         (
-            "binance",
-            {"title": "ZZZBLIND", "releaseDate": -5},
-            "non_positive_or_unusable_number:releaseDate",
+            "upbit",
+            {"title": "ZZZBLIND", "first_listed_at": "x", "listed_at": 7},
+            "bad_iso_time:first_listed_at",
         ),
         (
             "upbit",
-            {"title": "ZZZBLIND", "first_listed_at": "x", "listed_at": 7},
+            {"title": "ZZZBLIND", "first_listed_at": upbit_iso(IN_DISCOVERY), "listed_at": 7},
             "type_int:listed_at",
+        ),
+        (
+            "upbit",
+            {"title": "ZZZBLIND", "listed_at": upbit_iso(IN_DISCOVERY)},
+            "missing:first_listed_at",
         ),
     ],
 )
 def test_item_failure_names_the_reason_without_values(
     source: str, bad: dict[str, Any], reason: str
 ) -> None:
-    good: dict[str, Any] = {
-        "bybit": {"publishTime": IN_DISCOVERY},
-        "binance": {"releaseDate": IN_DISCOVERY},
-        "upbit": {"first_listed_at": upbit_iso(IN_DISCOVERY), "listed_at": upbit_iso(IN_DISCOVERY)},
-    }[source]
-    items = [good, good, bad]
-    payload = {
-        "bybit": bybit_page,
-        "binance": binance_page,
-        "upbit": lambda i: {"success": True, "data": {"notices": i}},
-    }[source](items)
+    items = [good_article(source), good_article(source), bad]
     with pytest.raises(cf.SchemaMismatchError) as caught:
-        cf.cut_page(source, payload)
+        cf.cut_page(source, announcement_page(source, items))
     assert (caught.value.index, caught.value.reason) == (2, reason)
     assert "ZZZBLIND" not in json.dumps(cf.failure_record(caught.value))
+
+
+@pytest.mark.parametrize(
+    ("source", "bad"),
+    [
+        ("bybit", {"title": "ZZZBLIND"}),
+        ("bybit", {"title": "ZZZBLIND", "publishTime": 0, "dateTimestamp": IN_DISCOVERY}),
+        ("binance", {"title": "ZZZBLIND", "releaseDate": -5}),
+    ],
+)
+def test_article_without_a_machine_time_is_counted_and_dropped_unparsed(
+    source: str, bad: dict[str, Any]
+) -> None:
+    # Regression: the first live run stopped on a Bybit page holding such an article.
+    # An author-filled time is never a fallback: the article is placed in no window.
+    items = [good_article(source)] * 19 + [bad]
+    out = cf.cut_page(source, announcement_page(source, items))
+    assert out["untimed"] == 1
+    assert len(out["kept"]) == 19
+    assert out["dropped"] == 0
+    assert not out["oldest_reached"]
+    assert "ZZZBLIND" not in json.dumps(out)
+
+
+def test_untimed_articles_do_not_set_the_time_boundary() -> None:
+    old = {"publishTime": TOO_OLD}
+    out = cf.cut_page("bybit", bybit_page([old] * 10 + [{"title": "x"}] * 1))
+    assert out["untimed"] == 1
+    assert out["oldest_reached"]  # read from the last item that has a machine time
+    only_untimed = cf.cut_page("bybit", bybit_page([good_article("bybit")] * 19 + [{"x": 1}]))
+    assert not only_untimed["oldest_reached"]
+
+
+def test_too_many_untimed_articles_stop_the_fetch() -> None:
+    items = [good_article("bybit")] * 17 + [{"title": "a"}, {"title": "b"}, {"title": "c"}]
+    with pytest.raises(cf.SchemaMismatchError) as caught:
+        cf.cut_page("bybit", bybit_page(items))
+    assert (caught.value.index, caught.value.reason) == (17, "untimed_share_above_limit")
+    # Exactly at the limit still passes: 2 of 20 is 10%.
+    out = cf.cut_page(
+        "bybit", bybit_page([*items[:17], {"title": "a"}, {"title": "b"}, good_article("bybit")])
+    )
+    assert out["untimed"] == 2
+
+
+@pytest.mark.parametrize(
+    ("record", "reason"),
+    [
+        ({"contractType": "LinearPerpetual", "settleCoin": "USDT"}, "missing:symbol"),
+        (
+            {
+                "symbol": "AUSDT",
+                "contractType": "LinearPerpetual",
+                "settleCoin": "USDT",
+                "deliveryTime": "ZZZBLIND",
+            },
+            "bad_instrument_field",
+        ),
+    ],
+)
+def test_instrument_record_failure_is_an_item_stage_failure(
+    record: dict[str, Any], reason: str
+) -> None:
+    item = {"launchTime": str(IN_HOLDOUT), **record}
+    with pytest.raises(cf.SchemaMismatchError) as caught:
+        cf.cut_page("bybit_instruments", bybit_page([item]))
+    assert cf.failure_record(caught.value) == {
+        "class": "SchemaMismatchError",
+        "stage": "item",
+        "item_index": 0,
+        "reason": reason,
+    }
 
 
 def test_envelope_failure_record_never_echoes_exception_text() -> None:
@@ -565,6 +642,7 @@ def test_report_counts_instrument_launches_per_window_deduplicated() -> None:
         }
     )
     public, _ = cf.report(receipts)
+    assert public["untimed_without_machine_time"] == {"binance": 0, "bybit": 0, "upbit": 0}
     assert public["instrument_launches"] == {
         "discovery": {"launches": 3, "bases": 2, "weeks": 2},
         "holdout": {"launches": 1, "bases": 1, "weeks": 1},
@@ -661,6 +739,7 @@ def test_fetch_paginates_and_never_persists_bodies(tmp_path: Path) -> None:
         "pages_ok": 2,
         "kept": 2,
         "dropped": 2,
+        "untimed": 0,
         "terminal": True,
         "stop": "time_boundary",
     }
@@ -724,9 +803,28 @@ def test_item_level_mismatch_with_an_unchanged_key_tree_records_its_reason(tmp_p
         "class": "SchemaMismatchError",
         "stage": "item",
         "item_index": 1,
-        "reason": "missing:releaseDate",
+        "reason": "untimed_share_above_limit",
     }
     assert "ZZZBLIND" not in json.dumps(stopped)
+
+
+@pytest.mark.usefixtures("small")
+def test_fetch_survives_an_untimed_article_and_the_report_discloses_it(tmp_path: Path) -> None:
+    # Regression for the first live stop: one article without a machine time among
+    # well-formed ones no longer ends the run, and its count reaches the report.
+    good = [
+        {"id": i, "title": "Binance Will List Kept (KEPT)", "releaseDate": IN_DISCOVERY + i}
+        for i in range(19)
+    ]
+    odd = {"id": 99, "title": "Binance Will List Odd (ZZZBLIND)"}
+    pages = dict(PAGES) | {"/b?1": binance_page([*good, odd])}
+    with httpx.Client(transport=handler(pages)) as client:
+        fetch = fetcher(tmp_path)
+        summary = fetch.fetch(client)
+    assert summary["series"]["binance:48"]["untimed"] == 1
+    assert summary["series"]["binance:48"]["kept"] == 19 + 1  # page 2 keeps one holdout item
+    assert cf.untimed_by_source(fetch.receipts()) == {"binance": 1}
+    assert "ZZZBLIND" not in json.dumps(fetch.receipts())
 
 
 @pytest.mark.usefixtures("small")
@@ -745,6 +843,7 @@ def test_old_instrument_does_not_end_the_catalog(tmp_path: Path) -> None:
         "pages_ok": 2,
         "kept": 2,
         "dropped": 0,
+        "untimed": 0,
         "terminal": True,
         "stop": "cursor_end",
     }
