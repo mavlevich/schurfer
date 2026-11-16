@@ -142,6 +142,65 @@ def test_schema_mismatch_raises(source: str, payload: dict[str, Any]) -> None:
         cf.cut_page(source, payload)
 
 
+@pytest.mark.parametrize(
+    ("source", "bad", "reason"),
+    [
+        ("bybit", {"title": "ZZZBLIND"}, "missing:publishTime"),
+        (
+            "bybit",
+            {"title": "ZZZBLIND", "publishTime": 0},
+            "non_positive_or_unusable_number:publishTime",
+        ),
+        ("bybit", {"title": "ZZZBLIND", "publishTime": ""}, "str_not_positive_integer:publishTime"),
+        ("bybit", {"title": "ZZZBLIND", "publishTime": None}, "type_NoneType:publishTime"),
+        ("bybit", {"title": "ZZZBLIND", "publishTime": True}, "bool:publishTime"),
+        (
+            "binance",
+            {"title": "ZZZBLIND", "releaseDate": -5},
+            "non_positive_or_unusable_number:releaseDate",
+        ),
+        (
+            "upbit",
+            {"title": "ZZZBLIND", "first_listed_at": "x", "listed_at": 7},
+            "type_int:listed_at",
+        ),
+    ],
+)
+def test_item_failure_names_the_reason_without_values(
+    source: str, bad: dict[str, Any], reason: str
+) -> None:
+    good: dict[str, Any] = {
+        "bybit": {"publishTime": IN_DISCOVERY},
+        "binance": {"releaseDate": IN_DISCOVERY},
+        "upbit": {"first_listed_at": upbit_iso(IN_DISCOVERY), "listed_at": upbit_iso(IN_DISCOVERY)},
+    }[source]
+    items = [good, good, bad]
+    payload = {
+        "bybit": bybit_page,
+        "binance": binance_page,
+        "upbit": lambda i: {"success": True, "data": {"notices": i}},
+    }[source](items)
+    with pytest.raises(cf.SchemaMismatchError) as caught:
+        cf.cut_page(source, payload)
+    assert (caught.value.index, caught.value.reason) == (2, reason)
+    assert "ZZZBLIND" not in json.dumps(cf.failure_record(caught.value))
+
+
+def test_envelope_failure_record_never_echoes_exception_text() -> None:
+    with pytest.raises(ValueError, match="retCode") as caught:
+        cf.cut_page("bybit", {"retCode": 10001, "result": {"list": []}})
+    assert cf.failure_record(caught.value) == {
+        "class": "ValueError",
+        "stage": "envelope",
+        "reason": "retCode",
+    }
+    assert cf.failure_record(ValueError("ZZZBLIND")) == {
+        "class": "ValueError",
+        "stage": "envelope",
+        "reason": "other",
+    }
+
+
 def test_upbit_canonical_time_is_the_earliest_machine_time() -> None:
     item = {
         "id": 1,
@@ -647,6 +706,27 @@ def test_fetch_stops_on_schema_mismatch_with_keys_only(tmp_path: Path) -> None:
         cf.Fetcher(tmp_path, {"rules": "corrected"})
     with httpx.Client(transport=handler(PAGES)) as client:
         assert fetcher(tmp_path / "second-run").fetch(client)["complete"]
+
+
+@pytest.mark.usefixtures("small")
+def test_item_level_mismatch_with_an_unchanged_key_tree_records_its_reason(tmp_path: Path) -> None:
+    # One article without its time among well-formed ones: the union key tree equals a
+    # good page's, so only the failure record can say what broke (regression: the
+    # first live run stopped on such a page with nothing to diagnose it).
+    good = {"id": 8, "title": "Binance Will List Kept (KEPT)", "releaseDate": IN_DISCOVERY}
+    odd = {"id": 7, "title": "Binance Will List Hold (ZZZBLIND)"}
+    pages = dict(PAGES) | {"/b?2": binance_page([good, odd])}
+    with httpx.Client(transport=handler(pages)) as client, pytest.raises(cf.FetchStoppedError):
+        fetcher(tmp_path).fetch(client)
+    stopped = fetcher(tmp_path).receipts()[-1]
+    assert stopped["outcome"] == "schema_mismatch"
+    assert stopped["failure"] == {
+        "class": "SchemaMismatchError",
+        "stage": "item",
+        "item_index": 1,
+        "reason": "missing:releaseDate",
+    }
+    assert "ZZZBLIND" not in json.dumps(stopped)
 
 
 @pytest.mark.usefixtures("small")

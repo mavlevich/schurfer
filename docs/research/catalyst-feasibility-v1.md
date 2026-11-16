@@ -192,7 +192,11 @@ are therefore expected shapes, not confirmed ones. The guards:
 
 - the first page of every series records a **schema probe**: the key paths and value
   types of the response, never a value;
-- any mismatch stops the whole fetch closed, with the same key-only record;
+- any mismatch stops the whole fetch closed, with the same key-only record and a
+  `failure` record: the exception class, the stage (`envelope` or `item`), the item
+  index and a reason from a fixed vocabulary (for example `missing:publishTime`). The
+  key tree is a union over the items of a page, so one malformed item leaves it
+  unchanged; the `failure` record is what names it. It holds no value, title or symbol;
 - the fix is a reviewed code change. A stopped run does not resume: its run binding
   holds the code revision, so a corrected revision starts a **new run in a new root**,
   from the first page. The stopped run's receipts are kept, passed to the new run via

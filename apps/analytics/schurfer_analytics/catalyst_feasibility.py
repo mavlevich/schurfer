@@ -210,6 +210,77 @@ def canonical_ms(source: str, item: dict[str, Any]) -> int:
     raise ValueError(source)
 
 
+TIME_FIELDS = {
+    "bybit": ("publishTime",),
+    "bybit_instruments": ("launchTime",),
+    "binance": ("releaseDate",),
+    "upbit": ("first_listed_at", "listed_at"),
+}
+
+
+class SchemaMismatchError(ValueError):
+    """One item broke the expected shape. Carries a fixed-vocabulary reason, never a value."""
+
+    def __init__(self, index: int, reason: str) -> None:
+        super().__init__(f"item {index}: {reason}")
+        self.index, self.reason = index, reason
+
+
+def explain_time_failure(source: str, item: dict[str, Any]) -> str:
+    """Name why an item's machine time is unusable, from key presence and types only.
+
+    The vocabulary is fixed here: field names come from the code and Python type
+    names from the value, so no value, title or symbol can reach a receipt.
+    """
+    for field in TIME_FIELDS[source]:
+        if field not in item:
+            return f"missing:{field}"
+        value = item[field]
+        if isinstance(value, bool):
+            return f"bool:{field}"
+        if source == "upbit":
+            if not isinstance(value, str):
+                return f"type_{type(value).__name__}:{field}"
+            continue
+        if isinstance(value, int | float):
+            return f"non_positive_or_unusable_number:{field}"
+        if isinstance(value, str):
+            return f"str_not_positive_integer:{field}"
+        return f"type_{type(value).__name__}:{field}"
+    return "unusable_time"
+
+
+ENVELOPE_REASONS = frozenset(
+    {
+        "retCode",
+        "code",
+        "catalogs",
+        "success",
+        "cursor",
+        "items",
+        "result",
+        "result.list",
+        "data",
+        "data.catalogs",
+        "data.notices",
+        "articles",
+        "list",
+    }
+)
+
+
+def failure_record(exc: BaseException) -> dict[str, Any]:
+    """Key-only account of a schema failure: exception class and a fixed reason."""
+    record: dict[str, Any] = {"class": type(exc).__name__}
+    if isinstance(exc, SchemaMismatchError):
+        record.update(stage="item", item_index=exc.index, reason=exc.reason)
+        return record
+    first = exc.args[0] if exc.args else None
+    record["stage"] = "envelope"
+    record["reason"] = first if isinstance(first, str) and first in ENVELOPE_REASONS else "other"
+    return record
+
+
 def window_of(ms: int) -> str | None:
     for name, (first, end) in WINDOWS.items():
         if first <= ms < end:
@@ -253,7 +324,10 @@ def cut_page(source: str, payload: Any) -> dict[str, Any]:
     kept: list[dict[str, Any]] = []
     dropped, oldest_reached = 0, False
     for index, item in enumerate(items):
-        ms = canonical_ms(source, item)
+        try:
+            ms = canonical_ms(source, item)
+        except (KeyError, ValueError, TypeError, OverflowError) as exc:
+            raise SchemaMismatchError(index, explain_time_failure(source, item)) from exc
         # The time boundary belongs to announcement feeds only, which run from the
         # newest. It is read from the page's last item: an old notice pinned above
         # newer ones must not end the series. A catalog of instruments has no time
@@ -468,8 +542,9 @@ class Fetcher:
             try:
                 payload = json.loads(bytes(body))
                 page = cut_page(series.source, payload)
-            except (ValueError, TypeError, KeyError, OverflowError):
+            except (ValueError, TypeError, KeyError, OverflowError) as exc:
                 error = "schema_mismatch"
+                receipt["failure"] = failure_record(exc)
                 try:
                     receipt["schema"] = key_tree(json.loads(bytes(body)))
                 except ValueError:
