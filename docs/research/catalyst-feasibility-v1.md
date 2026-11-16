@@ -170,10 +170,10 @@ appeared in or near the blind window is kept.
 
 **Sources and endpoints.** Pinned in the code (`catalyst_feasibility.py`, `SERIES`):
 
-- Bybit `GET /v5/announcements/index`, `locale=en-US`, types `delistings` and
-  `product_updates`, 20 per page. It is documented, has no time filter and pages
-  from the newest. Canonical time `publishTime`; `dateTimestamp` is author-filled
-  and reported only.
+- Bybit `GET /v5/announcements/index`, `locale=en-US`, type `delistings`, 20 per page.
+  It is documented, has no time filter and pages from the newest. Canonical time
+  `publishTime`; `dateTimestamp` is author-filled and reported only. The type
+  `product_updates` is **not requested**: see "Product updates" below.
 - Bybit `GET /v5/market/instruments-info`, linear, statuses `Trading`, `Delivering`
   and `Closed`, by cursor.
 - Binance's public announcement list (`bapi/composite/v1/public/cms/article/list/query`),
@@ -204,6 +204,17 @@ are therefore expected shapes, not confirmed ones. The guards:
   64 MiB study budget, and named in the report's provenance. A transport failure on the
   same revision does resume, up to three attempts per page;
 - for edits, the order check (section 4) is the evidence, and the report says so.
+
+**Product updates (not requested).** The first page of the live `product_updates`
+feed, read on 2026-11-16 by the third fetch, had no `result.list[].publishTime` key at
+all: its key tree held only the author-filled `dateTimestamp` and `startDateTimestamp`.
+The author-filled time is never a fallback, so this feed has no machine publication
+time, and buckets `A4f` and `A4r` (funding interval and risk limit changes), which come
+only from it, cannot be reconstructed. They get the verdict `not_reconstructible`
+without a count, and the report lists the series under `unrequested_series` with the
+reason. **This conclusion rests on that first page only.** The 20 newest articles of the
+feed carry no machine time; older pages were not read, and nothing here says they would
+not. Reading them would take a new amendment before any count.
 
 **Articles with no machine time.** The first live fetch stopped on a Bybit
 announcements page with an article that has no usable `publishTime`. For the numeric-time
@@ -259,6 +270,12 @@ pages dated on or after 2026-09-29 pass through pagination. The guards:
 
 - At most **3,000 requests** in total, **64 MiB** of response bytes and **1 request per
   second** per host.
+- **First pages first.** The fetch requests the first page of every series that has not
+  started before it reads the second page of any. A schema mismatch or an oversized
+  response on a first page is recorded and the other first pages are still requested; the
+  stop is raised once all of them are in, naming each failed series. A stopped run stays
+  stopped. If every first page passes, the remaining pages follow series by series. A
+  schema failure of one endpoint therefore cannot hide the key trees of the others.
 - An announcement series ends in one of four ways that count as read to its end: an
   empty page, the time boundary, the end of a cursor, or the untimed era (section 6). The time boundary is reached
   when the **last** item of a page is older than 2023-02-01; the feeds run from the
@@ -534,6 +551,13 @@ about April 2024, inside the holdout. The untimed era stop and the coverage rule
 leave the discovery year readable and make a Bybit-sourced holdout unconfirmable unless
 the feed reaches back to 2023-02-01. The remaining series had not been requested when it
 stopped. The rerun passes both stopped run roots with `--prior-root`.
+
+**Third live fetch stop, 2026-11-16.** The fetch of revision `b835cd8` read the
+delistings feed to the untimed era (24 pages, coverage from about 2024-05-27) and stopped
+on the first page of `product_updates`, which has no `publishTime` key. The series is no
+longer requested and `A4f` and `A4r` are `not_reconstructible` (section 6). The fetch
+order now requests every first page before any deeper page. Both are written before any
+count is read. The rerun passes the three stopped run roots with `--prior-root`.
 
 **Changes made while writing the code.** These come after the design discussion and
 are for the colleague's review of the code PR:

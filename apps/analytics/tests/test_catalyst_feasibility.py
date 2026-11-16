@@ -893,9 +893,10 @@ def test_fetch_paginates_and_never_persists_bodies(tmp_path: Path) -> None:
     assert str(BLIND) not in stored
     assert "body_base64" not in stored
     receipts = fetcher(tmp_path).receipts()
-    assert [r["position"] for r in receipts] == [1, 2, "", "c2"]
+    assert [r["position"] for r in receipts] == [1, "", 2, "c2"]
     assert "schema" in receipts[0]
-    assert "schema" not in receipts[1]
+    assert "schema" in receipts[1]  # the catalog's first page
+    assert "schema" not in receipts[2]
 
 
 @pytest.mark.usefixtures("small")
@@ -903,7 +904,7 @@ def test_fetch_resumes_without_repeating(tmp_path: Path) -> None:
     pages = dict(PAGES) | {"/b?2": 500}
     with httpx.Client(transport=handler(pages)) as client, pytest.raises(cf.FetchStoppedError):
         fetcher(tmp_path).fetch(client)
-    assert len(list((tmp_path / "attempts").glob("*.json"))) == 1 + cf.ATTEMPTS_PER_PAGE
+    assert len(list((tmp_path / "attempts").glob("*.json"))) == 2 + cf.ATTEMPTS_PER_PAGE
     stored = "".join(p.read_text() for p in tmp_path.rglob("*.json"))
     assert "secret error body" not in stored
     with pytest.raises(cf.FetchStoppedError):
@@ -977,7 +978,7 @@ def test_an_untimed_first_page_is_a_schema_change_not_an_era(tmp_path: Path) -> 
     pages = dict(PAGES) | {"/b?1": binance_page([{"id": i, "title": "x"} for i in range(5)])}
     with httpx.Client(transport=handler(pages)) as client, pytest.raises(cf.FetchStoppedError):
         fetcher(tmp_path).fetch(client)
-    stopped = fetcher(tmp_path).receipts()[-1]
+    stopped = fetcher(tmp_path).receipts()[0]
     assert stopped["outcome"] == "schema_mismatch"
     assert stopped["failure"]["reason"] == "untimed_era_before_any_timed_page"
 
@@ -999,6 +1000,76 @@ def test_fetch_survives_an_untimed_article_and_the_report_discloses_it(tmp_path:
     assert summary["series"]["binance:48"]["kept"] == 19 + 1  # page 2 keeps one holdout item
     assert cf.untimed_by_source(fetch.receipts()) == {"binance": 1}
     assert "ZZZBLIND" not in json.dumps(fetch.receipts())
+
+
+BAD = {"retCode": 0, "result": {"rows": []}}
+
+
+@pytest.mark.usefixtures("small")
+def test_every_first_page_is_requested_before_a_stop_is_raised(tmp_path: Path) -> None:
+    # Series 1 reads fine, series 2 does not match: series 1's second page is not
+    # requested, and the stop names the series that failed.
+    pages = dict(PAGES) | {"/i?": BAD}
+    with (
+        httpx.Client(transport=handler(pages)) as client,
+        pytest.raises(cf.FetchStoppedError, match="bybit_inst:Trading: schema_mismatch"),
+    ):
+        fetcher(tmp_path).fetch(client)
+    receipts = fetcher(tmp_path).receipts()
+    assert [(r["series"], r["position"], r["outcome"]) for r in receipts] == [
+        ("binance:48", 1, "ok"),
+        ("bybit_inst:Trading", "", "schema_mismatch"),
+    ]
+
+
+def test_all_first_page_key_trees_come_back_in_one_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    third = cf.Series(
+        "binance:161", "binance", "https://example.test/b2", (("pageSize", "2"),), "page", "pageNo"
+    )
+    monkeypatch.setattr(cf, "SERIES", (*SMALL, third))
+    pages = dict(PAGES) | {"/b?1": BAD, "/b2?1": {"code": "000000", "data": {"x": 1}}}
+    with (
+        httpx.Client(transport=handler(pages)) as client,
+        pytest.raises(cf.FetchStoppedError) as caught,
+    ):
+        fetcher(tmp_path).fetch(client)
+    assert "binance:48: schema_mismatch" in str(caught.value)
+    assert "binance:161: schema_mismatch" in str(caught.value)
+    receipts = fetcher(tmp_path).receipts()
+    assert len(receipts) == 3  # one request per series, nothing deeper
+    assert all("schema" in r for r in receipts)
+    with pytest.raises(cf.FetchStoppedError):  # a stopped run stays stopped, no new request
+        fetcher(tmp_path).fetch(httpx.Client(transport=handler(PAGES)))
+    assert len(fetcher(tmp_path).receipts()) == 3
+
+
+@pytest.mark.usefixtures("small")
+def test_deep_pages_follow_only_after_every_first_page_passed(tmp_path: Path) -> None:
+    with httpx.Client(transport=handler(PAGES)) as client:
+        fetcher(tmp_path).fetch(client)
+    order = [(r["series"], r["position"]) for r in fetcher(tmp_path).receipts()]
+    assert order == [
+        ("binance:48", 1),
+        ("bybit_inst:Trading", ""),
+        ("binance:48", 2),
+        ("bybit_inst:Trading", "c2"),
+    ]
+
+
+def test_product_updates_is_not_requested_and_its_buckets_are_not_reconstructible() -> None:
+    assert "bybit_ann:product_updates" not in [s.name for s in cf.SERIES]
+    public = a2_report(untimed_total=0)
+    assert public["unrequested_series"] == {
+        "bybit_ann:product_updates": "no machine publication time"
+    }
+    for bucket in ("A4f", "A4r"):
+        entry = public["buckets"][bucket]
+        assert entry["verdict"] == "not_reconstructible"
+        assert "bybit_ann:product_updates" in entry["reason"]
+    assert "reason" not in public["buckets"]["A2"]
+    assert public["buckets"]["A2"]["verdict"] == "feasible"
 
 
 @pytest.mark.usefixtures("small")
@@ -1067,10 +1138,10 @@ def test_prior_root_budget_carries_across_stopped_run(
     with httpx.Client(transport=handler(bad_pages)) as client, pytest.raises(cf.FetchStoppedError):
         fetcher(first).fetch(client)
     prior = cf.prior_usage([first])
-    assert prior["attempts"] == 1
+    assert prior["attempts"] == 2
     assert len(prior["runs"]) == 1
-    # SMALL needs 4 requests; with 1 already spent in run1, a cap of 4 blocks run2.
-    monkeypatch.setattr(cf, "MAX_REQUESTS", 4)
+    # SMALL needs 4 requests; with 2 already spent in run1, a cap of 5 blocks run2.
+    monkeypatch.setattr(cf, "MAX_REQUESTS", 5)
     clock = iter(float(i) for i in range(10_000))
     succ = cf.Fetcher(
         second,
@@ -1081,12 +1152,12 @@ def test_prior_root_budget_carries_across_stopped_run(
     with httpx.Client(transport=handler(PAGES)) as client, pytest.raises(cf.BudgetExceededError):
         succ.fetch(client)
     assert len(list((second / "attempts").glob("*.json"))) == 3
-    # Raise cap to 5: the remaining 1 request completes run2 and records cumulative total 5.
-    monkeypatch.setattr(cf, "MAX_REQUESTS", 5)
+    # Raise cap to 6: the remaining 1 request completes run2 and records cumulative total 6.
+    monkeypatch.setattr(cf, "MAX_REQUESTS", 6)
     with httpx.Client(transport=handler(PAGES)) as client:
         summary = succ.fetch(client)
     assert summary["complete"]
-    assert summary["attempts_and_reserved_bytes"][0] == 5
+    assert summary["attempts_and_reserved_bytes"][0] == 6
 
 
 def test_run_binding_cannot_change(tmp_path: Path) -> None:
@@ -1119,4 +1190,4 @@ def test_plan_makes_no_request(capsys: pytest.CaptureFixture[str]) -> None:
     assert cf.main(["plan"]) == 0
     plan = json.loads(capsys.readouterr().out)
     assert plan["limits"]["max_requests"] == 3_000
-    assert len(plan["series"]) == 9
+    assert len(plan["series"]) == 8
