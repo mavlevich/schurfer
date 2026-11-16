@@ -603,27 +603,31 @@ Completed on the owner's go, 2026-11-16:
 
 ## I25 new-perp short `new-perp-short-v1`, draft protocol, 2026-11-16 (design only)
 
-[Draft protocol](new-perp-short-lab-protocol-v1.md) for the colleague's discussion.
-**This row records no read.** The document fetches nothing, reads no price, funding rate,
-spread, depth or return, and registers no request list. It states in advance what each
-later stage would read, so that no window is spent by accident. Each stage needs the
-owner's separate go and, before its first request, a request list with a hash and an
-update of this row.
+[Draft protocol](new-perp-short-lab-protocol-v1.md), revision 2 after the colleague's
+review, for discussion. **This row records no read.** The document fetches nothing,
+reads no price, funding rate, spread, depth or return, and registers no request list. It
+states in advance what each later stage would read, so that no window is spent by
+accident. Each stage needs the owner's separate go and, before its first request, a
+request list with a hash and an update of this row.
 
 **Planned exposure, by stage (not yet read):**
 
-- **Stage 1, coverage level.** Bybit trade-archive file listings and first daily files,
-  catalog fields of `instruments-info`, the Bybit spot catalog, and existence lists of
-  bars, funding history and order-book files, for launches in the discovery year
-  (2024-10-01 to 2025-09-30) and, **sealed and aggregate only**, the backward holdout
-  (2023-02-01 to 2024-09-15). One binary identity flag reads bar-to-bar close ratios but
-  computes no return.
+- **Stage 1, coverage level, discovery year only (2024-10-01 to 2025-09-30).** Bybit
+  trade-archive file listings and first daily files, catalog fields of `instruments-info`,
+  machine-timed announcements, the Bybit spot catalog, and existence lists of trade
+  bars, mark-price bars, funding history and order-book files. Identity is judged by
+  evidence that is not a price. No price is read.
+- **Stage 1b, coverage level, backward holdout (2023-02-01 to 2024-09-15).** The same
+  checks, **sealed and aggregate only**, run only after stage 1 passes and on a further
+  separate go of the owner.
 - **Stage 3, features level.** Pre-entry return dispersion and week-block dependence of
   the cohort's first days, discovery year only. No mean, sign or outcome is emitted.
-- **Stage 4, outcomes level, discovery year only.** 1-minute trade bars, hourly mark
-  bars, funding history, order-book snapshots and a liquid-pool benchmark, for launches
-  whose whole path ends by 2025-09-30. After that read those paths count as read at
-  outcome level for this trigger.
+- **Stage 4, outcomes level, discovery year only.** 1-minute trade bars and mark-price
+  bars, hourly mark bars, funding history, order-book snapshots and a liquid-pool
+  benchmark, for launches whose whole path ends by 2025-09-30. A price-scale
+  diagnostic, which gates nothing and excludes nothing, belongs here and is
+  outcome-level. After that read those paths count as read at outcome level for this
+  trigger.
 - **Never read:** any price from 2025-10-01 (the HYP-031 test year, excluded and
   unassigned) or from 2026-09-29 (the HYP-012 v2 blind window). Launches whose path
   would cross 2025-09-30, or 2024-09-15 for the holdout, are counted and never priced.
@@ -635,4 +639,5 @@ alone. Its launch list stays sealed outside Git, as in the catalyst study.
 **What the existing count already read.** The `instrument_launches` aggregates of
 [catalyst-feasibility-v1](catalyst-feasibility-v1-result-2026-11-16.md): 263 launches in
 53 ISO weeks (discovery) and 254 launches (holdout), coverage level, no price. No new
-exposure comes from this draft.
+exposure comes from this draft. The draft's only external reads were public Bybit
+help-center and API documentation pages, which hold no market value.
