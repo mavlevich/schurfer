@@ -1,0 +1,63 @@
+{
+  "attempts_and_reserved_bytes": [287, 3594593],
+  "code_revision": "48676de95a8a372e6d50f4bc95d785373c4b60d1",
+  "fetch_summary_sha256": "a9ae2a271c85f7d11a5b9dadf57bf3fa2db1fbdc09b240b1ba543059a1803e3a",
+  "holdout_events_sha256": "52baf153df9af11cef24d996388cd7e356052021354f94ebac37ef0472ccb8ee",
+  "outcome": "stop_direction_a",
+  "prior_runs": [
+    {
+      "attempts": 25,
+      "bytes": 254013,
+      "run_binding_sha256": "08e81c294bcebb3e48573afdca2ffd7feefcd61cbf673dc56f0e4c2d6742facf"
+    },
+    {
+      "attempts": 156,
+      "bytes": 2626156,
+      "run_binding_sha256": "4343a68e35722b3f38416228aea59567d01de1463a55678c30e3715438f2fdac"
+    },
+    {
+      "attempts": 24,
+      "bytes": 243723,
+      "run_binding_sha256": "63ed6dcf2cb90bb1f51d2fe8cd8de94dd9049414871d08655407ef4a1b1ce5a9"
+    },
+    {
+      "attempts": 24,
+      "bytes": 243723,
+      "run_binding_sha256": "b3984692d739c935d6827dd5dddf5251539b6cd65ace705e0d5aeebcf05792b5"
+    }
+  ],
+  "report_generated_at_utc": "2026-11-16T14:00:20+00:00",
+  "report_gz_sha256": "b0f824ad88267d7b418a6db4eacf26568038678c2e47c3887baa91431e673db5",
+  "report_sha256": "39f063571c5ca9938a694db0ba04429e0bcac6d7ccec10ca51c4480cd27b3009",
+  "reused_pages": {
+    "binance:161": 19,
+    "binance:48": 61,
+    "binance:49": 44,
+    "bybit_ann:delistings": 24,
+    "bybit_inst:Closed": 2,
+    "bybit_inst:Delivering": 1,
+    "bybit_inst:Trading": 1
+  },
+  "run_binding_sha256": "c477aebdfe2cde6cd026ad7dbcc80075bb82248939ef52a0b1b23acba7c84e08",
+  "runtime_location": "schurfer-runs/catalyst-feasibility-v1-run5/ next to the main checkout, outside Git; the sealed holdout events are holdout-events.json there",
+  "sealed_holdout_events_bytes": 17187,
+  "skipped_prior_runs": [
+    {
+      "reason": "parse definitions differ",
+      "run_binding_sha256": "63ed6dcf2cb90bb1f51d2fe8cd8de94dd9049414871d08655407ef4a1b1ce5a9"
+    },
+    {
+      "reason": "parse definitions differ",
+      "run_binding_sha256": "b3984692d739c935d6827dd5dddf5251539b6cd65ace705e0d5aeebcf05792b5"
+    }
+  ],
+  "study": "catalyst-feasibility-v1",
+  "verdicts": {
+    "A1": "insufficient_events",
+    "A2": "lab_only",
+    "A3": "insufficient_events",
+    "A4d": "lab_only",
+    "A4f": "not_reconstructible",
+    "A4r": "not_reconstructible"
+  }
+}

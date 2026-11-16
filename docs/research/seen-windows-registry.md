@@ -580,3 +580,20 @@ returned news headlines about Upbit listings, at least one in the discovery year
 and some possibly dated in 2026, inside the v2 blind window. These were titles only,
 with no market values. They are recorded conservatively, like the 2026-11-13
 search, and are not used in any rule or count.
+
+Completed on the owner's go, 2026-11-16:
+
+- **Fetch** from clean `48676de` after four runs that stopped on the feeds' shape or on a
+  rate limit and were fixed through #602 to #605 before any count was read. 287 requests
+  in all (3,594,593 reserved bytes), 152 pages continued from earlier runs. Run binding
+  `c477aebd...`, outside Git.
+- **Report** at 14:00 UTC: outcome `stop_direction_a`, buckets `A1` and `A3`
+  `insufficient_events`, `A2` and `A4d` `lab_only`, `A4f` and `A4r` `not_reconstructible`.
+  [Result](catalyst-feasibility-v1-result-2026-11-16.md).
+- **Now read at coverage level, as registered:** event counts and timestamps in both
+  windows. The backward holdout appears only as aggregate counts; its sealed event list
+  has SHA-256 `52baf153...`. No price, trade, spread, depth, funding rate, open interest
+  or return was read, and no holdout title, ticker or date was looked at. Both windows
+  stay usable for confirmation.
+- **Not requested:** Bybit `product_updates` (no machine publication time on its first
+  page) and Upbit's notice list (unreachable: HTTP 429, 400, 429).

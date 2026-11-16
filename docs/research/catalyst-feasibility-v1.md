@@ -4,6 +4,9 @@ Status: **design discussed with the colleague on 2026-11-15; their fixes are fol
 (section 11).** It authorizes no fetch. The code and the seen-windows registry row go
 to one colleague review. The fetch itself needs a separate go from the owner.
 
+Result: [recorded 2026-11-16](catalyst-feasibility-v1-result-2026-11-16.md), outcome
+`stop_direction_a`.
+
 Study id: `catalyst-feasibility-v1`. No HYP id is assigned. One is assigned only if a
 laboratory protocol follows (section 9).
 

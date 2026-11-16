@@ -1,0 +1,88 @@
+{
+  "attempts_and_reserved_bytes": [287, 3594593],
+  "budget_exhausted": [],
+  "complete": true,
+  "reused_pages": {
+    "binance:161": 19,
+    "binance:48": 61,
+    "binance:49": 44,
+    "bybit_ann:delistings": 24,
+    "bybit_inst:Closed": 2,
+    "bybit_inst:Delivering": 1,
+    "bybit_inst:Trading": 1
+  },
+  "series": {
+    "binance:161": {
+      "attempts": 0,
+      "dropped": 165,
+      "kept": 215,
+      "pages_ok": 19,
+      "stop": "time_boundary",
+      "terminal": true,
+      "untimed": 0
+    },
+    "binance:48": {
+      "attempts": 0,
+      "dropped": 375,
+      "kept": 845,
+      "pages_ok": 61,
+      "stop": "time_boundary",
+      "terminal": true,
+      "untimed": 0
+    },
+    "binance:49": {
+      "attempts": 55,
+      "dropped": 554,
+      "kept": 1426,
+      "pages_ok": 99,
+      "stop": "time_boundary",
+      "terminal": true,
+      "untimed": 0
+    },
+    "bybit_ann:delistings": {
+      "attempts": 0,
+      "dropped": 280,
+      "kept": 180,
+      "pages_ok": 24,
+      "stop": "untimed_era",
+      "terminal": true,
+      "untimed": 0
+    },
+    "bybit_inst:Closed": {
+      "attempts": 0,
+      "dropped": 383,
+      "kept": 309,
+      "pages_ok": 2,
+      "stop": "cursor_end",
+      "terminal": true,
+      "untimed": 0
+    },
+    "bybit_inst:Delivering": {
+      "attempts": 0,
+      "dropped": 0,
+      "kept": 0,
+      "pages_ok": 1,
+      "stop": "empty",
+      "terminal": true,
+      "untimed": 0
+    },
+    "bybit_inst:Trading": {
+      "attempts": 0,
+      "dropped": 469,
+      "kept": 406,
+      "pages_ok": 1,
+      "stop": "cursor_end",
+      "terminal": true,
+      "untimed": 0
+    },
+    "upbit:notices": {
+      "attempts": 3,
+      "dropped": 0,
+      "kept": 0,
+      "pages_ok": 0,
+      "stop": "unreachable",
+      "terminal": true,
+      "untimed": 0
+    }
+  }
+}
