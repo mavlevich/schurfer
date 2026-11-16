@@ -22,8 +22,13 @@ found that none of the 134 no-base holdout titles has any of the seven fixed sha
 `...USDT` pair): all 134 are `other`.** So the parenthesis hypothesis is not
 supported, neither is the `Multiple` or index hypothesis, and the real shape is still
 unknown. No defect in the sense of the contract's correction clause is established.
-This note proposes no fix and writes no amendment, and A2 stays `lab_only`. Any
-further look at the holdout titles is a separate decision of the owner.
+
+**Status: A2 stays `lab_only`. The cause of the lost bases is not established.**
+`other = 134` means only that the shape classes fixed in advance did not recognise
+the title format. It is not evidence that the events do not exist, that no edge
+exists, or that the titles are unreadable. This note proposes no fix, writes no
+amendment, and does not close A2. No second class selection on the holdout titles is
+allowed now.
 
 ## 2. What the A2 branch does
 
@@ -164,16 +169,19 @@ python -m schurfer_analytics.catalyst_a2_shape --root <run 5 root> --window hold
   hypothesis that the loss is the missing parenthesis form (section 5, hypothesis 1) is
   not supported.
 - The `Multiple` and index shapes are not what lost them either (both 0).
-- `other` is 100% and so the look did not identify the shape. The classes cannot tell
-  whether a parser could read these titles, so no parser change is shown to matter and
-  none is proposed. The look does not show that they are unreadable either.
+- `other` is 100% and so the look did not identify the shape. It says the classes did
+  not recognise the title format, and nothing about whether events or an edge exist.
+  The classes cannot tell whether a parser could read these titles, so no parser change
+  is shown to matter and none is proposed. The look does not show that the titles are
+  unreadable either.
 - Not tested, and not claimed: that the titles are of a coin-margined product, use another
   quote asset such as `BUSD` or `USD`, or are another article type matched by the
   `Futures Will Launch` and `Perpetual` pattern. The classes were fixed before the run and
-  are not changed after it. Looking further would be a second disclosed look and needs
-  its own decision of the owner.
+  are not changed after it. A second class selection on the holdout titles is not
+  allowed now.
 
-**Status of A2.** It stays `lab_only` as recorded. This look is logged in the
+**Status of A2.** It stays `lab_only`; the cause of the lost bases is not established.
+This look is logged in the
 [registry](seen-windows-registry.md) as a structural look at the holdout titles of A2
 (shape-class counts only, no returns).
 
@@ -217,8 +225,8 @@ after the look in section 6 there is no confirmed defect to apply it to.
    second entry (proposed), never a replacement?
 3. **A definition question, separate from the parser:** should a `...USDC` perp
    listing ever be an A2 event? Proposed: no.
-4. **Next step.** The look found all 134 titles outside the seven fixed shapes. Is A2
-   closed as `lab_only` for good (proposed, since no parser change is shown to matter),
-   or does the owner want a second disclosed look with new classes (for example other
-   quote assets or coin-margined products), accepting that it is another look at the
-   holdout?
+4. **Status and return condition (stated, not a question).** A2 stays `lab_only` and
+   the cause of the lost bases is not established. A2 returns only when independent
+   information about the title format appears (for example from a documented source, or
+   from discovery-year or other non-holdout material) or when a new confirming window
+   exists. No second class selection on the holdout titles is made in the meantime.
