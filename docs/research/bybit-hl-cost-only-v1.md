@@ -17,7 +17,14 @@ the price ratio demoted to a diagnostic flag (5.2); `insufficient_depth` split f
 `depth_unobserved` (5.6); `cost_inconclusive` as a named boundary outcome (5.7); scope of a
 tier-limited pass, the Innovation Zone check and per-variant reporting (5.7); the
 Hyperliquid freshness threshold set by a rule from pilot cadence (5.5). The questions that
-stay open, including both positions on the signer, are in section 13.
+stay open are in section 13.
+
+**Revision 3 (2026-11-17), after the review of revision 2.** Changed: `q` is no longer a
+saved or published derived result, because `mid = S / q` recovers the price, and the
+boundary between private raw bytes and the published report is stated (5.6); the signer
+question is closed: `boto3` and `botocore` sign every Hyperliquid request, with SDK retries
+disabled and every actual HTTP send passing through the attempt journal (section 8). No AWS
+key is needed now.
 
 This is Stage 2A of the [consilium plan](../consilium/plan.md), written from the
 Stage 2A frame in [`screens/b-2026-11-15.md`](../consilium/screens/b-2026-11-15.md)
@@ -99,7 +106,8 @@ Rules, fixed now:
   every `ListObjectsV2` and `GetObject` call must be signed, and the charges go to the
   signing account. This machine has no `aws` CLI, no `~/.aws` and no `boto3`. Whether
   the owner provides credentials, and under which account and spending cap, is the
-  owner's open decision. Until then both steps are design only.
+  owner's open decision. **No key is needed now.** Until the decision, both steps are
+  design only, and a Step A go needs a concrete request list and budget first (section 10).
 - **No credential reaches the repository or a log.** Credentials are read from the
   process environment of the run only, never from a file in the repository, never printed
   and never stored in `run.json`, the ledger or a receipt. The code refuses to start
@@ -109,9 +117,10 @@ Rules, fixed now:
 - **Least privilege.** The key the owner creates should allow only `s3:ListBucket` and
   `s3:GetObject` on `hyperliquid-archive`. Step A needs only `ListBucket`. This is a
   recommendation to the owner, not a requirement the code can check.
-- **New dependencies are a review point.** `lz4` (frame decoding) and an S3 request
-  signer (`boto3`, or a small SigV4 signer on the existing `httpx`) are not in
-  `uv.lock`. Adding either changes the lockfile and goes through the code PR's review.
+- **New dependencies are a review point.** `boto3` (with `botocore`) signs every
+  Hyperliquid request, and `lz4` decodes frames; neither is in `uv.lock`, so the code PR
+  changes the lockfile and goes through review. There is no hand-written SigV4. Bybit
+  requests stay on `httpx`. The conditions under which `boto3` is allowed are in section 8.
 - **Bybit needs no credentials.** Its order book archive is public at
   `quote-saver.bycsi.com`. The 2026-11-13 [B2 scope result](bybit-presettlement-b2-scope-result-2026-11-13.md)
   established that host through the official history catalogue and by HEAD requests.
@@ -178,14 +187,14 @@ The report shows no price, no order book and no object body.
 
 ### 4.4 Budget
 
-| Item                                    | Limit                                                         |
-| --------------------------------------- | ------------------------------------------------------------- |
-| Attempts, all passes together           | 12,000 (planned first attempts at most 10,210)                |
-| Sub-caps on first attempts              | pass 0: 10; pass 1: 3,000; pass 2: 7,200 (150 coins x 48)     |
-| Response bytes                          | 256 MiB, counted as in B1 (section 8)                         |
-| Request starts                          | 3 per second, one worker                                      |
-| Attempts per request                    | 2                                                             |
-| Estimated cost (indicative, unverified) | under USD 0.15: 12,000 list requests plus 256 MiB of transfer |
+| Item                                    | Limit                                                                                      |
+| --------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Attempts, all passes together           | 12,000 (planned first attempts at most 10,210)                                             |
+| Sub-caps on first attempts              | pass 0: 10; pass 1: 3,000; pass 2: 7,200 (150 coins x 48)                                  |
+| Response bytes                          | 256 MiB: each response charged after the call, new attempts refused at 255 MiB (section 8) |
+| Request starts                          | 3 per second, one worker                                                                   |
+| Attempts per request                    | 2                                                                                          |
+| Estimated cost (indicative, unverified) | under USD 0.15: 12,000 list requests plus 256 MiB of transfer                              |
 
 A pass cap that is reached ends the run as `listing_incomplete` with reason
 `request_budget`, never as complete. Pass 2 stops closed at 150 coins; a larger set is a
@@ -409,12 +418,27 @@ If one venue is `insufficient_depth` and the other `depth_unobserved`, the obser
 way). `depth_unobserved` can lower a tier's coverage but is never by itself a reason for
 `stop_execution_infeasible`.
 
-**Stored per observation:** status, venue, size, `q` in contract units, `x_venue`, half
-spread in bps, levels used, book age, book variant and `price_ratio_flag`. **Never stored
-or published:** any price level, any mid, the cross-venue ratio.
+**Stored per observation, in the sealed result and in the published report:** status,
+venue, size `S`, `x_venue`, half spread in bps, the number of levels used, book age, book
+variant and `price_ratio_flag`. **`q` is not saved.** Since `mid0 = S / q`, a saved `q`
+would give the mid price back, and across two venues their ratio. `C(q)`, `P(q)`, `mid0`,
+the best bid and ask and the cross-venue ratio are computed in memory and discarded. The
+cost number needs none of them after it is computed.
+
+**Where the boundary lies.** Three places, kept apart:
+
+1. **Private raw bytes** (`bodies/NNNNN.bin`, section 8): the exact prefix of each archive
+   file. They contain prices and sizes, stay outside Git on the run machine, are never
+   published, and exist so that a corrective re-parse needs no new request.
+2. **In-memory intermediates:** the quantities and book-derived values above. Never
+   written to a file, a log, a receipt or an exception message.
+3. **The sealed result and the published report:** only the fields listed above, in bps and
+   counts. A schema check rejects any other field (example 38).
 
 **Forbidden, and tested as absent:** `mid(t + dt) - mid(t)` or any difference between two
-instants, any return, any funding value, any open interest, any second instant.
+instants, any return, any funding value, any open interest, any second instant, and any
+saved field from which a price level can be recovered (`q`, a mid, a best price, a walked
+cost or proceeds, a cross-venue ratio).
 
 ### 5.7 Statuses and decision rules
 
@@ -592,6 +616,37 @@ The design follows the catalyst study. Each step has its own run root under igno
   with the SHA-256 in the receipt, so a corrective re-parse needs no re-fetch.
 - **Redirects** are not followed. HTTP content encoding must be identity, so a
   compressed response cannot hide growth.
+- **`boto3` and the attempt journal.** The SDK has its own retries and other hidden
+  behaviour, so its defaults are not allowed. The contract is:
+  - **One HTTP send is one attempt.** The SDK's own retry is configured off
+    (`retries={"total_max_attempts": 1}` in an explicit `botocore.config.Config`, which
+    takes precedence over `AWS_MAX_ATTEMPTS`, `AWS_RETRY_MODE` and any config file). Our
+    own loop, outside the SDK, makes a second attempt as a **new** journaled send, under the
+    retry rules of section 5.5. Attempts per request stay at most 2.
+  - **Every actual HTTP send passes through the journal.** A handler on botocore's
+    `before-send` event (run once per real send, whatever caused it: our call, an SDK
+    retry, a region redirect) commits the ledger row **before** the send and raises if
+    the step's attempt or byte budget is exhausted, so the request is never opened.
+    "Or an equivalent" is allowed only if the test below passes for it.
+  - **Bytes.** For a ranged `GetObject` (Step B) the handler reserves the full range
+    length (1 MiB) before the send, not refunded, as the planned worst case of section
+    5.9 assumes; the body is read through a stream bounded by the range. For
+    `ListObjectsV2` (Step A) the SDK reads and parses the whole XML body, so the exact size
+    cannot be reserved block by block. The attempt is charged afterwards with the actual
+    raw size, and the next attempt is refused once the charged total reaches **255 MiB**,
+    so the largest possible overshoot (one response of at most 1,000 keys, well under 1
+    MiB) stays inside 256 MiB. `MaxKeys` is fixed at 1,000.
+  - **Hidden behaviour switched off or proven inert:** region redirects, response checksum
+    validation (`response_checksum_validation="when_required"`), credential refresh and
+    instance-metadata lookups. Credentials come only from the three standard environment
+    variables, passed explicitly to the client, never through the default provider chain.
+    The `botocore` and `boto3` loggers stay at WARNING or above.
+  - **The proof is a test, not the configuration.** Against a local fake S3 server on
+    `localhost` (as the B1 transport tests do), the number of HTTP requests the server
+    receives must equal the number of journal rows, in these runs: a plain call, a forced
+    HTTP 500, a forced 301 region redirect, a dropped connection, and the same with
+    `AWS_MAX_ATTEMPTS=10` set in the environment (examples 62 to 65). The `boto3` version
+    is pinned in `uv.lock`; a version change repeats the test.
 - **Resume.** Only a transport failure on the same revision resumes, up to two attempts
   per request. A schema or integrity failure is never retried.
 - **`--prior-root`.** A corrected revision starts a new run and passes every stopped root.
@@ -604,7 +659,9 @@ The design follows the catalyst study. Each step has its own run root under igno
   holds `x` values in bps and statuses only (section 5.6). The result record PR pins its
   SHA-256.
 - **Credential hygiene.** Errors are logged by class and status, never by message text.
-  Request signing happens inside one function that never receives a path for logging.
+  Request signing happens inside the SDK client, which is built once from the environment
+  and never logs a request. A fake secret placed in the environment appears in no file the
+  run writes (example 59).
 
 ## 9. Cost of being wrong
 
@@ -620,19 +677,19 @@ The design follows the catalyst study. Each step has its own run root under igno
 
 ## 10. What happens next
 
-| Step                                 | Gate                                                                                                               |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| This contract                        | the colleague's design discussion; fixes folded in                                                                 |
-| AWS access decision                  | the owner: whether, which account, which spending cap. Not assumed.                                                |
-| Registry row and Step A code PR      | one colleague review; merged on green. Adds `lz4` and a signer, so a lockfile review.                              |
-| Step A listing                       | the owner's go; clean detached worktree at the merge commit; credentials in the session environment, never in chat |
-| Step A report and result record      | the owner's go for the read; the result PR also pins the Step A result SHA                                         |
-| Grid PR                              | the generated grid and its SHA-256, reviewed; on `main` before any Step B request                                  |
-| Step B code PR                       | one colleague review; may be written in parallel with Step A, merged before Step B                                 |
-| Step B pilot                         | the owner's go                                                                                                     |
-| Step B full run                      | a separate owner's go, after the pilot result is reviewed                                                          |
-| Step B report and result record      | the owner's go for the read                                                                                        |
-| Two-leg laboratory protocol (if any) | a new HYP id; sizes, tiers, horizons, exits and thresholds fixed before any return is read                         |
+| Step                                 | Gate                                                                                                                                                                                                     |
+| ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| This contract                        | the colleague's design discussion; fixes folded in                                                                                                                                                       |
+| AWS access decision                  | the owner: whether, which account, which spending cap. Not assumed.                                                                                                                                      |
+| Registry row and Step A code PR      | one colleague review; merged on green. Adds `boto3` and `lz4`, so a lockfile review.                                                                                                                     |
+| Step A listing                       | the owner's go, after a concrete request list (the exact prefixes and the budget table) is published; clean detached worktree at the merge commit; credentials in the session environment, never in chat |
+| Step A report and result record      | the owner's go for the read; the result PR also pins the Step A result SHA                                                                                                                               |
+| Grid PR                              | the generated grid and its SHA-256, reviewed; on `main` before any Step B request                                                                                                                        |
+| Step B code PR                       | one colleague review; may be written in parallel with Step A, merged before Step B                                                                                                                       |
+| Step B pilot                         | the owner's go                                                                                                                                                                                           |
+| Step B full run                      | a separate owner's go, after the pilot result is reviewed                                                                                                                                                |
+| Step B report and result record      | the owner's go for the read                                                                                                                                                                              |
+| Two-leg laboratory protocol (if any) | a new HYP id; sizes, tiers, horizons, exits and thresholds fixed before any return is read                                                                                                               |
 
 No dates are promised. A go for one step is not a go for the next.
 
@@ -640,71 +697,78 @@ No dates are promised. A go for one step is not a go for the next.
 
 Each rule is testable on hand-built input. The code PR turns each row into a test. No row
 needs a network call or real market data. All numbers are invented. Quantities in rows 1 to 8
-are in coins; every `x` was recomputed by hand from the formulas of section 5.6.
+are in coins and show `q`, `C` and `P` only as intermediates the code does not save; every
+`x` was recomputed by hand from the formulas of section 5.6. Rows 62 to 66 test the
+`boto3` attempt count against a local fake server.
 
-| #   | Rule                                                | Input                                                                                                                        | Expected                                                                                                                                           |
-| --- | --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Fixed quantity, one level                           | Book A: asks `[(100,5),(101,5)]`, bids `[(99.9,5),(99,5)]` (price, coins). `S = 250`                                         | `mid0 = 99.95`, `q = 2.50125`, `C = 250.125`, `P = 249.8749`, `x = 10.005` bps                                                                     |
-| 2   | Depth walks to the second level                     | Book A, `S = 750`                                                                                                            | `q = 7.50375`, `C = 752.879`, `P = 747.371`, `x = 73.43` bps                                                                                       |
-| 3   | Depth short on both sides                           | Book A, `S = 1000`: `q = 10.005`, each side holds 10 coins, 2 levels of a 200-level limit                                    | `insufficient_depth`, `x_total = +inf`                                                                                                             |
-| 4   | Same quantity on both sides (reviewer case)         | asks `[(100,2.5)]`, bids `[(99.9,3)]`, `S = 250`: `q = 2.50125`                                                              | `insufficient_depth`: the asks hold 2.5 < `q`. A rule that sells `S` dollars and buys `S` dollars separately would have passed at about 10.005 bps |
-| 5   | Truncated book is not a thin book                   | a Hyperliquid side with exactly `L_max` levels holding less than `q`                                                         | `depth_unobserved`: no cost value, not `+inf`, not resolved, counted against coverage                                                              |
-| 6   | Fully observed thin book next to a truncated one    | Bybit side thin with 40 of 200 levels, Hyperliquid side at `L_max` and short                                                 | `insufficient_depth`                                                                                                                               |
-| 7   | Unobserved depth alone never stops the family       | a tier whose 36 observations are 20 `ok` below 31.0 and 16 `depth_unobserved`                                                | `coverage_insufficient` (20 resolved < 24), so `stop_coverage` at most; never `stop_execution_infeasible`                                          |
-| 8   | Sum of two venues                                   | Book A as Bybit, `S = 250`; Hyperliquid asks `[(50,10),(50.5,10)]`, bids `[(49.9,10),(49.5,10)]`                             | `x_bybit = 10.005`, `x_hl = 20.02`, `x_total = 30.025`                                                                                             |
-| 9   | Lower median, even count                            | `x_total = [10, 20, 40, 50]`                                                                                                 | lower median 20                                                                                                                                    |
-| 10  | Lower median keeps infinity out                     | `x_total = [10, 20, +inf, +inf]`                                                                                             | lower median 20, no arithmetic on `inf`                                                                                                            |
-| 11  | Tier: interval clear of 31.0                        | lower median 20, interval `[14, 26]` / lower median 40, interval `[33, 47]`                                                  | `cost_pass` / `execution_infeasible`                                                                                                               |
-| 12  | Tier: boundary named, not rounded                   | lower median 28, interval `[22, 33]` / lower median 35, interval `[29, 41]` / lower median exactly 31.0, interval `[27, 36]` | `cost_inconclusive` in all three                                                                                                                   |
-| 13  | Coverage floor                                      | 36 planned, 23 resolved / 24 resolved                                                                                        | `coverage_insufficient` / eligible for a verdict (if dates and bases hold)                                                                         |
-| 14  | Outcome: pass tier plus others                      | tiers: `cost_pass`, `execution_infeasible`, `coverage_insufficient`                                                          | `continue_to_3b`, scope the pass tier only                                                                                                         |
-| 15  | Outcome: no pass, coverage gap                      | tiers: `execution_infeasible`, `execution_infeasible`, `coverage_insufficient`                                               | `stop_coverage`, never `stop_execution_infeasible`                                                                                                 |
-| 16  | Outcome: no pass, boundary                          | tiers: `execution_infeasible`, `execution_infeasible`, `cost_inconclusive`                                                   | `stop_cost_inconclusive`                                                                                                                           |
-| 17  | Source quality beats a passing tier (reviewer case) | `T1` is `cost_pass` at 250; 22 of 108 observations are `prefix_insufficient` (20.37%)                                        | `stop_source_quality`; the `T1` result is a diagnostic only. With 21 of 108 (19.44%) the study continues to the tier verdicts                      |
-| 18  | Integrity beats everything                          | one `range_unsupported` after 60 observations, all tiers passing so far                                                      | `stop_source_quality`, nothing sealed                                                                                                              |
-| 19  | Budget stop                                         | cumulative response bytes reach 512 MiB                                                                                      | `stop_budget`; no snapshot published; no verdict read                                                                                              |
-| 20  | T1-only pass                                        | only `T1` is `cost_pass`                                                                                                     | `continue_to_3b` with scope `[T1]`; the first 3B gate is whether `T1` holds the needed funding gaps                                                |
-| 21  | Innovation Zone column                              | a passing tier whose Bybit symbols include 2 with `innovation_zone = true`                                                   | the report lists both and states 20.2 bps for them; the gate is unchanged; the 3B check is mandatory                                               |
-| 22  | Variant sensitivity                                 | one tier: `ob200` lower median 25 (9 resolved), `ob500` lower median 37 (10 resolved)                                        | `variant_sensitive` flag; the gate still uses the pooled sample                                                                                    |
-| 23  | 404 falls back to `ob500`                           | `ob200` URL returns 404, `ob500` returns 206 with `Content-Range: bytes 0-2097151/90000000`                                  | the `ob500` book is used and labelled `ob500`; no `range_unsupported`                                                                              |
-| 24  | 404 on both                                         | `ob200` and `ob500` both 404                                                                                                 | `bybit_file_absent`; the observation stays planned; no substitute                                                                                  |
-| 25  | `Range` ignored                                     | HTTP 200 to a `Range` request                                                                                                | `range_unsupported`, body unread, run stopped                                                                                                      |
-| 26  | `Range` mismatched                                  | HTTP 206 with `Content-Range: bytes 100-2097151/...`                                                                         | `range_unsupported`, run stopped                                                                                                                   |
-| 27  | Short file is fine                                  | HTTP 206 with `Content-Range: bytes 0-80000/80001`                                                                           | accepted as a complete file; the book rules decide                                                                                                 |
-| 28  | Retriable errors are not `Range` errors             | HTTP 429 then 206 / HTTP 503 twice / `Retry-After: 7`                                                                        | `ok` after one retry / `transport_failed` / the wait is 7 s                                                                                        |
-| 29  | Access and other 4xx                                | HTTP 403 on a signed Hyperliquid request / HTTP 400 on a Bybit URL                                                           | `access_denied`, run stopped / `http_rejected`, not retried                                                                                        |
-| 30  | Hyperliquid freshness rule                          | pilot gaps p99 = 3.2 s / 7.2 s / 31 s                                                                                        | `L_hl` = 5,000 ms / 8,000 ms / `stop_source_quality`                                                                                               |
-| 31  | Freshness set before costs                          | a run that computes a pilot `x` before `L_hl` is pinned                                                                      | refused                                                                                                                                            |
-| 32  | Unit map, matching units                            | `kPEPE` (1,000 tokens) against `1000PEPEUSDT` (1,000 tokens)                                                                 | unit ratio 1: eligible                                                                                                                             |
-| 33  | Unit map, other units                               | a Hyperliquid coin of 1 token against a Bybit contract of 1,000 tokens                                                       | `unit_ratio_not_one`: counted, never sampled                                                                                                       |
-| 34  | No map row                                          | a base with a name match and no row in the pinned map                                                                        | `identity_unverifiable`: counted, never sampled                                                                                                    |
-| 35  | Ambiguous base                                      | `PEPEUSDT` and `1000PEPEUSDT` both live                                                                                      | `identity_ambiguous`                                                                                                                               |
-| 36  | Price ratio is a flag only                          | mid ratio 1.2 after the unit ratio, identity map row present                                                                 | `price_ratio_flag = true`; identity status unchanged; the observation is resolved; no ratio field in any output                                    |
-| 37  | Similar prices prove nothing                        | two different assets with mid ratio 1.001 and no map row                                                                     | `identity_unverifiable`, not sampled                                                                                                               |
-| 38  | Forbidden computations                              | a result schema with any of `return`, `funding`, `basis`, `mid_change`                                                       | schema validation fails                                                                                                                            |
-| 39  | Date guard, Step B                                  | requests for 2024-09-30, 2025-10-01, 2026-09-29                                                                              | all refused before any call                                                                                                                        |
-| 40  | Date guard, Step A                                  | requests for 2023-01-31, 2025-10-01, 2026-09-29                                                                              | all refused; 2023-02-01 and 2025-09-30 allowed                                                                                                     |
-| 41  | Step A never downloads                              | a call to any `GetObject` or `Range` method on the Step A client                                                             | raises; no such method exists                                                                                                                      |
-| 42  | Stale book                                          | last Bybit message `ts` 5,000 ms before `T` / 5,001 ms                                                                       | `ok` / `book_stale`                                                                                                                                |
-| 43  | Never reading ahead                                 | a delta at `ts = T` and one at `ts = T + 1`                                                                                  | neither is applied                                                                                                                                 |
-| 44  | Prefix too short                                    | a prefix that ends with `ts < T` and no file end                                                                             | `prefix_insufficient`, no second request                                                                                                           |
-| 45  | First message not a snapshot                        | prefix starting with a delta                                                                                                 | `book_broken`                                                                                                                                      |
-| 46  | Hash selection of dates                             | eligible dates 2024-10-15, 10-16, 10-17: digests `6949...`, `5e37...`, `6753...`                                             | 2024-10-16 is chosen                                                                                                                               |
-| 47  | Hash selection of pairs                             | bases AAA, BBB, CCC on 2024-10-15: digests `e664...`, `8747...`, `a241...`                                                   | order BBB, CCC, AAA; the first 3 are taken                                                                                                         |
-| 48  | No replacement                                      | one chosen pair's Hyperliquid object is 404                                                                                  | `hl_object_absent`, the observation stays planned, no substitute                                                                                   |
-| 49  | Tier split                                          | 9 bases with sizes 1 to 9                                                                                                    | `T3 = {1,2,3}`, `T2 = {4,5,6}`, `T1 = {7,8,9}`                                                                                                     |
-| 50  | Untiered                                            | a base with 9 usable dates                                                                                                   | `untiered`, never sampled                                                                                                                          |
-| 51  | Archive coverage                                    | 292 of 365 usable / 291 of 365                                                                                               | `archive_covered` / `archive_partial` (if the other criteria hold)                                                                                 |
-| 52  | Longest gap                                         | a 15-day unusable run in an otherwise full year                                                                              | not `archive_covered`                                                                                                                              |
-| 53  | First observed, reliable                            | first listing after 14 usable dates                                                                                          | reliable candidate                                                                                                                                 |
-| 54  | First observed, left-censored                       | first listing on the archive's first usable date                                                                             | `left_censored`, not a launch                                                                                                                      |
-| 55  | I22 unknown versus negative                         | 35 reliable and 10 unreliable candidates, minimum 40                                                                         | `i22_unknown_archive`; 35 and 4 gives `i22_insufficient_events`                                                                                    |
-| 56  | Holdout privacy                                     | any report field with a holdout coin name or a holdout date                                                                  | schema validation fails                                                                                                                            |
-| 57  | Prior-root budget                                   | prior root used 400 attempts and 100 MiB                                                                                     | the new run's limits are the totals minus 400 and 100 MiB                                                                                          |
-| 58  | Prior root with other rules                         | prior root's `rules` differ                                                                                                  | refused, or its receipts not reused                                                                                                                |
-| 59  | Credential hygiene                                  | a fake secret inside an injected error text                                                                                  | absent from `run.json`, the ledger and every receipt                                                                                               |
-| 60  | Missing credentials                                 | no credential in the environment                                                                                             | `credential_missing`; zero network calls                                                                                                           |
-| 61  | Attempt before HTTP                                 | process killed after the ledger commit                                                                                       | the attempt stays charged on resume                                                                                                                |
+| #   | Rule                                                | Input                                                                                                                          | Expected                                                                                                                                           |
+| --- | --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Fixed quantity, one level                           | Book A: asks `[(100,5),(101,5)]`, bids `[(99.9,5),(99,5)]` (price, coins). `S = 250`                                           | `mid0 = 99.95`, `q = 2.50125`, `C = 250.125`, `P = 249.8749`, `x = 10.005` bps                                                                     |
+| 2   | Depth walks to the second level                     | Book A, `S = 750`                                                                                                              | `q = 7.50375`, `C = 752.879`, `P = 747.371`, `x = 73.43` bps                                                                                       |
+| 3   | Depth short on both sides                           | Book A, `S = 1000`: `q = 10.005`, each side holds 10 coins, 2 levels of a 200-level limit                                      | `insufficient_depth`, `x_total = +inf`                                                                                                             |
+| 4   | Same quantity on both sides (reviewer case)         | asks `[(100,2.5)]`, bids `[(99.9,3)]`, `S = 250`: `q = 2.50125`                                                                | `insufficient_depth`: the asks hold 2.5 < `q`. A rule that sells `S` dollars and buys `S` dollars separately would have passed at about 10.005 bps |
+| 5   | Truncated book is not a thin book                   | a Hyperliquid side with exactly `L_max` levels holding less than `q`                                                           | `depth_unobserved`: no cost value, not `+inf`, not resolved, counted against coverage                                                              |
+| 6   | Fully observed thin book next to a truncated one    | Bybit side thin with 40 of 200 levels, Hyperliquid side at `L_max` and short                                                   | `insufficient_depth`                                                                                                                               |
+| 7   | Unobserved depth alone never stops the family       | a tier whose 36 observations are 20 `ok` below 31.0 and 16 `depth_unobserved`                                                  | `coverage_insufficient` (20 resolved < 24), so `stop_coverage` at most; never `stop_execution_infeasible`                                          |
+| 8   | Sum of two venues                                   | Book A as Bybit, `S = 250`; Hyperliquid asks `[(50,10),(50.5,10)]`, bids `[(49.9,10),(49.5,10)]`                               | `x_bybit = 10.005`, `x_hl = 20.02`, `x_total = 30.025`                                                                                             |
+| 9   | Lower median, even count                            | `x_total = [10, 20, 40, 50]`                                                                                                   | lower median 20                                                                                                                                    |
+| 10  | Lower median keeps infinity out                     | `x_total = [10, 20, +inf, +inf]`                                                                                               | lower median 20, no arithmetic on `inf`                                                                                                            |
+| 11  | Tier: interval clear of 31.0                        | lower median 20, interval `[14, 26]` / lower median 40, interval `[33, 47]`                                                    | `cost_pass` / `execution_infeasible`                                                                                                               |
+| 12  | Tier: boundary named, not rounded                   | lower median 28, interval `[22, 33]` / lower median 35, interval `[29, 41]` / lower median exactly 31.0, interval `[27, 36]`   | `cost_inconclusive` in all three                                                                                                                   |
+| 13  | Coverage floor                                      | 36 planned, 23 resolved / 24 resolved                                                                                          | `coverage_insufficient` / eligible for a verdict (if dates and bases hold)                                                                         |
+| 14  | Outcome: pass tier plus others                      | tiers: `cost_pass`, `execution_infeasible`, `coverage_insufficient`                                                            | `continue_to_3b`, scope the pass tier only                                                                                                         |
+| 15  | Outcome: no pass, coverage gap                      | tiers: `execution_infeasible`, `execution_infeasible`, `coverage_insufficient`                                                 | `stop_coverage`, never `stop_execution_infeasible`                                                                                                 |
+| 16  | Outcome: no pass, boundary                          | tiers: `execution_infeasible`, `execution_infeasible`, `cost_inconclusive`                                                     | `stop_cost_inconclusive`                                                                                                                           |
+| 17  | Source quality beats a passing tier (reviewer case) | `T1` is `cost_pass` at 250; 22 of 108 observations are `prefix_insufficient` (20.37%)                                          | `stop_source_quality`; the `T1` result is a diagnostic only. With 21 of 108 (19.44%) the study continues to the tier verdicts                      |
+| 18  | Integrity beats everything                          | one `range_unsupported` after 60 observations, all tiers passing so far                                                        | `stop_source_quality`, nothing sealed                                                                                                              |
+| 19  | Budget stop                                         | cumulative response bytes reach 512 MiB                                                                                        | `stop_budget`; no snapshot published; no verdict read                                                                                              |
+| 20  | T1-only pass                                        | only `T1` is `cost_pass`                                                                                                       | `continue_to_3b` with scope `[T1]`; the first 3B gate is whether `T1` holds the needed funding gaps                                                |
+| 21  | Innovation Zone column                              | a passing tier whose Bybit symbols include 2 with `innovation_zone = true`                                                     | the report lists both and states 20.2 bps for them; the gate is unchanged; the 3B check is mandatory                                               |
+| 22  | Variant sensitivity                                 | one tier: `ob200` lower median 25 (9 resolved), `ob500` lower median 37 (10 resolved)                                          | `variant_sensitive` flag; the gate still uses the pooled sample                                                                                    |
+| 23  | 404 falls back to `ob500`                           | `ob200` URL returns 404, `ob500` returns 206 with `Content-Range: bytes 0-2097151/90000000`                                    | the `ob500` book is used and labelled `ob500`; no `range_unsupported`                                                                              |
+| 24  | 404 on both                                         | `ob200` and `ob500` both 404                                                                                                   | `bybit_file_absent`; the observation stays planned; no substitute                                                                                  |
+| 25  | `Range` ignored                                     | HTTP 200 to a `Range` request                                                                                                  | `range_unsupported`, body unread, run stopped                                                                                                      |
+| 26  | `Range` mismatched                                  | HTTP 206 with `Content-Range: bytes 100-2097151/...`                                                                           | `range_unsupported`, run stopped                                                                                                                   |
+| 27  | Short file is fine                                  | HTTP 206 with `Content-Range: bytes 0-80000/80001`                                                                             | accepted as a complete file; the book rules decide                                                                                                 |
+| 28  | Retriable errors are not `Range` errors             | HTTP 429 then 206 / HTTP 503 twice / `Retry-After: 7`                                                                          | `ok` after one retry / `transport_failed` / the wait is 7 s                                                                                        |
+| 29  | Access and other 4xx                                | HTTP 403 on a signed Hyperliquid request / HTTP 400 on a Bybit URL                                                             | `access_denied`, run stopped / `http_rejected`, not retried                                                                                        |
+| 30  | Hyperliquid freshness rule                          | pilot gaps p99 = 3.2 s / 7.2 s / 31 s                                                                                          | `L_hl` = 5,000 ms / 8,000 ms / `stop_source_quality`                                                                                               |
+| 31  | Freshness set before costs                          | a run that computes a pilot `x` before `L_hl` is pinned                                                                        | refused                                                                                                                                            |
+| 32  | Unit map, matching units                            | `kPEPE` (1,000 tokens) against `1000PEPEUSDT` (1,000 tokens)                                                                   | unit ratio 1: eligible                                                                                                                             |
+| 33  | Unit map, other units                               | a Hyperliquid coin of 1 token against a Bybit contract of 1,000 tokens                                                         | `unit_ratio_not_one`: counted, never sampled                                                                                                       |
+| 34  | No map row                                          | a base with a name match and no row in the pinned map                                                                          | `identity_unverifiable`: counted, never sampled                                                                                                    |
+| 35  | Ambiguous base                                      | `PEPEUSDT` and `1000PEPEUSDT` both live                                                                                        | `identity_ambiguous`                                                                                                                               |
+| 36  | Price ratio is a flag only                          | mid ratio 1.2 after the unit ratio, identity map row present                                                                   | `price_ratio_flag = true`; identity status unchanged; the observation is resolved; no ratio field in any output                                    |
+| 37  | Similar prices prove nothing                        | two different assets with mid ratio 1.001 and no map row                                                                       | `identity_unverifiable`, not sampled                                                                                                               |
+| 38  | Forbidden computations                              | a result schema with any of `return`, `funding`, `basis`, `mid_change`, `q`, `mid`, `best_bid`, `best_ask`, `cost`, `proceeds` | schema validation fails                                                                                                                            |
+| 39  | Date guard, Step B                                  | requests for 2024-09-30, 2025-10-01, 2026-09-29                                                                                | all refused before any call                                                                                                                        |
+| 40  | Date guard, Step A                                  | requests for 2023-01-31, 2025-10-01, 2026-09-29                                                                                | all refused; 2023-02-01 and 2025-09-30 allowed                                                                                                     |
+| 41  | Step A never downloads                              | a call to any `GetObject` or `Range` method on the Step A client                                                               | raises; no such method exists                                                                                                                      |
+| 42  | Stale book                                          | last Bybit message `ts` 5,000 ms before `T` / 5,001 ms                                                                         | `ok` / `book_stale`                                                                                                                                |
+| 43  | Never reading ahead                                 | a delta at `ts = T` and one at `ts = T + 1`                                                                                    | neither is applied                                                                                                                                 |
+| 44  | Prefix too short                                    | a prefix that ends with `ts < T` and no file end                                                                               | `prefix_insufficient`, no second request                                                                                                           |
+| 45  | First message not a snapshot                        | prefix starting with a delta                                                                                                   | `book_broken`                                                                                                                                      |
+| 46  | Hash selection of dates                             | eligible dates 2024-10-15, 10-16, 10-17: digests `6949...`, `5e37...`, `6753...`                                               | 2024-10-16 is chosen                                                                                                                               |
+| 47  | Hash selection of pairs                             | bases AAA, BBB, CCC on 2024-10-15: digests `e664...`, `8747...`, `a241...`                                                     | order BBB, CCC, AAA; the first 3 are taken                                                                                                         |
+| 48  | No replacement                                      | one chosen pair's Hyperliquid object is 404                                                                                    | `hl_object_absent`, the observation stays planned, no substitute                                                                                   |
+| 49  | Tier split                                          | 9 bases with sizes 1 to 9                                                                                                      | `T3 = {1,2,3}`, `T2 = {4,5,6}`, `T1 = {7,8,9}`                                                                                                     |
+| 50  | Untiered                                            | a base with 9 usable dates                                                                                                     | `untiered`, never sampled                                                                                                                          |
+| 51  | Archive coverage                                    | 292 of 365 usable / 291 of 365                                                                                                 | `archive_covered` / `archive_partial` (if the other criteria hold)                                                                                 |
+| 52  | Longest gap                                         | a 15-day unusable run in an otherwise full year                                                                                | not `archive_covered`                                                                                                                              |
+| 53  | First observed, reliable                            | first listing after 14 usable dates                                                                                            | reliable candidate                                                                                                                                 |
+| 54  | First observed, left-censored                       | first listing on the archive's first usable date                                                                               | `left_censored`, not a launch                                                                                                                      |
+| 55  | I22 unknown versus negative                         | 35 reliable and 10 unreliable candidates, minimum 40                                                                           | `i22_unknown_archive`; 35 and 4 gives `i22_insufficient_events`                                                                                    |
+| 56  | Holdout privacy                                     | any report field with a holdout coin name or a holdout date                                                                    | schema validation fails                                                                                                                            |
+| 57  | Prior-root budget                                   | prior root used 400 attempts and 100 MiB                                                                                       | the new run's limits are the totals minus 400 and 100 MiB                                                                                          |
+| 58  | Prior root with other rules                         | prior root's `rules` differ                                                                                                    | refused, or its receipts not reused                                                                                                                |
+| 59  | Credential hygiene                                  | a fake secret inside an injected error text                                                                                    | absent from `run.json`, the ledger and every receipt                                                                                               |
+| 60  | Missing credentials                                 | no credential in the environment                                                                                               | `credential_missing`; zero network calls                                                                                                           |
+| 61  | Attempt before HTTP                                 | process killed after the ledger commit                                                                                         | the attempt stays charged on resume                                                                                                                |
+| 62  | `boto3` attempts: plain call                        | one `ListObjectsV2` against the local fake server                                                                              | the server sees 1 request; the journal has 1 row                                                                                                   |
+| 63  | `boto3` attempts: HTTP 500                          | the fake server answers 500 once, then 200                                                                                     | the server sees 2 requests; the journal has 2 rows (our loop's second attempt); the SDK did not retry by itself                                    |
+| 64  | `boto3` attempts: region redirect                   | the fake server answers 301 with another region                                                                                | server requests equal journal rows (any SDK follow-up send is journaled and charged); our result for the request is `http_rejected`                |
+| 65  | `boto3` attempts: environment override              | `AWS_MAX_ATTEMPTS=10`, the fake server answers 500 every time                                                                  | exactly 2 sends for the request, then `transport_failed`; the environment variable changes nothing                                                 |
+| 66  | Listing byte charge                                 | charged total 254.9 MiB, then one 0.3 MiB response                                                                             | charged after the call; the next attempt is refused at 255 MiB; the total stays under 256 MiB                                                      |
 
 ## 12. Not in this study
 
@@ -764,14 +828,11 @@ in the revision note at the top and are not repeated here, except where a limit 
    `depth_unobserved` (a data gap), and fixes the limit from the pilot. The limit that
    remains: if the pilot cannot establish `L_max`, every Hyperliquid side counts as at its
    limit, which pushes outcomes toward `stop_coverage`.
-8. **Credentials, signer and dependencies.** Not decided; two positions from the reviews.
-   (a) `lz4` plus a minimal SigV4 signer on the existing `httpx` for both steps: one
-   request path, `Range` and error handling under our control, a smaller lockfile change,
-   but our own signing code to review. (b) `boto3` for Step A (`ListObjectsV2`, retries and
-   pagination built in) and `lz4` for Step B: a mature signer, but a large dependency, and
-   Step B's ranged, byte-counted reads still need care. My position is open; I lean to (a)
-   only if a reviewer will read the signer line by line. The AWS key, the account and the
-   spending cap are the owner's decision and are not assumed.
+8. **Credentials and account.** The signer is settled: `boto3` with SDK retries off and
+   every send journaled (section 8). What remains is the owner's decision: whether to
+   provide an AWS key, under which account, with which spending cap. No key is needed now,
+   and none is assumed. Before any Step A request the owner receives the concrete request
+   list and budget and gives a separate go.
 9. **I22 thresholds and the Bybit catalog pin.** I mirrored the catalyst floors (40 and
    30 launches, 8 weeks) where the screen gave only 40. The pin uses the catalyst run's
    instrument catalog, which sits outside Git. Alternative: the HYP-031 discovery index.
