@@ -114,10 +114,14 @@ What the protocol would have to fix before any read, if it takes the feature:
    left out, never counted as "did not retrace";
 5. the current signal's own episode never enters its history;
 6. the share is computed on a market-adjusted price, while the primary metric stays net
-   as traded; a positive market-adjusted figure alone is not account profit;
-7. one action, justified by prior reads rather than by chart shape (C2 is a short), with
-   "no trade" as the comparison;
-8. a fixed positive net threshold: a filtered short that only loses less is a fail.
+   as traded; a positive market-adjusted figure alone is not account profit. The
+   protocol names the market index, the adjustment formula and its parameters, all
+   known before the signal, so two implementations cannot produce different retraces;
+7. one action, justified by prior reads rather than by chart shape (C2 is a short);
+8. two comparisons, both reported: the filtered short against the same short without
+   the filter (does the feature add anything), and the filtered short against no trade
+   and the 5% hurdle on reserved capital (is it worth money);
+9. a fixed positive net threshold: a filtered short that only loses less is a fail.
 
 The window from 2026-09-29 stays historical data for this study after v2 is terminal
 (item 1); a pass in it would still need a forward confirmation. A first test is pooled
