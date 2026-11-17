@@ -1,4 +1,4 @@
-# New-perp short, laboratory protocol v1 (DRAFT, revision 9, 2026-11-17)
+# New-perp short, laboratory protocol v1 (DRAFT, revision 10, 2026-11-17)
 
 Study identifier: `new-perp-short-v1`. Idea: `I25` in the
 [consilium ideas list](../consilium/ideas.md). A hypothesis identifier (`HYP-039` is the
@@ -13,14 +13,15 @@ archive, identity per launch, power calibration, the laboratory read) are writte
 owner's separate go. Merge of this document is also a separate decision of the owner
 and the colleague.
 
-**Revision 9** follows two reviews of the experiment model, a consistency pass over the whole chain
-(selection, entry, events of an open position, exit, funding and fees, verdict) and five reads of
+**Revision 10** follows two reviews of the experiment model, a consistency pass over the whole chain
+(selection, entry, events of an open position, exit, funding and fees, verdict) and six reads of
 the rules by the colleague (the sign map, the trigger window and the margin-loss and cost wording;
 then the gap rule, the portfolio timing of unresolved episodes, the entry clock and the six-part
 decomposition; then the `EVT` of a stop, the mark-price test in a zero-trade minute and the dating
 of a confirmed event against a gap; then the lookback cut, the funds check, funding coverage as
 a selection condition, the `exec_net` guards, a missing entry bar and the benchmark end of an
-unresolved episode; then the cash ledger and the four money paths). What changed
+unresolved episode; then the cash ledger and the four money paths; then the known cash flows of an
+unresolved episode in L). What changed
 in each revision is in section 13; the rules are pinned by the worked examples of Appendix A.
 
 Chain of evidence behind it:
@@ -355,8 +356,8 @@ multiply variants on one path.)
   `unresolved` episode has **no actual exit**: its slot and loss timing are set per scenario in 6.1
   (example A7). Its `t_last` (the end of the last covered bar) plays the role of `t_exit` **in H
   only**, for the time of the whole-margin loss, the funding window and the end of the
-  market-adjusted interval `[E, t_last]` of 7.3; in L the episode is excluded from the mean
-  and has no interval.
+  market-adjusted interval `[E, t_last]` of 7.3; in L the episode is out of the mean and has no
+  interval, but it **is entered**, and its known cash flows stay in the L ledger (6.1).
 - **No other exit.** No discretionary exit, no re-entry.
 
 ### 5.3 Right-tail rule (short squeeze)
@@ -470,8 +471,8 @@ margin also reserves a closing-fee amount that the 50% simplification ignores.
    (item 3), not explained by a confirmed event dated at or before it, is `unresolved` **from that bar on**. Its last covered bar is the
    bar before the first missing one, and `t_last` is the end of that bar. It is counted
    in the denominator, never dropped. Its price result, fee, funding window and slot
-   timing are set **per scenario** (6.1, example A7): **L** excludes it from the mean and
-   keeps its slot blocked until `X`; **H** gives it the whole margin lost at `t_last` and
+   timing are set **per scenario** (6.1, example A7): **L** keeps it out of the mean, debits its
+   entry fee and the funding up to `t_last` in the ledger, and keeps its slot blocked until `X`; **H** gives it the whole margin lost at `t_last` and
    releases the slot then. Their share, together with `entry_unavailable` (M5), of the episodes eligible for entry
    must be at most 5%, else `incomplete_coverage` (examples A2f, A6 and A9).
 6. **Why +30% and 2x.** A 30% stop limits the typical loss of a squeeze and a 50%
@@ -568,15 +569,15 @@ net_bps     = 10,000 * net_usd / (q * F_e)            (bps of the entry notional
 **Exit types and what each one charges.** The same rule, in one place, so that no other
 section has to assume an exit. `F_x` is the fill of section 6.2; `margin = 0.5 * q * F_e`.
 
-| Exit type                      | `price_usd`                          | `fee_usd`                         | Funding counted for `s` with | Slot released                        |
-| ------------------------------ | ------------------------------------ | --------------------------------- | ---------------------------- | ------------------------------------ |
-| Planned exit                   | `q * (F_e - F_x)`                    | entry fee plus `phi * q * F_x`    | `E < s < X`                  | at `X`                               |
-| Stop                           | `q * (F_e - F_x)`                    | entry fee plus `phi * q * F_x`    | `E < s < t_exit`             | at `t_exit`                          |
-| Liquidation (L and H)          | `-margin` (settled at bankruptcy)    | **entry fee only**                | `E < s < t_exit`             | at `t_exit`                          |
-| Confirmed event after entry, L | `q * (F_e - F_last)`, non-executable | entry fee plus `phi * q * F_last` | `E < s < t_exit`             | at `t_exit`                          |
-| Confirmed event after entry, H | `-margin`                            | **entry fee only**                | `E < s < t_exit`             | at `t_exit`                          |
-| `unresolved` after `E`, L      | episode excluded from the mean       | none                              | none                         | **blocked until `X`** (conservative) |
-| `unresolved` after `E`, H      | `-margin` at `t_last`                | **entry fee only**                | `E < s < t_last`             | at `t_last`                          |
+| Exit type                      | `price_usd`                                          | `fee_usd`                         | Funding counted for `s` with | Slot released                        |
+| ------------------------------ | ---------------------------------------------------- | --------------------------------- | ---------------------------- | ------------------------------------ |
+| Planned exit                   | `q * (F_e - F_x)`                                    | entry fee plus `phi * q * F_x`    | `E < s < X`                  | at `X`                               |
+| Stop                           | `q * (F_e - F_x)`                                    | entry fee plus `phi * q * F_x`    | `E < s < t_exit`             | at `t_exit`                          |
+| Liquidation (L and H)          | `-margin` (settled at bankruptcy)                    | **entry fee only**                | `E < s < t_exit`             | at `t_exit`                          |
+| Confirmed event after entry, L | `q * (F_e - F_last)`, non-executable                 | entry fee plus `phi * q * F_last` | `E < s < t_exit`             | at `t_exit`                          |
+| Confirmed event after entry, H | `-margin`                                            | **entry fee only**                | `E < s < t_exit`             | at `t_exit`                          |
+| `unresolved` after `E`, L      | price pnl unknown, **not credited**; out of the mean | entry fee, debited at entry       | `E < s < t_last`             | **blocked until `X`** (conservative) |
+| `unresolved` after `E`, H      | `-margin` at `t_last`                                | **entry fee only**                | `E < s < t_last`             | at `t_last`                          |
 
 `F_last` is the last trade price before the event. A liquidation or a margin-loss
 scenario charges no separate exit fee: the isolated margin already holds the closing-fee
@@ -598,12 +599,19 @@ reserve, and the loss is the whole margin. Pinned by examples A1 to A9 in Append
 **Unresolved episodes in the portfolio.** The slot-limited portfolio (5.4, 6.4) is
 computed **separately in L and in H**, because the two scenarios treat an `unresolved`
 episode differently. In **H** the whole margin is lost at `t_last` and the slot is released
-then. In **L** the episode has no pnl (it is excluded from the mean) but its slot **stays
-blocked until `X`**, the conservative choice: nothing is known about the position, so the
-capital is not assumed free. For that reason the set of episodes entered can differ between
-L and H (a later signal can find a free slot in H and a blocked one in L), and **both**
-`roc_annual` figures are reported. If a scenario's portfolio cannot be computed, that
-scenario has **no result** (section 8, sign map). Pinned by example A7.
+then. In **L** the price result is unknown and **not credited**, but the cash flows already
+made are real: the **entry fee** debited at entry and the **funding** for the settlements up
+to `t_last` stay in the L ledger (`net_usd` of the episode as a portfolio quantity is
+`-entry_fee + funding_usd`), and its slot **stays blocked until `X`**, the conservative
+choice: nothing is known about the position, so the capital is not assumed free. Two sets
+are therefore kept apart: **entered** (the portfolio: it includes the L-unresolved episode
+with its known cash flows) and **result included in the mean** (the per-episode statistics,
+cluster means, bootstrap and decomposition of section 7: it excludes the L-unresolved
+episode). Excluding an episode from the mean never removes its cash from the portfolio. The
+set of episodes entered can differ between L and H (a later signal can find a free slot in
+H and a blocked one in L), and **both** `roc_annual` figures are reported. If a scenario's
+portfolio cannot be computed, that scenario has **no result** (section 8, sign map). Pinned
+by examples A7 and A7b.
 
 ### 6.2 Cost model and its two scenarios
 
@@ -681,8 +689,9 @@ roc_annual = (sum of net_usd over the window) / C * (365 / window_days)
 with `window_days` the days of the discovery year that episodes may occupy, each
 episode occupying its slot until `actual_exit`. Idle slots,
 the unallocated buffer and the days between trades count in `C`. `roc_annual` is computed on the **slot-limited portfolio**: an episode that finds no free slot is
-skipped and its reason recorded, while the per-episode statistics of section 7 use every
-episode. The portfolio, and so `roc_annual`, is **computed separately on each of the four money paths of 5.4**: an
+skipped and its reason recorded, while the per-episode statistics of section 7 use every episode with a result in the
+scenario (an L-unresolved episode is entered in the portfolio, with its known cash flows, but
+is not in the mean, 6.1). The portfolio, and so `roc_annual`, is **computed separately on each of the four money paths of 5.4**: an
 `unresolved` episode blocks its slot until `X` in L and frees it at `t_last` in H (6.1,
 example A7), so the entry sets can differ and both figures are reported. A result must
 exceed 5% a year **in both scenarios**, L and H (section 6.2), **on `net` and on `exec_net`**,
@@ -771,7 +780,7 @@ EVT = 10,000 * price_usd / (q * F_e)     price_usd from the 6.1 table row of its
 that is: confirmed event in L, the non-executable last-trade result `q * (F_e - F_last)`;
 confirmed event in H, liquidation (L and H) and `unresolved` in H, `-margin`; **stop**, its
 stop-fill price result `q * (F_e - F_x)` in that scenario (`F_x` of 6.2). An `unresolved`
-episode exists in H only (in L it is excluded, 5.3 item 5). The identity then reads `net = EVT + FND - FEE` for it and still holds
+episode exists in H only (in L it is out of the mean and the decomposition, 5.3 item 5). The identity then reads `net = EVT + FND - FEE` for it and still holds
 exactly; the test checks it for every episode and every scenario (examples A2g and A4b).
 
 The market-adjusted net used by the guards, `net_adj`, uses the interval over which the
@@ -1020,7 +1029,20 @@ goes to the stage 2 contract and its tests. Deferred to stage 2: Q18 (a), (b) an
 the precision and rounding of the ledger; the treatment of unrealised pnl and of quantity
 steps in the funds check.
 
-### 13.0 Revision 9: cash ledger and the four money paths (two problems)
+### 13.0 Revision 10: known cash flows of an unresolved episode in L (one problem)
+
+The 6.1 row said fee `none` and funding `none` for `unresolved` in L, against the ledger
+rule of 5.4. Excluding an episode from the mean must not remove its cash from the
+portfolio: it could let a portfolio at 5.025% a year read as 4.975% after the known 0.50.
+Now: in L the entry fee is debited at entry and the funding up to `t_last` counted, the
+price pnl is unknown and not credited, the slot is blocked until `X`, and the two sets
+(**entered** and **result included in the mean**) are separated in words (6.1). A2f, A6, A7
+and A7b are resynced; the L funds check uses these flows through the ledger. The
+suggested one-line edit of 6.4 (naming USD 5,000 as the primary working capital) was **not**
+made: 5.4 and 6.4 still say the primary economics is at USD 50, and changing the primary
+size is a decision for stage 2 and the owner, not a wording fix.
+
+#### Revision 9: cash ledger and the four money paths (two problems)
 
 Both were real and are fixed in 5.4 with examples.
 
@@ -1376,7 +1398,8 @@ hour 31:00 has trade open 110, high 131, mark high 120, as in A2d. No funding, a
 
 - **Classification:** the first missing bar starts at hour 30:00, so the episode is
   `unresolved` from there, `t_last = 30:00`. The stop-level bar after the gap is **not
-  read**. **L:** excluded from the mean, slot blocked until `X`. **H:** whole margin lost
+  read**. **L:** out of the mean, its entry fee (`-1.1` USD) stays in the L ledger, no funding in
+  this toy, slot blocked until `X`. **H:** whole margin lost
   at `t_last`, entry fee only: `-500 - 1.1 = -501.1` USD, **-5,011 bps**.
 - **Why not the stop.** Reading it would give `-303.77` USD (L) and `-312.54` USD (H) as
   in A2d, but an unseen liquidation inside the gap could have given `-501.1` (A2a). The
@@ -1493,7 +1516,9 @@ announcement exists.
 
 - **Classification:** a **data gap**, not a status exit and not an event after entry. The
   episode is `unresolved`, counts against the 95% bars coverage of M5 and the 5% gate.
-- **Scoring.** **L:** excluded from the mean (counted in the denominator), slot blocked until `X`. **H:** whole
+- **Scoring.** **L:** out of the mean (counted in the coverage denominator), its known cash flows stay
+  in the L ledger (entry fee `-1.1` and the same 5 settlements `+0.5`, so `-0.6` USD as a
+  portfolio quantity, price pnl not credited), slot blocked until `X`. **H:** whole
   margin lost, entry fee only, funding up to the last covered bar. That bar ends at day
   9.0, 48 hours after `E`: the settlements at hours 8, 16, 24, 32 and 40 count (**5**,
   marks of 100); the one at hour 48 has no covered mark bar and is not counted (strict
@@ -1502,7 +1527,7 @@ announcement exists.
   its market-adjusted interval ends at `t_last` (day 9.0), the same time as the loss. It
   has no reference exit, so `M = S = 0` and only `net_adj` uses the interval: with BTCUSDT
   at `R_bench = -0.02` over `[E, t_last]`, `net_adj = -5,006 + 10,000 * (-0.02) = -5,206`
-  bps. In L the episode is excluded and has no interval.
+  bps. In L the episode is out of the mean and has no interval.
 - **Gate.** With 200 episodes the limit is 10 unresolved; 12 unresolved is 6% and ends
   the study as `incomplete_coverage` (section 8, order 2); `entry_unavailable` episodes
   count in the same share (A9).
@@ -1525,9 +1550,12 @@ after entry) and missing after, with no confirmed event: `unresolved`. **V** ent
 book, 20 settlements at `r = 0.00015`), so with `q = 5` each gives **-0.55** USD in L and
 **+0.40** USD in H (half of A5: price `-0.95` and `0`, funding `+1.5`, fee `1.10`).
 
-- **L portfolio.** U has no pnl but its slot stays **blocked until day 9.0**; V holds slot 2. W's signal at day 3.0 finds no free slot: skipped, reason
-  `slot_blocked_by_unresolved`. Entered set `{V}`, `sum net = -0.55` USD,
-  `roc_annual = -0.55 / 1,000 * 365 / 14 = -0.0143`, **-1.43% a year**.
+- **L portfolio.** U's price result is unknown and not credited, but its cash flows are
+  real: entry fee `-0.55` and funding `+0.05` (one settlement, as in H) give `-0.50` USD in
+  the ledger; its slot stays **blocked until day 9.0**; V holds slot 2. W's signal at day
+  3.0 finds no free slot: skipped, reason `slot_blocked_by_unresolved`. Entered set
+  `{U, V}`, **result included in the mean** `{V}`. `sum net = -0.50 - 0.55 = -1.05` USD,
+  `roc_annual = -1.05 / 1,000 * 365 / 14 = -0.027375`, **-2.7375% a year**.
 - **H portfolio.** U loses its whole margin at `t_last` and frees slot 1 then. Funding: one
   settlement counts (hour 8; the next is after `t_last`), marks of 100, `r = 0.0001`:
   `0.0001 * 5 * 100 = +0.05`. `net_U = -250 + 0.05 - 0.55 = -250.50` USD, **-5,010 bps**.
@@ -1536,7 +1564,7 @@ book, 20 settlements at `r = 0.00015`), so with `q = 5` each gives **-0.55** USD
   `= 499.10`, at least the `250.55` needed, so W enters and gives `+0.40`. Entered set `{U, V, W}`,
   `sum net = -250.50 + 0.40 + 0.40 = -249.70` USD,
   `roc_annual = -249.70 / 1,000 * 365 / 14 = -6.51`, that is **-651% a year**.
-- **Why both figures.** The entered sets differ (`{V}` against `{U, V, W}`), so one
+- **Why both figures.** The entered sets differ (`{U, V}` against `{U, V, W}`), so one
   portfolio cannot stand for both scenarios: each is computed on its own and both
   `roc_annual` figures are reported.
 
@@ -1551,9 +1579,14 @@ day 3.0.
   `1,000 - 501.0 = 499.0`, below the `500 + 1.1 = 501.1` that W needs: W is
   **`skipped_insufficient_funds`**, size is not reduced and nothing is topped up. Entered
   set `{U}`, `roc_annual = -501.0 / 1,000 * 365 / 14 = -13.06`, that is **-1,306% a year**.
-- **L.** U has no pnl and keeps the slot until day 9.0; W is skipped for the slot
-  (`slot_blocked_by_unresolved`). Entered set empty: no portfolio result for L in this toy.
+- **L.** U's price result is not credited; its entry fee and funding stay in the ledger
+  (`-1.1 + 0.1 = -1.0` USD) and it keeps the slot until day 9.0; W is skipped for the slot
+  (`slot_blocked_by_unresolved`; the cash `1,000 - 1.0 - 500` reserved `= 499.0` would
+  also be below 501.1, and the first reason found, the slot, is recorded). Entered set
+  `{U}`, result included in the mean: empty. `sum = -1.0` USD,
+  `roc_annual = -1.0 / 1,000 * 365 / 14 = -0.02607`, **-2.607% a year**.
 - W is skipped in both, for different reasons, and the reason is recorded per scenario.
+  The two entered sets are the same here, `{U}`, with very different results.
 
 ### A7c. The cash ledger (section 5.4)
 
