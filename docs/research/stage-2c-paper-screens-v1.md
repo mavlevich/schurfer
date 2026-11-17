@@ -30,16 +30,27 @@ ratio**, not the headline rate, decides the return. Every screen below therefore
 an explicit capital parameter. I35 adds a 3 point premium (8% a year) for liquid-staking
 token (LST) risk, as the B screen did; the 5% figure is also shown.
 
+**Capital split and interest on the buffer.** Reserved capital `C` is split into the
+hedged leg (spot or LST, value `N`), **margin** for the short (assumed 10% of `N`, not
+checked against Bybit's tiers), **buffer** (the rest of what is held back against a
+rally of the short), and **free** USDT. Only free USDT is certain to earn the 5%
+reference. Whether margin or buffer left on the exchange also earns interest at the same
+time is **not confirmed**. The conservative corner therefore credits **zero interest on
+margin and buffer** (`r_b = 0`); the favorable corner credits 5% (`r_b = 5%`), which
+needs the account to pay interest on unused collateral. Every dollar figure below states
+which of the two it uses. This is the first account fact to check before any measurement
+of I26 or I35: it is a documentation question and costs no request.
+
 **Fees** (bps per side, base tier, non-VIP; regional schedules and the owner's account
 tier were not checked):
 
-| Item                              |                  Taker | Maker | Source                                                                                                                                                                 |
-| --------------------------------- | ---------------------: | ----: | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Bybit USDT perpetual              |                    5.5 |   2.0 | [Bybit fees](https://www.bybit.com/en/help-center/article/Perpetual-Futures-Contract-Fees-Explained)                                                                   |
-| Bybit USDC perpetual              |                    5.5 |   2.0 | same page; no settlement fee stated for USDC futures                                                                                                                   |
-| Bybit spot                        |                   10.0 |  10.0 | [Bybit spot fees](https://www.bybit.com/en-US/help-center/s/article/Bybit-Spot-Fees-Explained), regional pages differ                                                  |
-| Bybit USDT dated (expiry) futures |                    5.5 |   2.0 | same perpetual page; whether a settlement fee applies to USDT expiry contracts is stated inconsistently, so **2.5 bps at expiry is added as a conservative allowance** |
-| Lido protocol fee                 | 10% of staking rewards |       | [Lido protocol fee](https://lido.fi/how-lido-works/protocol-fee) (DAO can change it)                                                                                   |
+| Item                              |                  Taker | Maker | Source                                                                                                                                                                                                                                                  |
+| --------------------------------- | ---------------------: | ----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Bybit USDT perpetual              |                    5.5 |   2.0 | [Bybit fees](https://www.bybit.com/en/help-center/article/Perpetual-Futures-Contract-Fees-Explained)                                                                                                                                                    |
+| Bybit USDC perpetual              |                    5.5 |   2.0 | same page; no settlement fee stated for USDC futures                                                                                                                                                                                                    |
+| Bybit spot                        |                   10.0 |  10.0 | [Bybit spot fees](https://www.bybit.com/en-US/help-center/s/article/Bybit-Spot-Fees-Explained), regional pages differ                                                                                                                                   |
+| Bybit USDT dated (expiry) futures |                    5.5 |   2.0 | same perpetual page; official pages disagree between 0 and 5 bps for a settlement fee at expiry, so **two scenarios are used: 0 bps (favorable) and 5 bps (conservative)** until the specific contract is clarified; the midpoint is not an upper bound |
+| Lido protocol fee                 | 10% of staking rewards |       | [Lido protocol fee](https://lido.fi/how-lido-works/protocol-fee) (DAO can change it)                                                                                                                                                                    |
 
 Non-fee cost per leg per round trip (spread, impact): the program models 19 bps for
 established alts at USD 50 ([A screen](../consilium/screens/a-2026-11-15.md)). It is not
@@ -64,9 +75,12 @@ Weekly spreads of the baskets below are **assumptions, not measurements**.
 Each form is computed at a **favorable corner** and a **conservative corner** of its
 stated input bounds.
 
-- `screen_fail`: the favorable corner misses the hurdle, or misses the power condition
-  the program requires of any candidate (a lower bound of net EV above zero on an
-  untouched window).
+- `screen_fail`: the favorable corner misses the hurdle on the arithmetic of the form
+  itself. A power shortfall at an **assumed** variance is never by itself a
+  `screen_fail`: the required spread is a minimum for the economics, not an upper bound
+  on the real effect, and an MDE above it does not exclude a larger effect. Such a form
+  is `needs_measurement` (of the variance) or is `deferred_by_priority`, a label that
+  says it is stopped by budget and order of work and not by a power failure.
 - `screen_pass`: the conservative corner clears the hurdle with a stated margin. It
   permits writing a protocol, never an order, and is not evidence of a return.
 - `needs_measurement`: the favorable corner clears and the conservative corner does not.
@@ -106,24 +120,38 @@ side notional is twice the capital, and one shorted name squeezing to 4x within 
 (the carry screen saw 4x and 7x moves) loses 3x its fifth of the short side, about 1.2
 times the capital, so that corner would be liquidated by a case already seen on record.
 
-**Power.** To see an effect of size `s` the weekly basket spread must satisfy
-`sd <= s / 17.9` on 52 weeks or `s / 14.0` on 85 weeks:
+The hurdle here credits no interest on margin or buffer: all of `C` is reserved, so the
+5% is charged on all of it (the conservative reading of the buffer rule above).
 
-| Corner       |    `s` | max `sd` per week, 52 weeks | max `sd` per week, 85 weeks |
-| ------------ | -----: | --------------------------: | --------------------------: |
-| Conservative | 12.80% |                       0.71% |                       0.91% |
-| Favorable    |  4.16% |                       0.23% |                       0.30% |
+**Power, stated for what it is.** The required `s` is the **smallest** spread that makes
+the economics work; it is not a ceiling on what the strategy may earn. A test whose MDE
+is above `s` cannot confirm an effect of exactly `s`, but it does not exclude a larger
+one, so it does not stop the idea. What power can say is conditional on the variance of
+the quantity actually tested: the weekly **net** basket return (funding collected, price
+drift of both legs, turnover cost), whose own spread is unmeasured. With that spread
+`sd` the yearly MDE is `17.9 * sd` on 52 weeks and `14.0 * sd` on 85 weeks, so the
+following weekly `sd` makes an effect of exactly `s` just detectable:
 
-The BTC trend note already used a weekly BTC spread of about 5.5% (2.77% at p = 0.5)
-and found that 0.71% was a quarter of it. A ten-name dollar-neutral basket of alts is not
-plausibly an order of magnitude quieter than BTC. Even at a deliberately generous
-weekly `sd = 1%`, the 85-week holdout cannot detect less than 14% a year and the 52-week
-year less than 18%, against a favorable requirement of 4.16%.
+| Corner       |    `s` | `sd` at which MDE = `s`, 52 weeks | `sd` at which MDE = `s`, 85 weeks |
+| ------------ | -----: | --------------------------------: | --------------------------------: |
+| Conservative | 12.80% |                             0.71% |                             0.91% |
+| Favorable    |  4.16% |                             0.23% |                             0.30% |
 
-**Rule fixed in advance.** `screen_fail` on power if the favorable corner needs a weekly
-spread under 0.5% on the 85-week holdout. It does (0.30%). It reverses only if a
-dispersion-only read (spread of the weekly basket difference, no mean, no net) of
-the discovery year shows `sd <= 0.30%`.
+The BTC trend note used a weekly BTC spread of about 5.5%. If the net basket spread were
+as low as 1% a week (a generous assumption for an alt basket), the 85-week holdout could
+confirm only effects of 14% a year or more and the 52-week year 18% or more. That is a
+statement about **what one window can confirm**, not about what the strategy earns: an
+edge between 4.16% and 14% a year would be economically enough and statistically
+invisible on one window. A clean test would need the spread of the net return, measured,
+and a longer or pooled sample. The funding component alone is nearly deterministic once
+the ranks are fixed, and its own variance is small; the price-drift component carries
+the risk and the variance.
+
+**Rule fixed in advance.** No `screen_fail` on power. The form is `needs_measurement` of
+one quantity: the spread of the weekly net basket return on the discovery year (a
+dispersion read: variance, no mean, no net return, no label), which converts the
+assumed `sd` into a measured one. It is **deferred by priority** behind I25 and Stage 2A,
+which is a decision about budget and order and not a finding of this arithmetic.
 
 **Data and request budget of a real test.** None is requested. For reference: the local
 carry snapshot (287 live spot-perp pairs, sha256 prefix `24a7f03b`, funding and 4 h
@@ -140,10 +168,13 @@ funding between the tails, price drift or basket volatility; capacity at USD 5,0
 (depth of alt perps); margin mode and cross-margin netting on Bybit; liquidation risk
 beyond the one squeeze case quoted from an earlier report; the Hyperliquid leg.
 
-**Verdict: `screen_fail` (power).** Changes the B screen's `needs_measurement`: the B
-screen stopped on the same condition ("MDE above the realistic net spread") but left it
-open for the measurement; here the condition is evaluated on paper with stated bounds.
-It rests on the assumed floor `sd >= 1%` a week and is the first item for the colleague.
+**Verdict: `needs_measurement`, `deferred_by_priority`.** Same as the B screen. The
+first version of this document called it a power `screen_fail`; review showed that the
+required spread is a minimum and not an upper bound, and that power must be computed for
+the net return with its own, unmeasured variance. What does stand on the arithmetic: the
+required spread is 4.2% to 12.8% of notional a year after turnover, the favorable corner
+(`rho = 0.25`) would be liquidated by a squeeze already on record, and the conservative
+corner needs 3.5 bps a day to persist after the ranks decay.
 
 ## I35: ETH staking carry with a short-perp hedge
 
@@ -155,23 +186,37 @@ slashing risk, withdrawal queue, and funding turning negative.
 **Fixed parameters.** One position of about USD 5,000 of reserved capital; `alpha = N /
 C`, the share of capital in the hedged notional; staking yield after the protocol fee
 `y`; net funding on the short `f`; amortized entry and exit cost `c` per year of
-holding. Net return on all capital: `alpha * (y + f - c) + (1 - alpha) * 5%`, where
-the idle part earns the 5% reference.
+holding. Net return on all capital: `alpha * (y + f - c) + (1 - alpha) * r_b`, where
+`r_b` is the interest earned on everything that is not the hedged leg (margin, buffer
+and free USDT; see the capital split above). The target `H` is 8% (5% plus the 3 point
+premium) or 5%.
 
-**Correction of the B screen.** The B screen derives that `y + f - c` must exceed 11.4%
-for an 8% target at `alpha = 0.7`. That drops the idle term its own formula contains:
-the correct requirement is `5% + 3% / alpha = 9.29%`. The B screen also reads its
-"funding was not seen" claim from the carry screen. That screen's negative result came
-from an isolated 4.2x collateral ratio and rule churn, **not** from a measured ETH
-funding rate, so it says nothing about `f` here; this screen does not lean on it.
+**Correction of the B screen, and its limit.** The B screen derives that `y + f - c` must
+exceed 11.4% for an 8% target at `alpha = 0.7`. That is `H / alpha`, the requirement
+when the leftover capital earns **nothing**; with leftover capital earning 5% the
+requirement is `5% + 3% / alpha = 9.29%`. Neither is a slip: they are two assumptions
+about `r_b`, and an earlier version of this document wrongly called 11.4% an error. The
+9.29% figure holds **only if** the leftover capital earns interest, which is not
+confirmed. The B screen also reads its "funding was not seen" claim from the carry
+screen. That screen's negative result came from an isolated 4.2x collateral ratio and
+rule churn, **not** from a measured ETH funding rate, so it says nothing about `f` here;
+this screen does not lean on it.
 
-**Arithmetic.** Required net funding `f = 5% + (H - 5%) / alpha - y + c`:
+**Arithmetic.** Required net funding `f = (H - (1 - alpha) * r_b) / alpha - y + c`.
+Capital split in dollars (margin is 10% of `N`, buffer the rest of the leftover, free
+USDT zero, so in the conservative and middle rows every leftover dollar is held against
+the short):
 
-| Corner       | alpha | y, % | c, % | `f` needed at H = 8% | `f` needed at H = 5% | `f` needed at H = 8%, share of the 10.95% convention |
-| ------------ | ----: | ---: | ---: | -------------------: | -------------------: | ---------------------------------------------------: |
-| Conservative |  0.50 |  2.5 |  1.0 |                 9.50 |                 3.50 |                                                  87% |
-| Middle       |  0.70 |  3.0 |  0.5 |                 6.79 |                 2.50 |                                                  62% |
-| Favorable    |  0.90 |  3.5 | 0.25 |                 5.08 |                 1.75 |                                                  46% |
+| Corner       | alpha | LST `N` | margin | buffer | free | `r_b` | y, % | c, % | `f` at H = 8% | `f` at H = 5% | H = 8%, share of the 10.95% convention |
+| ------------ | ----: | ------: | -----: | -----: | ---: | ----: | ---: | ---: | ------------: | ------------: | -------------------------------------: |
+| Conservative |  0.50 |   2,500 |    250 |  2,250 |    0 |    0% |  2.5 |  1.0 |         14.50 |          8.50 |                                   132% |
+| Middle       |  0.70 |   3,500 |    350 |  1,150 |    0 |    0% |  3.0 |  0.5 |          8.93 |          4.64 |                                    82% |
+| Middle       |  0.70 |   3,500 |    350 |  1,150 |    0 |    5% |  3.0 |  0.5 |          6.79 |          2.50 |                                    62% |
+| Favorable    |  0.90 |   4,500 |    450 |     50 |    0 |    5% |  3.5 | 0.25 |          5.08 |          1.75 |                                    46% |
+
+The two middle rows are the same position under the two interest assumptions. With
+interest on the leftover the conservative corner would need 9.50% (H = 8%) and 3.50%
+(H = 5%), and the favorable corner without interest 5.64%.
 
 Inputs: `y` is a staking yield band of 2.5% to 3.5% after the 10% Lido fee (the B
 screen used 3 to 3.5%); it is an assumption, no live rate was read. `c` amortizes, over
@@ -187,8 +232,12 @@ USD 25 (`alpha = 0.5`) to USD 45 (`alpha = 0.9`) a year; at the favorable corner
 excess over idle USDT is a few tens of dollars a year at the 8% hurdle.
 
 **Rule fixed in advance.** `screen_pass` needs the conservative `f` at most half of the
-convention (5.5% a year); it is 9.5%, so no pass. `screen_fail` needs the favorable `f`
-above the convention itself; it is 5.1%, so no fail. Hence `needs_measurement`.
+convention (5.5% a year); it is 14.5% (9.5% with interest on the leftover), so no pass.
+`screen_fail` needs the favorable `f` above the convention itself; it is 5.1% (5.6%
+without interest), so no fail. Hence `needs_measurement`. The conservative corner
+needing more than the convention says that the result depends on two account facts
+(interest on unused collateral, LST accepted as collateral) before it depends on the
+funding rate.
 
 **Data and request budget of the measurement.** Settled funding of ETHUSDT on the
 discovery year: 1,095 rows, 6 requests, plus 3 requests for 4 h klines; under 20
@@ -205,9 +254,10 @@ withdrawal-queue and contract risk (carried only by the 3 point premium, which i
 choice, not an estimate).
 
 **Verdict: `needs_measurement`.** Supersedes the B screen's `paper_fail`, which rested on
-the arithmetic slip and on the misattributed funding evidence above. Weak prior: the
-conservative case needs 87% of the zero-premium funding rate, and the carry screen on this
-venue (a different structure) was negative.
+the misattributed funding evidence above (its 11.4% is the no-interest case, not a
+slip). Weak prior: the conservative case needs more than the whole zero-premium funding
+rate (132% at H = 8%, 78% at H = 5%), the middle case 82% without interest on the
+leftover, and the carry screen on this venue (a different structure) was negative.
 
 ## I26: dated BTC and ETH futures basis (long spot, short the dated future)
 
@@ -218,32 +268,46 @@ and is paid by leveraged longs for the delay.
 **Fixed parameters.** BTC and ETH only; one position per asset at a time, held to expiry;
 entry at a fixed days-to-expiry, one cycle about a quarter, so about four cycles a year;
 cost per cycle, with `x` the non-fee cost of a leg round trip (10 conservative, 3
-favorable, so 5 or 1.5 per crossing): conservative **43 bps** (spot in and out 10 + 10,
-future in 5.5, expiry allowance 2.5, three crossings at 5) and favorable **27 bps**
-(spot fees 20, passive future entry 2.0, no settlement fee, crossings 4.5).
+favorable, so 5 or 1.5 per crossing): conservative **45.5 bps** (spot in and out 10 + 10,
+future in 5.5, expiry fee 5, three crossings at 5) and favorable **26.5 bps** (spot fees
+20, passive future entry 2.0, expiry fee 0, crossings 4.5). The expiry fee scenarios are
+5 and 0 bps (see the fee table); an earlier version used 2.5 and costs of 43 and 27.
 
 **Arithmetic.** `alpha = N / C`. With the spot leg outside the collateral pool the short
-needs a buffer `B = R * V` for a rally `R` before expiry, so `alpha = 1 / (1 + R)`: 0.67 at
-R = 50%, 0.50 at R = 100%. With the spot counted as collateral, `alpha` can reach 0.9
-(not verified). Annualized entry basis `a` on notional is required to satisfy
-`alpha * (a - 4c) + (1 - alpha) * 5% >= 5%`, that is `a >= 5% + 4c`:
+needs a buffer `B = R * N` for a rally `R` before expiry, so `alpha = 1 / (1 + R)`: 0.67 at
+R = 50%, 0.50 at R = 100%; at `alpha = 0.5` there is **no free USDT**, the whole
+leftover is margin and buffer (USD 2,500: margin 250, buffer 2,250). With the spot counted as collateral, `alpha` can reach 0.9
+(not verified): USD 4,500 spot, 450 margin, 50 buffer. Annualized entry basis `a` on
+notional, four cycles a year, return on all capital `alpha * (a - 4c) + (1 - alpha) * r_b`.
+Required `a >= 4c + (5% - (1 - alpha) * r_b) / alpha`:
 
-| Corner       | cost per cycle `c` | required annualized basis `a` |
-| ------------ | -----------------: | ----------------------------: |
-| Conservative |             43 bps |                          6.7% |
-| Favorable    |             27 bps |                          6.1% |
+| Corner                           | alpha | `r_b` | cost per cycle `c` | required annualized basis `a` |
+| -------------------------------- | ----: | ----: | -----------------: | ----------------------------: |
+| Conservative                     |  0.50 |    0% |           45.5 bps |                        11.82% |
+| Conservative, interest on buffer |  0.50 |    5% |           45.5 bps |                         6.82% |
+| Favorable                        |  0.90 |    5% |           26.5 bps |                         6.06% |
+| Favorable, no interest           |  0.90 |    0% |           26.5 bps |                         6.62% |
 
-Dollars on USD 5,000 at `a = 10%`: net 6.6% (conservative cost, `alpha = 0.5`) to 8.5%
-(favorable cost, `alpha = 0.9`), an excess over idle USDT of about USD 80 to 175 a year;
-at `a = 8%` USD 30 to 85. Each point of basis above the
-requirement is worth USD 25 to 45 a year. This is the scale of the whole idea at the
-owner's size: **a permission to build the process, not income.**
+With the earlier cost of 43 bps the conservative figures were 11.72% without and 6.72%
+with interest on the buffer; the earlier version of this document printed only the
+interest case (6.7%). The 6.7% holds **only if** the buffer earns the 5% at the same time
+as it serves as margin, which is not confirmed.
 
-**Rule fixed in advance.** The favorable corner needs `a >= 6.1%` and the conservative
-one `a >= 6.7%`; whether the Bybit quarterly basis exceeds that is the unmeasured
-fact. A measurement passes only if, for each of BTC and ETH, at least half of the
-discovery-year cycles quote `a >= 6.7%` at the fixed entry and none is below zero. With
-four cycles per asset these are counts, not statistics.
+Dollars on USD 5,000 against idle USDT (USD 250 a year): at `a = 10%` the conservative
+corner nets 4.09% (USD 204, **USD 46 below idle**), the conservative corner with
+interest on the buffer 6.59% (USD 80 above), the favorable corner 8.55% (USD 177 above);
+at `a = 8%` the same corners are USD 96 below, USD 30 above and USD 87 above. Each point
+of basis above the requirement is worth USD 25 (`alpha = 0.5`) to 45 (`alpha = 0.9`) a
+year. This is the scale of the whole idea at the owner's size: **a permission to build
+the process, not income.**
+
+**Rule fixed in advance.** The threshold depends on one account fact, so it is stated for
+both readings: `a >= 11.8%` if the buffer earns nothing, `a >= 6.8%` if it is confirmed to
+earn 5% (conservative corner), and `a >= 6.1%` for the favorable corner. Whether the Bybit
+quarterly basis exceeds that is the unmeasured fact. A measurement passes only if, for
+each of BTC and ETH, at least half of the discovery-year cycles quote `a` above the
+threshold of the confirmed reading at the fixed entry and none is below zero. With four
+cycles per asset these are counts, not statistics.
 
 **Data and request budget of the measurement.** First, coverage with no price: whether
 Bybit's dated contracts of the discovery year appear in the existing linear
@@ -255,8 +319,9 @@ symbol year): about 20 requests in total. Nothing here needs the holdout.
 **What this screen did not measure.** Whether Bybit lists these dated contracts for the
 owner's account, their size minimums, any basis or its regime, the delivery price rule
 (an index average over the last 30 minutes for USDC futures; not checked for USDT) and
-the residual basis when selling spot against it, margin treatment of spot, and the
-conflicting statements about a settlement fee.
+the residual basis when selling spot against it, margin treatment of spot, whether
+margin and buffer earn interest, and the conflicting statements about a settlement fee
+(0 or 5 bps).
 
 **Verdict: `needs_measurement`.** The mechanism has a fixed payoff and needs no
 statistical proof, but the idea's own caveat stands: it exists when the basis is above
@@ -276,24 +341,38 @@ a cycle, assuming every passive order fills with no adverse selection. Held 30 d
 90 days. Capital: `N = C / (2 rho)` as in I36.
 
 **Arithmetic.** Net on `N` is `d - c * 365 / hold`, where `d` is the persistent annual
-differential captured on notional, so `d = 250 / N + c * 365 / hold`:
+differential captured on notional, so `d = 250 / N + c * 365 / hold`. The hold is the
+time between re-openings, so a weekly side decision with full turnover is a hold of 7
+days (`365 / 7 = 52` cycles). The hurdle on notional is 5.0% at `N` = 5,000 and 2.5% at
+`N` = 10,000 (no interest on margin credited):
 
-| Corner       | N per side | cost | hold    | required `d`, % a year | bps a day | bps per 8 h |
-| ------------ | ---------: | ---: | ------- | ---------------------: | --------: | ----------: |
-| Conservative |      5,000 |   42 | 30 days |                  10.11 |      2.77 |        0.92 |
-| Conservative |      5,000 |   42 | 90 days |                   6.70 |      1.84 |        0.61 |
-| Favorable    |     10,000 |   14 | 90 days |                   3.07 |      0.84 |        0.28 |
-| Favorable    |     10,000 |   14 | 30 days |                   4.20 |      1.15 |        0.38 |
+| Corner       | N per side | cost | hold            | required `d`, % a year | bps a day | bps per 8 h |
+| ------------ | ---------: | ---: | --------------- | ---------------------: | --------: | ----------: |
+| Conservative |      5,000 |   42 | 7 days (weekly) |                  26.84 |      7.35 |        2.45 |
+| Conservative |      5,000 |   42 | 30 days         |                  10.11 |      2.77 |        0.92 |
+| Conservative |      5,000 |   42 | 90 days         |                   6.70 |      1.84 |        0.61 |
+| Favorable    |     10,000 |   14 | 7 days (weekly) |                   9.78 |      2.68 |        0.89 |
+| Favorable    |     10,000 |   14 | 30 days         |                   4.20 |      1.15 |        0.38 |
+| Favorable    |     10,000 |   14 | 90 days         |                   3.07 |      0.84 |        0.28 |
 
-So the pair must hold a differential of 0.3 to 0.9 bps per 8 h net of costs, for months,
-between two contracts on one index that every market maker on the venue can also trade.
-The favorable corner is not impossible on paper and is not argued away.
+So the pair must hold a differential of 0.3 to 0.9 bps per 8 h net of costs (favorable,
+long hold) up to 2.5 bps per 8 h (conservative, weekly), between two contracts on one
+index that every market maker on the venue can also trade. The favorable corner at a
+long hold is not impossible on paper and is not argued away.
 
-**Rule fixed in advance.** Measure the funding of the paired contracts only. Choose the
-side by the trailing 7-day mean funding difference; the next 7 days' realized funding
-difference on notional, annualized, must exceed **3.1% a year** (the favorable corner)
-in the median walk-forward week, else `screen_fail` on the measurement. Passing it
-leads only to a cost-only book measurement, never to a trade.
+**Rule fixed in advance.** The threshold must match the way the side is chosen, so the
+rule is stated on the realized turnover. Measure the funding of the paired contracts
+only. Choose the side by the trailing 7-day mean funding difference, re-decided weekly,
+and record the share `q` of weeks in which the chosen side flips (a flip closes and
+reopens the position; no flip means holding). The required differential is
+`d(q) = 250 / N + 52 * q * c`: **9.78% a year** if every week turns over (`q = 1`,
+favorable cost), 3.07% only if `q` is about 1/13 (a hold near 90 days). The median
+walk-forward week's realized funding difference on notional, annualized, must exceed
+`d(q)` at the favorable cost, else `screen_fail` on the measurement. Because a weekly
+review with a 90-day threshold would mix two holding periods, the 3.1% figure of the
+first version is **withdrawn** as the test; the weekly walk-forward is a **preliminary
+diagnostic of persistence**, and a trade-form test with its own hold rule would be a
+separate contract. Passing leads only to a cost-only book measurement, never to a trade.
 
 **Data and request budget of the measurement.** Funding history of 4 contracts (BTC and
 ETH on each margin currency): 6 requests per contract for the discovery year, plus 3
@@ -326,8 +405,13 @@ day), hold `h` of 1, 2, 4, 8 or 12 hours. The daily horizon is not part of this 
 returns, so the spread of an `h` hour return is `sd = sigma * sqrt(h / 8760)` and the
 mean absolute move is `0.798 * sd`.
 
-**Arithmetic.** A directional rule with sign accuracy `p` earns gross `g = (2p - 1) *
-0.798 * sd` per trade. Costs per round trip, bps: **14** favorable taker (fee 11 + x 3),
+**Arithmetic.** A directional rule earns gross `g = (2p - 1) * 0.798 * sd` per trade
+**only under an assumption**: either the correctness of the call is uncorrelated with
+the size of the move, or `p` is the **move-weighted** accuracy, the share of the absolute
+move that the call gets right (`p = E[|R| * 1(correct)] / E|R|`). A plain hit rate is not
+enough: a rule can guess small moves and miss large ones and earn less than the formula,
+or the reverse. The table below is therefore a **conditional model**, not a bound on
+every rule. Costs per round trip, bps: **14** favorable taker (fee 11 + x 3),
 **30** the program's taker wall, **5** favorable maker (fees 4 + 1, assumes both legs
 fill at the touch). Hurdle on all capital: `730 * (g - c) >= 500 bps`, so `g >= c +
 0.7 bps` only; the cost wall, not the 5%, binds. To be **detectable** on one discovery
@@ -347,11 +431,14 @@ requirement is 70% at 1 h, 63% at 4 h, 61% at 8 h and 60.3% at 12 h, still above
 every `h`. A
 design effect of 3 (events cluster in volatile days) raises every MDE by about 60%.
 
-**Rule fixed in advance.** `screen_fail` for the taker forms if, at the favorable
-corner of the volatility band and 14 bps, the sign accuracy needed to be detectable on
-the discovery year exceeds **60%** at every `h`. A 10 point edge over a coin flip on
-BTC or ETH at an hour to half a day, net of a fee wall, would be an extraordinary
-signal; the table lets a reader apply a different ceiling. It does: 60.3% to 70%.
+**Rule fixed in advance.** A plausibility screen, not a proof: the form is judged
+**unlikely under the model** for taker execution if, at the favorable corner of the
+volatility band and 14 bps, the move-weighted accuracy needed to be detectable on the
+discovery year exceeds a chosen ceiling of **60%** at every `h`. The 60% is a chosen
+threshold, not a measured limit: a 10 point edge over a coin flip on BTC or ETH at an
+hour to half a day, net of a fee wall, would be an extraordinary signal, and the table
+lets a reader apply a different ceiling. It does exceed it: 60.3% to 70%. The design
+effect of 1.2 is an optimistic scenario (the HYP-037 calibration found much larger ones).
 
 **Data and request budget of a real test.** None is requested. For reference: hourly
 klines for the discovery year, about 9 requests per symbol (possibly zero, if the HYP-032
@@ -365,27 +452,37 @@ the price is moving against the order); funding during holds; market exposure of
 persistent long bias; the clustering of events (the design effect is assumed, and the
 HYP-037 calibration found design effects from 2.66 to 111 on other event families).
 
-**Verdict: `screen_fail` for taker execution at every horizon up to 12 h.** The passive
-form at 4 to 12 h stays under the 60% ceiling (58% to 60%) but depends on a fill model
-the repository does not have, so it is `needs_measurement`, **not recommended**:
-the figure assumes no adverse selection.
+**Verdict: `needs_measurement`, low prior, `deferred_by_priority`.** The first version
+issued a blanket `screen_fail` for taker execution; that does not follow from a
+conditional model whose accuracy is a plain hit rate under an independence assumption,
+so it is withdrawn. What the arithmetic does show: under the model, with accuracy at or
+below the chosen 60% ceiling and costs at the favorable 14 bps, no taker horizon up to 12
+h is detectable on one discovery year, and at the 30 bps wall none is close. A rule whose
+accuracy concentrates on large moves is not excluded by this table. The passive form at
+4 to 12 h stays under the ceiling (58% to 60%) but assumes no adverse selection and
+needs a fill model the repository does not have: an optimistic scenario, **not
+recommended** until an execution model exists.
 
 ## Summary
 
-| Idea | Verdict                                      | Decided by                                                                   |
-| ---- | -------------------------------------------- | ---------------------------------------------------------------------------- |
-| I36  | `screen_fail` (power)                        | Required spread 4.2% to 12.8% of notional needs weekly sd under 0.3% to 0.9% |
-| I35  | `needs_measurement`                          | Net ETH funding must reach 5.1% to 9.5% a year; convention is 10.95%         |
-| I26  | `needs_measurement`                          | Annualized basis must reach 6.1% to 6.7%; excess over idle USD 80 to 175     |
-| I27  | `needs_measurement`, low prior               | Paired-contract funding difference must reach 3.1% to 10.1% a year           |
-| I45  | `screen_fail` (taker); maker not recommended | Sign accuracy 62% to 75% needed to be detectable; the cost wall binds        |
+| Idea | Verdict                                   | Decided by                                                                                                        |
+| ---- | ----------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| I36  | `needs_measurement`, deferred by priority | Required spread 4.2% to 12.8% of notional; variance of the net basket return unmeasured; no power claim           |
+| I35  | `needs_measurement`, weak prior           | Net ETH funding must reach 5.1% to 14.5% a year (convention 10.95%); depends on interest on the leftover          |
+| I26  | `needs_measurement`                       | Basis must reach 6.1% to 11.8% a year, depending on interest on the buffer; USD 46 below to 177 above idle at 10% |
+| I27  | `needs_measurement`, low prior            | Funding difference must reach 3.1% to 26.8% a year, depending on turnover; weekly test is a diagnostic            |
+| I45  | `needs_measurement`, low prior, deferred  | Conditional model: no taker horizon detectable under a chosen 60% ceiling; maker is an optimistic scenario        |
 
-None of the four is a candidate for the single backward-holdout exam as it stands.
-The cheapest next facts, all under 100 requests and all inside the discovery year, are
-the ETH funding mean (I35), dated-contract coverage and entry basis (I26) and the paired
-funding difference (I27). None is authorized by this document; each needs the owner's
-separate go and its own contract, and I35 and I27 should wait for the I25 and Stage 2A
-decisions so they do not consume attention or a data budget the first two lines need.
+**Status after review.** There is no ready candidate among these four now, and none is a
+candidate for the single backward-holdout exam as it stands; the stop date 2027-02-11
+is unchanged. I36 is deferred by priority (not by a power failure) and I26 and I27 queue
+behind I25 and Stage 2A. The cheapest next facts, all under 100 requests and all inside
+the discovery year, are the ETH funding mean (I35), dated-contract coverage and entry
+basis (I26) and the paired funding difference (I27), plus one dispersion read for I36.
+None is authorized by this document; each needs the owner's separate go and its own
+contract. Two account facts decide more than any rate and cost no request: whether
+margin and buffer earn interest on the owner's account, and whether spot or an LST counts
+as collateral.
 
 ## Not measured, in one place
 
@@ -396,25 +493,21 @@ real books; the delivery price rule of USDT expiry contracts; the actual staking
 All numeric bands above that are labelled assumptions come from the stated sources and
 earlier repository reports, not from a reading.
 
-## Open questions for the colleague
+## Open questions
 
-1. **I36 power verdict.** Is it acceptable to call `screen_fail` on an assumed floor of
-   1% weekly spread (needed 0.30% or less), or should it stay `needs_measurement` until
-   a dispersion-only read of the existing snapshot? The B screen chose the latter.
-2. **I35 correction.** Do you agree the B screen's 11.4% requirement was a slip (9.29% at
-   `alpha = 0.7`) and its use of the carry result was a misattribution, so `paper_fail`
-   is withdrawn? Is the 3 point LST premium still right, or should I35 face 5%?
-3. **Capital ratio.** Is `alpha` 0.5 to 0.9 and `rho` 0.25 to 0.5 the right range for a
-   Bybit unified account, and may the owner count spot or an LST as collateral? This
-   moves I26, I35 and I36 more than any rate.
-4. **Cost bands.** x = 3 to 10 bps for BTC and ETH legs at USD 5,000 is my assumption;
-   the only measured books in the repository are Bybit at USD 50. Keep or replace?
-5. **I45 ceiling.** Is 60% sign accuracy a defensible plausibility ceiling, and is a
-   design effect of 1.2 acceptable here when HYP-037 found much larger ones?
-6. **I26 and I27 order.** Both are small (tens of dollars). Should they wait behind I25
-   and Stage 2A, or is the dated-contract coverage check (zero requests if the catalog
-   has it) worth doing now?
-7. **I27 maker form.** The 14 bps case assumes no adverse selection. Should it be dropped
-   from the screen as unscreenable?
-8. **Stop at 2027-02-11.** If I25 and Stage 2A both stop, none of these four is a
-   candidate that can reach an exam; is the right outcome to say so now?
+Answered by the review of 2026-11-17 and applied above: I36 stays `needs_measurement` or
+is deferred by priority; the carry attribution is corrected and the 3 point LST premium
+is kept for now; `alpha` and `rho` stay scenarios until the account is checked; the cost
+range x = 3 to 10 bps is a sensitivity assumption; 60% is a chosen plausibility
+threshold and a design effect of 1.2 an optimistic scenario; I26 and I27 queue after I25
+and Stage 2A; the maker forms stay optimistic scenarios until an execution model
+exists; there is no ready candidate now and the stop date stays 2027-02-11.
+
+Still open:
+
+1. Does the owner's Bybit account pay interest on margin and buffer left unused, and may
+   spot or an LST count as collateral? This sets `r_b` and `alpha` for I26 and I35.
+2. Does the Bybit settlement fee for USDT expiry contracts apply (0 or 5 bps) on the
+   specific contract the owner would trade?
+3. Which of the cheap measurements, if any, should wait for the owner's go after I25 and
+   Stage 2A decide?
