@@ -1021,13 +1021,17 @@ FUNDING_MAX_STEP_MS: Final = 8 * HOUR_MS  # the longest Bybit funding interval
 def funding_state(
     pages: list[dict[str, Any]], start: int, end: int, delivery_ms: int | None = None
 ) -> dict[str, Any]:
-    """Funding coverage of [start, end]: pagination finished AND settlements proven.
+    """Funding coverage of [start, end]: pagination finished AND no gap longer than 8 h.
 
-    Finishing the pagination (a short page, or a full page that reaches `start`) is not a
-    proof. Coverage is proven only when the timestamps of the pages form one chain with no
-    step above the longest funding interval (8 h), start at most one step after `start`, and
-    reach at most one step before `end` unless the catalog delivered the symbol by then (the
-    end is an event, not a gap). A full page covers only from its oldest row (HYP-036).
+    Finishing the pagination (a short page, or a full page that reaches `start`) is not
+    enough. The coarse check passes only when the timestamps of the pages form one chain with
+    no step above the longest funding interval (8 h), start at most one step after `start`,
+    and reach at most one step before `end` unless the catalog delivered the symbol by then
+    (the end is an event, not a gap). A full page covers only from its oldest row (HYP-036).
+    This is **not** proof that every settlement is present: for a symbol whose real interval
+    is shorter than 8 h, missing settlements below the step go unseen, and the real historical
+    interval is unknown (the catalog `fundingInterval` is a current snapshot). The verdict
+    labels the result "no gap longer than 8 h" and reports the interval strength apart.
     `pages` are the final results, newest page first; a page that did not come back ends the
     launch as `unavailable`.
     """
@@ -1071,7 +1075,7 @@ def funding_state(
     ended = delivery_ms is not None and delivery_ms <= newest + step
     if newest < end - step and not ended:
         return decided(False, "ends_early")
-    return decided(True, "proven")
+    return decided(True, "no_gap_over_8h")
 
 
 def deliveries(phase0: dict[str, Any]) -> dict[str, int | None]:
@@ -1239,15 +1243,17 @@ def ledger_totals(
     return sum(by_n.values()), sum(by_b.values()), by_n, by_b
 
 
-def prior_usage(roots: Iterable[Path]) -> dict[str, int]:
-    attempts = spent = 0
+def prior_usage(roots: Iterable[Path]) -> dict[str, dict[str, int]]:
+    """Earlier roots' usage, kept apart per go: the cost of go 2 files never counts against go 1."""
+    out = {str(go): {"attempts": 0, "bytes": 0} for go in (1, 2)}
     for root in roots:
         a = [json.loads(p.read_text()) for p in sorted((root / "attempts").glob("*.json"))]
         r = [json.loads(p.read_text()) for p in sorted((root / "receipts").glob("*.json"))]
-        count, used, _, _ = ledger_totals(a, r)
-        attempts += count
-        spent += used
-    return {"attempts": attempts, "bytes": spent}
+        for go in (1, 2):
+            count, used, _, _ = ledger_totals(a, r, frozenset(go_classes(go)))
+            out[str(go)]["attempts"] += count
+            out[str(go)]["bytes"] += used
+    return out
 
 
 # The fetcher.
@@ -1255,8 +1261,8 @@ def prior_usage(roots: Iterable[Path]) -> dict[str, int]:
 RETRYABLE_STATUS: Final = frozenset({429, 500, 502, 503, 504})
 RATE_LIMIT_RET_CODE: Final = 10006
 TERMINAL: Final = frozenset({"ok", "absent", "too_large"})
+FATAL_OUTCOMES: Final = frozenset({"forbidden", "schema_mismatch"})
 FILE_CLASSES: Final = frozenset({"D1", "D2h", "D2"})
-READ_CHUNK: Final = 64 * 1024
 
 
 def classify_status(request: Request, status: int, body: bytes) -> str | None:
@@ -1328,9 +1334,11 @@ class Fetcher:
         code: dict[str, Any] | None = None,
         now: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
-        prior: dict[str, int] | None = None,
+        prior: dict[str, dict[str, int]] | None = None,
+        wall: Callable[[], float] = time.time,
     ) -> None:
         self.root, self.client, self.now, self.sleep, self.go = root, client, now, sleep, go
+        self.wall = wall
         self.contract = json.loads(json.dumps(contract))
         if contract_hash(self.contract) != self.contract["request_list_sha256"]:
             raise ValueError("contract does not match its own hash")
@@ -1361,8 +1369,26 @@ class Fetcher:
             raise ValueError("attempt reservations are not a contiguous sequence")
         if not {r["seq"] for r in self.receipts} <= {a["seq"] for a in self.attempts}:
             raise ValueError("receipt without a charged attempt")
+        # A fatal receipt is written before stop.json, so a crash between the two writes leaves
+        # a receipt and no stop file. The receipt alone is enough: recovery writes the missing
+        # stop and refuses to continue (every stop kind that has a receipt is covered here).
+        for r in self.receipts:
+            if r["outcome"] in FATAL_OUTCOMES:
+                what = "HTTP 403" if r["outcome"] == "forbidden" else "schema mismatch"
+                reason = f"{r['cls']}: {what} (recovered from its receipt)"
+                self.record_stop(reason)
+                raise FetchStoppedError(f"this run was stopped: {reason}")
         # the slowdown of every earlier HTTP 429 persists across a resume
         slowed = sum(1 for r in self.receipts if r.get("http_status") == 429)
+        # and so does the server's Retry-After: the next permitted request time is persisted
+        self.not_before = max(
+            (
+                float(r["at_epoch"]) + min(int(r["retry_after_s"]), MAX_RETRY_AFTER_S)
+                for r in self.receipts
+                if r["outcome"] == "error" and "retry_after_s" in r and "at_epoch" in r
+            ),
+            default=0.0,
+        )
         self.spacing = min(MAX_SPACING_S, SPACING_S * 2**slowed)
         self.last = -self.spacing
         self.probed = {r["cls"] for r in self.receipts if "schema" in r}
@@ -1381,9 +1407,10 @@ class Fetcher:
     def totals(self) -> tuple[int, int, dict[str, int], dict[str, int]]:
         """Usage of this go's classes, plus earlier roots, and by class."""
         count, used, by_n, by_b = ledger_totals(self.attempts, self.receipts, self.enabled)
+        earlier = self.prior.get(str(self.go), {})
         return (
-            count + int(self.prior.get("attempts", 0)),
-            used + int(self.prior.get("bytes", 0)),
+            count + int(earlier.get("attempts", 0)),
+            used + int(earlier.get("bytes", 0)),
             by_n,
             by_b,
         )
@@ -1450,15 +1477,30 @@ class Fetcher:
             return self.final[request.key]
         tries = sum(1 for a in self.attempts if a["key"] == request.key)
         asked: int | None = None
+        credit = 0.0
+        earlier = [r for r in self.receipts if r["key"] == request.key]
+        if tries and earlier:
+            # a recovered request: the server's Retry-After and the time already waited since
+            # its last receipt come from the persisted receipt, not from this process
+            asked = earlier[-1].get("retry_after_s")
+            credit = max(0.0, self.wall() - float(earlier[-1].get("at_epoch", self.wall())))
         while True:
             if tries:
-                self.sleep(self._retry_delay(tries, asked))
+                wait = self._retry_delay(tries, asked) - credit
+                credit = 0.0
+                if wait > 0:
+                    self.sleep(wait)
+            permitted = self.not_before - self.wall()
+            if permitted > 0:
+                self.sleep(permitted)
             delay = self.last + self.spacing - self.now()
             if delay > 0:
                 self.sleep(delay)
             seq = self._charge(request)
             self.last = self.now()
             receipt, facts, asked = self._attempt(seq, request, reduce)
+            if asked is not None and receipt["outcome"] == "error" and asked <= MAX_RETRY_AFTER_S:
+                self.not_before = max(self.not_before, self.wall() + asked)
             disk = dict(receipt)
             if keep_facts and receipt["outcome"] in ("ok", "absent"):
                 disk["facts"] = facts
@@ -1521,28 +1563,34 @@ class Fetcher:
                     if resp.headers.get("content-encoding", "identity") not in ("", "identity"):
                         raise SchemaMismatchError("content_encoding")
                     cap = spec.max_response_bytes
-                    # Read at the transport, never past the cap: one chunk of at most cap + 1
-                    # bytes is requested, and only the bytes that fit are accepted.
-                    for piece in resp.iter_raw(chunk_size=max(1, min(READ_CHUNK, cap + 1))):
-                        room = cap - size
-                        if len(piece) > room:
-                            piece = piece[: max(room, 0)]
-                            error = "too_large"
-                        size += len(piece)
-                        sha.update(piece)
-                        if streamed is not None:
-                            streamed.feed(piece)
-                        else:
-                            body.extend(piece)
-                        if error is not None:
-                            break
+                    if length.isdigit() and int(length) > cap:
+                        error = "too_large"  # the declared length is over the cap: read nothing
+                    else:
+                        # Raw transport chunks, not re-chunked, so what the transport delivered
+                        # is exactly what is counted. Every received byte is accounted, and the
+                        # read ends at the first chunk that takes the total over the cap.
+                        for piece in resp.iter_raw():
+                            size += len(piece)
+                            sha.update(piece)
+                            if size > cap:
+                                error = "too_large"
+                                break
+                            if streamed is not None:
+                                streamed.feed(piece)
+                            else:
+                                body.extend(piece)
         except httpx.HTTPError:
             error = "error"  # never the exception text, URL or body
         except SchemaMismatchError as exc:
             error, reason = "schema_mismatch", exc.reason
         receipt.update(
-            http_status=status, body_bytes=size, body_sha256=sha.hexdigest() if size else ""
+            http_status=status,
+            body_bytes=size,
+            body_sha256=sha.hexdigest() if size else "",
+            at_epoch=self.wall(),
         )
+        if asked is not None:
+            receipt["retry_after_s"] = asked
         if error is None:
             error = classify_status(request, status, bytes(body))
         if error is None and status == 200 and request.method == "GET":

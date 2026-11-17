@@ -49,7 +49,8 @@ class Launch:
     entry_bar: bool = True
     hourly_end_days: float | None = None  # series ends this many days after T0
     hourly_gap_hours: tuple[int, ...] = ()  # positions of hourly bars missing inside the series
-    funding_mode: str = "full"  # "full", "empty", "sparse" (one row), "hole" (a 24 h hole)
+    funding_mode: str = "full"  # "full", "empty", "sparse" (one row), "hole", "half4h"
+    funding_interval_min: int | None = 480  # the catalog snapshot (None: field absent)
     listing_days: int = 40
     first_file_missing: bool = False
     listing_gap: tuple[int, int] | None = None  # list positions removed from the file list
@@ -65,6 +66,7 @@ class World:
     requests: list[httpx.Request] = field(default_factory=list)
     fail: dict[str, list[int]] = field(default_factory=dict)  # url substring -> statuses
     sizes_scale: int = 1
+    retry_after: int = 7
     extra_dirs: list[tuple[str, str | None]] = field(default_factory=list)  # root listing only
     crash: list[str] = field(default_factory=list)  # a url substring: die once on it
     raw: dict[str, bytes] = field(default_factory=dict)  # a url substring: answer with these bytes
@@ -109,7 +111,7 @@ class World:
             if part in url and statuses:
                 code = statuses.pop(0)
                 if code:
-                    headers = {"retry-after": "7"} if code == 429 else {}
+                    headers = {"retry-after": str(self.retry_after)} if code == 429 else {}
                     return httpx.Response(code, headers=headers, text="x")
         path, query = request.url.path, parse_qs(request.url.query.decode())
         host = request.url.host
@@ -131,7 +133,11 @@ class World:
             "status": launch.status,
             "launchTime": str(launch.launch_ms),
             "deliveryTime": str(launch.delivery_ms or 0),
-            "fundingInterval": 480,
+            **(
+                {"fundingInterval": launch.funding_interval_min}
+                if launch.funding_interval_min
+                else {}
+            ),
             "isPreListing": False,
             "priceFilter": {"tickSize": TICK, "minPrice": TICK},
             "lotSizeFilter": {
@@ -222,6 +228,9 @@ class World:
         stamps = list(range(first, end + 1, eight))
         if launch.funding_mode == "sparse":
             stamps = stamps[len(stamps) // 2 : len(stamps) // 2 + 1]
+        elif launch.funding_mode == "half4h":
+            # a 4 h schedule with every second settlement missing: steps of 8 h, never above it
+            stamps = list(range(first + (-first) % (4 * s1.HOUR_MS), end + 1, 8 * s1.HOUR_MS))
         elif launch.funding_mode == "hole":
             mid = stamps[len(stamps) // 2]
             stamps = [t for t in stamps if not mid <= t < mid + 3 * eight]
@@ -305,15 +314,22 @@ def rehash(contract: dict[str, Any]) -> dict[str, Any]:
 
 
 class Clock:
-    def __init__(self) -> None:
+    def __init__(self, wall_offset: float = 0.0, die_over: float | None = None) -> None:
         self.t = 0.0
         self.sleeps: list[float] = []
+        self.wall_offset = wall_offset
+        self.die_over = die_over
 
     def now(self) -> float:
         self.t += 0.01
         return self.t
 
+    def wall(self) -> float:
+        return 1_800_000_000.0 + self.wall_offset + self.t
+
     def sleep(self, seconds: float) -> None:
+        if self.die_over is not None and seconds > self.die_over:
+            raise RuntimeError("the process died before the wait")
         self.sleeps.append(seconds)
         self.t += seconds
 
@@ -325,8 +341,10 @@ def fetcher(
     *,
     go: int = 1,
     code: dict[str, Any] | None = None,
+    clock: Clock | None = None,
+    prior: dict[str, dict[str, int]] | None = None,
 ) -> tuple[s1.Fetcher, Clock]:
-    clock = Clock()
+    clock = clock or Clock()
     client = httpx.Client(transport=world.transport())
     f = s1.Fetcher(
         root,
@@ -334,8 +352,10 @@ def fetcher(
         client,
         go=go,
         code=code,
+        prior=prior,
         now=clock.now,
         sleep=clock.sleep,
+        wall=clock.wall,
     )
     return f, clock
 

@@ -669,7 +669,7 @@ gos needs the owner's go**. **This row records no read: nothing has been fetched
   per-symbol file listings, and HEAD requests (status and size, no body) for the first daily
   file of each launch.
 - **Go 2, after the owner reviews the go 1 manifest** (1,135 planned requests, at most 2,400,
-  attempt cap 1,700, 6.5 GiB): the first daily trade file of each launch (column 1, the trade
+  attempt cap 1,700, 6.5 GiB; the combined byte ceiling of both gos is about 6.8 GiB): the first daily trade file of each launch (column 1, the trade
   timestamp, only), one entry minute bar, hourly trade and mark-price series (start times and
   runs of missing hours only) and funding history (timestamps and page boundaries only). Go 2
   also contains the mark-price, funding and bar coverage reads that protocol section 11 item 2

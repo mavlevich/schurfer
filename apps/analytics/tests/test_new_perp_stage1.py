@@ -355,9 +355,9 @@ def fpage(
     return {"outcome": outcome, "facts": facts}
 
 
-def test_funding_short_page_with_settlements_across_the_span_is_proven() -> None:
+def test_funding_short_page_with_no_gap_over_8h_across_the_span_passes_the_coarse_check() -> None:
     state = s1.funding_state([fpage(FSTART + EIGHT, FEND - 1, False)], FSTART, FEND)
-    assert state == {"decided": True, "covered": True, "next_end": FEND, "reason": "proven"}
+    assert state == {"decided": True, "covered": True, "next_end": FEND, "reason": "no_gap_over_8h"}
 
 
 def test_funding_one_row_for_the_whole_interval_is_not_coverage() -> None:
@@ -383,7 +383,7 @@ def test_funding_full_page_covers_only_from_its_oldest_row() -> None:
     assert s1.funding_state([first, far], FSTART, FEND)["reason"] == "gap_between"
     # a full page whose oldest row reaches the span start finishes the pagination
     reach = fpage(FSTART, FEND - 1, True)
-    assert s1.funding_state([reach], FSTART, FEND)["reason"] == "proven"
+    assert s1.funding_state([reach], FSTART, FEND)["reason"] == "no_gap_over_8h"
 
 
 def test_funding_end_is_an_event_only_when_the_catalog_delivered_the_symbol() -> None:

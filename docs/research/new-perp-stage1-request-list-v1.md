@@ -48,7 +48,7 @@ uv run python -m schurfer_analytics.new_perp_stage1 write-contract --check
 | 1   | **metadata only**: catalog fields, archive names, per-symbol listings, HEAD sizes. No body   | C1, C3, D1, D2h    | 547              | 761          | 1,000       | 300 MiB  |
 | 2   | first daily files (column 1), one entry bar, hourly series, funding. Needs go 1 and manifest | D2, D3, D4, D5, D6 | 1,135            | 2,400        | 1,700       | 6.5 GiB  |
 
-Planned total 1,682 requests (the protocol's section 10 said about 1,000: that counted
+**Combined byte ceiling of both gos: 300 MiB + 6.5 GiB = 6,956 MiB, about 6.8 GiB.** Planned total 1,682 requests (the protocol's section 10 said about 1,000: that counted
 listings and first files only). Attempt caps include retries. At 1 second spacing go 1
 takes about 10 minutes and go 2 about 20 minutes plus the first-file transfer.
 
@@ -200,7 +200,11 @@ never a pass. There is no longer an optional class that could swallow a 403; a g
 outranks every class rule. (A wrong manifest hash given for go 2 only refuses to start; nothing
 is sent and the root is not stopped.) After a stop the only way on is a new root (with `--prior-root` to
 carry the budget), by a corrected revision and the owner's decision. A crash without a stop
-(the process dies) does resume in the same root.
+(the process dies) does resume in the same root. **The stop survives a crash between its two
+writes:** the fatal receipt (HTTP 403 or a schema mismatch) is written first and `stop.json`
+second, so on start a fetcher that finds a fatal receipt with no stop file writes the missing
+stop and refuses to continue; nothing is resent. Every other stop kind (cap, preflight,
+changed D2 list, a phase 0 class that failed) writes `stop.json` in one step.
 
 **Binding.** `run.json` holds the full binding: the `request_list_sha256`, the budget carried
 from earlier roots and the **code binding** (clean revision, the hashes of every published file
@@ -217,17 +221,25 @@ refused, so a parser fix cannot continue an old run: a corrected revision starts
   was written still counts and a fourth send never happens. HTTP 429, 500, 502, 503, 504, a
   transport failure and a Bybit `retCode` 10006 are retried; the pause before the next send is
   the server's `Retry-After` if a whole number up to 300 s, else **10 s, then 30 s**.
+  **The wait survives a restart:** each receipt carries its wall-clock time and the
+  `Retry-After` it received. A recovered request waits the rest of its `Retry-After` (the time
+  already elapsed is credited), and a recovered run holds a persisted **not-before** time for
+  every request, together with the doubled spacing.
 - **HTTP 403 stops the whole run at once, no retry.** Any other 4xx, a redirect (not
   followed), a non-JSON or unexpected body, or a schema mismatch also stops it.
 - A 404 on a listing or a file is a **result** (`absent`). After three failed sends a
   per-launch request is `unavailable`, which the verdict counts as missing evidence, never as
   covered. A phase 0 class that stays unavailable stops the run.
-- **Bounded reads.** Requests ask for `Accept-Encoding: identity`, and the body is read from
-  the transport in chunks of at most `cap + 1` bytes; only bytes that fit under the response
-  cap are accepted, hashed and counted. A body over the cap ends as `too_large` with exactly
-  the cap bytes counted. Revision 1 counted the whole block that crossed the cap.
-- **No cross-revision reuse of pages** (decision Q15). `--prior-root` carries only attempts
-  and bytes into the budget.
+- **Bounded reads.** Requests ask for `Accept-Encoding: identity`. A declared `Content-Length`
+  over the response cap is `too_large` and **nothing is read**. Otherwise the body is read as
+  the raw transport chunks, not re-chunked, **every received byte is accounted** (counted,
+  hashed and journaled), and the read ends at the first chunk that takes the total over the
+  cap. So what the transport delivered always equals what the journal charges; the overshoot
+  is at most one transport chunk. (Revision 1 trimmed the last block and left the extra bytes
+  out of the account.)
+- **No cross-revision reuse of pages** (decision Q15). `--prior-root` carries attempts
+  and bytes into the budget **per go**: usage of go 2 classes counts against go 2 only and usage
+  of go 1 classes against go 1 only, so old first files cannot block a new go 1.
 
 ## 5. How M1 to M6 and the stop codes are computed
 
@@ -242,21 +254,25 @@ assigned in one fixed order, each launch gets exactly one, and the counts add up
 | M1    | `d = first public trade - launchTime`: `aligned` -5 min to +60 min, `delayed_open` up to +24 h, else `premarket_or_ambiguous`. Pass: ambiguous at most 10%, readable at least 90%. Lifecycle: no archive, an unreadable or over-cap first file at most 15%. The first public trade is enough for `T0` | `not_reconstructible` |
 | M2    | (i) catalog launches with no archive file within 1 day of `launchTime` at most 5%; (ii) archive-only symbols at most 5% of the union (see the scope limit below; unlisted candidates count in the worst case); (iii) V1 launches missing more than 5% of path days at most 5%                         | `incomplete_coverage` |
 | M3    | `relist`, `multiplier_ambiguous` (catalog, with the delivery date inside the window), `ticker_reuse_suspected` (file list), `identity_unverifiable`; contradicting at most 10%, unverifiable at most 20% of the launches that survive M1 and M2, at least 100 episodes remain                         | `identity_unresolved` |
-| M4    | **pagination finished and settlements proven** (below). Share uncovered at most 5%                                                                                                                                                                                                                    | `incomplete_coverage` |
+| M4    | **pagination finished and no gap longer than 8 h**: a coarse check, labelled partial (below). Share uncovered at most 5%                                                                                                                                                                              | `incomplete_coverage` |
 | M5    | at least 95% of the episodes have the entry minute trade bar (else `entry_unavailable`) and **continuous** hourly trade and mark series over the V1 path (below)                                                                                                                                      | `incomplete_coverage` |
 | M6    | **PARTIAL check.** Catalog fields only: `minNotionalValue` at most USD 50, `maxLeverage` at least 2, `qtyStep` and `minOrderQty` present; unknown counts against; at least 90% feasible. It can only fail an order                                                                                    | `capital_infeasible`  |
 | floor | `n_primary` below 100 or fewer than 26 ISO weeks                                                                                                                                                                                                                                                      | `insufficient_events` |
 
-**M4, funding coverage.** Finishing the pagination is not a proof. A short page covers from
-the span start, a full page only from its oldest row (HYP-036), and four full pages without
-reaching the start are `pagination_exhausted`. Coverage is **proven** only if the timestamps of
-all pages form one chain with no step above 8 hours (the longest Bybit funding interval; a gap
-inside a page or between two pages is `gap_inside` or `gap_between`), the oldest row is at
-most one step after the span start (`starts_late`), and the newest row is at most one step
-before the span end unless the catalog delivered the symbol by then (`ends_early`, else an end
-event). A page that did not come back is `unavailable`. Reasons are reported by count.
-**Limit:** a single missing settlement of a 1 h or 4 h interval symbol is smaller than the
-8 h step and is not detected.
+**M4, funding coverage (a coarse check, not proof).** Finishing the pagination is not enough. A
+short page covers from the span start, a full page only from its oldest row (HYP-036), and four
+full pages without reaching the start are `pagination_exhausted`. The coarse check passes only if
+the timestamps of all pages form one chain with **no step above 8 hours** (a gap inside a page or
+between two pages is `gap_inside` or `gap_between`), the oldest row is at most one step after the
+span start (`starts_late`), and the newest row is at most one step before the span end unless the
+catalog delivered the symbol by then (`ends_early`, else an end event). A page that did not come
+back is `unavailable`. The reason of a pass is **`no_gap_over_8h`**, never "proven". **It does not
+show that every settlement is present:** for a symbol whose real interval is shorter than 8 h,
+missing settlements below the step go unseen, and the real historical interval is unknown (the
+catalog `fundingInterval` is a **current snapshot**). The report therefore counts the covered
+launches whose snapshot interval is exactly 8 h apart from those whose snapshot is shorter or
+absent, and the M4 status is `partial_pass`, never a pass. A confirmed historical schedule cannot
+be had without reading rates, so none is used.
 
 **M5, hourly continuity.** Each series is checked for a hole: the reducer records the runs of
 missing hours, and any run that overlaps the V1 path (the hour of `E` to the hour before `X`)
@@ -270,21 +286,31 @@ treated as missing at this resolution; the stage 4 rule for zero-trade minutes i
 **Outcomes.** The outcome is the first stop code of the assessed checks, else `stage1_stopped`
 if the run has a `stop.json`, else `stage1_incomplete` if anything is `not_assessed`, else
 **`stage1_pass_partial`**. It is never a plain "pass": the report carries `partial_checks`
-(minute-level path continuity and M6, below). After go 1 alone the report is the **go 1
+(all partial checks, listed next). After go 1 alone the report is the **go 1
 report** (`go1_complete` or a provisional stop code): it shows M2 and M3 shares, M1 by file
 name, M6 and the manifest, and lists what is not yet assessable.
 
+**`partial_checks` in the report lists every one of these**, so a `stage1_pass_partial` is never
+read as full proof: (1) **M6** static catalog fields only; (2) **M2 (ii)** the archive-only share
+is a lower bound; (3) **M4** the funding step is coarse (no gap longer than 8 h) and the interval
+is a snapshot; (4) **M5** minute-level continuity is deferred to stage 4; (5) any hourly series
+that is **unproven** (a truncated page), counted.
+
 **Scope limits, stated plainly:**
 
-- **M2 (ii) is a lower bound.** Only directories absent from the catalog whose last file is
-  inside the window are candidates. A symbol delisted after the cut and missing from the
-  catalog cannot be told from a test-year launch, so it is not kept (section 1, item 3).
+- **M2 (ii) is a lower bound and is never proven.** Only directories absent from the catalog
+  whose last file is inside the window are candidates. A symbol delisted after the cut and
+  missing from the catalog cannot be told from a test-year launch, so it is not kept (section 1,
+  item 3). A value at or below 5% does not show the true share is; the status is
+  `lower_bound_only_unproven`. A lower bound **above** 5% is a sure fail
+  (`fail_lower_bound_above_limit`). The M2 gate may pass on (i) and (iii) while (ii) stays
+  unproven, and the outcome says so.
 - **M6 does not show that an order opens.** No price, quantity rounding, risk limit or depth
   is checked. The report labels it `partial` and lists `not_checked`.
 - **Minute-level continuity** of the whole path is proven at stage 4, when the bars are
   fetched (Amendment 1).
 
-## 6. What changed since revision 1 (`e393458`)
+## 6. What changed since revision 1 (`e393458`), and in round 2 (`45104e7`)
 
 | Review item                                                                           | Change                                                                                                                                                                          | Remaining limit                                                            |
 | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
@@ -298,6 +324,18 @@ name, M6 and the manifest, and lists what is not yet assessable.
 | Q1 two gos; Q3 book removed; Q13 spot removed                                         | section 0; classes F and C2 deleted from the code and from the hash                                                                                                             | book and spot dates stay later decisions                                   |
 | Q2, Q8 minute path deferred                                                           | Amendment 1; hourly continuity is checked now                                                                                                                                   | protocol M5 text deviated from, by amendment                               |
 | Q5, Q6, Q7, Q9, Q10, Q11, Q14, Q15                                                    | closed material; M6 labelled partial; first trade is enough; thresholds frozen; unknown stays unknown; over-cap files counted apart; slowdown persists; no cross-revision reuse | as stated in sections 4 and 5                                              |
+
+Round 2, after the review of `45104e7`:
+
+| Review item                                                     | Change                                                                                                                  | Remaining limit                                  |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| P1 stop lost on a crash between the 403 receipt and `stop.json` | a fatal receipt alone stops a recovering fetcher, which writes the missing `stop.json`                                  | none                                             |
+| P2 byte cap not closed: extra bytes received but not journaled  | declared length over the cap reads nothing; otherwise raw chunks, all received bytes accounted, read ends over the cap  | overshoot of at most one transport chunk         |
+| P2 `Retry-After` lost on a restart                              | receipts persist the time and the `Retry-After`; the rest of the wait and a not-before time are honoured after recovery | wall clock must be sane                          |
+| P2 costs of the two gos mixed through `--prior-root`            | prior usage kept per go                                                                                                 | none                                             |
+| Status: 8 h funding step called `proven`                        | reason `no_gap_over_8h`, status `partial_pass`, interval snapshot strength counted                                      | unseen missing settlements of 1 h or 4 h symbols |
+| Status: M2 (ii) lower bound reported as assessed and passing    | `archive_only_proven` false, status `lower_bound_only_unproven`; it can fail but never prove                            | true archive-only share unknown                  |
+| Status: list all partial checks                                 | `partial_checks` lists M6, M2 (ii), M4, minute continuity and unproven series                                           | none                                             |
 
 ## 7. Interpretations made, and limits stated plainly
 
@@ -335,11 +373,12 @@ requested anywhere.
 1. **Zero-trade hours as gaps.** At hourly resolution a missing trade bar is a gap, which may
    fail an illiquid launch that had an hour without trades. _Recommend accept:_ it is
    conservative, and the stage 4 zero-trade minute rule is unchanged.
-2. **The 8 h funding step.** It cannot see one missing settlement of a 1 h or 4 h symbol. An
-   alternative is a row count against the catalog `fundingInterval` (a current snapshot).
-   _Recommend accept the limit at stage 1;_ stage 4 fetches the exact rows it prices.
-3. **M2 (ii) lower bound.** _Recommend accept:_ the only alternative keeps names whose launch
-   date is unknown, which the cut forbids.
+2. **The 8 h funding step.** It cannot see one missing settlement of a 1 h or 4 h symbol; it is
+   reported as a coarse, partial check. An alternative is a row count against the catalog
+   `fundingInterval` (a current snapshot, so also unproven). _Recommend accept the coarse label at
+   stage 1;_ stage 4 fetches the exact rows it prices.
+3. **M2 (ii) lower bound.** Reported as unproven. _Recommend accept:_ the only alternative keeps
+   names whose launch date is unknown, which the cut forbids.
 4. **Who approves go 2.** The owner, on the go 1 report and the manifest hash; the colleague
    reviews the report. _Recommend this split._
 5. **Phase 0 may repeat once** (C1 max 9, C3 max 2). A third interruption stops the run.

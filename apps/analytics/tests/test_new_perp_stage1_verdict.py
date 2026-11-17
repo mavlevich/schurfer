@@ -69,7 +69,11 @@ def test_a_healthy_discovery_year_passes_every_check_as_a_partial_pass(tmp_path:
     # M6 and the minute-level path are named partial checks, never proof that an order opens
     assert report["m6"]["partial"] is True and report["m6"]["status"] == "partial_pass"
     assert "risk limit and position cap" in report["m6"]["not_checked"]
-    assert len(report["partial_checks"]) == 2 and report["stop"] is None
+    # every partial, coarse or unproven check is listed, so a pass is never read as full proof
+    checks = " | ".join(report["partial_checks"])
+    for needle in ("m6:", "m2(ii):", "m4:", "no gap longer than 8 h", "m5: minute-level"):
+        assert needle in checks
+    assert report["stop"] is None
     assert "book" not in report and "spot" not in report
 
 
@@ -551,3 +555,45 @@ def test_every_stop_code_of_stage_1_is_in_the_protocol_table() -> None:
     for code in s1.STOP_CODES:
         assert f"`{code}`" in protocol
     assert re.fullmatch(r"[0-9a-f]{64}", s1.build_contract()["request_list_sha256"])
+
+
+def test_m4_is_a_coarse_check_and_says_so_when_the_real_interval_is_shorter(
+    tmp_path: Path,
+) -> None:
+    """Reviewer B: a 4 h schedule with half its settlements removed was reported `proven`."""
+    world = world_of(20)
+    for launch in world.launches[:12]:
+        launch.funding_interval_min = 240
+        launch.funding_mode = "half4h"  # every second 4 h settlement is missing
+    world.launches[12].funding_interval_min = None  # the snapshot field is absent
+    report = evaluate(world, tmp_path / "run")
+    m4 = report["m4"]
+    assert m4["funding_uncovered"] == 0  # no gap above 8 h: the coarse check passes
+    assert m4["status"] == "partial_pass" and m4["partial"] is True
+    assert "not proof" in m4["rule"] and "no gap longer than 8 h" in m4["rule"]
+    assert m4["covered_by_interval_snapshot"] == {
+        "snapshot_is_8h": 7,
+        "snapshot_shorter_or_unknown": 13,
+    }
+    assert "current snapshot" in m4["interval_note"]
+    assert any("13 covered launches" in c for c in report["partial_checks"])
+
+
+def test_m2_archive_only_is_a_lower_bound_and_never_proven(tmp_path: Path) -> None:
+    """Reviewer B: a lower bound at or below 5% was reported as assessed and passing."""
+    world = world_of(105)
+    world.archive_only = ["GHOSTAUSDT", "GHOSTBUSDT", "GHOSTCUSDT"]  # 3 of 108, about 2.8%
+    report = evaluate(world, tmp_path / "run")
+    m2 = report["m2"]
+    assert m2["shares"]["archive_only"] == pytest.approx(3 / 108)
+    assert m2["archive_only_proven"] is False and m2["partial"] is True
+    assert m2["archive_only_status"] == "lower_bound_only_unproven"
+    assert m2["pass"] is True  # the gate may still pass on (i) and (iii)
+    assert report["outcome"] == "stage1_pass_partial"
+    assert any(c.startswith("m2(ii):") and "lower bound" in c for c in report["partial_checks"])
+    # above the limit a lower bound is a sure fail
+    bad = world_of(20)
+    bad.archive_only = ["GHOSTAUSDT", "GHOSTBUSDT", "GHOSTCUSDT"]
+    failed = evaluate(bad, tmp_path / "bad")["m2"]
+    assert failed["archive_only_status"] == "fail_lower_bound_above_limit"
+    assert failed["pass"] is False

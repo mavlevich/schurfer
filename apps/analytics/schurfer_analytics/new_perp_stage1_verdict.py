@@ -261,13 +261,34 @@ def evaluate(data: RunData) -> dict[str, Any]:
         "m4": m4,
         "m5": m5,
         "m6": m6,
-        "partial_checks": [
-            "m5: minute-level continuity is proven at stage 4 (protocol Amendment 1)",
-            "m6: static catalog fields only, no price, risk limit or depth",
-        ],
+        "partial_checks": partial_checks(m2, m4, m5, m6),
         "stop": data.stop,
         "requests": data.requests,
     }
+
+
+def partial_checks(
+    m2: dict[str, Any], m4: dict[str, Any] | None, m5: dict[str, Any] | None, m6: dict[str, Any]
+) -> list[str]:
+    """Every check that is partial, coarse or unproven, so a pass is never read as full proof."""
+    out = [
+        "m6: static catalog fields only; no price, quantity rounding, risk limit or depth",
+        "m2(ii): the archive-only share is a lower bound (directories whose last file is inside "
+        f"the window); status {m2['archive_only_status']}, never proof",
+    ]
+    if m4 is not None:
+        weak = m4["covered_by_interval_snapshot"]["snapshot_shorter_or_unknown"]
+        out.append(
+            "m4: funding is a coarse check (no gap longer than 8 h), not proof of every "
+            "settlement; the catalog interval is a current snapshot, and "
+            f"{weak} covered launches have a snapshot interval shorter than 8 h or unknown"
+        )
+    if m5 is not None:
+        out.append("m5: minute-level continuity is deferred to stage 4 (protocol Amendment 1)")
+        unproven = sum(per.get("unproven", 0) for per in m5["states"].values())
+        if unproven:
+            out.append(f"m5: {unproven} hourly series are unproven (a truncated page)")
+    return out
 
 
 def evaluate_go1(data: RunData) -> dict[str, Any]:
@@ -332,6 +353,7 @@ def evaluate_go1(data: RunData) -> dict[str, Any]:
         "m2": m2,
         "m3": m3,
         "m6": m6,
+        "partial_checks": partial_checks(m2, None, None, m6),
         "not_assessed": [
             "m1_first_trade_time",
             "m2_path_days",
@@ -430,15 +452,20 @@ def _m2(
         "archive_only": _share(archive_only, union) if assessed_ii else None,
         "path_days_missing": _share(path_bad, len(candidates)),
     }
+    # (ii) is a LOWER BOUND: a value at or below the limit does not show the true share is.
+    # It can fail the gate (a lower bound above the limit is a sure fail), never prove it.
+    lower_bound_fails = assessed_ii and not _at_most(
+        shares["archive_only"], T["m2_archive_only_max"]
+    )
     limits = {
         "no_file_near_launch": T["m2_no_file_near_launch_max"],
         "archive_only": T["m2_archive_only_max"],
         "path_days_missing": T["m2_path_days_missing_max"],
     }
-    ok = all(
+    ok = not lower_bound_fails and all(
         _at_most(shares[k], limits[k])
         for k in shares
-        if (k != "path_days_missing" or candidates) and (k != "archive_only" or assessed_ii)
+        if (k != "path_days_missing" or candidates) and k != "archive_only"
     )
     return {
         "shares": shares,
@@ -452,6 +479,13 @@ def _m2(
         },
         "archive_only_scope": "absent from the catalog, last file inside the window",
         "archive_only_assessed": assessed_ii,
+        "archive_only_proven": False,
+        "archive_only_status": (
+            "fail_lower_bound_above_limit"
+            if lower_bound_fails
+            else ("lower_bound_only_unproven" if assessed_ii else "not_assessed")
+        ),
+        "partial": True,
         "pass": ok,
     }
 
@@ -555,11 +589,26 @@ def _m4(eligible: list[dict[str, Any]], not_assessed: list[str]) -> dict[str, An
         by_status["listed" if r["row"]["status"] == "Trading" else "delisted"] += 1
     share = _share(len(uncovered), n)
     assessed = "m4_funding_not_run" not in not_assessed
+    covered = [r for r in eligible if r["funding"] == "covered"]
+    # The real interval is unknown (the catalog value is a current snapshot). Only a snapshot
+    # of exactly 8 h is consistent with the 8 h step; a shorter or unknown one is coarse only.
+    consistent = sum(1 for r in covered if r["row"]["funding_interval_min"] == 480)
     return {
         "eligible": n,
         "funding_uncovered": len(uncovered),
         "share": share,
-        "rule": "pagination finished and settlements proven (chain with no step above 8 h)",
+        "partial": True,
+        "status": "partial_pass"
+        if assessed and _at_most(share, T["m4_funding_uncovered_max"])
+        else "fail",
+        "rule": "pagination finished and no gap longer than 8 h (a coarse check, not proof of "
+        "every settlement)",
+        "covered_by_interval_snapshot": {
+            "snapshot_is_8h": consistent,
+            "snapshot_shorter_or_unknown": len(covered) - consistent,
+        },
+        "interval_note": "the catalog fundingInterval is a current snapshot, not the historical "
+        "schedule",
         "by_reason": _count(uncovered, "funding_reason"),
         "by_launch_month": dict(sorted(by_month.items())),
         "by_status": by_status,

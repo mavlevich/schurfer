@@ -16,10 +16,12 @@ import httpx
 import pytest
 from schurfer_analytics import new_perp_stage1 as s1
 from schurfer_analytics import new_perp_stage1_verdict as v1
+from schurfer_analytics.bybit_carry_feasibility import publish_once
 
 from .new_perp_world import (
     PRICE,
     SENTINELS,
+    Clock,
     World,
     fetcher,
     ms,
@@ -30,6 +32,7 @@ from .new_perp_world import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Iterator
     from pathlib import Path
 
 CUT = s1.CUT_MS
@@ -356,25 +359,69 @@ def test_a_send_that_died_before_its_receipt_still_counts_as_an_attempt(tmp_path
     assert summary["outcomes"]["D6"]["unavailable"] == 1
 
 
-def test_a_body_over_the_cap_is_cut_at_the_transport(
+class CountingStream(httpx.SyncByteStream):
+    """A body of fixed-size pieces that counts every byte the client pulls from it."""
+
+    def __init__(self, total: int, piece: int = 1000) -> None:
+        self.total, self.piece, self.pulled = total, piece, 0
+
+    def __iter__(self) -> Iterator[bytes]:
+        left = self.total
+        while left > 0:
+            size = min(self.piece, left)
+            left -= size
+            self.pulled += size
+            yield b"x" * size
+
+
+def bar_request() -> s1.Request:
+    candidate = {
+        "symbol": "AAAUSDT",
+        "launch_ms": 1,
+        "t0_ms": ms("2024-11-01T10:00:00"),
+        "entry_ms": ms("2024-11-08T10:00:00"),
+        "exit_ms": ms("2024-11-15T10:00:00"),
+    }
+    return s1.bar_requests([candidate])[0]
+
+
+def test_every_received_byte_is_accounted_when_the_length_is_unknown(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """P2-6 regression: a 65,537 byte body used to be counted in full against a 65,536 cap."""
+    """P2 regression: the client received 65,537 bytes and journaled 65,536 (cap 65,536)."""
     cap = 65_536
     monkeypatch.setitem(
         s1.CLASS_BY_ID, "D3", dataclasses.replace(s1.CLASS_BY_ID["D3"], max_response_bytes=cap)
     )
-    world = small_world(2)
-    root = tmp_path / "run"
-    run_go(world, root, 1)
-    world.raw["/v5/market/kline"] = b"x" * (cap + 1)
-    run_go(world, root, 2)
-    receipts = [json.loads(p.read_text()) for p in (root / "receipts").glob("*.json")]
-    big = [r for r in receipts if r["outcome"] == "too_large"]
-    assert len(big) == 1 and big[0]["body_bytes"] == cap  # the byte past the cap is not counted
+    stream = CountingStream(cap + 1)  # no Content-Length: the length is unknown
+    transport = httpx.MockTransport(lambda r: httpx.Response(200, stream=stream))
+    client = httpx.Client(transport=transport)
+    f = s1.Fetcher(tmp_path / "run", s1.build_contract(), client, go=2)
+    result = f.run_request(bar_request())
+    assert result["outcome"] == "too_large"
+    receipt = json.loads(next((tmp_path / "run" / "receipts").glob("*.json")).read_text())
+    assert receipt["body_bytes"] == stream.pulled  # received == accounted, at the transport
+    assert cap < stream.pulled <= cap + 1000  # the read ended at the first chunk over the cap
 
 
-def test_the_first_file_stream_is_cut_at_the_response_cap(
+def test_a_declared_length_over_the_cap_reads_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    cap = 65_536
+    monkeypatch.setitem(
+        s1.CLASS_BY_ID, "D3", dataclasses.replace(s1.CLASS_BY_ID["D3"], max_response_bytes=cap)
+    )
+    stream = CountingStream(cap + 1)
+    headers = {"content-length": str(cap + 1)}
+    transport = httpx.MockTransport(lambda r: httpx.Response(200, headers=headers, stream=stream))
+    client = httpx.Client(transport=transport)
+    f = s1.Fetcher(tmp_path / "run", s1.build_contract(), client, go=2)
+    assert f.run_request(bar_request())["outcome"] == "too_large"
+    receipt = json.loads(next((tmp_path / "run" / "receipts").glob("*.json")).read_text())
+    assert stream.pulled == 0 and receipt["body_bytes"] == 0
+
+
+def test_a_first_file_declared_over_the_response_cap_is_not_read(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setitem(
@@ -386,7 +433,7 @@ def test_the_first_file_stream_is_cut_at_the_response_cap(
     summary = run_go(world, root, 2)
     assert summary["outcomes"]["D2"] == {"too_large": 2}
     receipts = [json.loads(p.read_text()) for p in (root / "receipts").glob("*.json")]
-    assert {r["body_bytes"] for r in receipts if r["cls"] == "D2"} == {40}
+    assert {r["body_bytes"] for r in receipts if r["cls"] == "D2"} == {0}  # nothing received
 
 
 def test_a_compressed_transfer_encoding_is_not_trusted(tmp_path: Path) -> None:
@@ -438,3 +485,121 @@ def test_no_request_leaves_the_mock_and_no_price_reaches_a_file(tmp_path: Path) 
     run_world(world, tmp_path / "run")
     assert world.requests, "the run made no request through the mock"
     assert PRICE not in all_text(tmp_path / "run")
+
+
+# Recovery after a crash between two writes, and the persisted wait
+
+
+def test_a_fatal_receipt_without_stop_json_still_stops_the_run(tmp_path: Path) -> None:
+    """P1 regression: a crash between the 403 receipt and stop.json let a new fetcher resend."""
+    world = small_world(3)
+    world.fail["instruments-info"] = [403]
+    root = tmp_path / "run"
+    f, _ = fetcher(world, root)
+    with pytest.raises(s1.FetchStoppedError):
+        s1.run_go1(f)
+    (root / "stop.json").unlink()  # the process died between the receipt and the stop file
+    before = len(world.requests)
+    with pytest.raises(s1.FetchStoppedError, match="recovered from its receipt"):
+        fetcher(world, root)
+    assert len(world.requests) == before  # nothing was resent
+    assert "HTTP 403" in json.loads((root / "stop.json").read_text())["reason"]  # rewritten
+    with pytest.raises(s1.FetchStoppedError, match="was stopped"):
+        fetcher(world, root)
+
+
+def test_a_schema_mismatch_receipt_without_stop_json_also_stops_the_run(tmp_path: Path) -> None:
+    transport = httpx.MockTransport(lambda r: streamed(content=b'{"a": 1}'))
+    root = tmp_path / "run"
+    f = s1.Fetcher(root, s1.build_contract(), httpx.Client(transport=transport))
+    with pytest.raises(s1.FetchStoppedError):
+        s1.run_go1(f)
+    (root / "stop.json").unlink()
+    with pytest.raises(s1.FetchStoppedError, match="schema mismatch"):
+        s1.Fetcher(root, s1.build_contract(), httpx.Client(transport=transport))
+    assert (root / "stop.json").exists()
+
+
+def test_retry_after_survives_a_restart_before_the_wait(tmp_path: Path) -> None:
+    """P2 regression: after a 429 with Retry-After 300 and a crash, the next process waited 10 s."""
+    world = small_world(2)
+    world.retry_after = 300
+    world.fail["instruments-info"] = [429]
+    root = tmp_path / "run"
+    dying = Clock(die_over=5.0)
+    f, _ = fetcher(world, root, clock=dying)
+    with pytest.raises(RuntimeError):
+        s1.run_go1(f)  # the 429 receipt is written, then the process dies before the wait
+    later = Clock(wall_offset=dying.wall() - 1_800_000_000.0 + 1.0)  # one second later
+    f2, clock = fetcher(world, root, clock=later)
+    s1.run_go1(f2)
+    assert 290 <= clock.sleeps[0] <= 300, clock.sleeps[:3]  # the rest of Retry-After
+    assert f2.spacing == 2.0  # the doubled spacing persists too
+
+
+def test_a_recovered_request_waits_the_rest_of_its_retry_after(tmp_path: Path) -> None:
+    """P2 regression: a recovered request waited 10 s whatever the server had asked."""
+    world = small_world(2)
+    world.retry_after = 300
+    world.fail["public.bybit.com/trading/T000USDT/"] = [429]  # a request with a stable key
+    root = tmp_path / "run"
+    dying = Clock(die_over=5.0)
+    f, _ = fetcher(world, root, clock=dying)
+    with pytest.raises(RuntimeError):
+        s1.run_go1(f)  # the listing's 429 is written, then the process dies before the wait
+    later = Clock(wall_offset=dying.wall() - 1_800_000_000.0 + 1.0)
+    f2, clock = fetcher(world, root, clock=later)
+    s1.run_go1(f2)
+    assert 290 <= max(clock.sleeps) <= 300, clock.sleeps[:3]
+    assert clock.sleeps[0] > 5  # the first thing it did was the rest of the wait, not 10 s
+
+
+def test_the_not_before_time_holds_for_a_different_request_after_a_restart(
+    tmp_path: Path,
+) -> None:
+    world = small_world(2)
+    world.retry_after = 120
+    world.fail["instruments-info"] = [429]
+    root = tmp_path / "run"
+    first = Clock()
+    f, _ = fetcher(world, root, clock=first)
+    f.sleep = lambda s: (_ for _ in ()).throw(RuntimeError("died"))
+    with pytest.raises(RuntimeError):
+        s1.run_go1(f)
+    clock = Clock(wall_offset=first.wall() - 1_800_000_000.0 + 5.0)
+    f2, _ = fetcher(world, root, clock=clock)
+    assert f2.not_before == pytest.approx(first.wall() + 120, abs=1.0)
+
+
+# The budget of each go is kept apart
+
+
+def write_prior_root(root: Path, cls: str, files: int, size: int) -> None:
+    for seq in range(1, files + 1):
+        key = f"{cls}-{seq}"
+        publish_once(root / "attempts" / f"{seq:05d}.json", {"seq": seq, "cls": cls, "key": key})
+        receipt = {"seq": seq, "cls": cls, "key": key, "body_bytes": size, "outcome": "ok"}
+        publish_once(root / "receipts" / f"{seq:05d}.json", receipt)
+
+
+def test_prior_usage_is_kept_per_go_so_old_go_2_files_do_not_block_go_1(tmp_path: Path) -> None:
+    """P2 regression: five old 64 MiB D2 files blocked a new go 1 under its 300 MiB cap."""
+    prior_root = tmp_path / "old"
+    write_prior_root(prior_root, "D2", 5, 64 * s1.MIB)
+    usage = s1.prior_usage([prior_root])
+    assert usage["1"] == {"attempts": 0, "bytes": 0}
+    assert usage["2"] == {"attempts": 5, "bytes": 5 * 64 * s1.MIB}
+    world = small_world(3)
+    f, _ = fetcher(world, tmp_path / "new", prior=usage)
+    summary = s1.run_go1(f)  # not blocked: the old go 1 spent nothing
+    assert summary["bytes"] < 300 * s1.MIB
+    f2, _ = fetcher(world, tmp_path / "new", go=2, prior=usage)
+    assert f2.totals()[1] >= 5 * 64 * s1.MIB  # go 2 still carries its own earlier cost
+
+
+def test_prior_usage_of_go_1_classes_counts_only_against_go_1(tmp_path: Path) -> None:
+    prior_root = tmp_path / "old"
+    write_prior_root(prior_root, "D1", 4, 1000)
+    usage = s1.prior_usage([prior_root])
+    assert usage["1"] == {"attempts": 4, "bytes": 4000}
+    assert usage["2"] == {"attempts": 0, "bytes": 0}
