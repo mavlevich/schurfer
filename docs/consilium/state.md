@@ -360,3 +360,30 @@ Read at: `e3f323d` (`origin/main`), PR #601 (`bccb6ee`), PR #606 (`da22081`), PR
     `docs/improvement-roadmap-v3` draft (such as intraday BTC/ETH `P-03`, which is not
     currently separated from `I6` in `ideas.md`) is deferred to a separate PR; those
     untracked local files are left untouched.
+
+## 15. `plan.md` Draft v3 sync, `USD 5,000` capital, `I45` (`P-03`) transfer, and `O11` prod observation, 2026-11-17
+
+Read at: `d5327b1` (`origin/main`), PR #606 (`da22081`), PR #607 (`e3f323d`), PR #608 (`45084ad`), PR #609 (`d5327b1`).
+
+- **Owner working capital (`R5` / `O9`, 2026-11-17):** Owner set **`USD 5,000`** as the
+  working planning capital (`5%` annual benchmark = `USD 250/year` on total allocated
+  capital, without calling that benchmark risk-free). Live drawdown limits remain to be
+  set before Stage 7.
+- **`plan.md` updated to Draft v3:** Aligned with PR #606/#607 (`stop_direction_a`; `A2`
+  and `A4d` `lab_only`, pending final close/continue confirmation), PR #608 (`45084ad`,
+  `I25` Stages 1–3 data recoverability/power checks before reading returns, per-fill
+  fees, and stop/liquidation modeling without a guaranteed loss cap), Stage 2A rules
+  (`31 bps` non-commission filter only; verify HL S3 archive availability and spend cap),
+  explicit `2027-02-11` stop rule (`program-plan-2026-11.md`), `I35`/`I36`, and `I43`'s
+  1–2 week data-slice wording.
+- **Transferred `P-03` (intraday BTC/ETH) as [`I45`](ideas.md):** Added as `unscreened`,
+  preserving separation from `I6` daily/multi-day BTC swings. Untracked local files on
+  `docs/improvement-roadmap-v3` remain untouched pending explicit owner deletion ok.
+- **Closed `O11` read-only production check (observed `2026-11-17 07:56 UTC` via `ssh schurfer`):**
+  - Host checkout `/opt/schurfer`: clean `main` at `e3dff47`; `/dev/sda1` disk **38G / 75G used (53%), 35G free**; `docker_postgres_data` **27.3 GB**; `docker_orderflow_data` **562.2 MB**; local `backups_bytes=180099775`.
+  - Group 1 (`momentum-capture`, `momentum-capture-binance`, `momentum-watch`, `momentum-paper`, `momentum-paper-hold12h`) is stopped; platform, `HYP-012 v2` (`analytics`, `source-lead-exit-capture`, `execution`), and Group 2 (`collector`, `outcome-resolver`, `liquidation-capture-*`, `lsr-subscriber`, `market-hotset`) are up.
+  - Timers passing (`Result=success`, `2026-11-17`): `schurfer-offsite-backup.service` (`04:13:50 UTC`), `schurfer-bybit-order-rules.service` (`07:07:19 UTC`), `schurfer-cold-bar-gated-deletion.service` (`05:00:58 UTC`), and `schurfer-restore-check.service` (`2026-11-15T06:03:03Z`, `ok: true`, `mismatches: {}`, `rows: 216226`, `tables: 23`, `schema_revision_ok: true`).
+  - **Two operational items flagged (no prod changes made):**
+    1. `schurfer-cold-bar-export.service` (`03:32:29 UTC`): `Result=exit-code`, `ExecMainStatus=2` (`ValueError: 2026-11-11 has no rows in timeseries.bybit_momentum_bars_1m; refusing to export`) — expected fallout from stopping Group 1 on 2026-11-10.
+    2. `schurfer-offsite-backup-health.service` (`07:01:57 UTC`): `Result=exit-code`, `ExecMainStatus=1` (root-owned unit logs not readable by `deploy` without `sudo`; requires separate owner/root inspection via `make prod-offsite-backup-health`).
+- **Open owner decisions remaining:** final closure of `A2`/`A4d` (`lab_only`) and choice on `I44` (`needs_rule_change` hold vs narrow single-channel rule amendment).
