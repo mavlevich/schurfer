@@ -71,3 +71,54 @@ is not recorded. They are diagnostic only under item 4, reported apart and exclu
 any verdict for the whole window until their viewing dates are pinned down. The research
 process read no price, signal or score about them; this addendum adds only their names.
 The exposure row is in the [seen-windows registry](seen-windows-registry.md).
+
+## Addendum 2026-11-17: BLESS and RARE, and a proposed refinement of C2
+
+**Two more viewed cases.** On or shortly before 2026-11-17 the owner opened roughly
+one-year price charts of BLESS and RARE after both reached the radar. The owner's
+impression: one token drifts down with periodic pumps; the other repeats pump and
+drawdown. Venue, exact viewing dates and the radar signal that fired are not recorded
+and are not filled in from data. The charts span the v2 blind window, so both tokens
+are diagnostic only under item 4, reported apart and excluded from any verdict for the
+whole window. The research process read no price, signal or score about them; this
+addendum adds only their names and the owner's description. The exposure row is in
+the [seen-windows registry](seen-windows-registry.md). This is a record of where an
+idea came from; it does not exclude the two tokens from unrelated future studies.
+
+**Proposed refinement of C2, not an approved test.** The owner asked whether a token's
+own history could tell how its next pump will behave. The proposal for the protocol
+author: test whether one point-in-time feature, the share of a token's earlier
+completed pump episodes that retraced, improves the C2 post-pump short against the same
+short without the feature. Whether C2 takes it, its parameters and its place in the
+variant count are decided when the protocol is written.
+
+What is already on record, and why the feature is at most a refinement:
+
+- [HYP-013](discovery-ledger.md) (token-behavior) already used the outcome of the most
+  recent spike: recovery is the first daily close within +-10% of the pre-spike close,
+  with unrecovered episodes right-censored (`token_behavior_descriptors.py`). Its four
+  filters ended `insufficient_triggers` on 47 instruments over two weeks; no test ran.
+  The possible novelty is the **share over several past episodes** and its predictive
+  value, not the use of a pump's outcome as such.
+- [Serial pump regimes v1](serial-pump-regimes-v1.md) describes what followed each
+  independent pump regime, without a verdict.
+
+What the protocol would have to fix before any read, if it takes the feature:
+
+1. what counts as a pump and as one episode, reusing HYP-013's spike definition unless
+   a reason to change it is written down;
+2. how far and within how long a retrace must happen;
+3. the minimum number of completed earlier episodes; below it the token is `no_history`,
+   never 0% or 100%;
+4. an episode still inside its retrace horizon at the decision is not completed and is
+   left out, never counted as "did not retrace";
+5. the current signal's own episode never enters its history;
+6. the share is computed on a market-adjusted price, while the primary metric stays net
+   as traded; a positive market-adjusted figure alone is not account profit;
+7. one action, justified by prior reads rather than by chart shape (C2 is a short), with
+   "no trade" as the comparison;
+8. a fixed positive net threshold: a filtered short that only loses less is a fail.
+
+The window from 2026-09-29 stays historical data for this study after v2 is terminal
+(item 1); a pass in it would still need a forward confirmation. A first test is pooled
+across instruments; no rule is fitted to BLESS, RARE or any viewed token.
