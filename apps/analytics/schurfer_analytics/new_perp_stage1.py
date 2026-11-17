@@ -102,8 +102,8 @@ FUNDING_MAX_PAGES: Final = 4
 PER_FILE_CAP_BYTES: Final = 512 * 1024 * 1024
 MIB: Final = 1024 * 1024
 # The two gos. Go 1 reads metadata only; go 2 needs go 1 and its reviewed manifest.
-GO_ATTEMPT_CAPS: Final = {1: 1000, 2: 1700}
-GO_BYTE_CAPS: Final = {1: 300 * MIB, 2: 7680 * MIB}
+GO_ATTEMPT_CAPS: Final = {1: 1000, 2: 2400}
+GO_BYTE_CAPS: Final = {1: 300 * MIB, 2: 8704 * MIB}
 
 BASE_API: Final = "https://api.bybit.com"
 CATALOG_URL: Final = f"{BASE_API}/v5/market/instruments-info"
@@ -219,7 +219,7 @@ CLASSES: Final[tuple[ClassSpec, ...]] = (
         258,
         MAX_LAUNCHES,
         PER_FILE_CAP_BYTES,
-        7168 * MIB,
+        7936 * MIB,
         go=2,
         note="runs only if the summed Content-Length of D2h is at most the class byte cap",
     ),

@@ -18,6 +18,7 @@ from schurfer_analytics import new_perp_stage1 as s1
 from schurfer_analytics import new_perp_stage1_verdict as v1
 from schurfer_analytics.bybit_carry_feasibility import publish_once
 
+from .new_perp_go1_sizes import SIZES_KIB
 from .new_perp_world import (
     PRICE,
     SENTINELS,
@@ -697,7 +698,7 @@ def test_the_reserve_and_the_rule_are_part_of_the_contract() -> None:
     assert "used + response cap + read reserve" in limits["byte_rule"]
 
 
-# The per-file cap of 512 MiB and the Go 2 budget of 7.5 GiB
+# The per-file cap of 512 MiB and the Go 2 budgets
 
 MEASURED_FILES = 258  # the Go 1 run: 258 first daily files
 MEASURED_TOTAL = 6737590608  # 6,425.47 MiB in bytes
@@ -779,7 +780,7 @@ def charge_file(f: s1.Fetcher, symbol: str, size: int) -> None:
 
 def test_go_2_budget_holds_all_258_measured_files_and_the_other_classes(tmp_path: Path) -> None:
     contract = s1.build_contract()
-    assert contract["go_limits"]["2"]["max_bytes"] == 7680 * s1.MIB
+    assert contract["go_limits"]["2"]["max_bytes"] == 8704 * s1.MIB
     big = [MEASURED_MAX] + [(3050141434 - MEASURED_MAX) // 21] * 21
     small = [3_687_449_174 // 236] * 236
     sizes = big + small
@@ -794,7 +795,7 @@ def test_go_2_budget_holds_all_258_measured_files_and_the_other_classes(tmp_path
     assert used == sum(sizes) and used < s1.CLASS_BY_ID["D2"].max_class_bytes
     # every other class can still run to its own class cap inside the step budget
     others = sum(c.max_class_bytes for c in s1.CLASSES if c.go == 2 and c.cls != "D2")
-    assert used + others < ceiling  # 6,425 MiB + 624 MiB < 7,680 MiB
+    assert used + others < ceiling  # 6,425 MiB + 624 MiB < 8,704 MiB
     # and the D2 class cap is a hard stop for one more file than the measured set can need
     with pytest.raises(s1.BudgetExceededError, match="D2: class byte cap"):
         for j in range(20):
@@ -812,3 +813,76 @@ def test_the_read_reserve_still_guards_a_512_mib_request(tmp_path: Path) -> None
     enough = small_step_contract(need)
     f2 = s1.Fetcher(tmp_path / "enough", enough, client, go=2)
     f2._charge(d2_request())  # exactly cap plus reserve is allowed
+
+
+# Replaying the real D2 queue: the measured sizes, in queue order, with retries
+
+
+def replay_d2_queue(tmp_path: Path, retried: tuple[int, ...] = ()) -> s1.Fetcher:
+    """Charge every first file in queue order against the real contract. A file index in
+    `retried` is downloaded a second time in full, right after its first attempt, as a
+    complete retry would be."""
+    client = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(404)))
+    f = s1.Fetcher(tmp_path, s1.build_contract(), client, go=2)
+    for index, kib in enumerate(SIZES_KIB):
+        for _ in range(2 if index in retried else 1):
+            charge_file(f, f"Q{index}USDT", kib * 1024)
+    return f
+
+
+def largest(count: int) -> tuple[int, ...]:
+    return tuple(sorted(range(len(SIZES_KIB)), key=lambda i: -SIZES_KIB[i])[:count])
+
+
+def test_the_replayed_queue_is_the_measured_one() -> None:
+    assert len(SIZES_KIB) == MEASURED_FILES
+    assert abs(sum(SIZES_KIB) * 1024 - MEASURED_TOTAL) < 300 * 1024  # rounded up to KiB
+    assert max(SIZES_KIB) * 1024 - MEASURED_MAX < 1024
+
+
+def test_the_d2_class_cap_covers_a_full_retry_of_the_largest_file_in_queue_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """P2 regression: with the 512 MiB + 64 KiB reserve before every request, a 7,168 MiB D2
+    class cap stopped the run, after a full retry of the largest file, before the last files."""
+    f = replay_d2_queue(tmp_path / "none")  # no retry: all 258 files fit
+    assert len(f.attempts) == MEASURED_FILES
+    one = replay_d2_queue(tmp_path / "one", largest(1))  # one full retry of the largest
+    assert len(one.attempts) == MEASURED_FILES + 1
+    monkeypatch.setitem(
+        s1.CLASS_BY_ID,
+        "D2",
+        dataclasses.replace(s1.CLASS_BY_ID["D2"], max_class_bytes=7168 * s1.MIB),
+    )
+    with pytest.raises(s1.BudgetExceededError, match="D2: class byte cap"):
+        replay_d2_queue(tmp_path / "old", largest(1))  # the old cap stops before the end
+
+
+def test_the_covered_retry_scenarios_are_exactly_the_ones_the_request_list_states(
+    tmp_path: Path,
+) -> None:
+    # one full retry of each of the three largest files, in the real order, still completes
+    three = replay_d2_queue(tmp_path / "three", largest(3))
+    assert len(three.attempts) == MEASURED_FILES + 3
+    used = three.totals()[1]
+    others = sum(c.max_class_bytes for c in s1.CLASSES if c.go == 2 and c.cls != "D2")
+    # the step cap holds even if D2 reaches its class cap and D3 to D6 reach theirs
+    step = three.contract["go_limits"]["2"]["max_bytes"]
+    assert used + others <= step
+    assert s1.CLASS_BY_ID["D2"].max_class_bytes + others <= step
+    # a full retry of the four largest is not covered, and stops cleanly by the class cap
+    with pytest.raises(s1.BudgetExceededError, match="D2: class byte cap"):
+        replay_d2_queue(tmp_path / "four", largest(4))
+
+
+def test_the_go_2_attempt_cap_covers_four_funding_pages_for_every_candidate() -> None:
+    contract = s1.build_contract()
+    candidates = 258  # the Go 1 manifest's upper bound
+    worst_first_attempts = candidates * (1 + 3 + s1.FUNDING_MAX_PAGES)  # D2, D3 to D5, D6
+    assert worst_first_attempts == 2064
+    cap = contract["go_limits"]["2"]["max_attempts"]
+    assert cap >= worst_first_attempts * 1.15  # at least 15% headroom for retries
+    d6 = next(c for c in contract["classes"] if c["cls"] == "D6")
+    assert d6["max_requests"] >= candidates * s1.FUNDING_MAX_PAGES  # 1,032 of 1,200
+    go2 = [c for c in contract["classes"] if c["go"] == 2]
+    assert sum(c["max_requests"] for c in go2) >= worst_first_attempts

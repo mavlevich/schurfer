@@ -585,7 +585,7 @@ def test_contract_has_two_gos_with_their_own_counts_caps_and_hashes() -> None:
     assert sum(c["max_requests"] for c in go2) == 2400
     assert contract["go_limits"] == {
         "1": {"max_attempts": 1000, "max_bytes": 300 * s1.MIB},
-        "2": {"max_attempts": 1700, "max_bytes": 7680 * s1.MIB},
+        "2": {"max_attempts": 2400, "max_bytes": 8704 * s1.MIB},
     }
     for c in classes.values():
         assert c["expected_requests"] <= c["max_requests"]
