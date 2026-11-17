@@ -1,4 +1,4 @@
-# New-perp short, laboratory protocol v1 (DRAFT, revision 7, 2026-11-17)
+# New-perp short, laboratory protocol v1 (DRAFT, revision 8, 2026-11-17)
 
 Study identifier: `new-perp-short-v1`. Idea: `I25` in the
 [consilium ideas list](../consilium/ideas.md). A hypothesis identifier (`HYP-039` is the
@@ -13,12 +13,14 @@ archive, identity per launch, power calibration, the laboratory read) are writte
 owner's separate go. Merge of this document is also a separate decision of the owner
 and the colleague.
 
-**Revision 7** follows two reviews of the experiment model, a consistency pass over the whole chain
-(selection, entry, events of an open position, exit, funding and fees, verdict) and three reads of
+**Revision 8** follows two reviews of the experiment model, a consistency pass over the whole chain
+(selection, entry, events of an open position, exit, funding and fees, verdict) and four reads of
 the rules by the colleague (the sign map, the trigger window and the margin-loss and cost wording;
 then the gap rule, the portfolio timing of unresolved episodes, the entry clock and the six-part
 decomposition; then the `EVT` of a stop, the mark-price test in a zero-trade minute and the dating
-of a confirmed event against a gap). What changed
+of a confirmed event against a gap; then the lookback cut, the funds check, funding coverage as
+a selection condition, the `exec_net` guards, a missing entry bar and the benchmark end of an
+unresolved episode). What changed
 in each revision is in section 13; the rules are pinned by the worked examples of Appendix A.
 
 Chain of evidence behind it:
@@ -79,6 +81,35 @@ longest (14 d plus 7 d). This keeps every price read out of the HYP-031 test yea
 the blind window, at the cost of about 5 to 12 of the 263 launches. The same cut applies
 at 2024-09-15 for the holdout. The cohort is not extended to compensate.
 
+**Lookback cut (fixed now).** No feature, benchmark selection or pool membership may read
+**any data dated before the start of the window the episode belongs to** (discovery year:
+2024-10-01; holdout: 2023-02-01). The protocol has features with a 30-day lookback from
+`E`: BTCUSDT's 30-day return of the regime view (7.2) and the 30-day turnover that
+selects the liquid pool (7.3). An episode whose lookback would start before the window
+start is **`lookback_censored`**: counted and listed with its reason, **not in the primary
+sample**, never priced. **This does not widen data access**: it keeps the reads inside the
+window, and the shorter lookback of an early launch is never substituted. A 30-day lookback
+starts at `E - 30 d`, so an episode is eligible when `E - 30 d >= window start`, that is
+`T0 >= (window start + 30 d) - age`: for the discovery year **`T0 >= 2024-10-24` for `V1`**
+(age 7 d), `T0 >= 2024-10-28` for `V2` (age 3 d) and `T0 >= 2024-10-17` for `V3` (age 14
+d). Each variant is cut by its own age; `V1` decides, and the shape across age is
+reported on the common set `T0 >= 2024-10-28`. The same cut applies to the holdout from
+its own start (stage 1b).
+**Planning guess, not a measurement:** the window of cut launch dates for `V1` is the 23
+days 2024-10-01 to 2024-10-23, and if launches arrived evenly that would remove about
+`263 * 23 / 365`, **about 17**, launches (arrivals are not even; the true number comes
+from metadata at stage 1). The planned count of resolved episodes falls from about 220 to
+**about 205** (section 7.4). The primary count is
+
+```text
+n_primary = launches - window_censored - lookback_censored - t0_ambiguous
+            - identity exclusions - funding_uncovered
+```
+
+and if `n_primary` is below 100 episodes or 26 ISO weeks the stop is
+`insufficient_events` (section 8). **The lookback is never shortened to rescue the
+count.**
+
 ## 3. Cohort
 
 - **Unit:** one launch is the first Bybit linear USDT perpetual of a base asset (after
@@ -100,9 +131,23 @@ at 2024-09-15 for the holdout. The cohort is not extended to compensate.
   stratum that gates nothing** (see question Q3).
 - **Pre-market.** A perp may trade before its regular launch, in a pre-market phase.
   Whether `launchTime` marks that start or the regular launch is the core of check M1.
-- **Counts that matter.** The 263 is an upper bound. Plan with about 220 resolved
-  episodes after the end cut, identity and coverage losses (a planning number, not a
-  measurement).
+- **Counts that matter.** The 263 is an upper bound. Plan with about **205** resolved
+  episodes after the end cut, the lookback cut (about 17, section 2), identity and
+  coverage losses (a planning number, not a measurement; it was about 220 before the
+  lookback cut).
+
+**Selection and entry statuses.** Each is counted with its reason, none is priced, and
+none depends on a return. They are decided from dates, catalog fields and the **existence**
+of data, never from its content.
+
+| Status                       | Decided from                                      | Effect                                                                                                                                             |
+| ---------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `window_censored`            | `T0`, planned `X`, window end (section 2)         | counted, never priced                                                                                                                              |
+| `lookback_censored`          | `T0`, age, window start (section 2)               | not in the primary sample                                                                                                                          |
+| `t0_ambiguous`, identity     | M1, M3                                            | excluded before entry                                                                                                                              |
+| `funding_uncovered`          | funding-history coverage listing (M4)             | excluded before entry; share at most 5% (M4)                                                                                                       |
+| `entry_unavailable`          | **existence** of the trade bar that starts at `E` | no position modelled; counted in the M5 coverage share and the 5% gate of section 8; never scored, never in the denominator of net                 |
+| `skipped_insufficient_funds` | cash at `E` in that scenario's portfolio (5.4)    | not entered in that scenario's portfolio, in L and H separately; counted with its reason; the per-episode statistics of section 7 are not affected |
 
 ## 4. Verification methods, before any return (stage 1)
 
@@ -121,7 +166,11 @@ after `E`: an announcement on day 10 about a trade opened on day 7 describes an
 already open position. Such an event is scored in the result (section 5.3), not deleted. A jump, a crash
 or a squeeze after entry is exactly what the strategy must survive, so a price move
 alone never removes a trade. A halt or a delisting after `E` is an outcome of the
-episode, handled in section 5.3, not an exclusion.
+episode, handled in section 5.3, not an exclusion. **The only data-availability
+exclusions** are `funding_uncovered` and `entry_unavailable` (section 3): each is decided
+from the existence of data and never from a price, each is counted, and both are gated
+(5% each, M4 and M5). Their limit is survivorship: missing data can correlate with young,
+thin or delisted symbols (M4).
 
 ### M1. What `launchTime` means versus the first public trade
 
@@ -225,11 +274,26 @@ is scored (section 5.3, item 4). Each launch receives one status:
 
 ### M4 to M6. Coverage of what the net needs (also before any return)
 
-| Check | Method                                                                                                                                                                                                                                                                                                                                                                                                      | Pass                                                   | Fail code             |
-| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | --------------------- |
-| M4    | Funding history coverage proven by pagination for the entry-to-planned-exit span of every episode (the HYP-036 rule: a full page covers only from its oldest row; a hold not inside one contiguous union of covered spans is incomplete).                                                                                                                                                                   | at least 95% of resolved episodes covered              | `incomplete_coverage` |
-| M5    | 1-minute trade bars, 1-minute mark-price bars and hourly mark bars at settlements, listed by existence (no content), over the planned path of every variant (days 3 to 21 after `T0`). A missing last file is **not** an end of trading: bars missing after the last archive file are a data gap unless a separate source confirms an end dated at or before the first missing minute (5.3, items 3 and 4). | at least 95% of episodes have their bars and mark bars | `incomplete_coverage` |
-| M6    | Static capital feasibility known at `E`: contract minimum order value, quantity step, maximum leverage, risk limit and position cap of the symbol, from the catalog snapshot, for notional USD 50 per slot.                                                                                                                                                                                                 | the order opens for at least 90% of episodes           | `capital_infeasible`  |
+| Check | Method                                                                                                                                                                                                                                                                                                                                                                                                                            | Pass                                                                           | Fail code             |
+| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------- |
+| M4    | Funding history coverage proven by pagination for the span **days 3 to 21 after `T0`** (the union of the planned paths of every variant) of every episode (the HYP-036 rule: a full page covers only from its oldest row; a span not inside one contiguous union of covered spans is incomplete). **A selection condition:** an episode that fails it is `funding_uncovered`, decided from metadata at stage 1, before any entry. | the `funding_uncovered` share is at most 5% of the episodes otherwise eligible | `incomplete_coverage` |
+| M5    | 1-minute trade bars, 1-minute mark-price bars and hourly mark bars at settlements, listed by existence (no content), over the planned path of every variant (days 3 to 21 after `T0`). A missing last file is **not** an end of trading: bars missing after the last archive file are a data gap unless a separate source confirms an end dated at or before the first missing minute (5.3, items 3 and 4).                       | at least 95% of episodes have their bars and mark bars                         | `incomplete_coverage` |
+| M6    | Static capital feasibility known at `E`: contract minimum order value, quantity step, maximum leverage, risk limit and position cap of the symbol, from the catalog snapshot, for notional USD 50 per slot.                                                                                                                                                                                                                       | the order opens for at least 90% of episodes                                   | `capital_infeasible`  |
+
+**Funding coverage is a selection condition (M4).** An episode whose funding history does
+not cover its planned path in one contiguous union is `funding_uncovered`, excluded before
+entry, counted, never entered. **Unknown funding is never taken as zero**, and no rate is
+imputed. **Limit, stated plainly:** coverage can correlate with young, thin or delisted
+symbols, so dropping uncovered episodes can drop exactly the launches that failed. The
+share by launch month and by status (delisted or not) is reported as a diagnostic, and a
+share above 5% is `incomplete_coverage`, not a smaller sample.
+
+**A missing entry bar (M5).** If the 1-minute trade bar that starts at `E` is missing, the
+episode is **`entry_unavailable`**: `P_e`, `F_e`, `q`, the fee and the margin are
+undefined, so **no position was modelled**, the slot is never taken, and the episode is
+**never scored** and never in the denominator of net. It is decided from **bar existence
+only, not from prices**, and it is counted in the M5 coverage share and in the 5% gate of
+section 8 (example A9).
 
 **Order books are not a gate.** Existence and depth of the order-book archive are
 **recorded, not required**: the share of episodes with a book at entry and at exit, at
@@ -288,8 +352,11 @@ multiply variants on one path.)
   the value of `q` at that fill), the funding settlements counted (`E < s < t_exit`,
   strict, as in HYP-036), the benchmark interval `[E, t_exit]` of section 7.3, the
   release of the slot, and the capital-time used in section 6.4 (example A3). An
-  `unresolved` episode has no actual exit: its slot and loss timing are set per scenario in 6.1
-  (example A7).
+  `unresolved` episode has **no actual exit**: its slot and loss timing are set per scenario in 6.1
+  (example A7). Its `t_last` (the end of the last covered bar) plays the role of `t_exit` **in H
+  only**, for the time of the whole-margin loss, the funding window and the end of the
+  market-adjusted interval `[E, t_last]` of 7.3; in L the episode is excluded from the mean
+  and has no interval.
 - **No other exit.** No discretionary exit, no re-entry.
 
 ### 5.3 Right-tail rule (short squeeze)
@@ -405,8 +472,8 @@ margin also reserves a closing-fee amount that the 50% simplification ignores.
    in the denominator, never dropped. Its price result, fee, funding window and slot
    timing are set **per scenario** (6.1, example A7): **L** excludes it from the mean and
    keeps its slot blocked until `X`; **H** gives it the whole margin lost at `t_last` and
-   releases the slot then. Their share must be at most 5%, else `incomplete_coverage`
-   (examples A2f and A6).
+   releases the slot then. Their share, together with `entry_unavailable` (M5), of the episodes eligible for entry
+   must be at most 5%, else `incomplete_coverage` (examples A2f, A6 and A9).
 6. **Why +30% and 2x.** A 30% stop limits the typical loss of a squeeze and a 50%
    margin leaves a buffer so that the stop is expected to fire before the exchange
    liquidates. The values are chosen once, by that purpose and not by any price, and
@@ -436,6 +503,13 @@ reserved capital. The portfolio report shows the worst case that occurred.
   slot is released at `actual_exit` (example A3); for an `unresolved` episode at `X` in L
   (blocked) and at `t_last` in H (example A7). `k` is computed on planned holds; early
   exits only free a slot sooner.
+- **Funds check before every entry.** An entry needs its margin plus the entry fee,
+  `0.5 * N + phi * q * F_e`, from **available cash**: `C` plus the net pnl already
+  **realised** (losses included) by closed episodes in that scenario, minus the margin
+  held by open positions. Unrealised pnl is not counted. If the cash is below the
+  requirement the entry is **`skipped_insufficient_funds`**: no reduction of size, no
+  top-up, counted with its reason. The check is made **in L and in H separately**, with
+  that scenario's realised pnl (example A7b).
 - **Order-size grid for costs:** order notional `N` of **USD 50 / 250 / 500 / 1,000**.
   The primary economics is at **USD 50** (the registered start); the other sizes show
   capacity and decide nothing except the scale-up claim (section 6.3).
@@ -495,7 +569,7 @@ section has to assume an exit. `F_x` is the fill of section 6.2; `margin = 0.5 *
 
 `F_last` is the last trade price before the event. A liquidation or a margin-loss
 scenario charges no separate exit fee: the isolated margin already holds the closing-fee
-reserve, and the loss is the whole margin. Pinned by examples A1 to A7 in Appendix A.
+reserve, and the loss is the whole margin. Pinned by examples A1 to A9 in Appendix A.
 
 **Reading the margin-loss rows** (liquidation, event in H, `unresolved` in H):
 
@@ -600,9 +674,10 @@ skipped and its reason recorded, while the per-episode statistics of section 7 u
 episode. The portfolio, and so `roc_annual`, is **computed separately in L and in H**: an
 `unresolved` episode blocks its slot until `X` in L and frees it at `t_last` in H (6.1,
 example A7), so the entry sets can differ and both figures are reported. A result must
-exceed 5% a year **in both scenarios**, L and H (section 6.2). At about 263 episodes
-and `k = 8` the hurdle alone needs only about 15 bps mean net per episode
-(`0.05 / (263 / 8 / 10,000)`), far below the statistical bar of section 7. The hurdle
+exceed 5% a year **in both scenarios**, L and H (section 6.2), **on `net` and on `exec_net`**
+(7.3, example A8). At about 205 episodes
+and `k = 8` the hurdle alone needs only about 20 bps mean net per episode
+(`0.05 / (205 / 8 / 10,000)`), far below the statistical bar of section 7. The hurdle
 is a second guard, not the binding one. The report also shows the money in dollars for
 `C` of USD 50 (one slot), 250, 3,000 and 5,000, so the scale of the prize is visible.
 
@@ -631,8 +706,8 @@ alt over a week.
 independence)`. The effective sample size is `n_eff = n_resolved / DEFF`. Both are
   reported with their inputs.
 - **Regime view:** the same statistics by half-year and by a market-state split fixed
-  now (BTCUSDT's 30-day return at `E`: above or below its median in the window), as
-  diagnostics. A result that exists only in one regime is not general.
+  now (BTCUSDT's 30-day return at `E`: above or below its median in the window, read only
+  from data dated inside the window, lookback cut of section 2), as diagnostics. A result that exists only in one regime is not general.
 
 ### 7.3 Market-adjusted return and the six-part decomposition
 
@@ -644,8 +719,8 @@ net_adj_bps = net_bps + 10,000 * R_bench       (R_bench over [E, t_exit]; a hedg
 ```
 
 for two benchmarks: BTCUSDT, and the **median of a pool of the 20 most liquid linear
-USDT perps** (by trailing 30-day turnover as known before `E`, excluding the instrument
-itself; point in time). The pool rule is fixed now, its members are computed at read
+USDT perps** (by trailing 30-day turnover as known before `E` and dated at or after the window
+start, excluding the instrument itself; point in time; lookback cut of section 2). The pool rule is fixed now, its members are computed at read
 time from data older than `E`. Adjustment is a **diagnostic hedge, not a tradable
 position**, as in the HYP-036 read. A pooled cross-sectional slope `beta_hat` of
 episode return on the benchmark return, over all episodes, is also reported (cluster
@@ -688,13 +763,24 @@ stop-fill price result `q * (F_e - F_x)` in that scenario (`F_x` of 6.2). An `un
 episode exists in H only (in L it is excluded, 5.3 item 5). The identity then reads `net = EVT + FND - FEE` for it and still holds
 exactly; the test checks it for every episode and every scenario (examples A2g and A4b).
 
-The market-adjusted net used by the guards, `net_adj`, uses the interval `[E, t_exit]` over
-which the short was actually open. A positive result that is all `M`, or all `FND`, is
-not a new-perp effect, and a positive result carried only by `EVT` is not one either: **a
-non-executable last-trade gain must never be the reason for a pass.** The report states
-which part carries the sign, gives the **number of `no_reference_exit` episodes and the
-share of the total net they contribute**, by scenario, and a guard (section 8) tests
-the net with every positive `EVT` set to zero. The
+The market-adjusted net used by the guards, `net_adj`, uses the interval over which the
+short was actually open: `[E, t_exit]`, and for an `unresolved` episode **in H only**
+`[E, t_last]`, the same end as its whole-margin loss (an unresolved episode has no actual
+exit and is excluded in L; `M` and `S` are already zero for it, so only `net_adj` uses this
+interval, example A6). A positive result that is all `M`, or all `FND`, is not a new-perp
+effect, and a positive result carried only by `EVT` is not one either: **a non-executable
+last-trade gain must never be the reason for a pass.**
+
+**`exec_net`.** For a `no_reference_exit` episode
+`exec_net_usd = net_usd - max(price_usd, 0)`, that is the net with its positive `EVT`
+set to zero (a negative `EVT` stays); for every other episode `exec_net = net`.
+**Every mandatory condition is evaluated on `net` and on `exec_net`, in L and in H**: the
+5% `roc_annual` barrier of the slot-limited portfolio (6.4), the 90% bootstrap lower
+bound, the removal of the top 5 episodes and the top 5 weeks, the sign in both halves of
+the year, and the market-adjusted guard (`net_adj` built from `exec_net` as well). A pass
+needs all of them on both (example A8). The report also states which part carries the
+sign, gives the **number of `no_reference_exit` episodes and the share of the total net
+they contribute**, by scenario. The
 portfolio report (slot occupancy released at `actual_exit`, every skip with its reason,
 daily PnL on `C`, drawdown, losing streaks, worst simultaneous stop-out) is mandatory
 next to the per-episode net.
@@ -718,10 +804,13 @@ next to the per-episode net.
 |          220 |    1,500 |      283 |      347 |      448 |      567 |
 |          220 |    2,000 |      378 |      463 |      597 |      756 |
 |          220 |    2,500 |      472 |      578 |      747 |      944 |
+|          205 |    1,500 |      293 |      359 |      464 |      587 |
+|          205 |    2,000 |      391 |      479 |      618 |      782 |
+|          205 |    2,500 |      489 |      599 |      773 |      978 |
 |          180 |    2,000 |      418 |      511 |      660 |      835 |
 
-- **Reading the table.** On about 220 episodes an effect below roughly 3% to 6% net per
-  weekly trade is not detectable, and it is a **large** effect to find in an open
+- **Reading the table.** On about 205 episodes (the planning number after the lookback cut) an effect below
+  roughly 3% to 6% net per weekly trade is not detectable, and it is a **large** effect to find in an open
   market. The study may well end at the power gate. That is an answer, and a cheap one.
 - **Calibration before any outcome (stage 3), dispersion only.** In the style of the
   HYP-037 calibration: for each resolved launch the return over `[T0 + 1 d, E)` (the
@@ -734,12 +823,16 @@ next to the per-episode net.
 - **Power gate (fixed now).** The calibrated MDE must be **at most 400 bps** of net per
   episode at the resolved `n`, with `DEFF` from the largest of the block lengths 2, 4 and
   8 (never the favorable one). Above it: stop `insufficient_power`, and **no return is
-  read**. At `n = 220` this needs `SD * sqrt(DEFF)` of about 2,100 bps or less. The 400
+  read**. At `n = 205` this needs `SD * sqrt(DEFF)` of about 2,050 bps or less. The 400
   bps is a planning limit, chosen as an effect that would be material against costs and
   still believable; it is question Q5.
 - **Evidence floor.** At least **100 resolved episodes** (the program default) and at
-  least **26 ISO weeks** with a resolved episode. No exception is requested. If fewer
-  remain after M1 to M3, the stop is `insufficient_events`, not a smaller test.
+  least **26 ISO weeks** with a resolved episode, counted as `n_primary` after the
+  lookback cut, `funding_uncovered` and the identity statuses (section 2). No exception is
+  requested. If fewer remain after the lookback cut or M1 to M4, the stop is
+  `insufficient_events`, not a smaller test and not a shortened lookback. About 17
+  launches are expected to be lookback-censored; the planning number of 205 stays well
+  above 100, but the true count is a metadata fact of stage 1.
 - **Guards from the program plan, rule 3:** the result must survive removal of the top 5
   episodes, the top 5 weeks, and hold in both halves of the year.
 
@@ -748,18 +841,18 @@ next to the per-episode net.
 Checked in this order. The first that applies ends the study at that stage. Stages 1
 to 3 read no return.
 
-| Order | Code                       | Condition                                                                                                                                                                                                                                                                                                                                                 | Stage |
-| ----- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
-| 1     | `not_reconstructible`      | M1 fails (`launch_time_unverified`), or the lifecycle of a launch cannot be rebuilt from native data for more than 15% of episodes                                                                                                                                                                                                                        | 1     |
-| 2     | `incomplete_coverage`      | M2, M4 or M5 fails (bars, mark bars and funding; **order-book coverage is not a gate**), or more than 5% of episodes are `unresolved` after `E` (an end of archive without a confirming source dated at or before the first missing minute counts here)                                                                                                   | 1, 4  |
-| 3     | `identity_unresolved`      | M3 fails                                                                                                                                                                                                                                                                                                                                                  | 1     |
-| 4     | `insufficient_events`      | fewer than 100 resolved episodes, or fewer than 26 weeks, after the stages above; at stage 4 the same floor is applied **to each scenario's own cohort** (L leaves `unresolved` episodes out, so its count can be smaller than H's), and a scenario below it has no result (the map below)                                                                | 1, 4  |
-| 5     | `capital_infeasible`       | M6 fails, or the order cannot be opened within `C` (minimum order, quantity step, risk limit, or no depth at USD 50 **at entry** for more than 20% of episodes; depth at exit never removes an episode)                                                                                                                                                   | 1     |
-| 6     | `insufficient_power`       | calibrated MDE above 400 bps (7.4), returns unread                                                                                                                                                                                                                                                                                                        | 3     |
-| 7     | `negative_net_after_costs` | the V1 cluster-mean net is at or below zero in **both** scenarios L and H (map below), on at least the evidence floor in each. A mature negative is a **fail under the assumed costs** and is not masked by thin diversity; it is not proof that no edge exists                                                                                           | 4     |
-| 8     | `scenario_dependent`       | the sign of the V1 cluster-mean net **differs between L and H**, in either direction (positive means above zero; zero counts as not positive). Neither a pass nor a fail                                                                                                                                                                                  | 4     |
-| 9     | `positive_not_robust`      | net is above zero in both, but a guard fails in L or in H: market-adjusted net not positive for both benchmarks; a top-5 removal or half-year flips the sign; the 90% bound is not above zero; `roc_annual` is not above 5%; or the sign comes only from `M`, `FND` or a positive `EVT` (the net with every positive `EVT` set to zero is not above zero) | 4     |
-| 10    | `lab_positive_hypothesis`  | all of the above hold in both L and H                                                                                                                                                                                                                                                                                                                     | 4     |
+| Order | Code                       | Condition                                                                                                                                                                                                                                                                                                                                       | Stage |
+| ----- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
+| 1     | `not_reconstructible`      | M1 fails (`launch_time_unverified`), or the lifecycle of a launch cannot be rebuilt from native data for more than 15% of episodes                                                                                                                                                                                                              | 1     |
+| 2     | `incomplete_coverage`      | M2, M4 or M5 fails (bars, mark bars and funding; **order-book coverage is not a gate**), or more than 5% of the episodes eligible for entry are `unresolved` after `E` or `entry_unavailable` (an end of archive without a confirming source dated at or before the first missing minute counts here; `funding_uncovered` is gated at 5% by M4) | 1, 4  |
+| 3     | `identity_unresolved`      | M3 fails                                                                                                                                                                                                                                                                                                                                        | 1     |
+| 4     | `insufficient_events`      | fewer than 100 resolved episodes, or fewer than 26 weeks, after the stages above and after the lookback cut (`n_primary`, section 2); at stage 4 the same floor is applied **to each scenario's own cohort** (L leaves `unresolved` episodes out, so its count can be smaller than H's), and a scenario below it has no result (the map below)  | 1, 4  |
+| 5     | `capital_infeasible`       | M6 fails, or the order cannot be opened within `C` (minimum order, quantity step, risk limit, or no depth at USD 50 **at entry** for more than 20% of episodes; depth at exit never removes an episode)                                                                                                                                         | 1     |
+| 6     | `insufficient_power`       | calibrated MDE above 400 bps (7.4), returns unread                                                                                                                                                                                                                                                                                              | 3     |
+| 7     | `negative_net_after_costs` | the V1 cluster-mean net is at or below zero in **both** scenarios L and H (map below), on at least the evidence floor in each. A mature negative is a **fail under the assumed costs** and is not masked by thin diversity; it is not proof that no edge exists                                                                                 | 4     |
+| 8     | `scenario_dependent`       | the sign of the V1 cluster-mean net **differs between L and H**, in either direction (positive means above zero; zero counts as not positive). Neither a pass nor a fail                                                                                                                                                                        | 4     |
+| 9     | `positive_not_robust`      | net is above zero in both, but a guard fails in L or in H, on `net` or on `exec_net` (7.3): market-adjusted net not positive for both benchmarks; a top-5 removal or half-year flips the sign; the 90% bound is not above zero; `roc_annual` is not above 5%; or the sign comes only from `M`, `FND` or a positive `EVT`                        | 4     |
+| 10    | `lab_positive_hypothesis`  | all of the above hold in both L and H, on `net` and on `exec_net`                                                                                                                                                                                                                                                                               | 4     |
 
 **Sign map of the V1 cluster-mean net (stage 4).** Every combination has one
 verdict. "Above zero" is strict; **zero is not positive**. A scenario with no result is
@@ -909,7 +1002,32 @@ nothing):
 
 ## 13. Revisions, and open design questions for the colleague
 
-### 13.0 Revision 7: the colleague's third read (three problems)
+### 13.0 Revision 8: the colleague's full pass (six problems and a sync note)
+
+All were checked against the text and were real. A lookback of 30 days from the earliest
+`V1` entry (2024-10-08) starts on 2024-09-08, inside the discarded dates.
+
+1. **Lookback outside the window (2, 3, 7.2, 7.3, 7.4, 8).** No feature, benchmark or pool
+   membership reads data dated before the window start; such an episode is
+   `lookback_censored` (counted, not in the primary sample) and the lookback is never
+   shortened. It does not widen data access. The planned sample is recomputed with a formula
+   and a planning guess only (about 17 censored; about 205 resolved; MDE table row added);
+   a count below the floor is `insufficient_events`.
+2. **Funds (5.4, A7, A7b).** An entry needs margin plus the entry fee from cash that
+   includes realised losses, else `skipped_insufficient_funds`, per scenario. A7 was wrong
+   under this rule (W could not afford the entry in H) and was redone with `k = 2`;
+   A7b shows the funds check with the original toy.
+3. **Funding coverage (M4).** A selection condition decided from metadata, status
+   `funding_uncovered`, never entered; unknown funding is never zero; the survivorship limit
+   is stated.
+4. **`exec_net` (7.3, 8, 6.4).** Every mandatory condition is evaluated on `net` and on
+   `exec_net` (positive `EVT` set to zero), in L and H (example A8).
+5. **Missing entry bar (3, M5, A9).** `entry_unavailable`, decided from bar existence only,
+   never scored, counted in the 5% gate.
+6. **Benchmark end of an unresolved episode (5.2, 7.3, A6).** In H only, `t_last`; in L none.
+7. **Sync (Q17).** The first-exit wording.
+
+#### Revision 7: the colleague's third read (three problems)
 
 All three were checked against the text and were real.
 
@@ -1133,17 +1251,28 @@ passes and with the owner's separate go (sections 2, 9, 10 and 11).
     should the stage 2 contract read the symbol's risk-limit tiers where they are
     available?
 
-16. **Q16. Worked examples.** Are A1 to A7 (with A2e to A2h and A4b) the right pins, and which further cases should
+16. **Q16. Worked examples.** Are A1 to A9 (with A2e to A2h, A4b and A7b) the right pins, and which further cases should
     become fixtures (for example a status event during a settlement bar, or a stop at
     the entry bar)?
 
 17. **Q17. Strictness of the gap rule.** One missing minute anywhere between the entry bar
-    and the planned-exit bar makes the episode `unresolved` (5.3 item 3), so the 5% gate
+    and the first exit (the planned-exit bar when there is no earlier exit) makes the
+    episode `unresolved` (5.3 item 3), so the 5% gate
     measures bar coverage at the level of single minutes. My position: keep it, because a
     single missing minute can hide the trigger bar and a milder rule would need a
     judgement made after seeing prices; the share is measured at stage 1, before any
     return, and a zero-trade minute is explicitly not missing. Do you want a tolerated
     gap length?
+
+18. **Q18. Lookback, funding span and funds.** (a) Each variant is cut by its own age
+    (`V1` from 2024-10-24, `V2` from 2024-10-28, `V3` from 2024-10-17) and the shape
+    across age is read on the common set; would you rather use one set (the latest cut,
+    2024-10-28) for all three? (b) Funding coverage is required over days 3 to 21 after
+    `T0`, the union of the variants' paths, so one set stays eligible for all; is that the
+    right span? (c) The funds check counts realised pnl only; should unrealised losses
+    reduce the cash as well? My positions: (a) own cuts, shape on the common set, (b)
+    yes, (c) realised only, because isolated margin already caps each position at its own
+    margin.
 
 ## 14. Not in this document
 
@@ -1337,8 +1466,14 @@ announcement exists.
   9.0, 48 hours after `E`: the settlements at hours 8, 16, 24, 32 and 40 count (**5**,
   marks of 100); the one at hour 48 has no covered mark bar and is not counted (strict
   `s < t_exit`). `-500 + 0.0001 * 10 * 100 * 5 - 1.1 = -500.6` USD, **-5,006 bps**.
+- **Benchmark interval (section 7.3).** An `unresolved` episode has no actual exit; in H
+  its market-adjusted interval ends at `t_last` (day 9.0), the same time as the loss. It
+  has no reference exit, so `M = S = 0` and only `net_adj` uses the interval: with BTCUSDT
+  at `R_bench = -0.02` over `[E, t_last]`, `net_adj = -5,006 + 10,000 * (-0.02) = -5,206`
+  bps. In L the episode is excluded and has no interval.
 - **Gate.** With 200 episodes the limit is 10 unresolved; 12 unresolved is 6% and ends
-  the study as `incomplete_coverage` (section 8, order 2).
+  the study as `incomplete_coverage` (section 8, order 2); `entry_unavailable` episodes
+  count in the same share (A9).
 - **Contrast, event after the gap began.** The first missing minute starts at day 9.0. If
   `instruments-info` showed `Closed` with a delivery time at day **9.5**, the event is
   dated **after** the gap began, so it does not rescue the episode: it **remains
@@ -1350,21 +1485,60 @@ announcement exists.
 
 ### A7. An unresolved episode in the portfolio (sections 5.4, 6.1 and 6.4)
 
-A toy portfolio with `C` = USD 1,000, `k = 1`, `N = 1,000` (`q = 10` at 100), window of 14
-days. **U** enters at day 2.0 (`X_U` = day 9.0); its trade and mark bars are present until
-day 2.5 (`t_last`, 12 hours after entry) and missing after, with no confirmed event:
-`unresolved`. **W** has a signal at day 3.0 (planned exit day 10.0) and its bars are those
-of A5 (flat 100, no book, 20 settlements at `r = 0.00015`).
+A toy portfolio with `C` = USD 1,000, **`k = 2`**, `N = 500` (`q = 5` at 100, margin 250,
+entry fee `0.0011 * 5 * 100 = 0.55`), window of 14 days. **U** enters at day 2.0 in slot 1
+(`X_U` = day 9.0); its trade and mark bars are present until day 2.5 (`t_last`, 12 hours
+after entry) and missing after, with no confirmed event: `unresolved`. **V** enters at day
+2.2 in slot 2 and **W** has a signal at day 3.0; V and W have the bars of A5 (flat 100, no
+book, 20 settlements at `r = 0.00015`), so with `q = 5` each gives **-0.55** USD in L and
+**+0.40** USD in H (half of A5: price `-0.95` and `0`, funding `+1.5`, fee `1.10`).
 
-- **L portfolio.** U has no pnl but its slot stays **blocked until day 9.0**. W's signal at
-  day 3.0 finds no free slot and is skipped, reason `slot_blocked_by_unresolved`. The
-  entered set is empty: in this toy L has no portfolio result (section 8, no result).
-- **H portfolio.** U loses its whole margin at `t_last` and frees the slot then. Funding:
-  one settlement counts (hour 8; the next, hour 16, is after `t_last`), marks of 100,
-  `r = 0.0001`: `+0.1`. `net_U = -500 + 0.1 - 1.1 = -501.0` USD, **-5,010 bps**. W finds
-  the free slot at day 3.0 and enters; its H result is A5's **+0.80** USD. Entered set
-  `{U, W}`, `sum net = -500.2` USD, `roc_annual = -500.2 / 1,000 * 365 / 14 = -13.04`,
-  that is **-1,304% a year**.
-- **Why both figures.** The entered sets differ (`{}` against `{U, W}`), so one portfolio
-  cannot stand for both scenarios: each is computed on its own and both `roc_annual`
-  figures are reported.
+- **L portfolio.** U has no pnl but its slot stays **blocked until day 9.0**; V holds slot 2. W's signal at day 3.0 finds no free slot: skipped, reason
+  `slot_blocked_by_unresolved`. Entered set `{V}`, `sum net = -0.55` USD,
+  `roc_annual = -0.55 / 1,000 * 365 / 14 = -0.0143`, **-1.43% a year**.
+- **H portfolio.** U loses its whole margin at `t_last` and frees slot 1 then. Funding: one
+  settlement counts (hour 8; the next is after `t_last`), marks of 100, `r = 0.0001`:
+  `0.0001 * 5 * 100 = +0.05`. `net_U = -250 + 0.05 - 0.55 = -250.50` USD, **-5,010 bps**.
+  Cash at W's entry: `1,000 - 250.50` (realised) `- 250` (V's margin held) `= 499.5`,
+  at least the `250.55` needed, so W enters and gives `+0.40`. Entered set `{U, V, W}`,
+  `sum net = -250.50 + 0.40 + 0.40 = -249.70` USD,
+  `roc_annual = -249.70 / 1,000 * 365 / 14 = -6.51`, that is **-651% a year**.
+- **Why both figures.** The entered sets differ (`{V}` against `{U, V, W}`), so one
+  portfolio cannot stand for both scenarios: each is computed on its own and both
+  `roc_annual` figures are reported.
+
+### A7b. The funds check (section 5.4)
+
+The first toy again: `C` = USD 1,000, **`k = 1`**, `N = 1,000` (`q = 10`, margin 500, entry
+fee 1.1). **U** enters at day 2.0 and is `unresolved` from day 2.5; **W** has a signal at
+day 3.0.
+
+- **H.** U loses its whole margin at `t_last`: funding `0.0001 * 10 * 100 * 1 = +0.1`,
+  `net_U = -500 + 0.1 - 1.1 = -501.0` USD, **-5,010 bps**. Cash after it
+  `1,000 - 501.0 = 499.0`, below the `500 + 1.1 = 501.1` that W needs: W is
+  **`skipped_insufficient_funds`**, size is not reduced and nothing is topped up. Entered
+  set `{U}`, `roc_annual = -501.0 / 1,000 * 365 / 14 = -13.06`, that is **-1,306% a year**.
+- **L.** U has no pnl and keeps the slot until day 9.0; W is skipped for the slot
+  (`slot_blocked_by_unresolved`). Entered set empty: no portfolio result for L in this toy.
+- W is skipped in both, for different reasons, and the reason is recorded per scenario.
+
+### A8. A pass carried by a non-executable gain (sections 7.3 and 8)
+
+A portfolio with `C` = USD 1,000 over a window of 365 days in scenario L. `sum net_usd =
++60.0`, of which **+20.0** is the positive `EVT` of confirmed-event episodes (non-executable
+last-trade gains), so `sum exec_net_usd = 60.0 - 20.0 = +40.0`.
+
+- `roc_annual` on `net` is `60.0 / 1,000 = 6.0%`, above the 5% barrier. On `exec_net` it
+  is `40.0 / 1,000 = 4.0%`: **2 points come from the non-executable gain, 4 points do not**.
+- The 5% barrier **fails on `exec_net`**, so the verdict is **`positive_not_robust`** even
+  though `net` passes (section 8, order 9). The same two-sided evaluation applies to the
+  90% bound, the top-5 removals, the half-year signs and the market-adjusted guard.
+
+### A9. A missing entry bar (sections 3 and 4, M5)
+
+A launch reaches `E = 12:35:00` on day 7. The trade bar that starts at `E` is **missing**
+from the bar listing (existence only), while the bars from `12:36:00` on exist. The episode
+is **`entry_unavailable`**: no `P_e`, `F_e`, `q`, fee or margin is defined, no position is
+modelled, no slot is taken, nothing is scored and it is not in the denominator of net. It
+counts in the 5% gate: with 200 eligible episodes, 4 `entry_unavailable` plus 7
+`unresolved` is 11, that is 5.5%, above 5%, so the study ends as `incomplete_coverage`.
