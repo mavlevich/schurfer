@@ -369,13 +369,19 @@ Read at: `d5327b1` (`origin/main`), PR #606 (`da22081`), PR #607 (`e3f323d`), PR
   working planning capital (`5%` annual benchmark = `USD 250/year` on total allocated
   capital, without calling that benchmark risk-free). Live drawdown limits remain to be
   set before Stage 7.
-- **`plan.md` updated to Draft v3:** Aligned with PR #606/#607 (`stop_direction_a`; `A2`
-  and `A4d` `lab_only`, pending final close/continue confirmation), PR #608 (`45084ad`,
+- **`plan.md` updated to Draft v3:** Aligned with PR #606/#607 (`stop_direction_a`; owner
+  decided `2026-11-17` not to pursue `A2`/`A4d` `lab_only` in this cycle), PR #608 (`45084ad`,
   `I25` Stages 1–3 data recoverability/power checks before reading returns, per-fill
   fees, and stop/liquidation modeling without a guaranteed loss cap), Stage 2A rules
   (`31 bps` non-commission filter only; verify HL S3 archive availability and spend cap),
   explicit `2027-02-11` stop rule (`program-plan-2026-11.md`), `I35`/`I36`, and `I43`'s
   1–2 week data-slice wording.
+- **`I44` (`CryptoAttack` / `CEXTrack`) moved to `parked` (`2026-11-17`):** Owner decided
+  not to reopen the `external Telegram channels are reference-only` rule: without a paid
+  subscription only an incomplete/filtered stream is accessible with extra external lag,
+  and equivalent CEX burst shapes (`"$X in N min = Y% of 24h volume"`) were already
+  tested directly on exchange data (`docs/analysis/momentum_flow_volume_burst_screen.sql`,
+  `HYP-016`, `HYP-030` / `bybit-burst-decay-v1`).
 - **Transferred `P-03` (intraday BTC/ETH) as [`I45`](ideas.md):** Added as `unscreened`,
   preserving separation from `I6` daily/multi-day BTC swings. Untracked local files on
   `docs/improvement-roadmap-v3` remain untouched pending explicit owner deletion ok.
@@ -386,4 +392,4 @@ Read at: `d5327b1` (`origin/main`), PR #606 (`da22081`), PR #607 (`e3f323d`), PR
   - **Two operational items flagged (no prod changes made):**
     1. `schurfer-cold-bar-export.service` (`03:32:29 UTC`): `Result=exit-code`, `ExecMainStatus=2` (`ValueError: 2026-11-11 has no rows in timeseries.bybit_momentum_bars_1m; refusing to export`) — expected fallout from stopping Group 1 on 2026-11-10.
     2. `schurfer-offsite-backup-health.service` (`07:01:57 UTC`): `Result=exit-code`, `ExecMainStatus=1` (root-owned unit logs not readable by `deploy` without `sudo`; requires separate owner/root inspection via `make prod-offsite-backup-health`).
-- **Open owner decisions remaining:** final closure of `A2`/`A4d` (`lab_only`) and choice on `I44` (`needs_rule_change` hold vs narrow single-channel rule amendment).
+- **Resolved owner decisions (`2026-11-17`):** working capital set to `USD 5,000`, `A2`/`A4d` (`lab_only`) parked for this cycle, and `I44` parked without reopening the external-channel rule.
