@@ -296,6 +296,36 @@ undefined, so **no position was modelled**, the slot is never taken, and the epi
 only, not from prices**, and it is counted in the M5 coverage share and in the 5% gate of
 section 8 (example A9).
 
+**Amendment 1 (2026-11-17, stage 1 contract, with the owner's and the colleague's
+decisions).** The stage 1 evidence for M4, M5 and M6 is fixed as follows. It deviates from the
+text of the M4 to M6 table above, which is why it is written here and not left to the request
+list.
+
+- **M5 at stage 1** proves (a) the 1-minute trade bar that starts at `E` exists (else
+  `entry_unavailable`), and (b) **hourly** trade and mark-price series are **continuous** over
+  the V1 path, from the hour of `E` to the hour before `X`: a missing hour inside the path is a
+  gap, a series that ends early is a gap unless a catalog delivery time at or before the first
+  missing hour confirms the end, and a page that may be cut by its row limit proves nothing.
+  **Continuity at minute level over the whole path is proven at stage 4**, when those bars are
+  fetched; the gap rule of 5.3 is unchanged. Stage 1 does not request minute bars.
+- **M4 at stage 1** is a **coarse check, not proof**: finishing the pagination is not enough,
+  and coverage passes only if the funding timestamps form one chain with no step above 8 hours,
+  start at most one step after the span start and end at most one step before its end (or the
+  catalog delivered the symbol). It is labelled "no gap longer than 8 h". It does not show that
+  every settlement is present when the real interval is shorter than 8 hours, and the catalog
+  `fundingInterval` is a current snapshot, so the report counts those launches apart.
+- **M6 at stage 1 is a partial check** on catalog fields only. It can fail an order, and it
+  never shows that an order opens: no price, quantity rounding, risk limit or depth is checked.
+- **Not read at stage 1:** order-book existence (item 7 stays a later decision), the spot
+  catalog, announcements, and the first bar with volume: `T0` is the first public trade.
+- **M2, second share** is assessed only for archive directories that are absent from the catalog
+  and whose last file is inside the window. A directory whose date is unknown or later is not
+  kept, because the cut forbids recording a launch date of the test year. It is a lower bound
+  and is **never proven**: it can fail the gate, not prove it.
+- **Stage 1 runs as two gos:** metadata only (catalog, archive names, listings, file sizes), then
+  first files, entry bars, hourly series and funding after the owner reviews the manifest of
+  the first. See the [stage 1 request list](new-perp-stage1-request-list-v1.md).
+
 **Order books are not a gate.** Existence and depth of the order-book archive are
 **recorded, not required**: the share of episodes with a book at entry and at exit, at
 each order size, is reported. It decides only which cost source scenario L uses for

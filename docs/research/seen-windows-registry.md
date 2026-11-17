@@ -691,6 +691,54 @@ help-center and API documentation pages (the margin-change notice, the Insurance
 page, the Innovation Zone fee FAQ and the fee-group endpoint page), opened on
 2026-11-16 in the browser pane and by web search. They hold no market value.
 
+## I25 stage 1 registration `new-perp-short-v1`, request list v1 revision 2, 2026-11-17 (pending the owner's go)
+
+[Request list and contract](new-perp-stage1-request-list-v1.md), frozen as
+[`contract.json`](evidence/new-perp-stage1-v1/contract.json). This row, the code, the
+contract JSON and the request list must be in main before the first request; **each of the two
+gos needs the owner's go**. **This row records no read: nothing has been fetched.**
+
+**Level: coverage, discovery year only (2024-10-01 to 2025-09-30).**
+
+- **Go 1, metadata only** (547 planned requests, at most 761, attempt cap 1,000, 300 MiB):
+  Bybit `instruments-info` linear catalog fields, the trade-archive root listing and
+  per-symbol file listings, and HEAD requests (status and size, no body) for the first daily
+  file of each launch.
+- **Go 2, after the owner reviews the go 1 manifest** (1,135 planned requests, at most 2,400,
+  attempt cap 1,700, 6.5 GiB; the combined byte ceiling of both gos is about 6.8 GiB): the first daily trade file of each launch (column 1, the trade
+  timestamp, only), one entry minute bar, hourly trade and mark-price series (start times and
+  runs of missing hours only) and funding history (timestamps and page boundaries only). Go 2
+  also contains the mark-price, funding and bar coverage reads that protocol section 11 item 2
+  names, and it cannot start without a finished go 1 and the manifest hash.
+
+Every response also holds prices or rates. They are discarded unparsed and no price, rate,
+volume or return is stored or reported. Hashes: `request_list_sha256`
+`023b9863d1af73dbeaff5cc7cf64d0e77f3c0fdba295e4158f7c0e54982d6fe3`, go 1
+`5f4d84d3d4294276fa2f91c144e8ab0f12999bd734642986c1b4ab91d213ece1`, go 2
+`3680644f7bc4c76aca1c754d6f1d1367a78d2259cab2beaf62e51677ebe50812`. The order-book archive and
+the spot catalog are **not** part of this registration; each is a later decision.
+
+**Cut.** Nothing dated from 2025-10-01 is read, recorded or counted: a catalog row launched from
+the cut is skipped before any other field is read, listing names from the cut are dropped
+uncounted, no total row count is stored, and an archive directory is kept only if it is absent
+from the catalog and its modification date is proven inside the window (an unknown date is not
+kept). No span of any series ends after 2025-09-30T23:59:59.999Z. This is how the HYP-031
+test year (2025-10-01 to 2026-09-28) and the HYP-012 v2 blind window (from 2026-09-29) stay
+unread and uncounted at metadata level too. A launch whose path would cross the cut is
+`window_censored` and gets no bar, mark or funding request.
+
+**Holdout.** Not requested. Catalog rows launched before 2024-10-01 are reduced to symbol, base
+and, only if it falls inside the window, a delivery date, kept as closed service material
+outside Git for `relist` and `multiplier_ambiguous` only. No date or count of them is
+published. Stage 1b stays a separate go.
+
+**Recorded after each go (not yet).** An aggregate report of counts, shares and stop codes (no
+symbol, no price), the run's `request_list_sha256`, the go hash and the code revision. The
+receipts stay sealed outside Git. After go 2 the discovery-year launches count as read at
+coverage level for this trigger, and nothing at outcome level. Stage 3 and stage 4 reads need
+their own request lists and rows. M5 at stage 1 proves the entry minute bar and hourly
+continuity only; minute-level continuity is proven at stage 4 (protocol Amendment 1).
+
 ## Stage 2C paper screens `stage-2c-paper-screens-v1`, 2026-11-17
 
 [Paper screens](stage-2c-paper-screens-v1.md) of I36, I35, I26, I27 and I45 at the
