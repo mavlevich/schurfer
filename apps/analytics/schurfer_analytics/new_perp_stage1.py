@@ -92,6 +92,11 @@ BACKOFF_S: Final = (10, 30, 60)
 MAX_RETRY_AFTER_S: Final = 300
 SPACING_S: Final = 1.0
 MAX_SPACING_S: Final = 8.0  # after an HTTP 429 the spacing doubles up to this
+# The last block. The transport (httpcore) reads at most 64 KiB per call, so no chunk of a
+# response is larger than this. It is a RESERVE inside every byte budget: a request starts only
+# if its response cap plus this reserve still fits in what remains of the step and class budget,
+# so the bytes received can never exceed a stated ceiling.
+READ_RESERVE_BYTES: Final = 64 * 1024
 FUNDING_PAGE_LIMIT: Final = 200
 FUNDING_MAX_PAGES: Final = 4
 PER_FILE_CAP_BYTES: Final = 64 * 1024 * 1024
@@ -167,7 +172,7 @@ CLASSES: Final[tuple[ClassSpec, ...]] = (
         1,
         2,
         4 * MIB,
-        8 * MIB,
+        9 * MIB,
         note="reduced in memory against the whole catalog; an unknown date is not kept; "
         "max 2 because an interrupted phase 0 repeats once",
     ),
@@ -1181,6 +1186,10 @@ def build_contract() -> dict[str, Any]:
             "funding_page_limit": FUNDING_PAGE_LIMIT,
             "funding_max_pages": FUNDING_MAX_PAGES,
             "funding_max_step_ms": FUNDING_MAX_STEP_MS,
+            "read_reserve_bytes": READ_RESERVE_BYTES,
+            "byte_rule": "a request starts only if used + response cap + read reserve fits the "
+            "step budget and the class budget; every received byte is accounted; a declared "
+            "length over the cap reads nothing; the transport reads at most the reserve per call",
         },
         "thresholds": THRESHOLDS,
         "stop_codes": list(STOP_CODES),
@@ -1237,7 +1246,7 @@ def ledger_totals(
     for a in attempts:
         if classes is not None and a["cls"] not in classes:
             continue
-        cap = CLASS_BY_ID[a["cls"]].max_response_bytes
+        cap = reserve(CLASS_BY_ID[a["cls"]])  # a crashed send may have received up to this
         by_n[a["cls"]] = by_n.get(a["cls"], 0) + 1
         by_b[a["cls"]] = by_b.get(a["cls"], 0) + done.get(a["seq"], cap)
     return sum(by_n.values()), sum(by_b.values()), by_n, by_b
@@ -1283,6 +1292,11 @@ def classify_status(request: Request, status: int, body: bytes) -> str | None:
         if isinstance(payload, dict) and payload.get("retCode") == RATE_LIMIT_RET_CODE:
             return "error"
     return None
+
+
+def reserve(spec: ClassSpec) -> int:
+    """Bytes a request may add to a budget: its response cap plus the last block."""
+    return spec.max_response_bytes + (READ_RESERVE_BYTES if spec.max_response_bytes else 0)
 
 
 def final_from_receipts(
@@ -1431,13 +1445,12 @@ class Fetcher:
         reason = ""
         if count >= int(limits["max_attempts"]):
             reason = "attempt cap reached"
-        elif used + spec.max_response_bytes > int(limits["max_bytes"]):
+        elif used + reserve(spec) > int(limits["max_bytes"]):
             reason = "byte cap reached"
         elif by_n.get(request.cls, 0) >= spec.max_requests * ATTEMPTS_PER_REQUEST:
             reason = f"{request.cls}: attempts above the class cap"
         elif (
-            spec.max_class_bytes
-            and by_b.get(request.cls, 0) + spec.max_response_bytes > spec.max_class_bytes
+            spec.max_class_bytes and by_b.get(request.cls, 0) + reserve(spec) > spec.max_class_bytes
         ):
             reason = f"{request.cls}: class byte cap reached"
         if reason:
@@ -1508,6 +1521,10 @@ class Fetcher:
             self.receipts.append(disk)
             tries += 1
             outcome = receipt["outcome"]
+            if receipt.get("reserve_exceeded"):
+                reason = f"{request.cls}: a transport chunk was larger than the read reserve"
+                self.record_stop(reason)
+                raise FetchStoppedError(reason)
             if outcome == "forbidden":
                 self.record_stop(f"{request.cls}: HTTP 403")
                 raise FetchStoppedError(f"{request.cls}: HTTP 403, stopped without retry")
@@ -1572,6 +1589,10 @@ class Fetcher:
                         for piece in resp.iter_raw():
                             size += len(piece)
                             sha.update(piece)
+                            if len(piece) > READ_RESERVE_BYTES:
+                                # the transport broke its 64 KiB read: the hard ceiling can no
+                                # longer be guaranteed. The bytes are counted, and the run stops.
+                                receipt["reserve_exceeded"] = True
                             if size > cap:
                                 error = "too_large"
                                 break

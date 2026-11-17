@@ -10,7 +10,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import re
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import httpx
 import pytest
@@ -603,3 +603,95 @@ def test_prior_usage_of_go_1_classes_counts_only_against_go_1(tmp_path: Path) ->
     usage = s1.prior_usage([prior_root])
     assert usage["1"] == {"attempts": 4, "bytes": 4000}
     assert usage["2"] == {"attempts": 0, "bytes": 0}
+
+
+# The step byte ceiling is hard
+
+
+def many_bar_requests(count: int) -> list[s1.Request]:
+    t0 = ms("2024-11-01T10:00:00")
+    out: list[s1.Request] = []
+    for i in range(count):
+        candidate = {
+            "symbol": f"S{i}USDT",
+            "launch_ms": 1,
+            "t0_ms": t0,
+            "entry_ms": t0 + 7 * 86_400_000,
+            "exit_ms": t0 + 14 * 86_400_000,
+        }
+        out.append(s1.bar_requests([candidate])[0])  # the D3 entry bar of each symbol
+    return out
+
+
+def small_step_contract(max_bytes: int) -> dict[str, Any]:
+    contract = json.loads(json.dumps(s1.build_contract()))
+    contract["go_limits"]["2"]["max_bytes"] = max_bytes
+    return rehash(contract)
+
+
+def run_until_the_budget_stops(
+    tmp_path: Path, max_bytes: int, streams: list[CountingStream], headers: dict[str, str]
+) -> tuple[int, s1.Fetcher]:
+    """Send D3 requests with the given bodies until the step budget stops the run. Returns the
+    bytes pulled from every stream."""
+    calls = iter(streams)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, headers=headers, stream=next(calls))
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    f = s1.Fetcher(tmp_path / "run", small_step_contract(max_bytes), client, go=2)
+    try:
+        for request in many_bar_requests(len(streams)):
+            f.run_request(request)
+    except s1.BudgetExceededError:
+        pass
+    return sum(stream.pulled for stream in streams), f
+
+
+def test_received_bytes_never_exceed_the_step_ceiling_without_content_length(
+    tmp_path: Path,
+) -> None:
+    """P2 regression: ceiling 1,048,576, received 1,048,577 (and journaled the same)."""
+    ceiling = 1_048_576
+    streams = [CountingStream(80_000, piece=5_000) for _ in range(40)]  # no Content-Length
+    pulled, f = run_until_the_budget_stops(tmp_path, ceiling, streams, {})
+    assert 0 < pulled <= ceiling  # received never exceeds the ceiling
+    assert f.totals()[1] == pulled  # and every received byte is in the journal's account
+    assert "byte cap" in json.loads((tmp_path / "run" / "stop.json").read_text())["reason"]
+
+
+def test_a_declared_length_over_what_remains_reads_nothing_near_the_ceiling(
+    tmp_path: Path,
+) -> None:
+    ceiling = 1_048_576
+    mixed = []
+    for i in range(30):
+        mixed.append(
+            CountingStream(80_000, piece=5_000) if i % 3 == 0 else CountingStream(2_000_000)
+        )
+    declared = {"content-length": "2000000"}
+    pulled, f = run_until_the_budget_stops(tmp_path, ceiling, mixed, declared)
+    assert pulled == 0 and f.totals()[1] == 0  # a declared length over the cap reads nothing
+    # and without a declared length the same bodies still stop at the ceiling
+    fresh = [CountingStream(2_000_000, piece=60_000) for _ in range(40)]
+    pulled2, f2 = run_until_the_budget_stops(tmp_path / "b", ceiling, fresh, {})
+    assert pulled2 <= ceiling and f2.totals()[1] == pulled2
+
+
+def test_a_transport_chunk_over_the_reserve_is_counted_and_stops_the_run(tmp_path: Path) -> None:
+    stream = CountingStream(200_000, piece=200_000)  # one chunk larger than the 64 KiB reserve
+    client = httpx.Client(
+        transport=httpx.MockTransport(lambda r: httpx.Response(200, stream=stream))
+    )
+    f = s1.Fetcher(tmp_path / "run", s1.build_contract(), client, go=2)
+    with pytest.raises(s1.FetchStoppedError, match="larger than the read reserve"):
+        f.run_request(many_bar_requests(1)[0])
+    assert f.totals()[1] == stream.pulled == 200_000  # the overshoot is counted, not hidden
+    assert (tmp_path / "run" / "stop.json").exists()
+
+
+def test_the_reserve_and_the_rule_are_part_of_the_contract() -> None:
+    limits = s1.build_contract()["limits"]
+    assert limits["read_reserve_bytes"] == 65_536 == s1.READ_RESERVE_BYTES
+    assert "used + response cap + read reserve" in limits["byte_rule"]

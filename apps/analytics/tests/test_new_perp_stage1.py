@@ -629,7 +629,7 @@ def test_checked_in_contract_and_request_list_match_the_code() -> None:
     assert "\u2014" not in doc  # no em dash anywhere
 
 
-def test_the_ledger_charges_a_crashed_attempt_its_full_cap() -> None:
+def test_the_ledger_charges_a_crashed_attempt_its_cap_and_reserve() -> None:
     attempts = [
         {"seq": 1, "cls": "D4", "key": "a"},
         {"seq": 2, "cls": "D4", "key": "b"},
@@ -637,4 +637,5 @@ def test_the_ledger_charges_a_crashed_attempt_its_full_cap() -> None:
     receipts = [{"seq": 1, "key": "a", "body_bytes": 1000}]
     count, used, by_n, by_b = s1.ledger_totals(attempts, receipts)
     assert (count, by_n["D4"]) == (2, 2)
-    assert used == 1000 + s1.CLASS_BY_ID["D4"].max_response_bytes == by_b["D4"]
+    # the crashed send is charged its response cap plus the read reserve
+    assert used == 1000 + s1.reserve(s1.CLASS_BY_ID["D4"]) == by_b["D4"]

@@ -27,13 +27,13 @@ for go 1.
 
 ```text
 request_list_sha256 (whole contract, bound into every run) =
-  1d1b7349526d93fd0396e8b6d572ecf761f6a4216161edb564f3bd234388b4c5
+  023b9863d1af73dbeaff5cc7cf64d0e77f3c0fdba295e4158f7c0e54982d6fe3
 go 1 approval hash (go_sha256["1"]) =
-  854eed7e766153792ce4742296570d36314a0d3c5a9a35ac27f36e65adc763ba
+  5f4d84d3d4294276fa2f91c144e8ab0f12999bd734642986c1b4ab91d213ece1
 go 2 approval hash (go_sha256["2"]) =
-  780b7e36d280f21660380f60cf7e5cae2e71b0e4086b072c2c1bc0fedf8673ef
+  3680644f7bc4c76aca1c754d6f1d1367a78d2259cab2beaf62e51677ebe50812
 contract.json file SHA-256 =
-  6f84cd11fbcb8b8e2815da525b6c3e55a121b09f706cb1775d411d02fba94e6e
+  6f77faa0a1e6430767438c6b346857fc4eb17316168c323603b8883dcedac7e4
 ```
 
 Check without a network request:
@@ -48,7 +48,7 @@ uv run python -m schurfer_analytics.new_perp_stage1 write-contract --check
 | 1   | **metadata only**: catalog fields, archive names, per-symbol listings, HEAD sizes. No body   | C1, C3, D1, D2h    | 547              | 761          | 1,000       | 300 MiB  |
 | 2   | first daily files (column 1), one entry bar, hourly series, funding. Needs go 1 and manifest | D2, D3, D4, D5, D6 | 1,135            | 2,400        | 1,700       | 6.5 GiB  |
 
-**Combined byte ceiling of both gos: 300 MiB + 6.5 GiB = 6,956 MiB, about 6.8 GiB.** Planned total 1,682 requests (the protocol's section 10 said about 1,000: that counted
+**Combined byte ceiling of both gos: 300 MiB + 6.5 GiB = 6,956 MiB, about 6.8 GiB. These are hard ceilings: each includes a 64 KiB reserve for the last block (section 4).** Planned total 1,682 requests (the protocol's section 10 said about 1,000: that counted
 listings and first files only). Attempt caps include retries. At 1 second spacing go 1
 takes about 10 minutes and go 2 about 20 minutes plus the first-file transfer.
 
@@ -115,7 +115,7 @@ bytes" the cap of all responses of the class.
 | Go  | Class | Name              | Method and endpoint                                                 | Expected | Max   | Per response | Class bytes |
 | --- | ----- | ----------------- | ------------------------------------------------------------------- | -------- | ----- | ------------ | ----------- |
 | 1   | C1    | `catalog_linear`  | GET `api.bybit.com/v5/market/instruments-info`                      | 3        | 9     | 3 MiB        | 27 MiB      |
-| 1   | C3    | `archive_root`    | GET `public.bybit.com/trading/`                                     | 1        | 2     | 4 MiB        | 8 MiB       |
+| 1   | C3    | `archive_root`    | GET `public.bybit.com/trading/`                                     | 1        | 2     | 4 MiB        | 9 MiB       |
 | 1   | D1    | `archive_listing` | GET `public.bybit.com/trading/{SYMBOL}/`                            | 293      | 450   | 1 MiB        | 256 MiB     |
 | 1   | D2h   | `first_file_head` | HEAD `public.bybit.com/trading/{SYMBOL}/{SYMBOL}{FIRST_DAY}.csv.gz` | 250      | 300   | 0            | 0           |
 | 2   | D2    | `first_file`      | GET `public.bybit.com/trading/{SYMBOL}/{SYMBOL}{FIRST_DAY}.csv.gz`  | 250      | 300   | 64 MiB       | 6,144 MiB   |
@@ -230,13 +230,18 @@ refused, so a parser fix cannot continue an old run: a corrected revision starts
 - A 404 on a listing or a file is a **result** (`absent`). After three failed sends a
   per-launch request is `unavailable`, which the verdict counts as missing evidence, never as
   covered. A phase 0 class that stays unavailable stops the run.
-- **Bounded reads.** Requests ask for `Accept-Encoding: identity`. A declared `Content-Length`
-  over the response cap is `too_large` and **nothing is read**. Otherwise the body is read as
-  the raw transport chunks, not re-chunked, **every received byte is accounted** (counted,
-  hashed and journaled), and the read ends at the first chunk that takes the total over the
-  cap. So what the transport delivered always equals what the journal charges; the overshoot
-  is at most one transport chunk. (Revision 1 trimmed the last block and left the extra bytes
-  out of the account.)
+- **Bounded reads, and a hard byte ceiling.** Requests ask for `Accept-Encoding: identity`. The
+  transport (httpcore) reads at most **64 KiB** per call, so no chunk of a response is larger
+  than that; the contract fixes this as `read_reserve_bytes` = **65,536**. The rule is
+  `used + response cap + read reserve <= budget`, checked before every request against **both**
+  the step budget (300 MiB for go 1, 6.5 GiB for go 2) and the class budget. So the last block
+  is a numeric reserve **inside** every budget, and the bytes received can never exceed the
+  stated ceilings: the 300 MiB and 6.5 GiB are hard ceilings, not targets. A declared
+  `Content-Length` over the response cap reads nothing. Otherwise the raw chunks are read and
+  **every received byte is accounted** (counted, hashed, journaled); the read ends at the first
+  chunk over the response cap, which is at most the reserve beyond it. A chunk larger than the
+  reserve (the transport breaking its 64 KiB read) is counted in full, stops the run and is
+  never hidden. A send that crashed before its receipt is charged its cap plus the reserve.
 - **No cross-revision reuse of pages** (decision Q15). `--prior-root` carries attempts
   and bytes into the budget **per go**: usage of go 2 classes counts against go 2 only and usage
   of go 1 classes against go 1 only, so old first files cannot block a new go 1.
@@ -336,6 +341,12 @@ Round 2, after the review of `45104e7`:
 | Status: 8 h funding step called `proven`                        | reason `no_gap_over_8h`, status `partial_pass`, interval snapshot strength counted                                      | unseen missing settlements of 1 h or 4 h symbols |
 | Status: M2 (ii) lower bound reported as assessed and passing    | `archive_only_proven` false, status `lower_bound_only_unproven`; it can fail but never prove                            | true archive-only share unknown                  |
 | Status: list all partial checks                                 | `partial_checks` lists M6, M2 (ii), M4, minute continuity and unproven series                                           | none                                             |
+
+Round 3, after the review of `68c296a`:
+
+| Review item                                                                     | Change                                                                                                                                 | Remaining limit                                       |
+| ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| P2 the step byte ceiling was not hard: the block crossing it was still received | a 64 KiB read reserve inside every step and class budget; a request starts only if cap plus reserve fits; chunks over the reserve stop | relies on the transport's 64 KiB read, and is checked |
 
 ## 7. Interpretations made, and limits stated plainly
 

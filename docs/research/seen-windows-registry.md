@@ -677,9 +677,9 @@ gos needs the owner's go**. **This row records no read: nothing has been fetched
 
 Every response also holds prices or rates. They are discarded unparsed and no price, rate,
 volume or return is stored or reported. Hashes: `request_list_sha256`
-`1d1b7349526d93fd0396e8b6d572ecf761f6a4216161edb564f3bd234388b4c5`, go 1
-`854eed7e766153792ce4742296570d36314a0d3c5a9a35ac27f36e65adc763ba`, go 2
-`780b7e36d280f21660380f60cf7e5cae2e71b0e4086b072c2c1bc0fedf8673ef`. The order-book archive and
+`023b9863d1af73dbeaff5cc7cf64d0e77f3c0fdba295e4158f7c0e54982d6fe3`, go 1
+`5f4d84d3d4294276fa2f91c144e8ab0f12999bd734642986c1b4ab91d213ece1`, go 2
+`3680644f7bc4c76aca1c754d6f1d1367a78d2259cab2beaf62e51677ebe50812`. The order-book archive and
 the spot catalog are **not** part of this registration; each is a later decision.
 
 **Cut.** Nothing dated from 2025-10-01 is read, recorded or counted: a catalog row launched from
