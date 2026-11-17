@@ -655,38 +655,50 @@ help-center and API documentation pages (the margin-change notice, the Insurance
 page, the Innovation Zone fee FAQ and the fee-group endpoint page), opened on
 2026-11-16 in the browser pane and by web search. They hold no market value.
 
-## I25 stage 1 registration `new-perp-short-v1`, request list v1, 2026-11-17 (pending the owner's go)
+## I25 stage 1 registration `new-perp-short-v1`, request list v1 revision 2, 2026-11-17 (pending the owner's go)
 
 [Request list and contract](new-perp-stage1-request-list-v1.md), frozen as
 [`contract.json`](evidence/new-perp-stage1-v1/contract.json). This row, the code, the
-contract JSON and the request list must be in main before the first request; the fetch
-needs the owner's go. **This row records no read: nothing has been fetched.**
+contract JSON and the request list must be in main before the first request; **each of the two
+gos needs the owner's go**. **This row records no read: nothing has been fetched.**
 
-**Level: coverage, discovery year only (2024-10-01 to 2025-09-30).** Bybit
-`instruments-info` catalog fields (linear and spot), the trade-archive root and per-symbol
-file listings, the size and then the timestamp column of the first daily trade file of each
-launch, the start times of one entry minute bar and of hourly trade and mark-price series,
-funding history page boundaries and timestamps, and (optional) HEAD existence of
-order-book files. Every response also holds prices or rates; they are discarded unparsed
-and no price, rate, volume or return is stored or reported. Request list hash
-`request_list_sha256` `79aa32aa033c87618ff8c35d94166772245954d26946b37b854e961e646b2f1e`:
-about 1,773 requests for the core classes and 410 for the optional book class, at most
-2,600 attempts (3,200 with the book class) and 6.5 GiB of response bytes.
+**Level: coverage, discovery year only (2024-10-01 to 2025-09-30).**
 
-**Cut.** Nothing dated from 2025-10-01 is read, recorded or counted: a catalog row
-launched from the cut is skipped before any other field is read, listing names from the cut
-are dropped uncounted, no total row count is stored, and no span of any series ends after
-2025-09-30T23:59:59.999Z. This is how the HYP-031 test year (2025-10-01 to 2026-09-28)
-and the HYP-012 v2 blind window (from 2026-09-29) stay unread and uncounted at metadata
-level too. A launch whose path would cross the cut is `window_censored` and gets no
-bar, mark or funding request.
+- **Go 1, metadata only** (547 planned requests, at most 761, attempt cap 1,000, 300 MiB):
+  Bybit `instruments-info` linear catalog fields, the trade-archive root listing and
+  per-symbol file listings, and HEAD requests (status and size, no body) for the first daily
+  file of each launch.
+- **Go 2, after the owner reviews the go 1 manifest** (1,135 planned requests, at most 2,400,
+  attempt cap 1,700, 6.5 GiB): the first daily trade file of each launch (column 1, the trade
+  timestamp, only), one entry minute bar, hourly trade and mark-price series (start times and
+  runs of missing hours only) and funding history (timestamps and page boundaries only). Go 2
+  also contains the mark-price, funding and bar coverage reads that protocol section 11 item 2
+  names, and it cannot start without a finished go 1 and the manifest hash.
 
-**Holdout.** Not requested. Catalog rows launched before 2024-10-01 are reduced to symbol and
-base with no date, kept outside Git for `relist` and `multiplier_ambiguous` only, and no count
-of them is reported. Stage 1b stays a separate go.
+Every response also holds prices or rates. They are discarded unparsed and no price, rate,
+volume or return is stored or reported. Hashes: `request_list_sha256`
+`1d1b7349526d93fd0396e8b6d572ecf761f6a4216161edb564f3bd234388b4c5`, go 1
+`854eed7e766153792ce4742296570d36314a0d3c5a9a35ac27f36e65adc763ba`, go 2
+`780b7e36d280f21660380f60cf7e5cae2e71b0e4086b072c2c1bc0fedf8673ef`. The order-book archive and
+the spot catalog are **not** part of this registration; each is a later decision.
 
-**Recorded after the run (not yet).** An aggregate report of counts, shares and stop codes
-(no symbol, no price), the run's `request_list_sha256` and the code revision. The receipts
-stay sealed outside Git. After the fetch the discovery-year launches count as read at
-coverage level for this trigger, and nothing at outcome level. Stage 3 and stage 4 reads
-need their own request lists and rows.
+**Cut.** Nothing dated from 2025-10-01 is read, recorded or counted: a catalog row launched from
+the cut is skipped before any other field is read, listing names from the cut are dropped
+uncounted, no total row count is stored, and an archive directory is kept only if it is absent
+from the catalog and its modification date is proven inside the window (an unknown date is not
+kept). No span of any series ends after 2025-09-30T23:59:59.999Z. This is how the HYP-031
+test year (2025-10-01 to 2026-09-28) and the HYP-012 v2 blind window (from 2026-09-29) stay
+unread and uncounted at metadata level too. A launch whose path would cross the cut is
+`window_censored` and gets no bar, mark or funding request.
+
+**Holdout.** Not requested. Catalog rows launched before 2024-10-01 are reduced to symbol, base
+and, only if it falls inside the window, a delivery date, kept as closed service material
+outside Git for `relist` and `multiplier_ambiguous` only. No date or count of them is
+published. Stage 1b stays a separate go.
+
+**Recorded after each go (not yet).** An aggregate report of counts, shares and stop codes (no
+symbol, no price), the run's `request_list_sha256`, the go hash and the code revision. The
+receipts stay sealed outside Git. After go 2 the discovery-year launches count as read at
+coverage level for this trigger, and nothing at outcome level. Stage 3 and stage 4 reads need
+their own request lists and rows. M5 at stage 1 proves the entry minute bar and hourly
+continuity only; minute-level continuity is proven at stage 4 (protocol Amendment 1).

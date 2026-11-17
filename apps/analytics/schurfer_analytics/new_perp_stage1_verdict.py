@@ -51,16 +51,32 @@ class RunData:
     mark_hourly: dict[str, dict[str, Any]] = field(default_factory=dict)
     trade_hourly: dict[str, dict[str, Any]] = field(default_factory=dict)
     funding: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
-    book: dict[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
-    enabled: set[str] = field(default_factory=lambda: set(s1.enabled_classes()))
-    preflight: dict[str, Any] | None = None
+    manifest: dict[str, Any] | None = None
+    stop: dict[str, Any] | None = None
+    go2_done: bool = False
     requests: dict[str, Any] = field(default_factory=dict)
+
+    @property
+    def go2_started(self) -> bool:
+        by_class = self.requests.get("by_class", {})
+        return (
+            self.go2_done
+            or any(c in by_class for c in ("D2", "D3", "D4", "D5", "D6"))
+            or bool(
+                self.firsts
+                or self.entry_bar
+                or self.mark_hourly
+                or self.trade_hourly
+                or self.funding
+            )
+        )
 
 
 def load_run(root: Path) -> RunData:
     """Rebuild the results of a run from its receipts. No request, no body."""
     receipts = [json.loads(p.read_text()) for p in sorted((root / "receipts").glob("*.json"))]
-    final = s1.final_from_receipts(receipts)
+    attempts = [json.loads(p.read_text()) for p in sorted((root / "attempts").glob("*.json"))]
+    final = s1.final_from_receipts(receipts, attempts)
     by_cls: dict[str, dict[str, dict[str, Any]]] = {}
     for r in final.values():
         if r["symbol"]:
@@ -69,16 +85,8 @@ def load_run(root: Path) -> RunData:
     pages = (r for r in final.values() if r["cls"] == "D6")
     for r in sorted(pages, key=lambda r: (r["symbol"], int(r["meta"]["page"]))):
         funding.setdefault(r["symbol"], []).append(r)
-    book: dict[str, dict[str, dict[str, Any]]] = {}
-    for r in final.values():
-        if r["cls"] == "F":
-            book.setdefault(r["symbol"], {}).setdefault(r["meta"]["label"], {})[
-                r["meta"]["file"]
-            ] = r
-    preflight_path = root / "preflight.json"
-    contract = json.loads((root / "contract.json").read_text())
-    attempts = [json.loads(p.read_text()) for p in sorted((root / "attempts").glob("*.json"))]
     count, used, by_n, by_b = s1.ledger_totals(attempts, receipts)
+    manifest_path, stop_path = root / "manifest.json", root / "stop.json"
     return RunData(
         phase0=json.loads((root / "phase0.json").read_text()),
         listings=by_cls.get("D1", {}),
@@ -88,9 +96,9 @@ def load_run(root: Path) -> RunData:
         mark_hourly=by_cls.get("D4", {}),
         trade_hourly=by_cls.get("D5", {}),
         funding=funding,
-        book=book,
-        enabled=set(s1.enabled_classes(contract)),
-        preflight=json.loads(preflight_path.read_text()) if preflight_path.exists() else None,
+        manifest=json.loads(manifest_path.read_text()) if manifest_path.exists() else None,
+        stop=json.loads(stop_path.read_text()) if stop_path.exists() else None,
+        go2_done=(root / "go2_done.json").exists(),
         requests={"attempts": count, "bytes": used, "by_class": by_n, "bytes_by_class": by_b},
     )
 
@@ -132,10 +140,13 @@ def static_order(row: dict[str, Any]) -> str:
 def bar_state(
     result: dict[str, Any] | None, entry_ms: int, exit_ms: int, delivery_ms: int | None
 ) -> str:
-    """Hourly series over the path of V1. `covered`, `confirmed_event`, or the gap reason.
+    """Hourly series over the path of V1: `covered`, `confirmed_event`, or the gap reason.
 
-    A series that ends before X is a data gap unless the catalog confirms an end dated at
-    or before the first missing minute (the end-of-archive rule, protocol 5.3 items 3, 4).
+    Continuity is checked, not only the two ends: a missing hour inside the path is an
+    `interior_gap`. A series that ends before X is a data gap unless the catalog confirms an
+    end dated at or before the first missing hour (the end-of-archive rule, protocol 5.3 items
+    3 and 4). A page that may be cut by its row limit, or whose gap list was truncated,
+    cannot prove continuity and is `unproven`: never green.
     """
     if result is None:
         return "not_run"
@@ -144,12 +155,18 @@ def bar_state(
     facts = result["facts"]
     if facts["n"] == 0:
         return "empty"
-    if facts["oldest_ms"] > _floor_hour(entry_ms):
+    if facts["full"] or facts["runs_truncated"]:
+        return "unproven"
+    path_start, path_end = _floor_hour(entry_ms), _floor_hour(exit_ms - 1)
+    if facts["oldest_ms"] > path_start:
         return "starts_late"
-    first_missing = facts["newest_ms"] + s1.HOUR_MS
-    if facts["newest_ms"] >= _floor_hour(exit_ms - 1):
+    for first_missing, count in facts["runs"]:
+        if first_missing <= path_end and first_missing + (count - 1) * s1.HOUR_MS >= path_start:
+            return "interior_gap"
+    first_missing_hour = facts["newest_ms"] + s1.HOUR_MS
+    if facts["newest_ms"] >= path_end:
         return "covered"
-    if delivery_ms is not None and delivery_ms <= first_missing:
+    if delivery_ms is not None and delivery_ms <= first_missing_hour:
         return "confirmed_event"
     return "ends_early"
 
@@ -160,7 +177,13 @@ def path_days(entry_ms: int, exit_ms: int) -> list[str]:
 
 
 def evaluate(data: RunData) -> dict[str, Any]:
-    """The stage 1 report: M1 to M6, launch statuses, n_primary and the stop code."""
+    """The stage 1 report: M1 to M6, launch statuses, n_primary and the stop code.
+
+    After go 1 alone (no first file, bar or funding request yet) it is the go 1 report: what
+    the owner reviews before go 2.
+    """
+    if not data.go2_started:
+        return evaluate_go1(data)
     launches = s1.in_window_launches(data.phase0)
     contradictions = s1.catalog_contradictions(data.phase0)
     candidates = {
@@ -183,7 +206,9 @@ def evaluate(data: RunData) -> dict[str, Any]:
         "pass": _at_most(ambiguous, T["m1_ambiguous_max"])
         and _at_least(readable, T["m1_readable_min"]),
     }
-    unrebuildable = sum(1 for r in rows if r["m1"] in ("no_archive", "t0_unreadable"))
+    unrebuildable = sum(
+        1 for r in rows if r["m1"] in ("no_archive", "t0_unreadable", "t0_over_cap")
+    )
     lifecycle_share = _share(unrebuildable, n_launches)
     lifecycle_ok = _at_most(lifecycle_share, T["lifecycle_unrebuildable_max"])
 
@@ -207,7 +232,16 @@ def evaluate(data: RunData) -> dict[str, Any]:
     m6 = _m6(after_funding)
 
     stops = _stop(m1, lifecycle_ok, m2, m3, m4, m5, m6, n_primary, weeks)
-    outcome = stops[0] if stops else ("stage1_incomplete" if not_assessed else "stage1_pass")
+    if not m2["archive_only_assessed"]:
+        not_assessed.append("m2_archive_only_dates_absent")
+    if stops:
+        outcome = stops[0]
+    elif data.stop is not None:
+        outcome = "stage1_stopped"  # a stopped run never reaches a pass
+    elif not_assessed:
+        outcome = "stage1_incomplete"
+    else:
+        outcome = "stage1_pass_partial"
     return {
         "version": REPORT_VERSION,
         "outcome": outcome,
@@ -217,17 +251,98 @@ def evaluate(data: RunData) -> dict[str, Any]:
         "n_primary": n_primary,
         "iso_weeks": weeks,
         "reasons": {r: reasons.get(r, 0) for r in REASONS},
-        "m1": {**m1, "lifecycle_unrebuildable_share": lifecycle_share},
+        "m1": {
+            **m1,
+            "lifecycle_unrebuildable_share": lifecycle_share,
+            "first_file_over_cap": m1_counts.get("t0_over_cap", 0),
+        },
         "m2": m2,
         "m3": m3,
         "m4": m4,
         "m5": m5,
         "m6": m6,
-        "book": _book(data, candidates),
-        "spot": _spot(data, rows),
+        "partial_checks": [
+            "m5: minute-level continuity is proven at stage 4 (protocol Amendment 1)",
+            "m6: static catalog fields only, no price, risk limit or depth",
+        ],
+        "stop": data.stop,
         "requests": data.requests,
-        "classes_in_go": sorted(data.enabled),
-        "book_source_confirmed": False,
+    }
+
+
+def evaluate_go1(data: RunData) -> dict[str, Any]:
+    """The go 1 report: names, listings, catalog fields and sizes. No T0, bar or funding yet.
+
+    Only checks that need no first file are evaluated, and their stop codes are provisional
+    (`provisional: true`): they can only be confirmed or cleared after go 2.
+    """
+    launches = s1.in_window_launches(data.phase0)
+    contradictions = s1.catalog_contradictions(data.phase0)
+    rows = [_launch(data, row, contradictions, {}) for row in launches]
+    n = len(launches)
+    by_name = _count(rows, "m1")
+    to_read = by_name.pop("t0_unreadable", 0)
+    over_cap = by_name.get("t0_over_cap", 0)
+    m2 = _m2(data, rows, {})
+    m3 = _m3(
+        [
+            {**r, "m1": "aligned" if r["m1"] in ("t0_unreadable", "t0_over_cap") else r["m1"]}
+            for r in rows
+        ]
+    )
+    not_excluded = [
+        r for r in rows if r["identity"] is None and r["m1"] != "premarket_or_ambiguous"
+    ]
+    m6 = _m6(not_excluded)
+    ambiguous = _share(by_name.get("premarket_or_ambiguous", 0), n)
+    no_archive = _share(by_name.get("no_archive", 0), n)
+    stops: list[str] = []
+    if (ambiguous or 0) > T["m1_ambiguous_max"] or (no_archive or 0) > T[
+        "lifecycle_unrebuildable_max"
+    ]:
+        stops.append("not_reconstructible")
+    shares_ok = _at_most(m2["shares"]["no_file_near_launch"], T["m2_no_file_near_launch_max"]) and (
+        not m2["archive_only_assessed"]
+        or _at_most(m2["shares"]["archive_only"], T["m2_archive_only_max"])
+    )
+    if not shares_ok:
+        stops.append("incomplete_coverage")
+    if not m3["pass"] and (
+        (m3["shares"]["identity_unverifiable"] or 0) > T["m3_unverifiable_max"]
+        or (m3["shares"]["contradicting"] or 0) > T["m3_contradicting_max"]
+    ):
+        stops.append("identity_unresolved")
+    if not m6["pass"]:
+        stops.append("capital_infeasible")
+    if stops:
+        outcome = stops[0]
+    elif data.stop is not None:
+        outcome = "stage1_stopped"
+    else:
+        outcome = "go1_complete"
+    return {
+        "version": REPORT_VERSION,
+        "report": "go1",
+        "provisional": True,
+        "outcome": outcome,
+        "stop_codes": stops,
+        "launches": n,
+        "m1_by_name": {**by_name, "first_file_to_read": to_read},
+        "first_file_over_cap": over_cap,
+        "m2": m2,
+        "m3": m3,
+        "m6": m6,
+        "not_assessed": [
+            "m1_first_trade_time",
+            "m2_path_days",
+            "m3_episodes_remaining",
+            "m4_funding",
+            "m5_bars",
+            "n_primary_and_weeks",
+        ],
+        "manifest": data.manifest,
+        "stop": data.stop,
+        "requests": data.requests,
     }
 
 
@@ -239,7 +354,7 @@ def _launch(
 ) -> dict[str, Any]:
     symbol = row["symbol"]
     listing = data.listings.get(symbol)
-    t0, m1 = s1.t0_of(row, listing, data.firsts.get(symbol))
+    t0, m1 = s1.t0_of(row, listing, data.firsts.get(symbol), data.heads.get(symbol))
     listing_ok = listing is not None and listing.get("outcome") == "ok"
     facts = listing["facts"] if listing is not None and listing_ok else None
     near = None
@@ -269,6 +384,7 @@ def _launch(
         "cuts": cuts,
         "eligible": symbol in candidates,
         "funding": None,
+        "funding_reason": None,
         "reason": None,
     }
 
@@ -298,6 +414,9 @@ def _m2(
     # Unlisted candidates count in the worst case: they could be archive-only symbols.
     archive_only = in_window + unavailable
     union = n + archive_only
+    # Only directories whose last file is inside the window are candidates, so this share is
+    # a lower bound on the archive-only symbols; with no dates on the page it is not assessed.
+    assessed_ii = bool(data.phase0["archive"]["modified_dates_present"])
     path_bad = 0
     for symbol, c in candidates.items():
         listing = data.listings[symbol]["facts"]
@@ -308,7 +427,7 @@ def _m2(
             path_bad += 1
     shares = {
         "no_file_near_launch": _share(no_near, n),
-        "archive_only": _share(archive_only, union),
+        "archive_only": _share(archive_only, union) if assessed_ii else None,
         "path_days_missing": _share(path_bad, len(candidates)),
     }
     limits = {
@@ -317,7 +436,9 @@ def _m2(
         "path_days_missing": T["m2_path_days_missing_max"],
     }
     ok = all(
-        _at_most(shares[k], limits[k]) for k in shares if k != "path_days_missing" or candidates
+        _at_most(shares[k], limits[k])
+        for k in shares
+        if (k != "path_days_missing" or candidates) and (k != "archive_only" or assessed_ii)
     )
     return {
         "shares": shares,
@@ -329,6 +450,8 @@ def _m2(
             "path_days_missing_launches": path_bad,
             "candidates_listed": len(window),
         },
+        "archive_only_scope": "absent from the catalog, last file inside the window",
+        "archive_only_assessed": assessed_ii,
         "pass": ok,
     }
 
@@ -371,7 +494,7 @@ def _assign_reasons(
 ) -> None:
     for r in rows:
         symbol = r["symbol"]
-        if r["m1"] in ("no_archive", "t0_unreadable"):
+        if r["m1"] in ("no_archive", "t0_unreadable", "t0_over_cap"):
             r["reason"] = "t0_unavailable"
         elif r["m1"] == "premarket_or_ambiguous":
             r["reason"] = "t0_ambiguous"
@@ -383,6 +506,7 @@ def _assign_reasons(
             r["reason"] = "lookback_censored"
         elif symbol in candidates:
             state = _funding_state(data, candidates[symbol])
+            r["funding_reason"] = state["reason"]
             r["funding"] = (
                 "pending"
                 if not state["decided"]
@@ -404,7 +528,8 @@ def _assign_reasons(
 
 def _funding_state(data: RunData, candidate: dict[str, Any]) -> dict[str, Any]:
     start, end = s1.funding_span(candidate["t0_ms"])
-    return s1.funding_state(data.funding.get(candidate["symbol"], []), start, end)
+    delivered = s1.deliveries(data.phase0).get(candidate["symbol"])
+    return s1.funding_state(data.funding.get(candidate["symbol"], []), start, end, delivered)
 
 
 def _entry_bar(data: RunData, candidate: dict[str, Any]) -> str:
@@ -434,6 +559,8 @@ def _m4(eligible: list[dict[str, Any]], not_assessed: list[str]) -> dict[str, An
         "eligible": n,
         "funding_uncovered": len(uncovered),
         "share": share,
+        "rule": "pagination finished and settlements proven (chain with no step above 8 h)",
+        "by_reason": _count(uncovered, "funding_reason"),
         "by_launch_month": dict(sorted(by_month.items())),
         "by_status": by_status,
         "assessed": assessed,
@@ -465,6 +592,11 @@ def _m5(
     assessed = n > 0 and not any("not_run" in per for per in states.values())
     if not assessed and n:
         not_assessed.append("m5_bars_not_run")
+    unproven = any("unproven" in per for per in states.values())
+    if unproven:
+        # a page that cannot prove continuity is never green and never a pass
+        assessed = False
+        not_assessed.append("m5_series_unproven")
     return {
         "episodes": n,
         "with_bars": ok,
@@ -483,12 +615,21 @@ def _m6(episodes: list[dict[str, Any]]) -> dict[str, Any]:
         counts[static_order(r["row"])] += 1
     n = len(episodes)
     share = _share(counts["feasible"], n)
+    ok = _at_least(share, T["m6_feasible_min"])
     return {
         "episodes": n,
         "counts": counts,
         "share": share,
-        "price_dependent_part": "deferred_to_stage_3_and_4",
-        "pass": _at_least(share, T["m6_feasible_min"]),
+        # A PARTIAL check: it can only fail an order. Passing it does not show that an order
+        # opens, because no price, quantity rounding, risk limit or depth is checked.
+        "partial": True,
+        "status": "partial_pass" if ok else "fail",
+        "not_checked": [
+            "quantity step and minimum quantity against USD 50 at the entry price",
+            "risk limit and position cap",
+            "depth at entry",
+        ],
+        "pass": ok,
     }
 
 
@@ -518,45 +659,6 @@ def _stop(
     if not m6["pass"]:
         out.append("capital_infeasible")
     return out
-
-
-def _book(data: RunData, candidates: dict[str, dict[str, Any]]) -> dict[str, Any]:
-    if "F" not in data.enabled:
-        return {"in_go": False}
-    counts = {
-        "entry": {"ob500": 0, "ob200": 0, "none": 0},
-        "exit": {"ob500": 0, "ob200": 0, "none": 0},
-    }
-    for symbol in candidates:
-        for label in ("entry", "exit"):
-            tried = data.book.get(symbol, {}).get(label, {})
-            if tried.get("ob500", {}).get("outcome") == "ok":
-                counts[label]["ob500"] += 1
-            elif tried.get("ob200", {}).get("outcome") == "ok":
-                counts[label]["ob200"] += 1
-            else:
-                counts[label]["none"] += 1
-    return {
-        "in_go": True,
-        "candidates": len(candidates),
-        "counts": counts,
-        "gates_nothing": True,
-        "counts_for_scenario_l": "zero until the owner confirms the source (protocol 11, item 7)",
-    }
-
-
-def _spot(data: RunData, rows: list[dict[str, Any]]) -> dict[str, Any]:
-    spot = data.phase0.get("spot")
-    if not spot or not spot["ok"]:
-        return {"available": False}
-    bases = {r["base"] for r in spot["rows"]}
-    present = sum(1 for r in rows if r["row"]["base"] in bases)
-    return {
-        "available": True,
-        "launches_with_spot_symbol": present,
-        "spot_rows_with_launch_time": spot["with_launch_time"],
-        "gates_nothing": True,
-    }
 
 
 def main(argv: list[str] | None = None) -> int:

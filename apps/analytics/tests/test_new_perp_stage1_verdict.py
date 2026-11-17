@@ -21,10 +21,9 @@ from .new_perp_world import (
     SENTINELS,
     Launch,
     World,
-    contract_without,
     fetcher,
     ms,
-    rehash,
+    run_go,
     run_world,
 )
 
@@ -47,13 +46,13 @@ def world_of(count: int, **kw: Any) -> World:
     return world
 
 
-# ---------------------------------------------------------------- a healthy world passes
+# a healthy world passes
 
 
-def test_a_healthy_discovery_year_passes_every_check(tmp_path: Path) -> None:
+def test_a_healthy_discovery_year_passes_every_check_as_a_partial_pass(tmp_path: Path) -> None:
     world = world_of(105)
     report = evaluate(world, tmp_path / "run")
-    assert report["outcome"] == "stage1_pass" and report["stop_codes"] == []
+    assert report["outcome"] == "stage1_pass_partial" and report["stop_codes"] == []
     assert report["not_assessed"] == []
     assert report["launches"] == report["n_primary"] == 105
     assert report["iso_weeks"] >= 26
@@ -65,11 +64,13 @@ def test_a_healthy_discovery_year_passes_every_check(tmp_path: Path) -> None:
         "mark": {"covered": 105},
         "trade": {"covered": 105},
     }
-    assert report["book"]["counts"]["entry"]["ob500"] == 105
-    assert report["book_source_confirmed"] is False
     assert report["m5"]["minute_level_path"] == "not_assessed_at_stage_1"
-    assert report["m6"]["price_dependent_part"] == "deferred_to_stage_3_and_4"
     assert report["m3"]["change_known_at_entry"] == "not_observable_at_stage_1"
+    # M6 and the minute-level path are named partial checks, never proof that an order opens
+    assert report["m6"]["partial"] is True and report["m6"]["status"] == "partial_pass"
+    assert "risk limit and position cap" in report["m6"]["not_checked"]
+    assert len(report["partial_checks"]) == 2 and report["stop"] is None
+    assert "book" not in report and "spot" not in report
 
 
 def test_the_report_holds_no_price_like_field_or_sentinel(tmp_path: Path) -> None:
@@ -103,7 +104,7 @@ def test_the_report_is_written_once_and_the_command_line_runs(tmp_path: Path) ->
         v1.main(["--root", str(root), "--out", str(out)])
 
 
-# ---------------------------------------------------------------- M1 and the lifecycle
+# M1 and the lifecycle
 
 
 def test_m1_counts_the_three_classes_and_fails_on_ambiguity(tmp_path: Path) -> None:
@@ -140,7 +141,7 @@ def test_a_missing_archive_or_unreadable_first_file_is_a_lifecycle_gap(tmp_path:
     assert report["reasons"]["t0_unavailable"] == 4
 
 
-# ---------------------------------------------------------------- M2
+# M2
 
 
 def test_m2_three_shares(tmp_path: Path) -> None:
@@ -172,7 +173,7 @@ def test_m2_path_days_missing(tmp_path: Path) -> None:
     assert report["m2"]["shares"]["path_days_missing"] == 1 / 20
 
 
-# ---------------------------------------------------------------- M3
+# M3
 
 
 def test_m3_statuses_come_from_the_catalog_and_the_file_list(tmp_path: Path) -> None:
@@ -233,7 +234,7 @@ def test_identity_unverifiable_stays_in_the_sample_and_is_counted(tmp_path: Path
     assert report["reasons"]["primary"] == 10  # unverifiable launches are still traded
 
 
-# ---------------------------------------------------------------- M4
+# M4
 
 
 def test_m4_funding_gaps_exclude_before_entry_and_gate_at_five_percent(tmp_path: Path) -> None:
@@ -247,20 +248,48 @@ def test_m4_funding_gaps_exclude_before_entry_and_gate_at_five_percent(tmp_path:
     assert report["m4"]["pass"] is False and "incomplete_coverage" in report["stop_codes"]
 
 
-def test_m4_paginates_backwards_and_calls_an_exhausted_span_uncovered(
+def test_m4_paginates_backwards_and_proves_the_pages_join(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(s1, "FUNDING_PAGE_LIMIT", 20)
     world = world_of(3)
     covered = evaluate(world, tmp_path / "a")
-    assert covered["requests"]["by_class"]["D6"] == 9  # 57 rows: three pages of 20, 20 and 17
+    assert covered["requests"]["by_class"]["D6"] == 9  # 57 rows: pages of 20, 20 and 17
     assert covered["m4"]["funding_uncovered"] == 0
     monkeypatch.setattr(s1, "FUNDING_MAX_PAGES", 2)
     exhausted = evaluate(world_of(3), tmp_path / "b")
     assert exhausted["m4"]["funding_uncovered"] == 3
+    assert exhausted["m4"]["by_reason"] == {"pagination_exhausted": 3}
 
 
-# ---------------------------------------------------------------- M5 and the end-of-archive rule
+def test_m4_a_finished_pagination_is_not_proof_of_coverage(tmp_path: Path) -> None:
+    """P1-2 regression: a short non-empty page used to cover the whole interval."""
+    world = world_of(20)
+    for launch in world.launches[:3]:
+        launch.funding_mode = "sparse"  # one settlement over 19 days
+    for launch in world.launches[3:5]:
+        launch.funding_mode = "hole"  # a 24 hour hole inside an otherwise dense page
+    report = evaluate(world, tmp_path / "run")
+    assert report["m4"]["by_reason"] == {"gap_inside": 2, "starts_late": 3}
+    assert report["reasons"]["funding_uncovered"] == 5
+    assert report["m4"]["pass"] is False and "incomplete_coverage" in report["stop_codes"]
+
+
+def test_the_p1_2_repro_two_hourly_points_and_one_funding_row_is_never_a_pass(
+    tmp_path: Path,
+) -> None:
+    """140 episodes, two hourly points over the whole range, one funding row: was a pass."""
+    world = world_of(105)
+    for launch in world.launches:
+        launch.hourly_gap_hours = tuple(range(1, 455))
+        launch.funding_mode = "sparse"
+    report = evaluate(world, tmp_path / "run")
+    assert report["outcome"] != "stage1_pass_partial"
+    assert report["m4"]["pass"] is False and report["m5"]["pass"] is False
+    assert report["stop_codes"][0] == "incomplete_coverage"
+
+
+# M5 and the end-of-archive rule
 
 
 def test_m5_a_missing_entry_bar_is_entry_unavailable_never_scored(tmp_path: Path) -> None:
@@ -272,6 +301,20 @@ def test_m5_a_missing_entry_bar_is_entry_unavailable_never_scored(tmp_path: Path
     assert report["m5"]["states"]["entry"] == {"absent": 3, "present": 17}
     assert report["m5"]["share"] == 17 / 20 and report["m5"]["pass"] is False
     assert "incomplete_coverage" in report["stop_codes"]
+
+
+def test_m5_an_interior_gap_in_the_path_is_a_gap_and_one_outside_it_is_not(
+    tmp_path: Path,
+) -> None:
+    world = world_of(20)
+    for launch in world.launches[:3]:
+        launch.hourly_gap_hours = (150,)  # day 9: inside the V1 path (days 7 to 14)
+    for launch in world.launches[3:6]:
+        launch.hourly_gap_hours = (10,)  # day 3: before the entry, outside the V1 path
+    report = evaluate(world, tmp_path / "run")
+    assert report["m5"]["states"]["mark"] == {"covered": 17, "interior_gap": 3}
+    assert report["m5"]["states"]["trade"] == {"covered": 17, "interior_gap": 3}
+    assert report["m5"]["pass"] is False  # 85% have their bars
 
 
 def test_m5_end_of_archive_is_a_gap_unless_the_catalog_confirms_the_end(tmp_path: Path) -> None:
@@ -302,11 +345,27 @@ def test_m5_end_of_archive_is_a_gap_unless_the_catalog_confirms_the_end(tmp_path
 
 def test_bar_state_unit_cases() -> None:
     entry, exit_ = ms("2024-11-08T10:01:00"), ms("2024-11-15T10:01:00")
-
-    def result(n: int, oldest: int | None, newest: int | None) -> dict[str, Any]:
-        return {"outcome": "ok", "facts": {"n": n, "oldest_ms": oldest, "newest_ms": newest}}
-
     floor = v1._floor_hour
+
+    def result(
+        n: int,
+        oldest: int | None,
+        newest: int | None,
+        runs: list[list[int]] | None = None,
+        *,
+        full: bool = False,
+        truncated: bool = False,
+    ) -> dict[str, Any]:
+        facts = {
+            "n": n,
+            "oldest_ms": oldest,
+            "newest_ms": newest,
+            "runs": runs or [],
+            "runs_truncated": truncated,
+            "full": full,
+        }
+        return {"outcome": "ok", "facts": facts}
+
     assert v1.bar_state(None, entry, exit_, None) == "not_run"
     assert v1.bar_state({"outcome": "unavailable"}, entry, exit_, None) == "unavailable"
     assert v1.bar_state(result(0, None, None), entry, exit_, None) == "empty"
@@ -321,6 +380,33 @@ def test_bar_state_unit_cases() -> None:
     assert v1.bar_state(short, entry, exit_, first_missing + 1) == "ends_early"
 
 
+def test_bar_state_checks_continuity_not_only_the_two_ends() -> None:
+    """P1-2 regression: two points at the ends of the range used to read as `covered`."""
+    entry, exit_ = ms("2024-11-08T10:01:00"), ms("2024-11-15T10:01:00")
+    floor = v1._floor_hour
+    ends = {
+        "n": 2,
+        "oldest_ms": floor(entry) - 96 * HOUR,
+        "newest_ms": floor(exit_ - 1),
+        "runs": [[floor(entry) - 95 * HOUR, 455]],
+        "runs_truncated": False,
+        "full": False,
+    }
+    assert v1.bar_state({"outcome": "ok", "facts": ends}, entry, exit_, None) == "interior_gap"
+    # a hole before the entry hour does not touch the V1 path; one after it does
+    before = {**ends, "runs": [[floor(entry) - 50 * HOUR, 3]]}
+    assert v1.bar_state({"outcome": "ok", "facts": before}, entry, exit_, None) == "covered"
+    inside = {**ends, "runs": [[floor(entry) + 40 * HOUR, 1]]}
+    assert v1.bar_state({"outcome": "ok", "facts": inside}, entry, exit_, None) == "interior_gap"
+    edge = {**ends, "runs": [[floor(exit_ - 1) - HOUR, 1]]}
+    assert v1.bar_state({"outcome": "ok", "facts": edge}, entry, exit_, None) == "interior_gap"
+    # a page that may be cut by its limit, or whose gap list was cut, proves nothing
+    cut = {**ends, "runs": [], "full": True}
+    assert v1.bar_state({"outcome": "ok", "facts": cut}, entry, exit_, None) == "unproven"
+    many = {**ends, "runs": [], "runs_truncated": True}
+    assert v1.bar_state({"outcome": "ok", "facts": many}, entry, exit_, None) == "unproven"
+
+
 def test_path_days_follow_the_calendar_days_the_position_touches() -> None:
     days = v1.path_days(ms("2024-11-08T10:01:00"), ms("2024-11-15T10:01:00"))
     assert days[0] == "2024-11-08" and days[-1] == "2024-11-15" and len(days) == 8
@@ -328,7 +414,7 @@ def test_path_days_follow_the_calendar_days_the_position_touches() -> None:
     assert exact[-1] == "2024-11-14" and len(exact) == 7
 
 
-# ---------------------------------------------------------------- M6, events, order and censoring
+# M6, events, order and censoring
 
 
 def test_m6_static_order_uses_catalog_fields_only(tmp_path: Path) -> None:
@@ -402,36 +488,62 @@ def test_stop_codes_come_in_the_order_of_section_8(tmp_path: Path) -> None:
     assert ordered(report["stop_codes"])
 
 
-def test_the_book_class_is_existence_only_and_never_gates(tmp_path: Path) -> None:
-    world = world_of(6)
-    world.book_ob500_missing = True  # ob200 answers instead
-    report = evaluate(world, tmp_path / "run")
-    assert report["book"]["counts"]["entry"] == {"ob500": 0, "ob200": 6, "none": 0}
-    assert report["book"]["gates_nothing"] is True
-    struck = evaluate(world_of(6), tmp_path / "struck", contract_without(("F",)))
-    assert struck["book"] == {"in_go": False}
-    assert "F" not in struck["classes_in_go"]
-
-
-def test_a_stopped_run_is_not_assessed_not_failed(tmp_path: Path) -> None:
-    contract = json.loads(json.dumps(s1.build_contract()))
-    contract["limits"]["max_attempts"] = 330  # stops inside the bar classes
-    f, _ = fetcher(world_of(105), tmp_path / "run", rehash(contract))
+def test_a_run_stopped_by_a_cap_is_stopped_not_passed_and_not_failed(tmp_path: Path) -> None:
+    world = world_of(105)
+    root = tmp_path / "run"
+    run_go(world, root, 1)
+    f, _ = fetcher(world, root, go=2)
+    f.contract["go_limits"]["2"]["max_attempts"] = 330  # the cap runs out inside the bar classes
     with pytest.raises(s1.BudgetExceededError):
-        s1.run(f)
-    report = v1.evaluate(v1.load_run(tmp_path / "run"))
+        s1.run_go2(f, s1.manifest_sha256(root))
+    report = v1.evaluate(v1.load_run(root))
     assert report["not_assessed"]  # bars or funding were not finished
-    assert report["m4"]["assessed"] is False or report["m5"]["assessed"] is False
     assert "incomplete_coverage" not in report["stop_codes"]  # no verdict from missing evidence
-    if not report["stop_codes"]:
-        assert report["outcome"] == "stage1_incomplete"
+    assert report["outcome"] == "stage1_stopped" and report["stop"]["reason"]
 
 
-def test_spot_catalog_is_a_diagnostic_that_gates_nothing(tmp_path: Path) -> None:
-    report = evaluate(world_of(10), tmp_path / "run")
-    assert report["spot"]["available"] is True
-    assert report["spot"]["launches_with_spot_symbol"] == 5
-    assert report["spot"]["gates_nothing"] is True
+def test_the_go_1_report_is_what_the_owner_reviews_before_go_2(tmp_path: Path) -> None:
+    world = world_of(20)
+    for launch in world.launches[:3]:  # the archive starts three days after launchTime
+        launch.first_file_offset_days = 3
+        launch.first_trade_delay_ms = 3 * DAY
+    root = tmp_path / "run"
+    summary = run_go(world, root, 1)
+    report = v1.evaluate(v1.load_run(root))
+    assert report["report"] == "go1" and report["provisional"] is True
+    assert report["m1_by_name"] == {"premarket_or_ambiguous": 3, "first_file_to_read": 17}
+    # 15% ambiguous by name alone, and those launches have no file within a day of launchTime
+    assert report["stop_codes"] == ["not_reconstructible", "incomplete_coverage"]
+    assert report["manifest"] == summary["manifest"] and report["manifest"]["d2_requests"] == 17
+    assert "m4_funding" in report["not_assessed"] and report["m6"]["partial"] is True
+    assert "n_primary_and_weeks" in report["not_assessed"]
+    healthy = world_of(20)
+    clean = tmp_path / "clean"
+    run_go(healthy, clean, 1)
+    assert v1.evaluate(v1.load_run(clean))["outcome"] == "go1_complete"
+
+
+def test_m2_archive_only_is_not_assessed_when_the_page_carries_no_dates() -> None:
+    phase0 = {
+        "catalog": {"rows": [], "prior": []},
+        "archive": {"candidates": [], "modified_dates_present": False},
+    }
+    m2 = v1._m2(v1.RunData(phase0=phase0), [], {})
+    assert m2["archive_only_assessed"] is False and m2["shares"]["archive_only"] is None
+    assert "last file inside the window" in m2["archive_only_scope"]
+
+
+def test_an_added_post_cut_directory_changes_nothing_the_run_records(tmp_path: Path) -> None:
+    """P1-1 regression: the directory counts moved when a post-cut directory was added."""
+    plain, more = world_of(6), world_of(6)
+    more.extra_dirs = [("NEWAUSDT", "2026-02-01"), ("NEWBUSDT", None), ("NEWCUSDT", "2025-10-01")]
+    run_go(plain, tmp_path / "a", 1)
+    run_go(more, tmp_path / "b", 1)
+    first = json.loads((tmp_path / "a" / "phase0.json").read_text())
+    second = json.loads((tmp_path / "b" / "phase0.json").read_text())
+    assert first == second
+    assert "NEW" not in (tmp_path / "b" / "phase0.json").read_text()
+    assert not any("NEW" in str(r.url) for r in more.requests)  # and none was listed
 
 
 def test_every_stop_code_of_stage_1_is_in_the_protocol_table() -> None:

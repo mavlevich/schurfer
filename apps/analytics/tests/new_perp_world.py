@@ -48,6 +48,8 @@ class Launch:
     funding_rows: bool = True  # False: the funding history is empty
     entry_bar: bool = True
     hourly_end_days: float | None = None  # series ends this many days after T0
+    hourly_gap_hours: tuple[int, ...] = ()  # positions of hourly bars missing inside the series
+    funding_mode: str = "full"  # "full", "empty", "sparse" (one row), "hole" (a 24 h hole)
     listing_days: int = 40
     first_file_missing: bool = False
     listing_gap: tuple[int, int] | None = None  # list positions removed from the file list
@@ -63,8 +65,9 @@ class World:
     requests: list[httpx.Request] = field(default_factory=list)
     fail: dict[str, list[int]] = field(default_factory=dict)  # url substring -> statuses
     sizes_scale: int = 1
-    spot: bool = True
-    book_ob500_missing: bool = False
+    extra_dirs: list[tuple[str, str | None]] = field(default_factory=list)  # root listing only
+    crash: list[str] = field(default_factory=list)  # a url substring: die once on it
+    raw: dict[str, bytes] = field(default_factory=dict)  # a url substring: answer with these bytes
 
     # -- builders
 
@@ -85,8 +88,23 @@ class World:
         return httpx.MockTransport(self.handle)
 
     def handle(self, request: httpx.Request) -> httpx.Response:
+        """Answer as a network stream would: a body that is read once, in chunks."""
+        built = self._respond(request)
+        return httpx.Response(
+            built.status_code, headers=built.headers, stream=httpx.ByteStream(built.content)
+        )
+
+    def _respond(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         url = str(request.url)
+        for part in self.crash:
+            if part in url:
+                self.crash.remove(part)
+                raise RuntimeError("the process died")
+        for part, body in self.raw.items():
+            if part in url:
+                del self.raw[part]
+                return httpx.Response(200, content=body)
         for part, statuses in self.fail.items():
             if part in url and statuses:
                 code = statuses.pop(0)
@@ -99,10 +117,6 @@ class World:
             return self.api(path, {k: v[0] for k, v in query.items()})
         if host == "public.bybit.com":
             return self.archive(path, request.method)
-        if host == "quote-saver.bycsi.com":
-            if self.book_ob500_missing and "ob500" in path:
-                return httpx.Response(404)
-            return httpx.Response(200, headers={"content-length": "1234"})
         return httpx.Response(404)
 
     # -- api
@@ -157,9 +171,11 @@ class World:
             )
         count = max(0, (last - first) // step + 1)
         width = 5 if "mark-price" in path else 7
-        rows = [[str(first + i * step), *([PRICE] * (width - 1))] for i in reversed(range(count))][
-            : int(q["limit"])
-        ]
+        rows = [
+            [str(first + i * step), *([PRICE] * (width - 1))]
+            for i in reversed(range(count))
+            if i not in launch.hourly_gap_hours
+        ][: int(q["limit"])]
         return httpx.Response(200, json=self.kline(symbol, rows, path))
 
     @staticmethod
@@ -167,14 +183,6 @@ class World:
         return {"retCode": 0, "result": {"symbol": symbol, "category": "linear", "list": rows}}
 
     def instruments(self, q: dict[str, str]) -> httpx.Response:
-        if q["category"] == "spot":
-            rows = [
-                {"symbol": f"{launch.base}USDT", "baseCoin": launch.base, "quoteCoin": "USDT"}
-                for launch in self.launches[::2]
-            ]
-            if not self.spot:
-                return httpx.Response(200, json={"retCode": 10001, "result": {}})
-            return httpx.Response(200, json={"retCode": 0, "result": {"list": rows}})
         status = q["status"]
         rows = [self.catalog_row(launch) for launch in self.launches if launch.status == status]
         if status == "Trading":
@@ -200,18 +208,23 @@ class World:
                 "launchTime": str(ms(f"{POST_CUT_DAY}T10:00:00")),
                 "priceFilter": {"tickSize": TICK},
             }
-            rows = [*rows, *old, post]  # type: ignore[list-item]
+            rows = [*rows, *old, post]
         return httpx.Response(
             200, json={"retCode": 0, "result": {"list": rows, "nextPageCursor": ""}}
         )
 
     def funding(self, launch: Launch, q: dict[str, str]) -> httpx.Response:
-        if not launch.funding_rows:
+        if not launch.funding_rows or launch.funding_mode == "empty":
             return httpx.Response(200, json={"retCode": 0, "result": {"list": []}})
         start, end, limit = int(q["startTime"]), int(q["endTime"]), int(q["limit"])
         eight = 8 * s1.HOUR_MS
         first = start + (-start) % eight
         stamps = list(range(first, end + 1, eight))
+        if launch.funding_mode == "sparse":
+            stamps = stamps[len(stamps) // 2 : len(stamps) // 2 + 1]
+        elif launch.funding_mode == "hole":
+            mid = stamps[len(stamps) // 2]
+            stamps = [t for t in stamps if not mid <= t < mid + 3 * eight]
         rows = [
             {"symbol": launch.symbol, "fundingRate": RATE, "fundingRateTimestamp": str(t)}
             for t in reversed(stamps)
@@ -229,6 +242,8 @@ class World:
             for n in names:
                 modified = POST_CUT_DAY if n == POST_CUT_SYMBOL else "2025-06-01"
                 lines.append(f'<a href="{n}/">{n}/</a>   {modified} 02:00    -')
+            for extra, dated in self.extra_dirs:
+                lines.append(f'<a href="{extra}/">{extra}/</a>   {dated or ""}')
             return httpx.Response(200, text="<html>" + "\n".join(lines) + "</html>")
         symbol = parts[1]
         launch = self.by_symbol().get(symbol)
@@ -289,16 +304,6 @@ def rehash(contract: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def contract_without(classes: tuple[str, ...]) -> dict[str, Any]:
-    """The contract with some optional classes struck from the owner's go."""
-    contract = s1.build_contract()
-    for c in contract["classes"]:
-        if c["cls"] in classes:
-            c["in_go"] = False
-    contract["limits"]["max_attempts"] = s1.max_attempts(s1.enabled_classes(contract))
-    return rehash(contract)
-
-
 class Clock:
     def __init__(self) -> None:
         self.t = 0.0
@@ -314,18 +319,48 @@ class Clock:
 
 
 def fetcher(
-    world: World, root: Path, contract: dict[str, Any] | None = None
+    world: World,
+    root: Path,
+    contract: dict[str, Any] | None = None,
+    *,
+    go: int = 1,
+    code: dict[str, Any] | None = None,
 ) -> tuple[s1.Fetcher, Clock]:
     clock = Clock()
     client = httpx.Client(transport=world.transport())
-    f = s1.Fetcher(root, contract or s1.build_contract(), client, now=clock.now, sleep=clock.sleep)
+    f = s1.Fetcher(
+        root,
+        contract or s1.build_contract(),
+        client,
+        go=go,
+        code=code,
+        now=clock.now,
+        sleep=clock.sleep,
+    )
     return f, clock
+
+
+def run_go(
+    world: World, root: Path, go: int, contract: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    f, _ = fetcher(world, root, contract, go=go)
+    if go == 1:
+        return s1.run_go1(f)
+    return s1.run_go2(f, s1.manifest_sha256(root))
 
 
 def run_world(
     world: World, root: Path, contract: dict[str, Any] | None = None
 ) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Fetch the synthetic world, then evaluate it from the receipts on disk."""
-    f, _ = fetcher(world, root, contract)
-    summary = s1.run(f)
+    """Both gos against the synthetic world, then the verdict from the receipts on disk."""
+    run_go(world, root, 1, contract)
+    summary = run_go(world, root, 2, contract)
+    summary["go1"] = json.loads((root / "manifest.json").read_text())
     return summary, v1.evaluate(v1.load_run(root))
+
+
+def streamed(
+    status: int = 200, *, content: bytes = b"", headers: dict[str, str] | None = None
+) -> httpx.Response:
+    """A response whose body is read once from a stream, as a network response is."""
+    return httpx.Response(status, headers=headers, stream=httpx.ByteStream(content))

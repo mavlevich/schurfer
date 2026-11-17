@@ -6,29 +6,19 @@ and tick size in its bodies is a sentinel, and so is the one launch after the cu
 
 from __future__ import annotations
 
-import dataclasses
 import gzip
 import hashlib
 import json
-import re
 from pathlib import Path
 from typing import Any
 
-import httpx
 import pytest
 from schurfer_analytics import new_perp_stage1 as s1
 from schurfer_analytics.catalyst_feasibility import asset
 
 from .new_perp_world import (
     PRICE,
-    SENTINELS,
-    Launch,
-    World,
-    contract_without,
-    fetcher,
     ms,
-    rehash,
-    run_world,
 )
 
 CUT = s1.CUT_MS
@@ -56,7 +46,7 @@ def row(symbol: str, launch: int, **extra: Any) -> dict[str, Any]:
     return base
 
 
-# ---------------------------------------------------------------- the cut lives in the reducers
+# the cut lives in the reducers
 
 
 def test_catalog_rows_after_the_cut_leave_no_trace() -> None:
@@ -83,8 +73,18 @@ def test_catalog_boundaries_of_the_window() -> None:
     assert {r["symbol"]: r["delivery_ms"] for r in out["rows"]}["LASTUSDT"] is None
     # a row before the window keeps no date, only whether it was delivered before it
     assert out["prior"] == [
-        {"symbol": "LIVEUSDT", "base": "LIVE", "delivered_before_window": False},
-        {"symbol": "OLDUSDT", "base": "OLD", "delivered_before_window": True},
+        {
+            "symbol": "LIVEUSDT",
+            "base": "LIVE",
+            "delivered_before_window": False,
+            "delivery_ms": None,
+        },
+        {
+            "symbol": "OLDUSDT",
+            "base": "OLD",
+            "delivered_before_window": True,
+            "delivery_ms": None,
+        },
     ]
 
 
@@ -126,23 +126,7 @@ def test_catalog_schema_mismatch_fails_closed(payload: Any) -> None:
         s1.reduce_catalog_page(payload)
 
 
-def test_spot_catalog_drops_post_cut_rows_and_old_dates() -> None:
-    items = [
-        {"symbol": "AAAUSDT", "baseCoin": "AAA", "quoteCoin": "USDT", "launchTime": str(START + 5)},
-        {"symbol": "OLDUSDT", "baseCoin": "OLD", "quoteCoin": "USDT", "launchTime": str(START - 5)},
-        {"symbol": "NEWUSDT", "baseCoin": "NEW", "quoteCoin": "USDT", "launchTime": str(CUT)},
-        {"symbol": "NOLAUNCHUSDT", "baseCoin": "NO", "quoteCoin": "USDT"},
-        {"symbol": "AAAUSDC", "baseCoin": "AAA", "quoteCoin": "USDC"},
-    ]
-    out = s1.reduce_spot_page(page(items))
-    assert [r["symbol"] for r in out["rows"]] == ["AAAUSDT", "NOLAUNCHUSDT", "OLDUSDT"]
-    old = next(r for r in out["rows"] if r["symbol"] == "OLDUSDT")
-    assert old["launch_ms"] is None and old["before_window"] is True
-    assert out["with_launch_time"] == 2
-    assert "NEWUSDT" not in json.dumps(out)
-
-
-def test_root_listing_never_names_a_catalog_symbol_or_a_stale_directory() -> None:
+def test_root_listing_keeps_only_directories_proven_inside_the_window() -> None:
     html = "\n".join(
         [
             '<a href="LIVEUSDT/">LIVEUSDT/</a> 2026-11-01 02:00 -',
@@ -150,15 +134,36 @@ def test_root_listing_never_names_a_catalog_symbol_or_a_stale_directory() -> Non
             '<a href="GONEUSDT/">GONEUSDT/</a> 2025-03-04 02:00 -',
             '<a href="STALEUSDT/">STALEUSDT/</a> 2024-03-04 02:00 -',
             '<a href="NODATEUSDT/">NODATEUSDT/</a>',
+            '<a href="LATEUSDT/">LATEUSDT/</a> 2025-10-01 02:00 -',
             '<a href="BTC-26DEC25/">BTC-26DEC25/</a> 2025-12-01 -',
         ]
     )
     out = s1.reduce_root_listing(html, {"LIVEUSDT", "POSTUSDT"})
-    assert out["candidates"] == ["GONEUSDT", "NODATEUSDT"]
-    assert out["dirs"] == 5 and out["dirs_with_modified"] == 4
-    assert "POSTUSDT" not in json.dumps(out)
+    # an unknown date is not allowed, and a date from the cut is not allowed
+    assert out == {"candidates": ["GONEUSDT"], "modified_dates_present": True}
     with pytest.raises(s1.SchemaMismatchError):
         s1.reduce_root_listing("<html>nothing</html>", set())
+
+
+def test_root_listing_output_does_not_change_when_post_cut_directories_are_added() -> None:
+    """P1-1 regression: no directory count or name of the test year is kept."""
+    base = [
+        '<a href="GONEUSDT/">GONEUSDT/</a> 2025-03-04 02:00 -',
+        '<a href="LIVEUSDT/">LIVEUSDT/</a> 2026-11-01 02:00 -',
+    ]
+    extra = [
+        '<a href="NEWAUSDT/">NEWAUSDT/</a> 2026-02-01 02:00 -',  # not in the catalog, post-cut
+        '<a href="NEWBUSDT/">NEWBUSDT/</a>',  # not in the catalog, no date
+    ]
+    plain = s1.reduce_root_listing("\n".join(base), {"LIVEUSDT"})
+    more = s1.reduce_root_listing("\n".join(base + extra), {"LIVEUSDT"})
+    assert plain == more
+    assert "NEW" not in json.dumps(more) and set(more) == {"candidates", "modified_dates_present"}
+
+
+def test_root_listing_without_any_date_has_no_candidates_and_says_so() -> None:
+    out = s1.reduce_root_listing('<a href="AAAUSDT/">AAAUSDT/</a>', set())
+    assert out == {"candidates": [], "modified_dates_present": False}
 
 
 def test_symbol_listing_drops_names_from_the_cut_uncounted() -> None:
@@ -233,20 +238,38 @@ def test_first_file_fails_closed() -> None:
 
 def test_kline_keeps_start_times_and_drops_rows_from_the_cut() -> None:
     rows = [[str(START), PRICE, PRICE, PRICE, PRICE, "1", PRICE], [str(CUT), PRICE] * 3 + ["1"]]
-    plain = s1.reduce_kline(
-        {"retCode": 0, "result": {"symbol": "AAAUSDT", "list": rows[:1]}}, "AAAUSDT", 7
-    )
-    both = s1.reduce_kline(
-        {"retCode": 0, "result": {"symbol": "AAAUSDT", "list": rows}}, "AAAUSDT", 7
-    )
-    assert plain == both == {"n": 1, "oldest_ms": START, "newest_ms": START}
-    assert PRICE not in json.dumps(both)
+    one = {"retCode": 0, "result": {"symbol": "AAAUSDT", "list": rows[:1]}}
+    both = {"retCode": 0, "result": {"symbol": "AAAUSDT", "list": rows}}
+    plain = s1.reduce_kline(one, "AAAUSDT", 7, limit=1000)
+    cut = s1.reduce_kline(both, "AAAUSDT", 7, limit=1000)
+    assert plain == cut
+    assert (plain["n"], plain["oldest_ms"], plain["newest_ms"]) == (1, START, START)
+    assert PRICE not in json.dumps(cut)
     with pytest.raises(s1.SchemaMismatchError, match="symbol"):
         s1.reduce_kline({"retCode": 0, "result": {"symbol": "BBBUSDT", "list": []}}, "AAAUSDT", 7)
+    bad = {"retCode": 0, "result": {"symbol": "AAAUSDT", "list": [[str(START)]]}}
     with pytest.raises(s1.SchemaMismatchError, match="row"):
-        s1.reduce_kline(
-            {"retCode": 0, "result": {"symbol": "AAAUSDT", "list": [[str(START)]]}}, "AAAUSDT", 7
-        )
+        s1.reduce_kline(bad, "AAAUSDT", 7)
+
+
+def hourly(starts: list[int], limit: int = 1000) -> dict[str, Any]:
+    rows = [[str(t), PRICE, PRICE, PRICE, PRICE] for t in starts]
+    return s1.reduce_kline(
+        {"retCode": 0, "result": {"symbol": "AAAUSDT", "list": rows}}, "AAAUSDT", 5, limit=limit
+    )
+
+
+def test_hourly_series_records_the_runs_of_missing_bars_and_only_timestamps() -> None:
+    """P1-2 regression: a series with two points over days is not a covered series."""
+    hour = s1.HOUR_MS
+    sparse = hourly([START, START + 400 * hour])
+    assert sparse["runs"] == [[START + hour, 399]]
+    whole = hourly([START + i * hour for i in range(10)])
+    assert whole["runs"] == [] and whole["runs_truncated"] is False
+    holes = hourly([START + i * hour for i in range(60) if i % 2 == 0])
+    assert len(holes["runs"]) == 20 and holes["runs_truncated"] is True
+    assert hourly([START, START + hour], limit=2)["full"] is True
+    assert PRICE not in json.dumps(sparse)
 
 
 def test_funding_keeps_timestamps_and_page_boundaries_only() -> None:
@@ -255,15 +278,20 @@ def test_funding_keeps_timestamps_and_page_boundaries_only() -> None:
 
     payload = {"retCode": 0, "result": {"list": [item(START + 200), item(START + 100), item(CUT)]}}
     out = s1.reduce_funding(payload, "AAAUSDT")
-    assert out == {"n": 2, "oldest_ms": START + 100, "newest_ms": START + 200, "full": False}
+    assert out == {
+        "n": 2,
+        "oldest_ms": START + 100,
+        "newest_ms": START + 200,
+        "max_gap_ms": 100,
+        "full": False,
+    }
     assert "0.0123456789" not in json.dumps(out)
+    bad = {"retCode": 0, "result": {"list": [item(START) | {"symbol": "X"}]}}
     with pytest.raises(s1.SchemaMismatchError):
-        s1.reduce_funding(
-            {"retCode": 0, "result": {"list": [item(START) | {"symbol": "X"}]}}, "AAAUSDT"
-        )
+        s1.reduce_funding(bad, "AAAUSDT")
 
 
-# ---------------------------------------------------------------- clock and eligibility
+# clock and eligibility
 
 
 def test_entry_clock_rounds_up_to_the_next_minute() -> None:
@@ -306,42 +334,81 @@ def test_first_file_two_days_away_is_decided_without_a_download() -> None:
     assert not s1.needs_first_file(None, launch)
 
 
-# ---------------------------------------------------------------- funding pagination (HYP-036 rule)
+# funding pagination (HYP-036 rule)
 
 
-def fpage(n: int, oldest: int | None, full: bool, outcome: str = "ok") -> dict[str, Any]:
-    return {
-        "outcome": outcome,
-        "facts": {"n": n, "oldest_ms": oldest, "newest_ms": oldest, "full": full},
-    }
+EIGHT = 8 * s1.HOUR_MS
+FSTART = START + 5 * DAY
+FEND = FSTART + 19 * DAY
 
 
-def test_funding_short_first_page_covers_the_span() -> None:
-    state = s1.funding_state([fpage(57, 1_500, False)], 1_000, 9_000)
-    assert state == {"decided": True, "covered": True, "next_end": 9_000, "reason": "short_page"}
+def fpage(
+    oldest: int | None,
+    newest: int | None,
+    full: bool,
+    *,
+    n: int = 10,
+    gap: int | None = EIGHT,
+    outcome: str = "ok",
+) -> dict[str, Any]:
+    facts = {"n": n, "oldest_ms": oldest, "newest_ms": newest, "max_gap_ms": gap, "full": full}
+    return {"outcome": outcome, "facts": facts}
+
+
+def test_funding_short_page_with_settlements_across_the_span_is_proven() -> None:
+    state = s1.funding_state([fpage(FSTART + EIGHT, FEND - 1, False)], FSTART, FEND)
+    assert state == {"decided": True, "covered": True, "next_end": FEND, "reason": "proven"}
+
+
+def test_funding_one_row_for_the_whole_interval_is_not_coverage() -> None:
+    """P1-2 regression: a short, non-empty page used to cover the whole interval."""
+    one = fpage(FSTART + 9 * DAY, FSTART + 9 * DAY, False, n=1, gap=None)
+    state = s1.funding_state([one], FSTART, FEND)
+    assert state["decided"] is True and state["covered"] is False
+    assert state["reason"] == "starts_late"
+    early = fpage(FSTART + EIGHT, FSTART + EIGHT, False, n=1, gap=None)
+    assert s1.funding_state([early], FSTART, FEND)["reason"] == "ends_early"
+    hole = fpage(FSTART + EIGHT, FEND - 1, False, gap=3 * EIGHT)
+    assert s1.funding_state([hole], FSTART, FEND)["reason"] == "gap_inside"
 
 
 def test_funding_full_page_covers_only_from_its_oldest_row() -> None:
-    pages = [fpage(200, 6_000, True)]
-    state = s1.funding_state(pages, 1_000, 9_000)
-    assert state["decided"] is False and state["next_end"] == 5_999
-    pages.append(fpage(30, 3_000, False))
-    assert s1.funding_state(pages, 1_000, 9_000)["covered"] is True
-    # a full page whose oldest row reaches the span start decides it too
-    assert s1.funding_state([fpage(200, 1_000, True)], 1_000, 9_000)["reason"] == "full_page"
+    first = fpage(FSTART + 10 * DAY, FEND - 1, True)
+    state = s1.funding_state([first], FSTART, FEND)
+    assert state["decided"] is False and state["next_end"] == FSTART + 10 * DAY - 1
+    older = fpage(FSTART + EIGHT, FSTART + 10 * DAY - EIGHT, False)
+    assert s1.funding_state([first, older], FSTART, FEND)["covered"] is True
+    # the pages must join: a hole between them is a gap even if each page is dense
+    far = fpage(FSTART + EIGHT, FSTART + 8 * DAY, False)
+    assert s1.funding_state([first, far], FSTART, FEND)["reason"] == "gap_between"
+    # a full page whose oldest row reaches the span start finishes the pagination
+    reach = fpage(FSTART, FEND - 1, True)
+    assert s1.funding_state([reach], FSTART, FEND)["reason"] == "proven"
 
 
-def test_funding_gaps_are_never_covered() -> None:
-    assert s1.funding_state([fpage(0, None, False)], 1_000, 9_000)["reason"] == "no_rows"
-    assert (
-        s1.funding_state([fpage(5, 2_000, False, "unavailable")], 1_000, 9_000)["covered"] is False
-    )
-    full = [fpage(200, 8_000 - 1_000 * i, True) for i in range(s1.FUNDING_MAX_PAGES)]
-    state = s1.funding_state(full, 1_000, 9_000)
+def test_funding_end_is_an_event_only_when_the_catalog_delivered_the_symbol() -> None:
+    stops = fpage(FSTART + EIGHT, FSTART + 5 * DAY, False)
+    assert s1.funding_state([stops], FSTART, FEND)["reason"] == "ends_early"
+    delivered = FSTART + 5 * DAY + EIGHT
+    assert s1.funding_state([stops], FSTART, FEND, delivered)["covered"] is True
+    assert s1.funding_state([stops], FSTART, FEND, delivered + 1)["covered"] is False
+
+
+def test_funding_unproven_or_unfinished_is_never_covered() -> None:
+    empty = fpage(None, None, False, n=0, gap=None)
+    assert s1.funding_state([empty], FSTART, FEND)["reason"] == "no_rows"
+    failed = fpage(FSTART, FEND, False, outcome="unavailable")
+    assert s1.funding_state([failed], FSTART, FEND)["covered"] is False
+    full = [
+        fpage(FEND - 1 - i * DAY, FEND - 1 - (i - 1) * DAY, True)
+        for i in range(s1.FUNDING_MAX_PAGES)
+    ]
+    state = s1.funding_state(full, FSTART, FEND)
     assert state["reason"] == "pagination_exhausted" and state["covered"] is False
+    assert s1.funding_state([], FSTART, FEND)["reason"] == "pending"
 
 
-# ---------------------------------------------------------------- identity from the catalog
+# identity from the catalog
 
 
 def phase0_of(
@@ -381,6 +448,49 @@ def test_relist_and_multiplier_ambiguity_come_from_the_catalog() -> None:
     }
 
 
+def test_an_old_symbol_closed_inside_the_window_is_judged_by_its_delivery_date() -> None:
+    """Reviewer A, P2: delivered before the launch is a relist, after it is two symbols."""
+    launch = ms("2024-12-01T00:00:00")
+    phase0 = phase0_of(
+        [catalog_row("AUSDT", "A", launch), catalog_row("BUSDT", "B", launch)],
+        [
+            {
+                "symbol": "1000AUSDT",
+                "base": "A",
+                "delivered_before_window": False,
+                "delivery_ms": launch - DAY,
+            },
+            {
+                "symbol": "1000BUSDT",
+                "base": "B",
+                "delivered_before_window": False,
+                "delivery_ms": launch + DAY,
+            },
+        ],
+    )
+    assert s1.catalog_contradictions(phase0) == {
+        "AUSDT": "relist",
+        "BUSDT": "multiplier_ambiguous",
+    }
+
+
+def test_the_catalog_keeps_a_prior_delivery_date_only_inside_the_window() -> None:
+    rows = [
+        row("AAAUSDT", START - 10, deliveryTime=str(START - 5)),
+        row("BBBUSDT", START - 10, deliveryTime=str(START + 5 * DAY)),
+        row("CCCUSDT", START - 10, deliveryTime=str(CUT + DAY)),
+    ]
+    prior = {p["symbol"]: p for p in s1.reduce_catalog_page(page(rows))["prior"]}
+    assert prior["AAAUSDT"] == {
+        "symbol": "AAAUSDT",
+        "base": "AAA",
+        "delivered_before_window": True,
+        "delivery_ms": None,
+    }
+    assert prior["BBBUSDT"]["delivery_ms"] == START + 5 * DAY
+    assert prior["CCCUSDT"]["delivery_ms"] is None  # a date from the cut is never kept
+
+
 def test_multiplier_prefix_does_not_make_a_new_base() -> None:
     assert asset("1000PEPE") == "PEPE"
     phase0 = phase0_of(
@@ -402,7 +512,7 @@ def test_ticker_reuse_needs_old_files_or_a_gap_before_the_launch() -> None:
     assert not s1.ticker_reuse(after, launch)
 
 
-# ---------------------------------------------------------------- planner
+# planner
 
 
 def test_planner_refuses_symbols_outside_the_contract_and_over_the_cap() -> None:
@@ -437,20 +547,6 @@ def test_bar_requests_carry_exact_spans_and_never_reach_the_cut() -> None:
     assert d4.url == s1.MARK_URL and d5.url == s1.KLINE_URL
 
 
-def test_book_requests_try_ob200_only_after_ob500_is_absent() -> None:
-    t0 = ms("2024-11-01T10:00:00")
-    c = {"symbol": "AAAUSDT", "launch_ms": t0, "t0_ms": t0, **s1.v1_cuts(t0)}
-    first = s1.book_requests([c], {})
-    assert [dict(r.meta)["file"] for r in first] == ["ob500", "ob500"]
-    seen = {
-        "AAAUSDT": {"entry": {"ob500": {"outcome": "absent"}}, "exit": {"ob500": {"outcome": "ok"}}}
-    }
-    second = s1.book_requests([c], seen)
-    assert [(dict(r.meta)["label"], dict(r.meta)["file"]) for r in second] == [("entry", "ob200")]
-    seen["AAAUSDT"]["entry"]["ob200"] = {"outcome": "absent"}
-    assert s1.book_requests([c], seen) == []
-
-
 def test_preflight_sums_the_listed_sizes_and_sets_big_files_aside() -> None:
     heads: dict[str, dict[str, Any]] = {
         "AUSDT": {"outcome": "ok", "facts": {"content_length": 100}},
@@ -463,36 +559,64 @@ def test_preflight_sums_the_listed_sizes_and_sets_big_files_aside() -> None:
     assert plan["over_per_file_cap"] == ["BUSDT"] and plan["no_size"] == ["CUSDT", "DUSDT"]
 
 
-# ---------------------------------------------------------------- contract
+# contract
 
 
 def test_contract_is_deterministic_and_hash_bound() -> None:
     a, b = s1.build_contract(), s1.build_contract()
     assert a == b and a["request_list_sha256"] == s1.contract_hash(a)
     other = json.loads(json.dumps(a))
-    other["limits"]["max_attempts"] += 1
+    other["go_limits"]["1"]["max_attempts"] += 1
     assert s1.contract_hash(other) != a["request_list_sha256"]
-    assert [r["cls"] for r in a["static_requests"]] == ["C1", "C1", "C1", "C2", "C3"]
+    assert [r["cls"] for r in a["static_requests"]] == ["C1", "C1", "C1", "C3"]
 
 
-def test_contract_counts_and_caps_are_consistent() -> None:
+def test_contract_has_two_gos_with_their_own_counts_caps_and_hashes() -> None:
     contract = s1.build_contract()
     classes = {c["cls"]: c for c in contract["classes"]}
-    core = [c for c in classes.values() if c["cls"] != "F"]
-    assert sum(c["expected_requests"] for c in core) == 1773
-    assert sum(c["expected_requests"] for c in classes.values()) == 2183
-    assert contract["limits"]["max_attempts"] == 3200
+    assert set(classes) == {"C1", "C3", "D1", "D2h", "D2", "D3", "D4", "D5", "D6"}
+    go1 = [c for c in classes.values() if c["go"] == 1]
+    go2 = [c for c in classes.values() if c["go"] == 2]
+    assert [c["cls"] for c in go1] == ["C1", "C3", "D1", "D2h"]  # metadata only, no body
+    assert [c["cls"] for c in go2] == ["D2", "D3", "D4", "D5", "D6"]
+    assert sum(c["expected_requests"] for c in go1) == 547
+    assert sum(c["expected_requests"] for c in go2) == 1135
+    assert sum(c["max_requests"] for c in go1) == 761
+    assert sum(c["max_requests"] for c in go2) == 2400
+    assert contract["go_limits"] == {
+        "1": {"max_attempts": 1000, "max_bytes": 300 * s1.MIB},
+        "2": {"max_attempts": 1700, "max_bytes": 6656 * s1.MIB},
+    }
     for c in classes.values():
         assert c["expected_requests"] <= c["max_requests"]
-    assert classes["F"]["optional"] and classes["C2"]["optional"]
-    assert classes["D2"]["max_class_bytes"] <= contract["limits"]["max_bytes_total"]
-    assert s1.max_attempts(["C1"]) == 2600 and s1.max_attempts(["F"]) == 3200
+    # no class of go 1 reads a body that holds prices: the only GET bodies are JSON metadata
+    # and HTML listings; every first file and bar is in go 2
+    assert {c["cls"] for c in go1 if c["method"] == "GET"} == {"C1", "C3", "D1"}
+    assert classes["D2"]["max_class_bytes"] <= contract["go_limits"]["2"]["max_bytes"]
+    assert "F" not in classes and "C2" not in classes  # book and spot are out of the contract
+    assert s1.go_classes(1) == ("C1", "C3", "D1", "D2h")
 
 
-def test_a_struck_optional_class_changes_the_hash_and_the_go() -> None:
-    struck = contract_without(("F",))
-    assert struck["request_list_sha256"] != s1.build_contract()["request_list_sha256"]
-    assert "F" not in s1.enabled_classes(struck) and struck["limits"]["max_attempts"] == 2600
+def test_each_go_hash_covers_the_shared_rules_and_only_its_own_classes() -> None:
+    base = s1.build_contract()
+    assert base["go_sha256"]["1"] != base["go_sha256"]["2"]
+
+    def changed(edit: Any) -> dict[str, Any]:
+        copy: dict[str, Any] = json.loads(json.dumps(base))
+        edit(copy)
+        return copy
+
+    def go2_class(c: dict[str, Any]) -> None:
+        next(x for x in c["classes"] if x["cls"] == "D2")["max_class_bytes"] -= 1
+
+    def threshold(c: dict[str, Any]) -> None:
+        c["thresholds"]["m1_ambiguous_max"] = 0.2
+
+    assert s1.go_hash(changed(go2_class), 1) == base["go_sha256"]["1"]  # go 1 unaffected
+    assert s1.go_hash(changed(go2_class), 2) != base["go_sha256"]["2"]
+    assert s1.go_hash(changed(threshold), 1) != base["go_sha256"]["1"]  # shared rules: both
+    assert s1.go_hash(changed(threshold), 2) != base["go_sha256"]["2"]
+    assert s1.go_hash(base, 1) == base["go_sha256"]["1"]
 
 
 def test_checked_in_contract_and_request_list_match_the_code() -> None:
@@ -500,6 +624,7 @@ def test_checked_in_contract_and_request_list_match_the_code() -> None:
     assert saved == s1.build_contract()
     doc = (REPO / s1.REQUEST_LIST_DOC).read_text()
     assert saved["request_list_sha256"] in doc
+    assert all(h in doc for h in saved["go_sha256"].values())
     assert hashlib.sha256((REPO / s1.CONTRACT_PATH).read_bytes()).hexdigest() in doc
     assert "\u2014" not in doc  # no em dash anywhere
 
@@ -513,241 +638,3 @@ def test_the_ledger_charges_a_crashed_attempt_its_full_cap() -> None:
     count, used, by_n, by_b = s1.ledger_totals(attempts, receipts)
     assert (count, by_n["D4"]) == (2, 2)
     assert used == 1000 + s1.CLASS_BY_ID["D4"].max_response_bytes == by_b["D4"]
-
-
-# ---------------------------------------------------------------- the fetcher, end to end
-
-
-def small_world(count: int = 12) -> World:
-    world = World.evenly(count)
-    world.prior = [("OLDUSDT", "OLD", ms("2024-06-01T00:00:00"))]
-    world.archive_only = ["GHOSTUSDT"]
-    return world
-
-
-def all_text(root: Path) -> str:
-    return "\n".join(p.read_text() for p in sorted(root.rglob("*.json")))
-
-
-def test_a_full_run_requests_only_the_contract_and_stores_no_value(tmp_path: Path) -> None:
-    world = small_world()
-    summary, report = run_world(world, tmp_path / "run")
-    n = len(world.launches)
-    # C1 3, C2 1, C3 1, D1 launches + one archive-only, D2h, D2, then D3 D4 D5, D6, F x2
-    expected = {
-        "C1": 3, "C2": 1, "C3": 1, "D1": n + 1, "D2h": n, "D2": n,
-        "D3": n, "D4": n, "D5": n, "D6": n, "F": 2 * n,
-    }  # fmt: skip
-    assert summary["attempts_by_class"] == expected
-    assert summary["attempts"] == sum(expected.values())
-    # no sentinel (price, rate, tick size, post-cut symbol or day) in any file of the run
-    text = all_text(tmp_path / "run")
-    for sentinel in SENTINELS:
-        assert sentinel not in text
-    # nothing was requested for the post-cut launch, and no request reaches the cut
-    for request in world.requests:
-        url = str(request.url)
-        assert request.url.host in {"api.bybit.com", "public.bybit.com", "quote-saver.bycsi.com"}
-        assert "POSTCUT" not in url
-        assert all(day < "2025-10-01" for day in re.findall(r"\d{4}-\d{2}-\d{2}", url))
-        for key in ("start", "end", "startTime", "endTime"):
-            value = dict(request.url.params).get(key)
-            assert value is None or int(value) < CUT
-    assert report["launches"] == n
-    # every receipt names a class, a key and an outcome; bodies are never persisted
-    for path in (tmp_path / "run" / "receipts").glob("*.json"):
-        receipt = json.loads(path.read_text())
-        assert {"cls", "key", "outcome", "body_sha256", "body_bytes"} <= set(receipt)
-
-
-def test_the_first_json_response_of_each_class_leaves_a_key_only_schema(tmp_path: Path) -> None:
-    run_world(small_world(3), tmp_path / "run")
-    schemas = {}
-    for path in sorted((tmp_path / "run" / "receipts").glob("*.json")):
-        receipt = json.loads(path.read_text())
-        if "schema" in receipt:
-            schemas[receipt["cls"]] = receipt["schema"]
-    assert {"C1", "C2", "D3", "D4", "D5", "D6"} <= set(schemas)
-    assert all(
-        re.fullmatch(r"[\w.\[\]]+:[a-z]+", entry) for tree in schemas.values() for entry in tree
-    )
-
-
-def test_a_429_is_retried_after_retry_after_and_slows_the_run(tmp_path: Path) -> None:
-    world = small_world(2)
-    world.fail["instruments-info"] = [429, 500]
-    f, clock = fetcher(world, tmp_path / "run")
-    s1.run(f)
-    assert 7.0 in clock.sleeps  # the server's Retry-After
-    assert 30.0 in clock.sleeps  # then the ladder: the second failed attempt of one request
-    assert f.spacing == 2.0  # doubled once, by the 429 only
-    assert f.summary()["attempts_by_class"]["C1"] == 5  # 3 requests + 2 retries
-
-
-def test_three_failed_attempts_make_a_request_unavailable_not_a_stop(tmp_path: Path) -> None:
-    world = small_world(3)
-    world.fail["funding/history"] = [500, 500, 500]
-    f, _ = fetcher(world, tmp_path / "run")
-    summary = s1.run(f)
-    assert summary["outcomes"]["D6"]["unavailable"] == 1
-    assert summary["outcomes"]["D6"]["ok"] == 2
-
-
-def test_a_core_class_that_stays_unavailable_stops_the_run(tmp_path: Path) -> None:
-    world = small_world(2)
-    world.fail["instruments-info"] = [500, 500, 500]
-    f, _ = fetcher(world, tmp_path / "run")
-    with pytest.raises(s1.FetchStoppedError, match="C1"):
-        s1.run(f)
-
-
-def test_403_stops_without_a_retry(tmp_path: Path) -> None:
-    world = small_world(2)
-    world.fail["instruments-info"] = [403]
-    f, clock = fetcher(world, tmp_path / "run")
-    with pytest.raises(s1.FetchStoppedError, match="403"):
-        s1.run(f)
-    assert f.summary()["attempts"] == 1 and clock.sleeps == []
-
-
-def test_a_schema_mismatch_stops_and_names_a_reason_not_a_value(tmp_path: Path) -> None:
-    client = httpx.Client(
-        transport=httpx.MockTransport(lambda r: httpx.Response(200, json={"a": 1}))
-    )
-    f = s1.Fetcher(tmp_path / "run", s1.build_contract(), client)
-    with pytest.raises(s1.FetchStoppedError, match=r"schema mismatch \(envelope\)"):
-        s1.run(f)
-    receipt = json.loads(next((tmp_path / "run" / "receipts").glob("*.json")).read_text())
-    assert receipt["outcome"] == "schema_mismatch" and receipt["schema"] == ["a:int"]
-
-
-def test_the_optional_spot_catalog_never_stops_the_run(tmp_path: Path) -> None:
-    world = small_world(3)
-    world.spot = False  # the spot endpoint answers with an error envelope
-    _, report = run_world(world, tmp_path / "run")
-    assert report["spot"] == {"available": False}
-
-
-def test_a_stopped_run_resumes_without_repeating_finished_requests(tmp_path: Path) -> None:
-    world = small_world(5)
-    world.fail["/v5/market/kline"] = [403]  # the first entry bar request
-    root = tmp_path / "run"
-    f, _ = fetcher(world, root)
-    with pytest.raises(s1.FetchStoppedError):
-        s1.run(f)
-    done = len(world.requests)
-    f2, _ = fetcher(world, root)
-    summary = s1.run(f2)
-    again = [str(r.url) for r in world.requests[done:]]
-    first_pass = {
-        str(r.url) + str(r.url.params) for r in world.requests[:done] if r.method == "GET"
-    }
-    # nothing finished before the stop is requested again, except the request that was refused
-    assert len([u for u in again if "instruments-info" in u]) == 0
-    assert (
-        sum(
-            1
-            for r in world.requests[done:]
-            if r.method == "GET" and (str(r.url) + str(r.url.params)) in first_pass
-        )
-        <= 1
-    )
-    assert summary["attempts"] == len(world.requests)
-
-
-def test_an_interrupted_phase_zero_starts_a_new_round(tmp_path: Path) -> None:
-    world = small_world(3)
-    world.fail["public.bybit.com/trading/"] = [403]  # the root listing, after C1 and C2
-    root = tmp_path / "run"
-    f, _ = fetcher(world, root)
-    with pytest.raises(s1.FetchStoppedError):
-        s1.run(f)
-    assert not (root / "phase0.json").exists()
-    f2, _ = fetcher(world, root)
-    s1.run(f2)
-    assert len(list((root / "rounds").glob("*.json"))) == 2
-    assert (root / "phase0.json").exists()
-    assert f2.summary()["attempts_by_class"]["C1"] == 6  # the whole phase, twice
-
-
-def test_the_run_binding_refuses_a_different_contract(tmp_path: Path) -> None:
-    f, _ = fetcher(small_world(2), tmp_path / "run")
-    del f
-    with pytest.raises(ValueError, match="run binding differs"):
-        fetcher(small_world(2), tmp_path / "run", contract_without(("F",)))
-
-
-def test_a_class_outside_the_go_is_never_requested(tmp_path: Path) -> None:
-    world = small_world(3)
-    run_world(world, tmp_path / "run", contract_without(("F",)))
-    assert not any(r.url.host == "quote-saver.bycsi.com" for r in world.requests)
-    f, _ = fetcher(world, tmp_path / "other")
-    f.enabled.discard("D5")
-    with pytest.raises(s1.FetchStoppedError, match="not in the owner's go"):
-        f.run_request(
-            s1.bar_requests(
-                [
-                    {
-                        "symbol": "AAAUSDT",
-                        "launch_ms": 1,
-                        "t0_ms": START,
-                        "entry_ms": START,
-                        "exit_ms": START + DAY,
-                    }
-                ]
-            )[2]
-        )
-
-
-def test_the_attempt_cap_is_a_hard_stop(tmp_path: Path) -> None:
-    tight = json.loads(json.dumps(s1.build_contract()))
-    tight["limits"]["max_attempts"] = 4
-    with pytest.raises(s1.BudgetExceededError, match="attempt cap"):
-        run_world(small_world(2), tmp_path / "run", rehash(tight))
-
-
-def test_the_preflight_stops_before_any_first_file_is_read(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setitem(
-        s1.CLASS_BY_ID, "D2", dataclasses.replace(s1.CLASS_BY_ID["D2"], max_class_bytes=10)
-    )
-    world = small_world(3)
-    f, _ = fetcher(world, tmp_path / "run")
-    with pytest.raises(s1.FetchStoppedError, match="preflight"):
-        s1.run(f)
-    assert not any(r.method == "GET" and r.url.path.endswith(".csv.gz") for r in world.requests)
-    assert json.loads((tmp_path / "run" / "preflight.json").read_text())["within_cap"] is False
-
-
-def test_a_file_over_the_per_file_cap_is_never_downloaded(tmp_path: Path) -> None:
-    world = small_world(3)
-    world.sizes_scale = 10**9  # every HEAD reports a huge Content-Length
-    summary, report = run_world(world, tmp_path / "run")
-    assert "D2" not in summary["attempts_by_class"]
-    assert report["stop_codes"][0] == "not_reconstructible"
-
-
-def test_the_first_file_stream_is_cut_at_the_response_cap(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    monkeypatch.setitem(
-        s1.CLASS_BY_ID, "D2", dataclasses.replace(s1.CLASS_BY_ID["D2"], max_response_bytes=40)
-    )
-    world = small_world(2)
-    summary, _ = run_world(world, tmp_path / "run")
-    assert summary["outcomes"]["D2"] == {"too_large": 2}
-
-
-def test_the_checked_in_stage1_pipeline_makes_no_request_outside_the_mock(tmp_path: Path) -> None:
-    # a real client would resolve the host; the mock transport has no fallback, so this
-    # fails closed if any request bypassed it
-    world = small_world(2)
-    run_world(world, tmp_path / "run")
-    assert world.requests, "the run made no request through the mock"
-    assert PRICE not in all_text(tmp_path / "run")
-
-
-def test_launch_defaults_are_a_healthy_launch() -> None:
-    launch = Launch("AAAUSDT", "AAA", ms("2024-11-01T10:00:00"))
-    assert launch.entry_bar and launch.funding_rows and launch.min_notional == "5"
