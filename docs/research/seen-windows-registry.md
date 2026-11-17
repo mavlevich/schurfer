@@ -611,3 +611,22 @@ Completed on the owner's go, 2026-11-16:
   No second class selection on the holdout titles is allowed now. It is a disclosed look
   at the holdout titles of A2, not a confirmation read. The backward holdout keeps its
   registered status. [Diagnostic](catalyst-feasibility-a2-diagnostic-2026-11-16.md), section 6.
+
+## Stage 2C paper screens `stage-2c-paper-screens-v1`, 2026-11-17
+
+[Paper screens](stage-2c-paper-screens-v1.md) of I36, I35, I26, I27 and I45 at the
+owner's USD 5,000. **No window was read, at any level.** No price, funding rate, open
+interest, spread, depth, basis, volume or return was read from any venue, archive or
+Schurfer capture, and no request was made to any exchange or data service. Inputs are
+repository documents, published fee and funding conventions, and formulas. The
+HYP-012 v2 blind window from 2026-09-29 was not approached.
+
+**Level: none (no exposure).** The backward holdout (2023-02-01 to 2024-09-15), the
+HYP-031 test year and the discovery year keep their registered status; none is spent or
+shortened by this document.
+
+**Planned reads, none authorized.** Any later measurement named there is limited to the
+discovery year (2024-10-01 to 2025-09-30), needs its own contract and this registry
+row updated before its first request, and needs the owner's separate go. Reusing the
+local carry snapshot (2024-10-01 to 2026-09-28) for I36 would be a discovery-only read
+at a window already seen at the outcomes level. The holdout is not requested.
