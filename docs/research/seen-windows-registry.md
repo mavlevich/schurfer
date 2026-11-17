@@ -654,3 +654,39 @@ exposure comes from this draft. The draft's only external reads were public Bybi
 help-center and API documentation pages (the margin-change notice, the Insurance Fund
 page, the Innovation Zone fee FAQ and the fee-group endpoint page), opened on
 2026-11-16 in the browser pane and by web search. They hold no market value.
+
+## I25 stage 1 registration `new-perp-short-v1`, request list v1, 2026-11-17 (pending the owner's go)
+
+[Request list and contract](new-perp-stage1-request-list-v1.md), frozen as
+[`contract.json`](evidence/new-perp-stage1-v1/contract.json). This row, the code, the
+contract JSON and the request list must be in main before the first request; the fetch
+needs the owner's go. **This row records no read: nothing has been fetched.**
+
+**Level: coverage, discovery year only (2024-10-01 to 2025-09-30).** Bybit
+`instruments-info` catalog fields (linear and spot), the trade-archive root and per-symbol
+file listings, the size and then the timestamp column of the first daily trade file of each
+launch, the start times of one entry minute bar and of hourly trade and mark-price series,
+funding history page boundaries and timestamps, and (optional) HEAD existence of
+order-book files. Every response also holds prices or rates; they are discarded unparsed
+and no price, rate, volume or return is stored or reported. Request list hash
+`request_list_sha256` `79aa32aa033c87618ff8c35d94166772245954d26946b37b854e961e646b2f1e`:
+about 1,773 requests for the core classes and 410 for the optional book class, at most
+2,600 attempts (3,200 with the book class) and 6.5 GiB of response bytes.
+
+**Cut.** Nothing dated from 2025-10-01 is read, recorded or counted: a catalog row
+launched from the cut is skipped before any other field is read, listing names from the cut
+are dropped uncounted, no total row count is stored, and no span of any series ends after
+2025-09-30T23:59:59.999Z. This is how the HYP-031 test year (2025-10-01 to 2026-09-28)
+and the HYP-012 v2 blind window (from 2026-09-29) stay unread and uncounted at metadata
+level too. A launch whose path would cross the cut is `window_censored` and gets no
+bar, mark or funding request.
+
+**Holdout.** Not requested. Catalog rows launched before 2024-10-01 are reduced to symbol and
+base with no date, kept outside Git for `relist` and `multiplier_ambiguous` only, and no count
+of them is reported. Stage 1b stays a separate go.
+
+**Recorded after the run (not yet).** An aggregate report of counts, shares and stop codes
+(no symbol, no price), the run's `request_list_sha256` and the code revision. The receipts
+stay sealed outside Git. After the fetch the discovery-year launches count as read at
+coverage level for this trigger, and nothing at outcome level. Stage 3 and stage 4 reads
+need their own request lists and rows.
