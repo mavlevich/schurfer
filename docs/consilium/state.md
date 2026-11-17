@@ -321,3 +321,75 @@ Read at: `27551c6` (main), consilium `7ba0e29`, PR #600 `a18f2c0`.
   both applied in `plan.md`. B implemented the three Step-0 items on PR #600 in commit
   `6ccd0db` (`instrument_launches` per window, `--prior-root` cumulative budget carry-over,
   and the section 5 catalog coverage note; 57 tests, `ruff`, `mypy --strict` pass).
+
+## 14. Status sync, `I43` (`spot -> perp`) screen, and `I44` (`CryptoAttack`), 2026-11-17
+
+Read at: `e3f323d` (`origin/main`), PR #601 (`bccb6ee`), PR #606 (`da22081`), PR #607 (`e3f323d`).
+
+- **Catalyst count status update (PR #606, `da22081`, 2026-11-16):** The catalyst
+  feasibility v1 count run is completed and merged (`stop_direction_a`: no catalyst
+  bucket is feasible; A2/A4d are `lab_only`, A1/A3 `insufficient_events` on Binance
+  alone, A4f/A4r not reconstructible). `I25` (new perp launches) passed its planned
+  **event-count threshold** (263 launches, 53 weeks); passing a count gate does not
+  establish profitability or statistical power.
+- **No general perp flow radar or broad multi-exchange WebSocket capture:** Broad
+  short-horizon order-flow radars on alt perpetuals remain closed under section 1
+  (`abnormal-flow v1`, `WATCH`, `net-buy v1`, `HYP-024`, `HYP-032`, `HYP-036`), and
+  order-book history (`ob200`/`ob500`) is reserved for execution-cost evaluation rather
+  than building a multi-exchange L2/trade WebSocket collector.
+- **Added [`I43`](ideas.md) and [`screens/owner-2026-11-17.md`](screens/owner-2026-11-17.md):**
+  - Mechanism 1 (directional Bybit USDT perp long after spot lead; excluding two-leg
+    `I7`/`I19` carry) is recorded as `needs_measurement`, queued behind `I25` and
+    Stage 2A, gated on one bounded 1–2 week discovery-window lead-lag and post-delay
+    perp return check against a concrete 30.0 bps Bybit taker round-trip hurdle.
+  - Mechanism 2 (spot-flow continuation) is recorded as `parked` as a current budget
+    decision (not claiming refutation), reopening only if a specific informational edge
+    absent from `abnormal-flow v1` and `HYP-036` is demonstrated.
+- **Added [`I44`](ideas.md) (`CryptoAttack` / `CEXTrack`) as `needs_rule_change`:**
+  Evaluating an external notification stream as data or labels is currently blocked by
+  the project rule that external Telegram channels are reference-only
+  (`catalyst-feasibility-v1.md`, `2026-09-06/colleague-audit.txt`). No paper screen or
+  collector design is opened unless the owner explicitly decides to reopen that rule
+  (if reopened, any future screen must separate historical archives without local
+  receive times or deleted messages from prospective full-stream capture of `CEXTrack`
+  with raw payloads, first-receive timestamps, edits, and parser errors).
+- **Separated follow-ups (explicitly outside this PR):**
+  - `O11` (live production verification of Group 1, disk, timers, and backups) remains
+    an independent read-only operational check with an observed date.
+  - Reconciliation/transfer of any unmerged items from the stale local
+    `docs/improvement-roadmap-v3` draft (such as intraday BTC/ETH `P-03`, which is not
+    currently separated from `I6` in `ideas.md`) is deferred to a separate PR; those
+    untracked local files are left untouched.
+
+## 15. `plan.md` Draft v3 sync, `USD 5,000` capital, `I45` (`P-03`) transfer, and `O11` prod observation, 2026-11-17
+
+Read at: `d5327b1` (`origin/main`), PR #606 (`da22081`), PR #607 (`e3f323d`), PR #608 (`076db4b`), PR #609 (`d5327b1`).
+
+- **Owner working capital (`R5` / `O9`, 2026-11-17):** Owner set **`USD 5,000`** as the
+  working planning capital (`5%` annual benchmark = `USD 250/year` on total allocated
+  capital, without calling that benchmark risk-free). Live drawdown limits remain to be
+  set before Stage 7.
+- **`plan.md` updated to Draft v3:** Aligned with PR #606/#607 (`stop_direction_a`; owner
+  decided `2026-11-17` not to pursue `A2`/`A4d` `lab_only` in this cycle), PR #608 (head
+  `076db4b`, `I25` Stage 1/1b data checks before prices, Stage 2–3 pre-entry price power
+  calibration before reading strategy outcomes, per-fill fees, and stop/liquidation
+  modeling without a guaranteed loss cap), Stage 2A rules (`31 bps` non-commission filter
+  only; verify HL S3 archive availability and spend cap), explicit `2027-02-11` stop rule
+  (`program-plan-2026-11.md`), `I35`/`I36`, and `I43`'s 1–2 week data-slice wording.
+- **`I44` (`CryptoAttack` / `CEXTrack`) moved to `parked` (`2026-11-17`):** Owner decided
+  not to reopen the `external Telegram channels are reference-only` rule: without a paid
+  subscription only an incomplete/filtered stream is accessible with extra external lag,
+  and equivalent CEX burst shapes (`"$X in N min = Y% of 24h volume"`) were already
+  tested directly on exchange data (`docs/analysis/momentum_flow_volume_burst_screen.sql`,
+  `HYP-016`, `HYP-030` / `bybit-burst-decay-v1`).
+- **Transferred `P-03` (intraday BTC/ETH) as [`I45`](ideas.md):** Added as `unscreened`,
+  preserving separation from `I6` daily/multi-day BTC swings. Untracked local files on
+  `docs/improvement-roadmap-v3` remain untouched pending explicit owner deletion ok.
+- **Closed `O11` read-only production check (observed `2026-11-17 07:56 UTC` via `ssh schurfer`):**
+  - Host checkout `/opt/schurfer`: clean `main` at `e3dff47`; `/dev/sda1` disk **38G / 75G used (53%), 35G free**; `docker_postgres_data` **27.3 GB**; `docker_orderflow_data` **562.2 MB**; local `backups_bytes=180099775`.
+  - Group 1 (`momentum-capture`, `momentum-capture-binance`, `momentum-watch`, `momentum-paper`, `momentum-paper-hold12h`) is stopped; platform, `HYP-012 v2` (`analytics`, `source-lead-exit-capture`, `execution`), and Group 2 (`collector`, `outcome-resolver`, `liquidation-capture-*`, `lsr-subscriber`, `market-hotset`) are up.
+  - Timers passing (`Result=success`, `2026-11-17`): `schurfer-offsite-backup.service` (`04:13:50 UTC`), `schurfer-bybit-order-rules.service` (`07:07:19 UTC`), `schurfer-cold-bar-gated-deletion.service` (`05:00:58 UTC`), and `schurfer-restore-check.service` (`2026-11-15T06:03:03Z`, `ok: true`, `mismatches: {}`, `rows: 216226`, `tables: 23`, `schema_revision_ok: true`).
+  - **Two operational items flagged (no prod changes made):**
+    1. `schurfer-cold-bar-export.service` (`03:32:29 UTC`): `Result=exit-code`, `ExecMainStatus=2` (`ValueError: 2026-11-11 has no rows in timeseries.bybit_momentum_bars_1m; refusing to export`) — expected fallout from stopping Group 1 on 2026-11-10.
+    2. `schurfer-offsite-backup-health.service` (`07:01:57 UTC`): `Result=exit-code`, `ExecMainStatus=1` (cause of non-zero exit not established: journal not readable during this check; requires separate inspection via `make prod-offsite-backup-health`).
+- **Resolved owner decisions (`2026-11-17`):** working capital set to `USD 5,000`, `A2`/`A4d` (`lab_only`) parked for this cycle, and `I44` parked without reopening the external-channel rule.

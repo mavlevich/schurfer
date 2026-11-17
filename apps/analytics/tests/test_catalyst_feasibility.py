@@ -429,6 +429,86 @@ def test_free_text_parser_reads_only_after_the_key_phrase() -> None:
     assert explicit == ("A1", ["ID"], "explicit")
 
 
+A2_PREFIX = "Binance Futures Will Launch USDⓈ-Margined"
+
+
+@pytest.mark.parametrize(
+    ("shape", "tail", "bases"),
+    [
+        # Read today: a ...USDT token, with or without a contract-size multiplier.
+        ("usdt_pair", "EXAMPLEUSDT Perpetual Contract", ["EXAMPLE"]),
+        ("usdt_pair_prefix_multiplier", "1000EXAMPLEUSDT Perpetual Contract", ["EXAMPLE"]),
+        ("usdt_pair_suffix_multiplier", "EXAMPLE1000USDT Perpetual Contract", ["EXAMPLE"]),
+        (
+            "usdt_pairs_several",
+            "AAAUSDT, BBBUSDT and CCCUSDT Perpetual Contracts",
+            ["AAA", "BBB", "CCC"],
+        ),
+        (
+            "usdt_pair_with_name_and_parens",
+            "Example (EXAMPLE) EXAMPLEUSDT Perpetual Contract",
+            ["EXAMPLE"],
+        ),
+        # Lost today (documented limits of the A2 branch): the article is bucketed A2 and
+        # counted as an article, but no event is made from it.
+        ("parens_only", "Example (EXAMPLE) Perpetual Contract", []),
+        ("parens_only_several", "Aaa (AAA) and Bbb (BBB) Perpetual Contracts", []),
+        ("parens_only_multiplier", "1000EXAMPLE (1000EXAMPLE) Perpetual Contract", []),
+        ("slash_pair", "AAA/USDT Perpetual Contract", []),
+        ("spaced_pair", "AAA USDT Perpetual Contract", []),
+        ("other_quote_asset", "AAAUSDC Perpetual Contract", []),
+        ("no_ticker_in_title", "Multiple Perpetual Contracts With up to 25x Leverage", []),
+        ("index_product", "ALL Composite Index Perpetual Contract", []),
+        # Partly lost: the pair is read, the parenthesised ticker of the same article is not.
+        ("pair_plus_parens_other_base", "AAAUSDT and Bbb (BBB) Perpetual Contracts", ["AAA"]),
+        (
+            "usdt_and_usdc_pairs",
+            "PENGUUSDC, CVXUSDT and SLPUSDT Perpetual Contracts",
+            ["CVX", "SLP"],
+        ),
+    ],
+)
+def test_a2_base_rule_reads_only_usdt_pairs(shape: str, tail: str, bases: list[str]) -> None:
+    """Pins the A2 branch as it is. It is a diagnostic of the code, not of any window.
+
+    Every case is bucketed A2 with the 'explicit' parser; only the bases differ. A
+    case that yields no base is a limit of the rule on a synthetic title: whether any
+    real article has that shape is a separate, title-level question (see the A2
+    base-extraction diagnostic note). Changing this rule is a contract amendment.
+    """
+    title = f"{A2_PREFIX} {tail}"
+    assert cf.classify_parsed("binance", "binance:48", {"title": title}) == (
+        "A2",
+        bases,
+        "explicit",
+    ), shape
+
+
+def test_a2_parentheses_are_read_for_spot_but_not_for_futures_titles() -> None:
+    # The same parenthesised form is explicit for A1 (spot) and ignored for A2.
+    spot = cf.classify_parsed(
+        "binance", "binance:48", {"title": "Binance Will List Example (EXAMPLE)"}
+    )
+    assert spot == ("A1", ["EXAMPLE"], "explicit")
+    futures = f"{A2_PREFIX} Example (EXAMPLE) Perpetual Contract"
+    assert cf.classify_parsed("binance", "binance:48", {"title": futures})[1] == []
+
+
+def test_a2_no_base_article_is_counted_as_status_no_base_not_dropped() -> None:
+    # A lost base must stay visible in the report as 'no_base', never vanish.
+    title = f"{A2_PREFIX} Example (EXAMPLE) Perpetual Contract"
+    receipt = {
+        "series": "binance:48",
+        "outcome": "ok",
+        "kept": [{"id": 1, "title": title, "releaseDate": IN_DISCOVERY}],
+    }
+    row = cf.articles([receipt])[0]
+    assert (row["bucket"], row["bases"], row["window"]) == ("A2", [], "discovery")
+    public, _ = cf.report([receipt])
+    assert public["buckets"]["A2"]["discovery"]["status"] == {"no_base": 1}
+    assert public["buckets"]["A2"]["discovery"]["events"] == 0
+
+
 @pytest.mark.parametrize(
     ("ticker", "base"),
     [("1000PEPE", "PEPE"), ("1000000MOG", "MOG"), ("SHIB1000", "SHIB"), ("1INCH", "1INCH")],
