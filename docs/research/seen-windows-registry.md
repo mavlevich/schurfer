@@ -611,3 +611,38 @@ Completed on the owner's go, 2026-11-16:
   No second class selection on the holdout titles is allowed now. It is a disclosed look
   at the holdout titles of A2, not a confirmation read. The backward holdout keeps its
   registered status. [Diagnostic](catalyst-feasibility-a2-diagnostic-2026-11-16.md), section 6.
+
+## Bybit against Hyperliquid cost-only `bybit-hl-cost-only-v1`, drafted 2026-11-17
+
+[Contract draft](bybit-hl-cost-only-v1.md), Stage 2A of the
+[consilium plan](../consilium/plan.md). **Not registered for any request yet.** This row,
+the code and the colleague's design review must be in main before the first request.
+There is no AWS credential in the program: the owner has not decided to provide one, and
+every listing, request and download needs the owner's separate go. No request has been
+made and no market value has been read.
+
+Two steps, hard-separated:
+
+- **Step A, listing only.** Signed requester-pays `ListObjectsV2` of the Hyperliquid
+  archive bucket, `market_data/[date]/0/l2Book/` for 2023-02-01 to 2025-09-30, plus an
+  hourly refinement for coins first seen in the discovery year. At most 12,000 attempts,
+  256 MiB of response bytes, 3 requests per second. Object keys, dates and sizes only; no
+  object body, no price, no order book. **Level: coverage.** Discovery year: per-coin
+  results published. Backward holdout (2023-02-01 to 2024-09-15): aggregate counts only,
+  coin list sealed outside Git. Gap week (2024-09-16 to 2024-09-30): lookback only, no
+  per-date output.
+- **Step B, cost only.** One instant per date and pair, 2024-10-01 to 2025-09-30 only:
+  `T = D 00:00:30 UTC`, at most 12 dates and 108 pair observations, read from a `Range`
+  prefix of one Bybit `ob200` (else `ob500`) day file and one Hyperliquid `l2Book` hour 0
+  file. Stored: spread and volume-weighted `x` in bps at USD 50, 250, 500 and 1,000,
+  statuses. Never stored or published: a price level, a mid, a cross-venue ratio. At most
+  512 MiB of response bytes. **Level: features (cost only), discovery year only.** No
+  return, no price move between instants, no funding rate, no basis level, no open
+  interest.
+
+Not requested, in either step: the HYP-031 test year (2025-10-01 to 2026-09-28) and every
+date on or after 2026-09-29. The request builder refuses them. Step B never touches the
+backward holdout. The discovery year is already open at outcome level (the Bybit and
+Hyperliquid rows above); Step B is laboratory exposure on it, not a confirmation window.
+The test year is `reserved` here and unassigned in the program plan; the contract does
+not use it and lists the disagreement as an open question.
