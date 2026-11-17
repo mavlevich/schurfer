@@ -695,3 +695,120 @@ def test_the_reserve_and_the_rule_are_part_of_the_contract() -> None:
     limits = s1.build_contract()["limits"]
     assert limits["read_reserve_bytes"] == 65_536 == s1.READ_RESERVE_BYTES
     assert "used + response cap + read reserve" in limits["byte_rule"]
+
+
+# The per-file cap of 512 MiB and the Go 2 budget of 7.5 GiB
+
+MEASURED_FILES = 258  # the Go 1 run: 258 first daily files
+MEASURED_TOTAL = 6737590608  # 6,425.47 MiB in bytes
+MEASURED_MAX = 428_549_908  # the largest, 408.70 MiB
+
+
+def d2_request(symbol: str = "AAAUSDT") -> s1.Request:
+    url = s1.first_file_url(symbol, "2024-11-01")
+    return s1.Request("D2", "GET", url, symbol=symbol, meta=(("first_day", "2024-11-01"),))
+
+
+class CountingReducer:
+    """Stands in for the gzip reader: counts the bytes it is fed, so a 400 MiB body can be
+    streamed in a test without building a real archive."""
+
+    fed = 0
+
+    def feed(self, chunk: bytes) -> None:
+        type(self).fed += len(chunk)
+
+    def finish(self) -> dict[str, Any]:
+        return {"rows": 1, "min_ms": 1, "max_ms": 1, "first_ms": 1, "last_ms": 1}
+
+
+def test_the_per_file_cap_is_512_mib_and_the_measured_files_fit_it() -> None:
+    assert s1.PER_FILE_CAP_BYTES == 512 * s1.MIB == s1.CLASS_BY_ID["D2"].max_response_bytes
+    heads = {
+        "BIGUSDT": {"outcome": "ok", "facts": {"content_length": MEASURED_MAX}},
+        "EDGEUSDT": {"outcome": "ok", "facts": {"content_length": 512 * s1.MIB}},
+        "OVERUSDT": {"outcome": "ok", "facts": {"content_length": 513 * s1.MIB}},
+        "JUSTOVERUSDT": {"outcome": "ok", "facts": {"content_length": 512 * s1.MIB + 1}},
+    }
+    plan = s1.preflight(heads)
+    assert set(plan["sizes"]) == {"BIGUSDT", "EDGEUSDT"}  # a 408 MiB file is read
+    assert plan["over_per_file_cap"] == ["JUSTOVERUSDT", "OVERUSDT"]  # a 513 MiB one is not
+
+
+def test_a_408_mib_first_file_is_read_and_a_513_mib_one_is_not(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(s1, "FirstFileReducer", CountingReducer)
+    CountingReducer.fed = 0
+    big = CountingStream(MEASURED_MAX, piece=64 * 1024)
+    headers = {"content-length": str(MEASURED_MAX)}
+    client = httpx.Client(
+        transport=httpx.MockTransport(lambda r: httpx.Response(200, headers=headers, stream=big))
+    )
+    f = s1.Fetcher(tmp_path / "ok", s1.build_contract(), client, go=2)
+    result = f.run_request(d2_request())
+    assert result["outcome"] == "ok" and result["body_bytes"] == MEASURED_MAX == big.pulled
+    assert CountingReducer.fed == MEASURED_MAX
+    # 513 MiB declared: nothing is read
+    over = CountingStream(513 * s1.MIB, piece=64 * 1024)
+    declared = {"content-length": str(513 * s1.MIB)}
+    client2 = httpx.Client(
+        transport=httpx.MockTransport(lambda r: httpx.Response(200, headers=declared, stream=over))
+    )
+    f2 = s1.Fetcher(tmp_path / "over", s1.build_contract(), client2, go=2)
+    assert f2.run_request(d2_request())["outcome"] == "too_large" and over.pulled == 0
+    # 513 MiB with no declared length: the read ends just past the cap, and all of it counts
+    blind = CountingStream(513 * s1.MIB, piece=64 * 1024)
+    client3 = httpx.Client(
+        transport=httpx.MockTransport(lambda r: httpx.Response(200, stream=blind))
+    )
+    f3 = s1.Fetcher(tmp_path / "blind", s1.build_contract(), client3, go=2)
+    result = f3.run_request(d2_request())
+    assert result["outcome"] == "too_large" and result["body_bytes"] == blind.pulled
+    assert 512 * s1.MIB < blind.pulled <= 512 * s1.MIB + s1.READ_RESERVE_BYTES
+
+
+def charge_file(f: s1.Fetcher, symbol: str, size: int) -> None:
+    """Charge one D2 request and record a receipt of `size` bytes, as a finished download."""
+    request = d2_request(symbol)
+    seq = f._charge(request)
+    f.receipts.append(
+        {"seq": seq, "cls": "D2", "key": request.key, "body_bytes": size, "outcome": "ok"}
+    )
+
+
+def test_go_2_budget_holds_all_258_measured_files_and_the_other_classes(tmp_path: Path) -> None:
+    contract = s1.build_contract()
+    assert contract["go_limits"]["2"]["max_bytes"] == 7680 * s1.MIB
+    big = [MEASURED_MAX] + [(3050141434 - MEASURED_MAX) // 21] * 21
+    small = [3_687_449_174 // 236] * 236
+    sizes = big + small
+    assert len(sizes) == MEASURED_FILES and abs(sum(sizes) - MEASURED_TOTAL) < 300
+    client = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(404)))
+    f = s1.Fetcher(tmp_path / "run", contract, client, go=2)
+    ceiling = contract["go_limits"]["2"]["max_bytes"]
+    for i, size in enumerate(sizes):
+        charge_file(f, f"F{i}USDT", size)
+        assert f.totals()[1] <= ceiling  # never above the step ceiling
+    used = f.totals()[1]
+    assert used == sum(sizes) and used < s1.CLASS_BY_ID["D2"].max_class_bytes
+    # every other class can still run to its own class cap inside the step budget
+    others = sum(c.max_class_bytes for c in s1.CLASSES if c.go == 2 and c.cls != "D2")
+    assert used + others < ceiling  # 6,425 MiB + 624 MiB < 7,680 MiB
+    # and the D2 class cap is a hard stop for one more file than the measured set can need
+    with pytest.raises(s1.BudgetExceededError, match="D2: class byte cap"):
+        for j in range(20):
+            charge_file(f, f"X{j}USDT", MEASURED_MAX)
+
+
+def test_the_read_reserve_still_guards_a_512_mib_request(tmp_path: Path) -> None:
+    need = s1.reserve(s1.CLASS_BY_ID["D2"])
+    assert need == 512 * s1.MIB + s1.READ_RESERVE_BYTES
+    client = httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(404)))
+    tight = small_step_contract(need - 1)
+    f = s1.Fetcher(tmp_path / "tight", tight, client, go=2)
+    with pytest.raises(s1.BudgetExceededError, match="byte cap"):
+        f._charge(d2_request())
+    enough = small_step_contract(need)
+    f2 = s1.Fetcher(tmp_path / "enough", enough, client, go=2)
+    f2._charge(d2_request())  # exactly cap plus reserve is allowed

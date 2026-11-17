@@ -1,4 +1,4 @@
-# I25 stage 1: contract and request list (v1, DRAFT, revision 2, 2026-11-17)
+# I25 stage 1: contract and request list (v1, DRAFT, revision 3, 2026-11-17)
 
 Status: **draft for the colleague's review, then the owner's go.** This document and its
 code fetch nothing. It is the stage 1 gate of the
@@ -27,13 +27,13 @@ for go 1.
 
 ```text
 request_list_sha256 (whole contract, bound into every run) =
-  023b9863d1af73dbeaff5cc7cf64d0e77f3c0fdba295e4158f7c0e54982d6fe3
+  bd2b50609f2235866a0f37d0029b12f3c94452158bd97f89de4971256b69d891
 go 1 approval hash (go_sha256["1"]) =
-  5f4d84d3d4294276fa2f91c144e8ab0f12999bd734642986c1b4ab91d213ece1
+  0937f3b3958515f41efcc6c21d0b5ffa75cf179721053bf068c8b8831aeb4b85
 go 2 approval hash (go_sha256["2"]) =
-  3680644f7bc4c76aca1c754d6f1d1367a78d2259cab2beaf62e51677ebe50812
+  09b9da256bd2932eba9781613f51e606d4804aa88acdac3d4d845a41724a237e
 contract.json file SHA-256 =
-  6f77faa0a1e6430767438c6b346857fc4eb17316168c323603b8883dcedac7e4
+  67c006d4c98024bfa60bb3c8991294d5da67844b600055e12aa968e1d655bac9
 ```
 
 Check without a network request:
@@ -45,17 +45,17 @@ uv run python -m schurfer_analytics.new_perp_stage1 write-contract --check
 
 | Go  | Reads                                                                                        | Classes            | Planned requests | Max requests | Attempt cap | Byte cap |
 | --- | -------------------------------------------------------------------------------------------- | ------------------ | ---------------- | ------------ | ----------- | -------- |
-| 1   | **metadata only**: catalog fields, archive names, per-symbol listings, HEAD sizes. No body   | C1, C3, D1, D2h    | 547              | 761          | 1,000       | 300 MiB  |
-| 2   | first daily files (column 1), one entry bar, hourly series, funding. Needs go 1 and manifest | D2, D3, D4, D5, D6 | 1,135            | 2,400        | 1,700       | 6.5 GiB  |
+| 1   | **metadata only**: catalog fields, archive names, per-symbol listings, HEAD sizes. No body   | C1, C3, D1, D2h    | 526              | 761          | 1,000       | 300 MiB  |
+| 2   | first daily files (column 1), one entry bar, hourly series, funding. Needs go 1 and manifest | D2, D3, D4, D5, D6 | 1,201            | 2,400        | 1,700       | 7.5 GiB  |
 
-**Combined byte ceiling of both gos: 300 MiB + 6.5 GiB = 6,956 MiB, about 6.8 GiB. These are hard ceilings: each includes a 64 KiB reserve for the last block (section 4).** Planned total 1,682 requests (the protocol's section 10 said about 1,000: that counted
+**Combined byte ceiling of both gos: 300 MiB + 7,680 MiB (7.5 GiB) = 7,980 MiB, about 7.8 GiB. These are hard ceilings: each includes a 64 KiB reserve for the last block (section 4).** Planned total 1,727 requests (go 1 526, measured; go 2 1,201) (the protocol's section 10 said about 1,000: that counted
 listings and first files only). Attempt caps include retries. At 1 second spacing go 1
 takes about 10 minutes and go 2 about 20 minutes plus the first-file transfer.
 
 **The gate between the gos.** Go 1 ends by writing `manifest.json` and `go1_done.json` in
 the run root: the launch count, the exact D2 request list (as a hash), the preflight (the
-summed `Content-Length` of the first files against the 6 GiB class cap, files over the
-64 MiB per-file cap counted apart), and an upper bound on the entry candidates. The go 1
+summed `Content-Length` of the first files against the 7 GiB class cap, files over the
+512 MiB per-file cap counted apart), and an upper bound on the entry candidates. The go 1
 **report** (`new_perp_stage1_verdict`, aggregate counts only, no symbol) shows the owner
 what is in it. The owner approves go 2 by giving the manifest's SHA-256.
 
@@ -114,15 +114,15 @@ bytes" the cap of all responses of the class.
 
 | Go  | Class | Name              | Method and endpoint                                                 | Expected | Max   | Per response | Class bytes |
 | --- | ----- | ----------------- | ------------------------------------------------------------------- | -------- | ----- | ------------ | ----------- |
-| 1   | C1    | `catalog_linear`  | GET `api.bybit.com/v5/market/instruments-info`                      | 3        | 9     | 3 MiB        | 27 MiB      |
+| 1   | C1    | `catalog_linear`  | GET `api.bybit.com/v5/market/instruments-info`                      | 4        | 9     | 3 MiB        | 27 MiB      |
 | 1   | C3    | `archive_root`    | GET `public.bybit.com/trading/`                                     | 1        | 2     | 4 MiB        | 9 MiB       |
-| 1   | D1    | `archive_listing` | GET `public.bybit.com/trading/{SYMBOL}/`                            | 293      | 450   | 1 MiB        | 256 MiB     |
-| 1   | D2h   | `first_file_head` | HEAD `public.bybit.com/trading/{SYMBOL}/{SYMBOL}{FIRST_DAY}.csv.gz` | 250      | 300   | 0            | 0           |
-| 2   | D2    | `first_file`      | GET `public.bybit.com/trading/{SYMBOL}/{SYMBOL}{FIRST_DAY}.csv.gz`  | 250      | 300   | 64 MiB       | 6,144 MiB   |
-| 2   | D3    | `entry_trade_bar` | GET `api.bybit.com/v5/market/kline`                                 | 205      | 300   | 64 KiB       | 24 MiB      |
-| 2   | D4    | `mark_hourly`     | GET `api.bybit.com/v5/market/mark-price-kline`                      | 205      | 300   | 512 KiB      | 150 MiB     |
-| 2   | D5    | `trade_hourly`    | GET `api.bybit.com/v5/market/kline`                                 | 205      | 300   | 512 KiB      | 150 MiB     |
-| 2   | D6    | `funding_history` | GET `api.bybit.com/v5/market/funding/history`                       | 270      | 1,200 | 256 KiB      | 300 MiB     |
+| 1   | D1    | `archive_listing` | GET `public.bybit.com/trading/{SYMBOL}/`                            | 263      | 450   | 1 MiB        | 256 MiB     |
+| 1   | D2h   | `first_file_head` | HEAD `public.bybit.com/trading/{SYMBOL}/{SYMBOL}{FIRST_DAY}.csv.gz` | 258      | 300   | 0            | 0           |
+| 2   | D2    | `first_file`      | GET `public.bybit.com/trading/{SYMBOL}/{SYMBOL}{FIRST_DAY}.csv.gz`  | 258      | 300   | 512 MiB      | 7,168 MiB   |
+| 2   | D3    | `entry_trade_bar` | GET `api.bybit.com/v5/market/kline`                                 | 233      | 300   | 64 KiB       | 24 MiB      |
+| 2   | D4    | `mark_hourly`     | GET `api.bybit.com/v5/market/mark-price-kline`                      | 233      | 300   | 512 KiB      | 150 MiB     |
+| 2   | D5    | `trade_hourly`    | GET `api.bybit.com/v5/market/kline`                                 | 233      | 300   | 512 KiB      | 150 MiB     |
+| 2   | D6    | `funding_history` | GET `api.bybit.com/v5/market/funding/history`                       | 244      | 1,200 | 256 KiB      | 300 MiB     |
 
 Parameters:
 
@@ -141,7 +141,7 @@ Parameters:
   before the oldest row of the previous full page, `limit=200`, at most 4 pages.
 - D3 to D6 are asked **only for entry candidates**: a readable, unambiguous `T0` (`aligned` or
   `delayed_open`), not `window_censored`, not `lookback_censored`, and not `relist`,
-  `multiplier_ambiguous` or `ticker_reuse_suspected`. Planning 205.
+  `multiplier_ambiguous` or `ticker_reuse_suspected`. Planning 233 (the 263 launches less the lookback and window censored, measured from the catalog dates; at most 258 by the Go 1 manifest).
 
 **Derived requests and their hashes.** C1 and C3 are the static list in `contract.json`
 (`static_requests`). Every later class is a deterministic function of earlier receipts. Before
@@ -179,7 +179,7 @@ afterwards: counts, shares and codes, no symbol and no price.
    it).
 2. **Phase 1 (go 1):** D1 for every in-window launch and every candidate.
 3. **Phase 2 (go 1):** D2h, then the **preflight** and the **manifest**. A file above the
-   per-file cap of **64 MiB** is not downloaded; its launch has an unreadable `T0`, counted
+   per-file cap of **512 MiB** is not downloaded; its launch has an unreadable `T0`, counted
    apart as `t0_over_cap` and reported (it still counts toward the lifecycle gate, so the bias
    against big launches is visible, not hidden).
 4. **Go 2:** checks `go1_done.json`, the manifest hash and the manifest's own preflight
@@ -234,9 +234,9 @@ refused, so a parser fix cannot continue an old run: a corrected revision starts
   transport (httpcore) reads at most **64 KiB** per call, so no chunk of a response is larger
   than that; the contract fixes this as `read_reserve_bytes` = **65,536**. The rule is
   `used + response cap + read reserve <= budget`, checked before every request against **both**
-  the step budget (300 MiB for go 1, 6.5 GiB for go 2) and the class budget. So the last block
+  the step budget (300 MiB for go 1, 7.5 GiB for go 2) and the class budget. So the last block
   is a numeric reserve **inside** every budget, and the bytes received can never exceed the
-  stated ceilings: the 300 MiB and 6.5 GiB are hard ceilings, not targets. A declared
+  stated ceilings: the 300 MiB and 7.5 GiB are hard ceilings, not targets. A declared
   `Content-Length` over the response cap reads nothing. Otherwise the raw chunks are read and
   **every received byte is accounted** (counted, hashed, journaled); the read ends at the first
   chunk over the response cap, which is at most the reserve beyond it. A chunk larger than the
@@ -348,6 +348,53 @@ Round 3, after the review of `68c296a`:
 | ------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
 | P2 the step byte ceiling was not hard: the block crossing it was still received | a 64 KiB read reserve inside every step and class budget; a request starts only if cap plus reserve fits; chunks over the reserve stop | relies on the transport's 64 KiB read, and is checked |
 
+## 6b. Amendment after the Go 1 run (revision 3)
+
+**Finding.** Go 1 ran on `f6eb5c3` (526 attempts, 11.4 MB, no stop, outcome `go1_complete`). Its
+HEAD sizes of the first daily files show that **22 of the 258 files are over the 64 MiB
+per-file cap**, so those launches would have had no `T0`. Measured from the Go 1 receipts
+(`facts.content_length` of D2h): **258 files, 6,425.47 MiB** in total; the 22 over-cap files
+total 2,908.84 MiB and the largest is 408.70 MiB (428,549,908 bytes); 236 files (3,516.63 MiB)
+are at most 64 MiB. All 258 are under 512 MiB. Go 2 was **not** run at 64 MiB.
+
+**Change.** One per-file cap of **512 MiB** for D2 (`PER_FILE_CAP_BYTES`, also the D2 response
+cap). Recomputed budgets:
+
+| Quantity         | Before        | After                        | Why                                                                                                                                                                  |
+| ---------------- | ------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D2 response cap  | 64 MiB        | 512 MiB                      | keeps all 258 files, with 103 MiB of margin over the largest                                                                                                         |
+| D2 class cap     | 6,144 MiB     | 7,168 MiB                    | 6,425.47 MiB of first files plus 742 MiB (about 1.8 redownloads of the largest file)                                                                                 |
+| Go 2 step cap    | 6,656 MiB     | 7,680 MiB (7.5 GiB)          | 6,425.47 MiB for D2, plus all of D3 to D6 at their own class caps (24 + 150 + 150 + 300 = 624 MiB), plus 630 MiB of slack                                            |
+| Go 1 step cap    | 300 MiB       | 300 MiB                      | Go 1 used 11.4 MB                                                                                                                                                    |
+| Combined ceiling | about 6.8 GiB | 7,980 MiB, **about 7.8 GiB** | 300 + 7,680 MiB                                                                                                                                                      |
+| Read reserve     | 64 KiB        | 64 KiB                       | it is per request and set by the transport's read size, not by the file size; a D2 request now needs `512 MiB + 64 KiB` of headroom in both budgets before it starts |
+
+**Is 7.5 GiB enough, with the attempt cap of 1,700?** Bytes: yes. D2 6,425.47 MiB, and the other
+four classes together stay under 624 MiB even if every one hits its class cap (expected well
+under 50 MiB), so 7,049 MiB of 7,680 MiB. A D2 request starts only while `used + 512.06 MiB <=
+7,680 MiB`, i.e. used at most 7,167.9 MiB, and during the D2 phase used is at most 6,425.47 MiB
+plus retries. Attempts: D2 258, D3 to D5 at most 258 each (233 expected), and D6 pages from the
+catalog `fundingInterval` (227 symbols at 4 h, 29 at 8 h, 6 at 1 h, 1 at 2 h: one page for 4 h
+and 8 h, two for 2 h, three for 1 h, so at most 276 pages for all 263 launches, 244 for the 233
+expected). Worst case 258 + 774 + 276 = 1,308 first attempts, about 1,430 with 10% retries,
+under 1,700. So the attempt cap and the 300 request class caps stand.
+
+**How the verified Go 1 metadata is carried: option (b), rerun Go 1 in a new root.**
+
+- **Why not reuse (a).** The per-file cap is in the shared rules, which are part of **both** go
+  hashes, so the Go 1 hash changes (the old Go 1 was approved on `5f4d84d3...`; the new one is
+  `0937f3b3...`). A reuse would need a prior-root mechanism bound by hash that proves identical
+  Go 1 class definitions and parse code by comparing normalized definitions, as the catalyst
+  study did. That mechanism is not implemented (decision Q15, no cross-revision reuse), would be
+  new unreviewed code on the critical path, and the existing `--prior-root` budget carry would
+  count the old 526 attempts against the new Go 1 cap of 1,000 and block a rerun.
+- **Why (b).** Go 1 costs 526 requests, about 11 MB and about 10 minutes, on public metadata. It
+  produces a fresh catalog, listings, HEAD sizes and manifest under the new hashes, with no trust
+  in reuse, and the old root stays a record. Go 2 is then approved on the new manifest hash.
+- **Trade-off.** 526 extra requests (1,052 in all across the two Go 1 reads) against not trusting
+  reuse. Both Go 1 reads are coverage level on the same year. Do **not** pass the old root as
+  `--prior-root` for the new Go 1.
+
 ## 7. Interpretations made, and limits stated plainly
 
 1. **M2 (iii) uses the V1 path days** (calendar days from `E` to the last minute of the hold).
@@ -360,7 +407,7 @@ Round 3, after the review of `68c296a`:
    the catalog is a current snapshot and no machine-timed announcement feed is read.
 4. **No entry filter and no price in selection.** Every status above is decided from dates,
    catalog fields and the **existence** of data.
-5. Planning numbers (263 launches, 205 entry candidates, 250 first files) are guesses. The caps
+5. Planning numbers (263 launches and 258 first files are measured by Go 1; 233 entry candidates is an estimate from catalog dates) are not guarantees. The caps
    are the contract; the counts only tell the owner what to expect.
 
 ## 8. Run procedure (after the go, not now)
@@ -394,10 +441,11 @@ requested anywhere.
    reviews the report. _Recommend this split._
 5. **Phase 0 may repeat once** (C1 max 9, C3 max 2). A third interruption stops the run.
    _Recommend accept._
-6. **Per-file cap of 64 MiB** and over-cap launches counted apart and toward the lifecycle
-   gate. _Recommend keep;_ the owner sees the count in the manifest before go 2.
-7. **Budget.** 1,682 planned requests, 2,700 attempt caps and 6.5 GiB for go 2, recomputed for
-   the two gos. _Recommend accept._
+6. **Per-file cap of 512 MiB** (raised from 64 MiB after Go 1, see the amendment below): all 258
+   measured files fit; over-cap launches are still counted apart and toward the lifecycle gate.
+   _Recommend keep._
+7. **Budget.** 1,727 planned requests, 2,700 attempt caps and 7.5 GiB for go 2, recomputed from
+   the measured file sizes. _Recommend accept._
 8. **Outcome name.** `stage1_pass_partial`, never `stage1_pass`. _Recommend accept._
 
 ## 10. Verification performed

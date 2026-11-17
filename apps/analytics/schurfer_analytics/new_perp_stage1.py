@@ -99,11 +99,11 @@ MAX_SPACING_S: Final = 8.0  # after an HTTP 429 the spacing doubles up to this
 READ_RESERVE_BYTES: Final = 64 * 1024
 FUNDING_PAGE_LIMIT: Final = 200
 FUNDING_MAX_PAGES: Final = 4
-PER_FILE_CAP_BYTES: Final = 64 * 1024 * 1024
+PER_FILE_CAP_BYTES: Final = 512 * 1024 * 1024
 MIB: Final = 1024 * 1024
 # The two gos. Go 1 reads metadata only; go 2 needs go 1 and its reviewed manifest.
 GO_ATTEMPT_CAPS: Final = {1: 1000, 2: 1700}
-GO_BYTE_CAPS: Final = {1: 300 * MIB, 2: 6656 * MIB}
+GO_BYTE_CAPS: Final = {1: 300 * MIB, 2: 7680 * MIB}
 
 BASE_API: Final = "https://api.bybit.com"
 CATALOG_URL: Final = f"{BASE_API}/v5/market/instruments-info"
@@ -151,7 +151,7 @@ CLASSES: Final[tuple[ClassSpec, ...]] = (
         "lotSizeFilter.qtyStep, lotSizeFilter.minOrderQty, leverageFilter.maxLeverage",
         "priceFilter (every field), upperFundingRate, lowerFundingRate, "
         "preListingInfo contents, every other field",
-        3,
+        4,
         9,
         3 * MIB,
         27 * MIB,
@@ -186,7 +186,7 @@ CLASSES: Final[tuple[ClassSpec, ...]] = (
         "file names matching SYMBOL + YYYY-MM-DD + .csv.gz and their dates, only dates "
         "before 2025-10-01 are kept",
         "file names and dates from 2025-10-01 (dropped uncounted), sizes, every other byte",
-        293,
+        263,
         MAX_LAUNCHES + MAX_ARCHIVE_ONLY,
         MIB,
         256 * MIB,
@@ -200,7 +200,7 @@ CLASSES: Final[tuple[ClassSpec, ...]] = (
         "none; only launches whose first listed day is within one day of launchTime",
         "HTTP status and Content-Length",
         "everything else (a HEAD has no body)",
-        250,
+        258,
         MAX_LAUNCHES,
         0,
         0,
@@ -216,10 +216,10 @@ CLASSES: Final[tuple[ClassSpec, ...]] = (
         "column 1 only (the trade timestamp): minimum, maximum, first, last, row count",
         "columns 2 and later of every row (side, size, price, ids, notionals), unparsed; "
         "the file is never stored",
-        250,
+        258,
         MAX_LAUNCHES,
         PER_FILE_CAP_BYTES,
-        6144 * MIB,
+        7168 * MIB,
         go=2,
         note="runs only if the summed Content-Length of D2h is at most the class byte cap",
     ),
@@ -232,7 +232,7 @@ CLASSES: Final[tuple[ClassSpec, ...]] = (
         "category=linear, symbol, interval=1, start=E, end=E, limit=1",
         "column 1 only (the bar start time), existence",
         "open, high, low, close, volume, turnover, unparsed",
-        205,
+        233,
         MAX_LAUNCHES,
         64 * 1024,
         24 * MIB,
@@ -248,7 +248,7 @@ CLASSES: Final[tuple[ClassSpec, ...]] = (
         "category=linear, symbol, interval=60, start=T0+3d, end=min(T0+21d, cut), limit=1000",
         "column 1 only (the bar start time): count, oldest, newest and the runs of missing hours",
         "open, high, low, close, unparsed",
-        205,
+        233,
         MAX_LAUNCHES,
         512 * 1024,
         150 * MIB,
@@ -264,7 +264,7 @@ CLASSES: Final[tuple[ClassSpec, ...]] = (
         "category=linear, symbol, interval=60, start=T0+3d, end=min(T0+21d, cut), limit=1000",
         "column 1 only (the bar start time): count, oldest, newest and the runs of missing hours",
         "open, high, low, close, volume, turnover, unparsed",
-        205,
+        233,
         MAX_LAUNCHES,
         512 * 1024,
         150 * MIB,
@@ -281,7 +281,7 @@ CLASSES: Final[tuple[ClassSpec, ...]] = (
         "fundingRateTimestamp only: per page the row count, oldest, newest and the largest "
         "gap between consecutive timestamps",
         "fundingRate (every row), unparsed",
-        270,
+        244,
         MAX_LAUNCHES * FUNDING_MAX_PAGES,
         256 * 1024,
         300 * MIB,

@@ -700,12 +700,12 @@ gos needs the owner's go**. **This row records no read: nothing has been fetched
 
 **Level: coverage, discovery year only (2024-10-01 to 2025-09-30).**
 
-- **Go 1, metadata only** (547 planned requests, at most 761, attempt cap 1,000, 300 MiB):
+- **Go 1, metadata only** (526 planned requests, measured by the first read; at most 761, attempt cap 1,000, 300 MiB):
   Bybit `instruments-info` linear catalog fields, the trade-archive root listing and
   per-symbol file listings, and HEAD requests (status and size, no body) for the first daily
   file of each launch.
-- **Go 2, after the owner reviews the go 1 manifest** (1,135 planned requests, at most 2,400,
-  attempt cap 1,700, 6.5 GiB; the combined byte ceiling of both gos is about 6.8 GiB): the first daily trade file of each launch (column 1, the trade
+- **Go 2, after the owner reviews the go 1 manifest** (1,201 planned requests, at most 2,400,
+  attempt cap 1,700, 7.5 GiB, one 512 MiB cap per first file; the combined byte ceiling of both gos is about 7.8 GiB): the first daily trade file of each launch (column 1, the trade
   timestamp, only), one entry minute bar, hourly trade and mark-price series (start times and
   runs of missing hours only) and funding history (timestamps and page boundaries only). Go 2
   also contains the mark-price, funding and bar coverage reads that protocol section 11 item 2
@@ -713,9 +713,9 @@ gos needs the owner's go**. **This row records no read: nothing has been fetched
 
 Every response also holds prices or rates. They are discarded unparsed and no price, rate,
 volume or return is stored or reported. Hashes: `request_list_sha256`
-`023b9863d1af73dbeaff5cc7cf64d0e77f3c0fdba295e4158f7c0e54982d6fe3`, go 1
-`5f4d84d3d4294276fa2f91c144e8ab0f12999bd734642986c1b4ab91d213ece1`, go 2
-`3680644f7bc4c76aca1c754d6f1d1367a78d2259cab2beaf62e51677ebe50812`. The order-book archive and
+`bd2b50609f2235866a0f37d0029b12f3c94452158bd97f89de4971256b69d891`, go 1
+`0937f3b3958515f41efcc6c21d0b5ffa75cf179721053bf068c8b8831aeb4b85`, go 2
+`09b9da256bd2932eba9781613f51e606d4804aa88acdac3d4d845a41724a237e`. The order-book archive and
 the spot catalog are **not** part of this registration; each is a later decision.
 
 **Cut.** Nothing dated from 2025-10-01 is read, recorded or counted: a catalog row launched from
