@@ -757,3 +757,29 @@ discovery year (2024-10-01 to 2025-09-30), needs its own contract and this regis
 row updated before its first request, and needs the owner's separate go. Reusing the
 local carry snapshot (2024-10-01 to 2026-09-28) for I36 would be a discovery-only read
 at a window already seen at the outcomes level. The holdout is not requested.
+
+## I25 stage 1 Go 1 read `new-perp-short-v1`, 2026-11-17 (coverage level, completed)
+
+[Result record](new-perp-stage1-go1-result-2026-11-17.md). Go 1 of the
+[stage 1 request list](new-perp-stage1-request-list-v1.md) was run on the owner's go from a clean
+`f6eb5c3`, bound to `request_list_sha256`
+`023b9863d1af73dbeaff5cc7cf64d0e77f3c0fdba295e4158f7c0e54982d6fe3`.
+
+**Level: coverage, discovery year only (2024-10-01 to 2025-09-30).** 526 requests, no retry, no
+stop: Bybit linear `instruments-info` catalog fields (4), the trade-archive root listing (1),
+per-symbol file listings (263) and HEAD requests (status and size, no body) for the first daily
+file of each launch (258). 11.4 MB of response bytes. **No price, rate, volume or return was read;
+no first daily file was downloaded.** Nothing dated from 2025-10-01 was read, recorded or counted,
+and no holdout, HYP-031 test-year or HYP-012 v2 blind-window input was requested.
+
+**Now read at coverage level for this trigger:** the discovery-year launch catalog fields, the
+archive file names and dates of those launches, and the sizes of their first daily files. Nothing
+at outcome level.
+
+**Findings recorded.** 22 of 258 first files exceed the 64 MiB per-file cap (a selection limit
+against the most active launches); M2 (ii) archive-only share is `not_assessed` (the root page has
+no modification dates). Manifest SHA-256
+`72395099c6110427f4b841cfb6bf4a477ed142bc829b6c0905fed158105317a0`. The lifted per-file cap is the
+reason for the contract amendment (PR 615); Go 1 is rerun in a new root under the new hashes, so
+the discovery-year metadata will be read at coverage level a second time. Receipts and
+`preflight.json` (per-symbol sizes and the 22 names) stay sealed outside Git.
