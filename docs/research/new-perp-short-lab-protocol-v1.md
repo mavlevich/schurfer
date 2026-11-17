@@ -1,4 +1,4 @@
-# New-perp short, laboratory protocol v1 (DRAFT, revision 8, 2026-11-17)
+# New-perp short, laboratory protocol v1 (DRAFT, revision 9, 2026-11-17)
 
 Study identifier: `new-perp-short-v1`. Idea: `I25` in the
 [consilium ideas list](../consilium/ideas.md). A hypothesis identifier (`HYP-039` is the
@@ -13,14 +13,14 @@ archive, identity per launch, power calibration, the laboratory read) are writte
 owner's separate go. Merge of this document is also a separate decision of the owner
 and the colleague.
 
-**Revision 8** follows two reviews of the experiment model, a consistency pass over the whole chain
-(selection, entry, events of an open position, exit, funding and fees, verdict) and four reads of
+**Revision 9** follows two reviews of the experiment model, a consistency pass over the whole chain
+(selection, entry, events of an open position, exit, funding and fees, verdict) and five reads of
 the rules by the colleague (the sign map, the trigger window and the margin-loss and cost wording;
 then the gap rule, the portfolio timing of unresolved episodes, the entry clock and the six-part
 decomposition; then the `EVT` of a stop, the mark-price test in a zero-trade minute and the dating
 of a confirmed event against a gap; then the lookback cut, the funds check, funding coverage as
 a selection condition, the `exec_net` guards, a missing entry bar and the benchmark end of an
-unresolved episode). What changed
+unresolved episode; then the cash ledger and the four money paths). What changed
 in each revision is in section 13; the rules are pinned by the worked examples of Appendix A.
 
 Chain of evidence behind it:
@@ -503,13 +503,24 @@ reserved capital. The portfolio report shows the worst case that occurred.
   slot is released at `actual_exit` (example A3); for an `unresolved` episode at `X` in L
   (blocked) and at `t_last` in H (example A7). `k` is computed on planned holds; early
   exits only free a slot sooner.
-- **Funds check before every entry.** An entry needs its margin plus the entry fee,
-  `0.5 * N + phi * q * F_e`, from **available cash**: `C` plus the net pnl already
-  **realised** (losses included) by closed episodes in that scenario, minus the margin
-  held by open positions. Unrealised pnl is not counted. If the cash is below the
-  requirement the entry is **`skipped_insufficient_funds`**: no reduction of size, no
-  top-up, counted with its reason. The check is made **in L and in H separately**, with
-  that scenario's realised pnl (example A7b).
+- **Cash is a time ledger.** Each portfolio keeps a ledger: the **entry fee** is debited at
+  entry, **funding** at each settlement (signed), **price pnl and the exit fee** at close.
+  Margin is a separate reserve, not a ledger entry. Nothing is charged twice: at close the
+  entry fee and the funding already debited are not repeated. Unrealised pnl is not
+  counted. `available_cash(t) = C + (sum of all ledger entries up to t) - margin reserved
+by open positions`.
+- **Funds check before every entry.** An entry needs `0.5 * N + phi * q * F_e` (margin plus
+  entry fee) from `available_cash`. If it is below the requirement the entry is
+  **`skipped_insufficient_funds`**: no reduction of size, no top-up, counted with its
+  reason (examples A7b and A7c).
+- **Four money paths.** The portfolio is simulated **separately for four paths: L on `net`,
+  L on `exec_net`, H on `net`, H on `exec_net`.** In an `exec_net` path every positive `EVT`
+  is set to zero in the ledger **at the moment it would be realised** (the positive price
+  result of the episode is not credited; fees and funding stay), so a non-executable gain
+  never funds a later entry. The entered set can differ between paths. `roc_annual` and
+  every guard use the matching path (7.3, example A8b). H has no positive `EVT` (its
+  results are `-margin` or a stop loss), so the H path on `exec_net` equals the H path on
+  `net`; it is still computed.
 - **Order-size grid for costs:** order notional `N` of **USD 50 / 250 / 500 / 1,000**.
   The primary economics is at **USD 50** (the registered start); the other sizes show
   capacity and decide nothing except the scale-up claim (section 6.3).
@@ -671,11 +682,11 @@ with `window_days` the days of the discovery year that episodes may occupy, each
 episode occupying its slot until `actual_exit`. Idle slots,
 the unallocated buffer and the days between trades count in `C`. `roc_annual` is computed on the **slot-limited portfolio**: an episode that finds no free slot is
 skipped and its reason recorded, while the per-episode statistics of section 7 use every
-episode. The portfolio, and so `roc_annual`, is **computed separately in L and in H**: an
+episode. The portfolio, and so `roc_annual`, is **computed separately on each of the four money paths of 5.4**: an
 `unresolved` episode blocks its slot until `X` in L and frees it at `t_last` in H (6.1,
 example A7), so the entry sets can differ and both figures are reported. A result must
-exceed 5% a year **in both scenarios**, L and H (section 6.2), **on `net` and on `exec_net`**
-(7.3, example A8). At about 205 episodes
+exceed 5% a year **in both scenarios**, L and H (section 6.2), **on `net` and on `exec_net`**,
+each on its own money path (5.4, 7.3, examples A8 and A8b). At about 205 episodes
 and `k = 8` the hurdle alone needs only about 20 bps mean net per episode
 (`0.05 / (205 / 8 / 10,000)`), far below the statistical bar of section 7. The hurdle
 is a second guard, not the binding one. The report also shows the money in dollars for
@@ -775,10 +786,11 @@ last-trade gain must never be the reason for a pass.**
 `exec_net_usd = net_usd - max(price_usd, 0)`, that is the net with its positive `EVT`
 set to zero (a negative `EVT` stays); for every other episode `exec_net = net`.
 **Every mandatory condition is evaluated on `net` and on `exec_net`, in L and in H**: the
-5% `roc_annual` barrier of the slot-limited portfolio (6.4), the 90% bootstrap lower
+5% `roc_annual` barrier of the slot-limited portfolio (6.4, simulated on the matching
+money path of 5.4: a gain set to zero in `exec_net` cannot fund an entry there), the 90% bootstrap lower
 bound, the removal of the top 5 episodes and the top 5 weeks, the sign in both halves of
 the year, and the market-adjusted guard (`net_adj` built from `exec_net` as well). A pass
-needs all of them on both (example A8). The report also states which part carries the
+needs all of them on both (examples A8 and A8b). The report also states which part carries the
 sign, gives the **number of `no_reference_exit` episodes and the share of the total net
 they contribute**, by scenario. The
 portfolio report (slot occupancy released at `actual_exit`, every skip with its reason,
@@ -1002,7 +1014,27 @@ nothing):
 
 ## 13. Revisions, and open design questions for the colleague
 
-### 13.0 Revision 8: the colleague's full pass (six problems and a sync note)
+**Findings policy.** A later finding changes a stop code or the sign map **only if it lets
+a wrong verdict pass**. Anything about the code-level detail of the portfolio simulation
+goes to the stage 2 contract and its tests. Deferred to stage 2: Q18 (a), (b) and (c);
+the precision and rounding of the ledger; the treatment of unrealised pnl and of quantity
+steps in the funds check.
+
+### 13.0 Revision 9: cash ledger and the four money paths (two problems)
+
+Both were real and are fixed in 5.4 with examples.
+
+1. **Cash is a time ledger (5.4, A7, A7c).** Entry fee at entry, funding at each
+   settlement, price pnl and exit fee at close, margin as a separate reserve,
+   `available_cash = C + ledger - reserved margin`, nothing charged twice. The funds
+   counterexample (cash 250.45, not 251, against 250.55 needed) is A7c, and A7 now counts
+   V's entry fee and funding in the cash at W's entry (499.10, not 499.5).
+2. **`exec_net` has its own money path (5.4, 6.4, 7.3, A8b).** Four paths: L and H, each on
+   `net` and on `exec_net`; a positive `EVT` is set to zero in the ledger when it would be
+   realised, so a non-executable gain never funds a later entry; the entered set can differ;
+   `roc_annual` and every guard use the matching path.
+
+#### Revision 8: the colleague's full pass (six problems and a sync note)
 
 All were checked against the text and were real. A lookback of 30 days from the earliest
 `V1` entry (2024-10-08) starts on 2024-09-08, inside the discarded dates.
@@ -1499,8 +1531,9 @@ book, 20 settlements at `r = 0.00015`), so with `q = 5` each gives **-0.55** USD
 - **H portfolio.** U loses its whole margin at `t_last` and frees slot 1 then. Funding: one
   settlement counts (hour 8; the next is after `t_last`), marks of 100, `r = 0.0001`:
   `0.0001 * 5 * 100 = +0.05`. `net_U = -250 + 0.05 - 0.55 = -250.50` USD, **-5,010 bps**.
-  Cash at W's entry: `1,000 - 250.50` (realised) `- 250` (V's margin held) `= 499.5`,
-  at least the `250.55` needed, so W enters and gives `+0.40`. Entered set `{U, V, W}`,
+  Cash at W's entry from the ledger: `1,000 - 250.50` (U closed) `- 0.55` (V's entry fee)
+  `+ 0.15` (V's two settlements, `2 * 0.00015 * 5 * 100`) `- 250` (V's margin reserved)
+  `= 499.10`, at least the `250.55` needed, so W enters and gives `+0.40`. Entered set `{U, V, W}`,
   `sum net = -250.50 + 0.40 + 0.40 = -249.70` USD,
   `roc_annual = -249.70 / 1,000 * 365 / 14 = -6.51`, that is **-651% a year**.
 - **Why both figures.** The entered sets differ (`{V}` against `{U, V, W}`), so one
@@ -1522,17 +1555,47 @@ day 3.0.
   (`slot_blocked_by_unresolved`). Entered set empty: no portfolio result for L in this toy.
 - W is skipped in both, for different reasons, and the reason is recorded per scenario.
 
+### A7c. The cash ledger (section 5.4)
+
+`C` = USD 1,000, `k = 2`, `N = 500` (`q = 5`, margin 250, entry fee 0.55). The ledger holds
+closed episodes with a net of `-499`. One position is open, **its entry fee 0.55 already
+debited**, no funding yet, with margin 250 reserved.
+
+- `available_cash = 1,000 - 499 - 0.55 - 250 = 250.45`. Counting only the margin
+  (`1,000 - 499 - 250 = 251`) would be wrong.
+- The next entry needs `250 + 0.55 = 250.55`, above `250.45`: **`skipped_insufficient_funds`**.
+
 ### A8. A pass carried by a non-executable gain (sections 7.3 and 8)
 
 A portfolio with `C` = USD 1,000 over a window of 365 days in scenario L. `sum net_usd =
 +60.0`, of which **+20.0** is the positive `EVT` of confirmed-event episodes (non-executable
-last-trade gains), so `sum exec_net_usd = 60.0 - 20.0 = +40.0`.
+last-trade gains), so `sum exec_net_usd = 60.0 - 20.0 = +40.0` (the entered set is the same
+in this first toy; A8b shows a case where it is not).
 
 - `roc_annual` on `net` is `60.0 / 1,000 = 6.0%`, above the 5% barrier. On `exec_net` it
   is `40.0 / 1,000 = 4.0%`: **2 points come from the non-executable gain, 4 points do not**.
 - The 5% barrier **fails on `exec_net`**, so the verdict is **`positive_not_robust`** even
   though `net` passes (section 8, order 9). The same two-sided evaluation applies to the
   90% bound, the top-5 removals, the half-year signs and the market-adjusted guard.
+
+### A8b. The money path of `exec_net` (sections 5.4 and 7.3)
+
+Scenario L, `C` = USD 1,000, `k = 1`, `N = 1,000` (margin 500, entry fee 1.1), window of 365
+days, episodes one after another. **E1** is a confirmed event: `price_usd = +100` (the
+non-executable last-trade gain, `EVT = +100`), `net_usd = +97.91` (fees less funding 2.09).
+**E2** is a liquidation: `-500 - 1.1 = -501.10`. **E3** needs `500 + 1.1 = 501.10`; if
+entered it nets `+30.0`.
+
+| Path            | E1 in the ledger      | After E2 cash                     | E3 (needs 501.10)                                      |
+| --------------- | --------------------- | --------------------------------- | ------------------------------------------------------ |
+| L on `net`      | `+97.91`              | `1,000 + 97.91 - 501.10 = 596.81` | **entered** (596.81 at least 501.10)                   |
+| L on `exec_net` | `97.91 - 100 = -2.09` | `1,000 - 2.09 - 501.10 = 496.81`  | **`skipped_insufficient_funds`** (496.81 below 501.10) |
+
+- **Entered sets:** `{E1, E2, E3}` on `net`, `{E1, E2}` on `exec_net`. The gain of E1 would
+  have funded E3 only on the `net` path.
+- **`roc_annual`:** on `net` `sum = 97.91 - 501.10 + 30.0 = -373.19`, `-373.19 / 1,000 =`
+  **-37.32%**; on `exec_net` `sum = -2.09 - 501.10 = -503.19`, **-50.32%**. Each guard uses
+  its own path.
 
 ### A9. A missing entry bar (sections 3 and 4, M5)
 
