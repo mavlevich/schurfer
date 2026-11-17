@@ -1,4 +1,4 @@
-# New-perp short, laboratory protocol v1 (DRAFT, revision 4, 2026-11-16)
+# New-perp short, laboratory protocol v1 (DRAFT, revision 5, 2026-11-17)
 
 Study identifier: `new-perp-short-v1`. Idea: `I25` in the
 [consilium ideas list](../consilium/ideas.md). A hypothesis identifier (`HYP-039` is the
@@ -13,8 +13,10 @@ archive, identity per launch, power calibration, the laboratory read) are writte
 owner's separate go. Merge of this document is also a separate decision of the owner
 and the colleague.
 
-**Revision 4** follows two reviews of the experiment model and a consistency pass over the whole chain
-(selection, entry, events of an open position, exit, funding and fees, verdict). What changed
+**Revision 5** follows two reviews of the experiment model, a consistency pass over the whole chain
+(selection, entry, events of an open position, exit, funding and fees, verdict) and a first read of
+the rules by the colleague (the sign map of section 8, the trigger window of section 5.3, the
+margin-loss note of section 6.1 and the cost wording of section 6.2). What changed
 in each revision is in section 13; the rules are pinned by the worked examples of Appendix A.
 
 Chain of evidence behind it:
@@ -331,16 +333,29 @@ margin also reserves a closing-fee amount that the 50% simplification ignores.
    fees), whatever the fill, and **only the entry fee** is charged (exit-type table in 6.1). No separate
    liquidation fee is assumed; none is stated on the pages read.
 2. **Stop.** A stop-market order on the **last trade price**, triggered when a 1-minute
-   trade-price high reaches `S = P_e * 1.30`, from the entry bar onward. The fill is a
+   trade-price high reaches `S = P_e * 1.30`, from the entry bar onward (and only while
+   the position is open, item 3). The fill is a
    **scenario assumption**, not a bound (6.2): scenario L fills at `max(S, bar open)`
    (gap aware), scenario H at the bar's **high**. A stop can lose more than 30% (example A2).
-3. **Order inside one bar.** One OHLC bar does not say what came first. Fixed
-   conventions, the same in both scenarios:
+3. **Trigger window, and order inside one bar.** The stop trigger, the liquidation
+   trigger `T_liq` (on the mark-price high) and the gap tests below are evaluated **only
+   on bars while the position is open**: in time order from the **entry bar** through the
+   **planned-exit bar** (the bar that ends at `X`), **inclusive**. The first bar that
+   triggers ends the episode; a trade high or a mark high in any later bar, including
+   one after an earlier stop, liquidation, confirmed event or the planned exit, never
+   stops or liquidates anything retroactively and is not read. For an `unresolved`
+   episode (item 5) only the covered bars are evaluated, and a trigger found there is
+   still the exit. One OHLC bar does not say what came first. Fixed conventions, the
+   same in both scenarios L and H:
    - if the same bar reaches both the stop trigger and the liquidation trigger, the
      **liquidation applies** (the worse outcome for the short);
+   - if the **planned-exit bar** itself reaches a trigger, the **trigger applies, not
+     the planned exit** (the stop, or the liquidation if both are reached), and `t_exit`
+     is the same `X`: only the fill and the exit type change (example A2e);
    - if a bar **opens** at or beyond the stop level (a gap), the stop triggers at that
      bar, and the fill is `bar open` in L and `bar high` in H;
-   - if a bar's mark price opens at or beyond `T_liq`, liquidation applies at once. These conventions are pinned by example A2.
+   - if a bar's mark price opens at or beyond `T_liq`, liquidation applies at once. These conventions and the trigger window are pinned by
+     examples A2a to A2e.
 4. **Events after entry.** A halt, delivery, delisting, contract conversion or symbol
    migration after `E` is an **event of an open position**, not an exclusion.
    - **Confirmation.** The end of the archive is **not** the end of trading: a missing
@@ -448,9 +463,24 @@ section has to assume an exit. `F_x` is the fill of section 6.2; `margin = 0.5 *
 scenario charges no separate exit fee: the isolated margin already holds the closing-fee
 reserve, and the loss is the whole margin. Pinned by examples A1 to A6 in Appendix A.
 
+**Reading the margin-loss rows** (liquidation, event in H, `unresolved` in H):
+
+- `-margin` **is the whole price loss of the position**. No other price loss is added
+  on top of it: not `q * (F_e - F_x)` for any fill, and not the distance of a bar's high
+  above `T_liq`.
+- The **entry fee is paid from the account balance outside the margin**, so it is added
+  **once**, as its own line: `net_usd = -margin + funding_usd - entry_fee`.
+- **Funding is a separate signed line, counted once**, for the settlements up to `t_exit`
+  (or the last covered bar for `unresolved`). It is not a second loss on top of `-margin`
+  and is not part of it; a funding payment does not enlarge the margin loss in this model.
+- No exit fee, no borrow cost and no second funding window exist for these rows. Examples
+  A2a, A4 (H) and A6 (H) are computed exactly this way.
+
 ### 6.2 Cost model and its two scenarios
 
-1. **Fee rate `phi`.** The Innovation Zone non-VIP **taker rate of 0.1100% (11 bps) per
+1. **Fee rate `phi`.** **`phi` = 11 bps is the VIP 0 (non-VIP) Innovation Zone taker rate
+   for one fill, as stated on the zone FAQ; the rates that applied in the historical
+   window are not recoverable.** The Innovation Zone non-VIP **taker rate of 0.1100% (11 bps) per
    side** and maker rate of 0.0400% are stated on Bybit's
    [Innovation Zone FAQ](https://www.bybit.com/en/help-center/article/FAQ-Perpetual-Trading-Innovation-Zone)
    (read 2026-11-16, last updated 2026-08-07). The standard non-VIP taker rate of 0.055%
@@ -481,10 +511,13 @@ reserve, and the loss is the whole margin. Pinned by examples A1 to A6 in Append
   better than L. In a wide bar H is worse. The document therefore never calls one
   "the lower-cost scenario", and section 8 treats a disagreement in sign, in either
   direction, as `scenario_dependent` (example A5).
-- **Allowance of 9.5 bps per side (19 bps round trip)** is the spread and slippage
-  figure used for established perps in the
-  [venue cost check](venue-cost-check-v1.md); days-old books are likely worse, so it is
-  a floor for L and not an estimate.
+- **Allowance of 9.5 bps per fill (19 bps round trip) is a spread-and-slippage
+  allowance. It is added to the fee `phi`, and it is not a fee.** It moves the fill
+  price (entry `P_e` less 9.5 bps, exit `P_x` plus 9.5 bps), and the fee `phi` is then
+  charged on that fill's value as in 6.1. So scenario L costs **`phi` + 9.5 bps = 20.5 bps
+  per fill** where no book exists (example A5). The figure is the one used for
+  established perps in the [venue cost check](venue-cost-check-v1.md); days-old books are
+  likely worse, so it is a floor for L and not an estimate.
 - **VWAP** is computed at order sizes USD 50, 250, 500 and 1,000 with no extra
   half-spread added (it is already inside the VWAP). Where the book has less depth
   than the size, that size is `depth_absent` for that fill and is **not extrapolated**.
@@ -645,18 +678,37 @@ next to the per-episode net.
 Checked in this order. The first that applies ends the study at that stage. Stages 1
 to 3 read no return.
 
-| Order | Code                       | Condition                                                                                                                                                                                                                                                             | Stage |
-| ----- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
-| 1     | `not_reconstructible`      | M1 fails (`launch_time_unverified`), or the lifecycle of a launch cannot be rebuilt from native data for more than 15% of episodes                                                                                                                                    | 1     |
-| 2     | `incomplete_coverage`      | M2, M4 or M5 fails (bars, mark bars and funding; **order-book coverage is not a gate**), or more than 5% of episodes are `unresolved` after `E` (an end of archive without a confirming source counts here)                                                           | 1, 4  |
-| 3     | `identity_unresolved`      | M3 fails                                                                                                                                                                                                                                                              | 1     |
-| 4     | `insufficient_events`      | fewer than 100 resolved episodes, or fewer than 26 weeks, after the stages above                                                                                                                                                                                      | 1     |
-| 5     | `capital_infeasible`       | M6 fails, or the order cannot be opened within `C` (minimum order, quantity step, risk limit, or no depth at USD 50 **at entry** for more than 20% of episodes; depth at exit never removes an episode)                                                               | 1     |
-| 6     | `insufficient_power`       | calibrated MDE above 400 bps (7.4), returns unread                                                                                                                                                                                                                    | 3     |
-| 7     | `negative_net_after_costs` | the V1 cluster-mean net is at or below zero in **both** scenarios L and H, on at least the evidence floor. A mature negative is a **fail under the assumed costs** and is not masked by thin diversity; it is not proof that no edge exists                           | 4     |
-| 8     | `scenario_dependent`       | the sign of the V1 cluster-mean net **differs between L and H**, in either direction (positive means above zero; zero counts as not positive). Neither a pass nor a fail                                                                                              | 4     |
-| 9     | `positive_not_robust`      | net is above zero in both, but a guard fails in L or in H: market-adjusted net not positive for both benchmarks; a top-5 removal or half-year flips the sign; the 90% bound is not above zero; `roc_annual` is not above 5%; or the sign comes only from `M` or `FND` | 4     |
-| 10    | `lab_positive_hypothesis`  | all of the above hold in both L and H                                                                                                                                                                                                                                 | 4     |
+| Order | Code                       | Condition                                                                                                                                                                                                                                                                                  | Stage |
+| ----- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----- |
+| 1     | `not_reconstructible`      | M1 fails (`launch_time_unverified`), or the lifecycle of a launch cannot be rebuilt from native data for more than 15% of episodes                                                                                                                                                         | 1     |
+| 2     | `incomplete_coverage`      | M2, M4 or M5 fails (bars, mark bars and funding; **order-book coverage is not a gate**), or more than 5% of episodes are `unresolved` after `E` (an end of archive without a confirming source counts here)                                                                                | 1, 4  |
+| 3     | `identity_unresolved`      | M3 fails                                                                                                                                                                                                                                                                                   | 1     |
+| 4     | `insufficient_events`      | fewer than 100 resolved episodes, or fewer than 26 weeks, after the stages above; at stage 4 the same floor is applied **to each scenario's own cohort** (L leaves `unresolved` episodes out, so its count can be smaller than H's), and a scenario below it has no result (the map below) | 1, 4  |
+| 5     | `capital_infeasible`       | M6 fails, or the order cannot be opened within `C` (minimum order, quantity step, risk limit, or no depth at USD 50 **at entry** for more than 20% of episodes; depth at exit never removes an episode)                                                                                    | 1     |
+| 6     | `insufficient_power`       | calibrated MDE above 400 bps (7.4), returns unread                                                                                                                                                                                                                                         | 3     |
+| 7     | `negative_net_after_costs` | the V1 cluster-mean net is at or below zero in **both** scenarios L and H (map below), on at least the evidence floor in each. A mature negative is a **fail under the assumed costs** and is not masked by thin diversity; it is not proof that no edge exists                            | 4     |
+| 8     | `scenario_dependent`       | the sign of the V1 cluster-mean net **differs between L and H**, in either direction (positive means above zero; zero counts as not positive). Neither a pass nor a fail                                                                                                                   | 4     |
+| 9     | `positive_not_robust`      | net is above zero in both, but a guard fails in L or in H: market-adjusted net not positive for both benchmarks; a top-5 removal or half-year flips the sign; the 90% bound is not above zero; `roc_annual` is not above 5%; or the sign comes only from `M` or `FND`                      | 4     |
+| 10    | `lab_positive_hypothesis`  | all of the above hold in both L and H                                                                                                                                                                                                                                                      | 4     |
+
+**Sign map of the V1 cluster-mean net (stage 4).** Every combination has one
+verdict. "Above zero" is strict; **zero is not positive**. A scenario with no result is
+checked first, before any sign is read.
+
+| Net in L                  | Net in H                 | Verdict                                                                                  |
+| ------------------------- | ------------------------ | ---------------------------------------------------------------------------------------- |
+| above zero                | above zero               | go on to the guards: `positive_not_robust` if one fails, else `lab_positive_hypothesis`  |
+| at or below zero          | at or below zero         | `negative_net_after_costs`                                                               |
+| above zero                | at or below zero         | `scenario_dependent`                                                                     |
+| at or below zero          | above zero               | `scenario_dependent`                                                                     |
+| no result in L, H or both | any, including no result | `insufficient_events`, naming the scenario; no sign is read, no pass, no fail, no guards |
+
+A scenario has **no result** when its cohort is below the evidence floor (fewer than 100
+resolved episodes or fewer than 26 ISO weeks), when every episode of it is excluded, or
+when its bootstrap cannot be computed for lack of clusters. The one status for all of
+these is `insufficient_events` (order 4), reported with the scenario and the counts. It is
+never read as "negative" and never as "scenario dependent". So `L = 0` with `H > 0`, and
+the reverse, are `scenario_dependent`; both at exactly `0` is `negative_net_after_costs`.
 
 - **`lab_positive_hypothesis` is not confirmation.** It means only that the candidate may
   be considered for a frozen exam (section 9). The discovery year is open and about 124
@@ -786,6 +838,28 @@ nothing):
   to differ in sign.
 
 ## 13. Revisions, and open design questions for the colleague
+
+### 13.0 Revision 5: the colleague's first read of the rules
+
+The colleague could not open the document and gave conditions on the rules as described.
+Each was checked against the text; two were real gaps and two needed clearer wording.
+
+1. **Sign map (section 8, wording).** The map from the signs of L and H to a verdict is one
+   table now, and zero is explicitly not positive. A scenario with **no result** (cohort
+   below the evidence floor, every episode excluded, no bootstrap) has one status,
+   `insufficient_events`, checked before any sign is read.
+2. **Trigger window (section 5.3 item 3, real gap).** Triggers (stop, `T_liq`) are
+   evaluated only on bars while the position is open, from the entry bar through the
+   planned-exit bar inclusive; nothing after the first exit is read. A trigger in the
+   planned-exit bar beats the planned exit, in L and in H. New example A2e.
+3. **Margin-loss note (section 6.1, wording).** `-margin` is the whole price loss; the
+   entry fee is added once, outside the margin; funding is one signed line counted once.
+   Checked A2a, A4 (H) and A6 (H) against it. A6 (H) counted 6 settlements where the
+   last covered bar allows 5 under the strict rule; corrected (-5,006 bps).
+4. **Cost wording (section 6.2, wording).** The 9.5 bps is a spread-and-slippage
+   allowance per fill added to the fee, not a fee (L per fill is `phi` + 9.5 bps); 11 bps
+   is the VIP 0 taker rate for one fill from the zone FAQ and historical rates are not
+   recoverable.
 
 ### 13.1 Revision 4: consistency pass, wording and worked examples
 
@@ -990,6 +1064,21 @@ Trade-price OHLC and mark-price high of the bar after entry, no funding.
 In A2b and A2d the loss exceeds 30% of notional (3,000 bps), which is why no loss ceiling
 is promised. In A2a and A2c the loss is the whole margin, whatever the bar's high.
 
+**A2e. The trigger window (section 5.3, item 3).** The planned-exit bar (the bar that
+ends at `X`) has trade open 110, high 131, close 112, mark high 120; no funding, as in A2d.
+Position open, so the bar is evaluated and the trigger wins over the planned exit:
+
+- **Result L:** the stop applies at `max(S, open)` plus the allowance, exactly as A2d:
+  **-303.77 USD, -3,037.66 bps**, exit type stop, `t_exit = X`. **Result H:** fill at the
+  bar high 131, as A2d: **-312.54 USD, -3,125.41 bps**. Had the planned exit been used
+  instead, L would be `F_x = 112 * 1.00095 = 112.1064`, price `-121.064`, fee
+  `1.1 + 1.23317`, net **-123.40 USD, -1,233.97 bps** (H would be the same as the stop,
+  the bar high): the trigger rule is what separates the two in L.
+- **After the first exit nothing is read.** A mark high of 155 in a bar **after** the
+  planned-exit bar, or after the stop of A3 fired at hour 30:05, does not liquidate and
+  does not change the result: the episode already ended, its funding window and slot are
+  those of the first exit.
+
 ### A3. An early `actual_exit` (sections 5.2 and 6.1)
 
 The stop of A2d fires in the bar that starts at hour 30:05 after `E`, so
@@ -1051,8 +1140,10 @@ announcement exists.
 - **Classification:** a **data gap**, not a status exit and not an event after entry. The
   episode is `unresolved`, counts against the 95% bars coverage of M5 and the 5% gate.
 - **Scoring.** **L:** excluded from the mean (counted in the denominator). **H:** whole
-  margin lost, entry fee only, funding up to the last covered bar (6 settlements, marks
-  of 100): `-500 + 0.0001 * 10 * 100 * 6 - 1.1 = -500.5` USD, **-5,005 bps**.
+  margin lost, entry fee only, funding up to the last covered bar. That bar ends at day
+  9.0, 48 hours after `E`: the settlements at hours 8, 16, 24, 32 and 40 count (**5**,
+  marks of 100); the one at hour 48 has no covered mark bar and is not counted (strict
+  `s < t_exit`). `-500 + 0.0001 * 10 * 100 * 5 - 1.1 = -500.6` USD, **-5,006 bps**.
 - **Gate.** With 200 episodes the limit is 10 unresolved; 12 unresolved is 6% and ends
   the study as `incomplete_coverage` (section 8, order 2).
 - **Contrast.** If `instruments-info` showed `Closed` with a delivery time at day 9.5, the
