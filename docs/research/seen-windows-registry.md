@@ -634,8 +634,9 @@ Two steps, hard-separated:
 - **Step B, cost only.** One instant per date and pair, 2024-10-01 to 2025-09-30 only:
   `T = D 00:00:30 UTC`, at most 12 dates and 108 pair observations, read from a `Range`
   prefix of one Bybit `ob200` (else `ob500`) day file and one Hyperliquid `l2Book` hour 0
-  file. Stored: spread and volume-weighted `x` in bps at USD 50, 250, 500 and 1,000,
-  statuses. Never stored or published: a price level, a mid, a cross-venue ratio. At most
+  file. Stored: half spread and executable non-fee cost `x` in bps at USD 50, 250, 500 and 1,000,
+  statuses, and a boolean price-ratio diagnostic flag. Never stored or published: a price
+  level, a mid, a cross-venue ratio. At most
   512 MiB of response bytes. **Level: features (cost only), discovery year only.** No
   return, no price move between instants, no funding rate, no basis level, no open
   interest.
