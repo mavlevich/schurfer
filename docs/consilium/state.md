@@ -363,19 +363,19 @@ Read at: `e3f323d` (`origin/main`), PR #601 (`bccb6ee`), PR #606 (`da22081`), PR
 
 ## 15. `plan.md` Draft v3 sync, `USD 5,000` capital, `I45` (`P-03`) transfer, and `O11` prod observation, 2026-11-17
 
-Read at: `d5327b1` (`origin/main`), PR #606 (`da22081`), PR #607 (`e3f323d`), PR #608 (`45084ad`), PR #609 (`d5327b1`).
+Read at: `d5327b1` (`origin/main`), PR #606 (`da22081`), PR #607 (`e3f323d`), PR #608 (`076db4b`), PR #609 (`d5327b1`).
 
 - **Owner working capital (`R5` / `O9`, 2026-11-17):** Owner set **`USD 5,000`** as the
   working planning capital (`5%` annual benchmark = `USD 250/year` on total allocated
   capital, without calling that benchmark risk-free). Live drawdown limits remain to be
   set before Stage 7.
 - **`plan.md` updated to Draft v3:** Aligned with PR #606/#607 (`stop_direction_a`; owner
-  decided `2026-11-17` not to pursue `A2`/`A4d` `lab_only` in this cycle), PR #608 (`45084ad`,
-  `I25` Stages 1–3 data recoverability/power checks before reading returns, per-fill
-  fees, and stop/liquidation modeling without a guaranteed loss cap), Stage 2A rules
-  (`31 bps` non-commission filter only; verify HL S3 archive availability and spend cap),
-  explicit `2027-02-11` stop rule (`program-plan-2026-11.md`), `I35`/`I36`, and `I43`'s
-  1–2 week data-slice wording.
+  decided `2026-11-17` not to pursue `A2`/`A4d` `lab_only` in this cycle), PR #608 (head
+  `076db4b`, `I25` Stage 1/1b data checks before prices, Stage 2–3 pre-entry price power
+  calibration before reading strategy outcomes, per-fill fees, and stop/liquidation
+  modeling without a guaranteed loss cap), Stage 2A rules (`31 bps` non-commission filter
+  only; verify HL S3 archive availability and spend cap), explicit `2027-02-11` stop rule
+  (`program-plan-2026-11.md`), `I35`/`I36`, and `I43`'s 1–2 week data-slice wording.
 - **`I44` (`CryptoAttack` / `CEXTrack`) moved to `parked` (`2026-11-17`):** Owner decided
   not to reopen the `external Telegram channels are reference-only` rule: without a paid
   subscription only an incomplete/filtered stream is accessible with extra external lag,
@@ -391,5 +391,5 @@ Read at: `d5327b1` (`origin/main`), PR #606 (`da22081`), PR #607 (`e3f323d`), PR
   - Timers passing (`Result=success`, `2026-11-17`): `schurfer-offsite-backup.service` (`04:13:50 UTC`), `schurfer-bybit-order-rules.service` (`07:07:19 UTC`), `schurfer-cold-bar-gated-deletion.service` (`05:00:58 UTC`), and `schurfer-restore-check.service` (`2026-11-15T06:03:03Z`, `ok: true`, `mismatches: {}`, `rows: 216226`, `tables: 23`, `schema_revision_ok: true`).
   - **Two operational items flagged (no prod changes made):**
     1. `schurfer-cold-bar-export.service` (`03:32:29 UTC`): `Result=exit-code`, `ExecMainStatus=2` (`ValueError: 2026-11-11 has no rows in timeseries.bybit_momentum_bars_1m; refusing to export`) — expected fallout from stopping Group 1 on 2026-11-10.
-    2. `schurfer-offsite-backup-health.service` (`07:01:57 UTC`): `Result=exit-code`, `ExecMainStatus=1` (root-owned unit logs not readable by `deploy` without `sudo`; requires separate owner/root inspection via `make prod-offsite-backup-health`).
+    2. `schurfer-offsite-backup-health.service` (`07:01:57 UTC`): `Result=exit-code`, `ExecMainStatus=1` (cause of non-zero exit not established: journal not readable during this check; requires separate inspection via `make prod-offsite-backup-health`).
 - **Resolved owner decisions (`2026-11-17`):** working capital set to `USD 5,000`, `A2`/`A4d` (`lab_only`) parked for this cycle, and `I44` parked without reopening the external-channel rule.
