@@ -603,7 +603,7 @@ Completed on the owner's go, 2026-11-16:
 
 ## I25 new-perp short `new-perp-short-v1`, draft protocol, 2026-11-16 (design only)
 
-[Draft protocol](new-perp-short-lab-protocol-v1.md), revision 6 after the colleague's
+[Draft protocol](new-perp-short-lab-protocol-v1.md), revision 7 after the colleague's
 review, for discussion. **This row records no read.** The document fetches nothing,
 reads no price, funding rate, spread, depth or return, and registers no request list. It
 states in advance what each later stage would read, so that no window is spent by

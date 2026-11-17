@@ -1,4 +1,4 @@
-# New-perp short, laboratory protocol v1 (DRAFT, revision 6, 2026-11-17)
+# New-perp short, laboratory protocol v1 (DRAFT, revision 7, 2026-11-17)
 
 Study identifier: `new-perp-short-v1`. Idea: `I25` in the
 [consilium ideas list](../consilium/ideas.md). A hypothesis identifier (`HYP-039` is the
@@ -13,11 +13,12 @@ archive, identity per launch, power calibration, the laboratory read) are writte
 owner's separate go. Merge of this document is also a separate decision of the owner
 and the colleague.
 
-**Revision 6** follows two reviews of the experiment model, a consistency pass over the whole chain
-(selection, entry, events of an open position, exit, funding and fees, verdict) and two reads of
-the rules by the colleague (the sign map, the trigger window and the margin-loss and cost wording,
+**Revision 7** follows two reviews of the experiment model, a consistency pass over the whole chain
+(selection, entry, events of an open position, exit, funding and fees, verdict) and three reads of
+the rules by the colleague (the sign map, the trigger window and the margin-loss and cost wording;
 then the gap rule, the portfolio timing of unresolved episodes, the entry clock and the six-part
-decomposition). What changed
+decomposition; then the `EVT` of a stop, the mark-price test in a zero-trade minute and the dating
+of a confirmed event against a gap). What changed
 in each revision is in section 13; the rules are pinned by the worked examples of Appendix A.
 
 Chain of evidence behind it:
@@ -163,7 +164,7 @@ The catalyst study states that the archive was not reconciled. This check does i
     `Closed` no longer returns) are at most 5% of the union;
   - symbols missing more than 5% of the days of their planned path are at most 5% of the
     catalog set. A missing last file is **not** taken as an end of trading: the days
-    after it are a data gap unless a separate source confirms an end (5.3, item 4).
+    after it are a data gap unless a separate source confirms an end dated at or before the first missing minute (5.3, items 3 and 4).
 - **Fail code.** `incomplete_coverage`, with the three shares named. An archive-only
   symbol is **never** added to the cohort by hand after the check: the cohort is the
   catalog as registered. The share is reported because delisted perps are the likely
@@ -224,11 +225,11 @@ is scored (section 5.3, item 4). Each launch receives one status:
 
 ### M4 to M6. Coverage of what the net needs (also before any return)
 
-| Check | Method                                                                                                                                                                                                                                                                                                                                                   | Pass                                                   | Fail code             |
-| ----- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | --------------------- |
-| M4    | Funding history coverage proven by pagination for the entry-to-planned-exit span of every episode (the HYP-036 rule: a full page covers only from its oldest row; a hold not inside one contiguous union of covered spans is incomplete).                                                                                                                | at least 95% of resolved episodes covered              | `incomplete_coverage` |
-| M5    | 1-minute trade bars, 1-minute mark-price bars and hourly mark bars at settlements, listed by existence (no content), over the planned path of every variant (days 3 to 21 after `T0`). A missing last file is **not** an end of trading: bars missing after the last archive file are a data gap unless a separate source confirms an end (5.3, item 4). | at least 95% of episodes have their bars and mark bars | `incomplete_coverage` |
-| M6    | Static capital feasibility known at `E`: contract minimum order value, quantity step, maximum leverage, risk limit and position cap of the symbol, from the catalog snapshot, for notional USD 50 per slot.                                                                                                                                              | the order opens for at least 90% of episodes           | `capital_infeasible`  |
+| Check | Method                                                                                                                                                                                                                                                                                                                                                                                                      | Pass                                                   | Fail code             |
+| ----- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | --------------------- |
+| M4    | Funding history coverage proven by pagination for the entry-to-planned-exit span of every episode (the HYP-036 rule: a full page covers only from its oldest row; a hold not inside one contiguous union of covered spans is incomplete).                                                                                                                                                                   | at least 95% of resolved episodes covered              | `incomplete_coverage` |
+| M5    | 1-minute trade bars, 1-minute mark-price bars and hourly mark bars at settlements, listed by existence (no content), over the planned path of every variant (days 3 to 21 after `T0`). A missing last file is **not** an end of trading: bars missing after the last archive file are a data gap unless a separate source confirms an end dated at or before the first missing minute (5.3, items 3 and 4). | at least 95% of episodes have their bars and mark bars | `incomplete_coverage` |
+| M6    | Static capital feasibility known at `E`: contract minimum order value, quantity step, maximum leverage, risk limit and position cap of the symbol, from the catalog snapshot, for notional USD 50 per slot.                                                                                                                                                                                                 | the order opens for at least 90% of episodes           | `capital_infeasible`  |
 
 **Order books are not a gate.** Existence and depth of the order-book archive are
 **recorded, not required**: the share of episodes with a book at entry and at exit, at
@@ -358,10 +359,16 @@ margin also reserves a closing-fee amount that the 50% simplification ignores.
    1-minute mark-price bar of every minute. **After the first missing bar nothing later is
    read**: the episode is `unresolved` from that bar (item 5), even if a later bar shows a
    stop or liquidation level. Only a trigger found **before** the first missing bar is an
-   exit. A minute with no trades inside a covered file or page is **not** missing: it is
-   the explicit zero-volume bar, or, if the source emits none, a flat bar at the previous
-   close with zero volume (a rule recorded in stage 2), and it cannot trigger anything. A
-   minute is missing only when the source for it (file, page or series) is absent. A
+   exit. A minute with no trades inside a covered file or page is **not** missing: its trade bar
+   is the explicit zero-volume bar, or, if the source emits none, a flat bar at the
+   previous close with zero volume (a rule recorded in stage 2). Such a trade bar cannot
+   trigger the **stop**, but it **does not cancel the mark-price test**: liquidation is
+   tested on the independent mark-price stream, and a covered mark bar whose high is at or
+   above `T_liq` liquidates even if the trade bar of that minute is flat or has no volume
+   (example A2h). A minute is missing only when the source for it (file, page or series)
+   is absent, and the two streams are never substituted: a missing mark bar is a gap and
+   is **never rebuilt from trade prices**, and a missing trade bar is **never rebuilt from
+   mark prices**. A
    missing minute at or after the time of a **confirmed event** (item 4) is not a gap;
    it is the event. A confirmed event dated **after** a gap does not rescue the episode:
    the last trade before it lies beyond the gap, which is not read (example A2f). One OHLC bar does not say what came first. Fixed conventions, the
@@ -374,14 +381,16 @@ margin also reserves a closing-fee amount that the 50% simplification ignores.
    - if a bar **opens** at or beyond the stop level (a gap), the stop triggers at that
      bar, and the fill is `bar open` in L and `bar high` in H;
    - if a bar's mark price opens at or beyond `T_liq`, liquidation applies at once. These conventions and the trigger window are pinned by
-     examples A2a to A2f.
+     examples A2a to A2h.
 4. **Events after entry.** A halt, delivery, delisting, contract conversion or symbol
    migration after `E` is an **event of an open position**, not an exclusion.
    - **Confirmation.** The end of the archive is **not** the end of trading: a missing
      last file may mean an incomplete archive. An instrument event is established only
      by a **separate source**: the instrument's status in `instruments-info` (for
      example `Delivering` or `Closed` with a delivery time) or a machine-timed Bybit
-     announcement. Without confirmation it is a **data gap**: the episode is
+     announcement. A confirmation counts only if the **event time** is at or before the first
+     missing minute (item 3). Without it, or if the event is dated after the gap
+     began, it is a **data gap**: the episode is
      `unresolved` (item 5), counts against the 95% bars coverage of M5 and the 5% gate
      below, and is never called a status exit.
    - **Scoring of a confirmed event.** The last trade before a halt is **not an
@@ -390,8 +399,8 @@ margin also reserves a closing-fee amount that the 50% simplification ignores.
      event (labelled non-executable) and **H:** the whole margin lost. A recorded
      delivery price is reported beside them. Their share is reported by event type. Pinned by examples A4 and A6.
 5. **Unresolved after `E`.** An episode with a missing trade bar or mark bar between the
-   entry bar and the planned-exit bar (item 3), not explained by a confirmed event dated
-   at or before it, is `unresolved` **from that bar on**. Its last covered bar is the
+   entry bar and the first exit (or the planned-exit bar when there is no earlier exit)
+   (item 3), not explained by a confirmed event dated at or before it, is `unresolved` **from that bar on**. Its last covered bar is the
    bar before the first missing one, and `t_last` is the end of that bar. It is counted
    in the denominator, never dropped. Its price result, fee, funding window and slot
    timing are set **per scenario** (6.1, example A7): **L** excludes it from the mean and
@@ -666,11 +675,18 @@ stop, the whole margin for a liquidation.
 ends the episode before `X`, there is **no `P_x`** and `R_ref` is undefined (the same holds
 for a stop or liquidation whose planned-exit bar is not covered). **No price is invented
 and the episode is not dropped.** Such an episode carries a flag `no_reference_exit`, and
-`M = S = STOP = EXE = 0` for it. Its **whole price result** is the part `EVT`: in L the
-non-executable last-trade result `q * (F_e - F_last)` of a confirmed event, in H
-`-margin`; an `unresolved` episode exists in H only, as `-margin` (in L it is excluded,
-5.3 item 5). The identity then reads `net = EVT + FND - FEE` for it and still holds
-exactly; the test checks it for every episode and every scenario (example A4b).
+`M = S = STOP = EXE = 0` for it. Its **whole price result** is the part `EVT`, stated
+once for **every** `no_reference_exit` episode:
+
+```text
+EVT = 10,000 * price_usd / (q * F_e)     price_usd from the 6.1 table row of its actual exit
+```
+
+that is: confirmed event in L, the non-executable last-trade result `q * (F_e - F_last)`;
+confirmed event in H, liquidation (L and H) and `unresolved` in H, `-margin`; **stop**, its
+stop-fill price result `q * (F_e - F_x)` in that scenario (`F_x` of 6.2). An `unresolved`
+episode exists in H only (in L it is excluded, 5.3 item 5). The identity then reads `net = EVT + FND - FEE` for it and still holds
+exactly; the test checks it for every episode and every scenario (examples A2g and A4b).
 
 The market-adjusted net used by the guards, `net_adj`, uses the interval `[E, t_exit]` over
 which the short was actually open. A positive result that is all `M`, or all `FND`, is
@@ -735,7 +751,7 @@ to 3 read no return.
 | Order | Code                       | Condition                                                                                                                                                                                                                                                                                                                                                 | Stage |
 | ----- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- |
 | 1     | `not_reconstructible`      | M1 fails (`launch_time_unverified`), or the lifecycle of a launch cannot be rebuilt from native data for more than 15% of episodes                                                                                                                                                                                                                        | 1     |
-| 2     | `incomplete_coverage`      | M2, M4 or M5 fails (bars, mark bars and funding; **order-book coverage is not a gate**), or more than 5% of episodes are `unresolved` after `E` (an end of archive without a confirming source counts here)                                                                                                                                               | 1, 4  |
+| 2     | `incomplete_coverage`      | M2, M4 or M5 fails (bars, mark bars and funding; **order-book coverage is not a gate**), or more than 5% of episodes are `unresolved` after `E` (an end of archive without a confirming source dated at or before the first missing minute counts here)                                                                                                   | 1, 4  |
 | 3     | `identity_unresolved`      | M3 fails                                                                                                                                                                                                                                                                                                                                                  | 1     |
 | 4     | `insufficient_events`      | fewer than 100 resolved episodes, or fewer than 26 weeks, after the stages above; at stage 4 the same floor is applied **to each scenario's own cohort** (L leaves `unresolved` episodes out, so its count can be smaller than H's), and a scenario below it has no result (the map below)                                                                | 1, 4  |
 | 5     | `capital_infeasible`       | M6 fails, or the order cannot be opened within `C` (minimum order, quantity step, risk limit, or no depth at USD 50 **at entry** for more than 20% of episodes; depth at exit never removes an episode)                                                                                                                                                   | 1     |
@@ -893,7 +909,29 @@ nothing):
 
 ## 13. Revisions, and open design questions for the colleague
 
-### 13.0 Revision 6: the colleague's second read (four problems)
+### 13.0 Revision 7: the colleague's third read (three problems)
+
+All three were checked against the text and were real.
+
+1. **`EVT` of a stop (7.3).** `EVT` was described only as the last-trade result or
+   `-margin`, but the formula is `price_usd / (q * F_e)` and a stop whose planned-exit bar is
+   not covered has its own known price loss. Stated once: for every `no_reference_exit`
+   episode `EVT` takes `price_usd` from the 6.1 row of its actual exit (event L last-trade
+   result; event H, liquidation and unresolved H `-margin`; stop its stop-fill result in
+   that scenario). Example A2g. The coverage rule of 5.3 item 5 now says the gap is
+   looked for up to the first exit, so a gap after a stop does not make it unresolved.
+2. **Zero-trade minute against liquidation (5.3 item 3).** "Cannot trigger anything" held
+   only for the trade-price stop. A covered mark bar with a high at or above `T_liq`
+   liquidates even if the trade bar of that minute has no volume; a missing mark bar is a
+   gap and is never rebuilt from trade prices, a missing trade bar never from mark prices
+   (example A2h).
+3. **A6 contrast (A6, M2, M5, section 8).** A `Closed` status with a delivery at day 9.5
+   cannot confirm an end when the missing bars start at day 9.0: the event is dated after
+   the gap began, so the episode stays `unresolved`; an event at day 8.5, at or before the
+   first missing minute, is an event after entry. M2, M5, 5.3 item 4 and the section 8
+   gate now say the confirming source must be dated at or before the first missing minute.
+
+#### Revision 6: the colleague's second read (four problems)
 
 All four were checked against the text and were real. Each is handled once, where the rule
 lives, and pinned by an example.
@@ -1095,7 +1133,7 @@ passes and with the owner's separate go (sections 2, 9, 10 and 11).
     should the stage 2 contract read the symbol's risk-limit tiers where they are
     available?
 
-16. **Q16. Worked examples.** Are A1 to A7 (with A2e, A2f, A4b) the right pins, and which further cases should
+16. **Q16. Worked examples.** Are A1 to A7 (with A2e to A2h and A4b) the right pins, and which further cases should
     become fixtures (for example a status event during a settlement bar, or a stop at
     the entry bar)?
 
@@ -1183,6 +1221,33 @@ hour 31:00 has trade open 110, high 131, mark high 120, as in A2d. No funding, a
   in A2d, but an unseen liquidation inside the gap could have given `-501.1` (A2a). The
   rule does not guess the milder outcome.
 
+**A2g. A stop with no planned-exit bar (sections 5.3 and 7.3).** The stop of A2d fires in
+the bar that starts at hour 30:05 (covered, first exit); no funding, as in A2d. The
+planned-exit bar at `X` is **not covered**, so there is no `P_x`: the episode is **not
+unresolved** (the stop came first and nothing after it is read) but it has **no reference
+exit**, flag `no_reference_exit`, `M = S = STOP = EXE = 0`, and its whole price result is
+`EVT` from the stop row of 6.1 in that scenario.
+
+| Scenario | `price_usd` | `EVT` bps | `FND` | `FEE` bps | `net = EVT + FND - FEE`                                 |
+| -------- | ----------: | --------: | ----: | --------: | ------------------------------------------------------- |
+| L        |    -301.235 | -3,012.35 |     0 |   25.3136 | `-3,012.35 - 25.3136 = -3,037.66` bps = **-303.77 USD** |
+| H        |        -310 |    -3,100 |     0 |     25.41 | `-3,100 - 25.41 = -3,125.41` bps = **-312.54 USD**      |
+
+Fee check: L `1.1 + 1.43136 = 2.53136` USD (25.3136 bps of 1,000); H `1.1 + 1.441 = 2.541`
+USD (25.41 bps). The nets equal A2d exactly, so the identity holds with `EVT` carrying the
+stop's price result.
+
+**A2h. A minute with no trades, a mark high above `T_liq` (section 5.3, item 3).** In the
+minute after entry no trade occurs: the trade bar is the flat zero-volume bar at 100; the
+mark-price bar of the same minute is covered with high 150, at or above `T_liq = 149`.
+
+- **Result:** liquidation applies, whole margin lost, entry fee only: `-500 - 1.1 = -501.1`
+  USD, **-5,011 bps** in L and in H (as A2a). The empty trade bar does not cancel the mark
+  test.
+- **If the mark bar of that minute were missing** the episode would be a gap (`unresolved`),
+  not rebuilt from the flat trade bar, and a missing trade bar is likewise never rebuilt
+  from mark prices.
+
 ### A3. An early `actual_exit` (sections 5.2 and 6.1)
 
 The stop of A2d fires in the bar that starts at hour 30:05 after `E`, so
@@ -1209,7 +1274,7 @@ and 104; `r = 0.0001`.
 ### A4. A contract change announced after entry (section 4 M3, section 5.3 item 4)
 
 Entry at day 7.0. A machine-timed announcement, **published at day 10.0**, says the
-contract converts at day 10, 12:00. The conversion is a confirmed event after entry.
+contract converts at day 10, 12:00. The conversion is a confirmed event after entry, and the bars are covered up to it.
 
 - **Selection:** the evidence is dated after `E`, so it cannot exclude the launch. The
   episode **is not deleted**. Had the same announcement been published at day 6.0, before
@@ -1274,8 +1339,14 @@ announcement exists.
   `s < t_exit`). `-500 + 0.0001 * 10 * 100 * 5 - 1.1 = -500.6` USD, **-5,006 bps**.
 - **Gate.** With 200 episodes the limit is 10 unresolved; 12 unresolved is 6% and ends
   the study as `incomplete_coverage` (section 8, order 2).
-- **Contrast.** If `instruments-info` showed `Closed` with a delivery time at day 9.5, the
-  end would be confirmed and the episode scored as an event after entry, as in A4.
+- **Contrast, event after the gap began.** The first missing minute starts at day 9.0. If
+  `instruments-info` showed `Closed` with a delivery time at day **9.5**, the event is
+  dated **after** the gap began, so it does not rescue the episode: it **remains
+  `unresolved`** (5.3 item 3; the last trade before the event lies beyond the gap).
+- **Contrast, event at the gap.** If the delivery time were day **8.5** and the first
+  missing minute were at or after it, the missing bars are the event, not a gap: the
+  episode is an **event after entry**, scored as in A4 (L: the last-trade result of the
+  covered bars, non-executable; H: whole margin lost).
 
 ### A7. An unresolved episode in the portfolio (sections 5.4, 6.1 and 6.4)
 
