@@ -1,4 +1,4 @@
-# I25 stage 1: contract and request list (v1, DRAFT, revision 4, 2026-11-18)
+# I25 stage 1: contract and request list (v1, DRAFT, revision 6, 2026-11-18)
 
 Status: **draft for the colleague's review, then the owner's go.** This document and its
 code fetch nothing. It is the stage 1 gate of the
@@ -27,13 +27,13 @@ for go 1.
 
 ```text
 request_list_sha256 (whole contract, bound into every run) =
-  0a0c2ffc5371ce1b7e15ecc3c91419c5dda5edd3fd7e939229407a5b1b05e894
+  8a4758760af4889078f2034eba77c78a8f1885b8269fce6b2cde863259cf9c17
 go 1 approval hash (go_sha256["1"]) =
-  0937f3b3958515f41efcc6c21d0b5ffa75cf179721053bf068c8b8831aeb4b85
+  02b5ac65932302e377563cc9d8ce1a1448cd3c94b022cb797a214a4a77f359fe
 go 2 approval hash (go_sha256["2"]) =
-  4ac001707aae5c37a6a482ca8333da3db28bc7ede249c0e72c0531bb5fcd0818
+  5324b08114db77c5cc999aa0f7f79f994ff101968b2a9d04ebb67ff4291713bb
 contract.json file SHA-256 =
-  be08eed52010e7b1483f5b2228f1cb661871c872d6dc93c0f9fafd98997abb2c
+  1f59d45a759d8ee13866611abba366807b87f33ba482d1592cde30a3b0475edc
 ```
 
 Check without a network request:
@@ -46,9 +46,9 @@ uv run python -m schurfer_analytics.new_perp_stage1 write-contract --check
 | Go  | Reads                                                                                        | Classes            | Planned requests | Max requests | Attempt cap | Byte cap |
 | --- | -------------------------------------------------------------------------------------------- | ------------------ | ---------------- | ------------ | ----------- | -------- |
 | 1   | **metadata only**: catalog fields, archive names, per-symbol listings, HEAD sizes. No body   | C1, C3, D1, D2h    | 526              | 761          | 1,000       | 300 MiB  |
-| 2   | first daily files (column 1), one entry bar, hourly series, funding. Needs go 1 and manifest | D2, D3, D4, D5, D6 | 1,201            | 2,400        | 2,400       | 8.5 GiB  |
+| 2   | first daily files (column 1), one entry bar, hourly series, funding. Needs go 1 and manifest | D2, D3, D4, D5, D6 | 1,181            | 2,400        | 2,400       | 8.5 GiB  |
 
-**Combined byte ceiling of both gos: 300 MiB + 8,704 MiB (8.5 GiB) = 9,004 MiB, about 8.8 GiB. These are hard ceilings: each includes a 64 KiB reserve for the last block (section 4).** Planned total 1,727 requests (go 1 526, measured; go 2 1,201) (the protocol's section 10 said about 1,000: that counted
+**Combined byte ceiling of both gos: 300 MiB + 8,704 MiB (8.5 GiB) = 9,004 MiB, about 8.8 GiB. These are hard ceilings: each includes a 64 KiB reserve for the last block (section 4).** Planned total 1,707 requests (go 1 526, measured; go 2 1,181) (the protocol's section 10 said about 1,000: that counted
 listings and first files only). Attempt caps include retries. **Worst case** (4 funding pages for
 every one of 258 candidates): go 2 sends 258 + 3 x 258 + 4 x 258 = **2,064 first attempts**, and the
 cap of 2,400 leaves 16% for retries. At one request per second go 1 takes about 10 minutes and a
@@ -125,10 +125,10 @@ bytes" the cap of all responses of the class.
 | 1   | D1    | `archive_listing` | GET `public.bybit.com/trading/{SYMBOL}/`                            | 263      | 450   | 1 MiB        | 256 MiB     |
 | 1   | D2h   | `first_file_head` | HEAD `public.bybit.com/trading/{SYMBOL}/{SYMBOL}{FIRST_DAY}.csv.gz` | 258      | 300   | 0            | 0           |
 | 2   | D2    | `first_file`      | GET `public.bybit.com/trading/{SYMBOL}/{SYMBOL}{FIRST_DAY}.csv.gz`  | 258      | 300   | 512 MiB      | 7,936 MiB   |
-| 2   | D3    | `entry_trade_bar` | GET `api.bybit.com/v5/market/kline`                                 | 233      | 300   | 64 KiB       | 24 MiB      |
-| 2   | D4    | `mark_hourly`     | GET `api.bybit.com/v5/market/mark-price-kline`                      | 233      | 300   | 512 KiB      | 150 MiB     |
-| 2   | D5    | `trade_hourly`    | GET `api.bybit.com/v5/market/kline`                                 | 233      | 300   | 512 KiB      | 150 MiB     |
-| 2   | D6    | `funding_history` | GET `api.bybit.com/v5/market/funding/history`                       | 244      | 1,200 | 256 KiB      | 300 MiB     |
+| 2   | D3    | `entry_trade_bar` | GET `api.bybit.com/v5/market/kline`                                 | 228      | 300   | 64 KiB       | 24 MiB      |
+| 2   | D4    | `mark_hourly`     | GET `api.bybit.com/v5/market/mark-price-kline`                      | 228      | 300   | 512 KiB      | 150 MiB     |
+| 2   | D5    | `trade_hourly`    | GET `api.bybit.com/v5/market/kline`                                 | 228      | 300   | 512 KiB      | 150 MiB     |
+| 2   | D6    | `funding_history` | GET `api.bybit.com/v5/market/funding/history`                       | 239      | 1,200 | 256 KiB      | 300 MiB     |
 
 Parameters:
 
@@ -147,7 +147,7 @@ Parameters:
   before the oldest row of the previous full page, `limit=200`, at most 4 pages.
 - D3 to D6 are asked **only for entry candidates**: a readable, unambiguous `T0` (`aligned` or
   `delayed_open`), not `window_censored`, not `lookback_censored`, and not `relist`,
-  `multiplier_ambiguous` or `ticker_reuse_suspected`. Planning 233 (the 263 launches less the lookback and window censored, measured from the catalog dates; at most 258 by the Go 1 manifest).
+  `multiplier_ambiguous` or `ticker_reuse_suspected`. Measured 228 by the Go 2 run (the 263 launches less the lookback and window censored and the ambiguous; at most 258 by the Go 1 manifest).
 
 **Derived requests and their hashes.** C1 and C3 are the static list in `contract.json`
 (`static_requests`). Every later class is a deterministic function of earlier receipts. Before
@@ -172,7 +172,8 @@ rest unparsed**. Receipts and reports hold timestamps, existence, sizes, counts 
 | D5    | the same for the trade series                                                                                                                                                                    | open, high, low, close, volume, turnover                                                                        |
 | D6    | `fundingRateTimestamp`: per page the row count, oldest, newest and the **largest gap between consecutive timestamps**                                                                            | `fundingRate` of every row                                                                                      |
 
-The first response of each JSON class also leaves a **key-only schema probe** (key paths and
+An **error envelope** (retCode other than 0) additionally keeps its `retCode` and short `retMsg`
+(section 4); it holds no market value. The first response of each JSON class also leaves a **key-only schema probe** (key paths and
 value types, never values). Receipts, plans, `phase0.json`, `manifest.json` and the catalog
 snapshot live in the run root **outside Git**. Only the aggregate report is committed
 afterwards: counts, shares and codes, no symbol and no price.
@@ -225,12 +226,33 @@ refused, so a parser fix cannot continue an old run: a corrected revision starts
 - At most **3 sends** per request, **counted from the attempt journal**: every attempt is
   written to `attempts/` before the request, so a send whose process died before its receipt
   was written still counts and a fourth send never happens. HTTP 429, 500, 502, 503, 504, a
-  transport failure and a Bybit `retCode` 10006 are retried; the pause before the next send is
+  transport failure and a Bybit rate-limit or transient `retCode` in a 200 envelope (below) are retried; the pause before the next send is
   the server's `Retry-After` if a whole number up to 300 s, else **10 s, then 30 s**.
   **The wait survives a restart:** each receipt carries its wall-clock time and the
   `Retry-After` it received. A recovered request waits the rest of its `Retry-After` (the time
   already elapsed is credited), and a recovered run holds a persisted **not-before** time for
   every request, together with the doubled spacing.
+- **A Bybit error envelope (HTTP 200 with `retCode` other than 0)** records **only its `retCode`
+  and its short `retMsg`** (at most 200 characters) in the receipt: an error envelope carries no
+  market data, and a success envelope still records nothing of the kind. **Retried** under the
+  pacing rules above: the rate-limit codes 10006 and 10018 (each also doubles the spacing, like an
+  HTTP 429) and the transient codes 10000 and 10016 (timeout, server error).
+  Code 10018 is deprecated in the source table and retained only as a bounded
+  compatibility case for its former IP-rate-limit meaning. Code 10019 belongs
+  to the WebSocket trade service; this REST fetcher treats it as fatal.
+  **Any other code is fatal and the stop names it** (`D5: api error retCode 10001`);
+  an unknown code is never guessed. A body whose shape is wrong (no integer `retCode`, no string
+  `retMsg`, not an object) is still a **schema mismatch** and fatal. After three sends a retried
+  request is `unavailable`, as for any transient failure. Sources of the table: the repo's own
+  live note (retCode 10016, "svc error: Get kline failed", about 1% of public kline requests on
+  2026-10-26, in `bybit_post_funding_screen.py`) and the Bybit V5 error-code page
+  (<https://bybit-exchange.github.io/docs/v5/error>), independently read on **2026-11-18**.
+  `retCode` must be an actual integer before success or retry classification;
+  booleans and floats are invalid, including `false` and `0.0`. A successful
+  response needs integer zero and a dictionary `result`; an error envelope
+  additionally needs a string `retMsg`. The tables and type rule are part of the
+  contract. A non-JSON body or unexpected HTTP status records a fixed schema
+  reason before stopping; neither path may escape as an unrecorded `KeyError`.
 - **HTTP 403 stops the whole run at once, no retry.** Any other 4xx, a redirect (not
   followed), a non-JSON or unexpected body, or a schema mismatch also stops it.
 - A 404 on a listing or a file is a **result** (`absent`). After three failed sends a
@@ -399,7 +421,7 @@ candidates is 258 (D2) + 3 x 258 (D3 to D5) + 4 x 258 (D6) = **2,064 first attem
 **2,400** leaves 336 attempts, 16%, for retries (three sends per request at most, counted from
 the journal). D6 can need up to 1,032 requests of its class maximum of 1,200, and the classes'
 maximum requests sum to 2,400, so no class cap binds before the attempt cap. With the current
-catalog the expected need is far lower (258 + 3 x 233 + 244 = 1,201 requests, about 1,430 with 10%
+catalog the expected need is far lower (258 + 3 x 228 + 239 = 1,181 requests, about 1,430 with 10%
 retries); a run that exhausts 2,400 attempts would stop cleanly and not overshoot.
 
 **How the verified Go 1 metadata is carried: option (b), rerun Go 1 in a new root.**
@@ -419,7 +441,96 @@ retries); a run that exhausts 2,400 attempts would stop cleanly and not overshoo
   a **new owner go** under the unchanged go 1 hash `0937f3b3...`. Both Go 1 reads are coverage level on the same year. Do **not** pass the old root as
   `--prior-root` for the new Go 1.
 
+## 6c. Amendment after the Go 2 partial run (revision 5)
+
+**What happened.** Go 2 ran on `e70a1b4` in a new root after a clean Go 1 rerun (manifest SHA-256
+`759305ceaf5730ff0b7f23963a2c17292590ecb590d0336376cc139a0b5ca76d`, all 258 first files, none
+over the cap) and **stopped fail-closed** with `D5: schema mismatch (envelope)` after 589 Go 2
+receipts in 13.5 minutes: D2 258 ok (6,425.47 MiB, 7.9 minutes), D3 110 ok, D4 110 ok, D5 109 ok,
+D6 not started. 110 of the 228 entry candidates were reached.
+
+**What the two odd D5 receipts are, from the receipts and the code** (bodies are not kept, by
+design: only a key tree, a size and a hash).
+
+|                   | seq 856, CHILLGUYUSDT                                                                                                                                                          | seq 1115, TUTUSDT                                                                                                                                                                                                          |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Receipt           | HTTP 200, 123 bytes, outcome `error`; seq 857, the same request 10.6 s later, ok, 34,045 bytes                                                                                 | HTTP 200, 106 bytes, outcome `schema_mismatch`, reason `envelope`, key tree `result:dict, retCode:int, retExtInfo:dict, retMsg:str, time:int`                                                                              |
+| Branch that fired | `classify_status` parsed the body as JSON and found `retCode == 10006` (the **only** way to get `error` with HTTP 200 in the old code), so it was retried with the 10 s ladder | `classify_status` passed it (valid JSON, retCode not 10006); the kline reducer called `_envelope`, which raises `envelope` when `retCode != 0`, and stopped the whole run                                                  |
+| Known             | the body was a JSON object with `retCode` exactly 10006 (rate limit)                                                                                                           | the body was a well-formed envelope with an **integer retCode that is neither 0 nor 10006**: with retCode 0 and a dict result the reducer would have failed later with another reason (`symbol` or `list`), not `envelope` |
+| Not known         | the message text (see the inference)                                                                                                                                           | **the retCode and the message**                                                                                                                                                                                            |
+
+Why one was retried and the other fatal: the old code recognised exactly one code, 10006, as
+retryable, and sent every other non-zero code to the reducer, where it is a fatal `envelope`
+mismatch. **Inference, not proof:** an envelope without data is 78 bytes plus the message
+(`{"retCode":10006,"retMsg":"","result":{},"retExtInfo":{},"time":<13 digits>}`), and the
+10006 message "Too many visits. Exceeded the API Rate Limit." is 45 characters, so 78 + 45 = 123
+matches seq 856 exactly. For seq 1115, 106 - 78 = 28 characters of message. The repo's own note
+records that Bybit answers public kline requests with retCode 10016, "svc error: Get kline
+failed" (27 characters), on about 1% of requests; TUTU's mark-price request one second earlier
+succeeded with the same parameters. A transient server error fits, one byte off a 5-digit code
+and that message. It is a hypothesis; the receipt cannot confirm it.
+
+**Fix.** Section 4: an error envelope records only `retCode` and `retMsg`; rate-limit and
+transient codes are retried; any other code is fatal and named; a wrong shape stays a schema
+mismatch. The tables are in the contract, so **all three hashes change** (the shared rules carry
+them, and the expected counts are updated to the measured 228 entry candidates and 239 funding
+pages, 1,181 requests for Go 2). The old CHILLGUY retry did not double the spacing (only HTTP 429
+did); it now does, and the slowdown persists across a restart.
+
+**Rerun: option (a), a plain rerun in a fresh root, not a hash-bound reuse.** Q15 and the full
+binding forbid resuming a root under different code, and the parse code changed (the envelope
+check is in every JSON reducer, Go 1's catalog included), so both gos run again in a new root.
+Reuse of the D2 (and Go 1) receipts whose class code is unchanged would need new trust-bearing
+code: a normalized-definition comparison across revisions, a hash-bound import of receipts into
+a root with a different run binding, and per-class carry of the budget. D2 saved 7.9 minutes and
+6.3 GiB of public archive transfer; that does not pay for a new mechanism on the critical path.
+**Recommend (a).** Cost of (a):
+
+|                                                      | Attempts                        | Bytes                                        |
+| ---------------------------------------------------- | ------------------------------- | -------------------------------------------- |
+| Spent so far (v1 Go 1 526; v2 Go 1 526 and Go 2 589) | 1,641                           | about 6.3 GiB (11.4 MB + 11.4 MB + 6.28 GiB) |
+| The rerun (fresh root), expected                     | 526 + about 1,181 = about 1,707 | about 6.4 GiB (D2 6.28 GiB again)            |
+| The rerun, hard caps                                 | 1,000 + 2,400 = 3,400           | 300 MiB + 8,704 MiB                          |
+| **Study total after the rerun, expected**            | **about 3,350**                 | **about 12.7 GiB**                           |
+| **Study total, worst case within caps**              | **1,641 + 3,400 = 5,041**       | **about 6.3 + 8.8 = 15.1 GiB**               |
+
+A fresh root has fresh caps; the totals above are the study's, not any root's. The rerun needs a
+new owner go for Go 1 under the new Go 1 hash and a second for Go 2 on the new manifest hash.
+
+**Diagnostic (run on the owner's go, one request): retCode 0, retMsg "OK".** The fix records the
+retCode on the next run whatever it is, so the diagnostic was not needed for correctness; it was
+worth one request because an unknown or deterministic code for TUTU would have stopped the rerun
+again at the same candidate, after 7.9 minutes of D2 and 6.3 GiB. The request was rebuilt from the
+saved receipts (its key equals seq 1115's), sent once to `api.bybit.com` with no retry, and only
+`retCode` and `retMsg` were read; the response was piped and never stored:
+
+```bash
+curl -sS 'https://api.bybit.com/v5/market/kline?category=linear&symbol=TUTUSDT&interval=60&start=1742638383361&end=1744193583361&limit=1000' | jq '{retCode, retMsg}'
+```
+
+**Result: `retCode` 0, `retMsg` "OK".** The error that stopped Go 2 at seq 1115 **did not
+reproduce**: the same request, with the same parameters, now succeeds. So the parameters are
+accepted at the time of the diagnostic. This is consistent with a transient failure,
+but does not establish its original cause or guarantee a later rerun will succeed.
+**Not established:** the retCode of the original answer. The hypothesis of 10016
+("svc error: Get kline failed") stays unconfirmed; nothing in a success answer can
+confirm it, and the success body was not
+looked at beyond those two fields. The request is **one extra request outside any run budget**
+(coverage level, discovery year, window 2025-03-22T10:13:03.361Z to 2025-04-09T10:13:03.361Z).
+
 ## 7. Interpretations made, and limits stated plainly
+
+**Revision 6, review of PR 618 at `eab8713`.** Synthetic requests reproduced three
+defects: `false` and `0.0` were accepted as successful zero codes; WS-only 10019
+was retried by the REST fetcher; malformed JSON and unexpected HTTP statuses
+could raise `KeyError` while formatting a missing schema reason. Typed code
+validation now precedes API classification and also protects direct reducers;
+10019 stops on its first response; all schema-stop paths persist a fixed reason.
+Regression cases exercise receipt recovery without `stop.json`. The error-code
+page was read independently, and the diagnostic wording above no longer claims
+that one later success proves the earlier error transient. No new market-data
+request was made. Shared rules and all approval hashes change; caps and windows
+do not. Existing roots remain sealed under their original bindings.
 
 1. **M2 (iii) uses the V1 path days** (calendar days from `E` to the last minute of the hold).
    More than 5% of 7 or 8 days means one missing day.
@@ -431,7 +542,7 @@ retries); a run that exhausts 2,400 attempts would stop cleanly and not overshoo
    the catalog is a current snapshot and no machine-timed announcement feed is read.
 4. **No entry filter and no price in selection.** Every status above is decided from dates,
    catalog fields and the **existence** of data.
-5. Planning numbers (263 launches and 258 first files are measured by Go 1; 233 entry candidates is an estimate from catalog dates) are not guarantees. The caps
+5. Planning numbers (263 launches and 258 first files are measured by Go 1; 228 entry candidates and 239 funding pages are measured from the Go 2 receipts and the catalog) are not guarantees. The caps
    are the contract; the counts only tell the owner what to expect.
 
 ## 8. Run procedure (after the go, not now)
@@ -468,7 +579,7 @@ requested anywhere.
 6. **Per-file cap of 512 MiB** (raised from 64 MiB after Go 1, see the amendment below): all 258
    measured files fit; over-cap launches are still counted apart and toward the lifecycle gate.
    _Recommend keep._
-7. **Budget.** 1,727 planned requests; attempt caps 1,000 (go 1) and 2,400 (go 2, covering a
+7. **Budget.** 1,707 planned requests; attempt caps 1,000 (go 1) and 2,400 (go 2, covering a
    2,064-attempt worst case); 8.5 GiB for go 2 and about 8.8 GiB combined, recomputed from the
    measured file sizes by replaying the real queue. _Recommend accept._
 8. **Outcome name.** `stage1_pass_partial`, never `stage1_pass`. _Recommend accept._

@@ -54,6 +54,7 @@ class RunData:
     manifest: dict[str, Any] | None = None
     stop: dict[str, Any] | None = None
     go2_done: bool = False
+    api_errors: dict[str, int] = field(default_factory=dict)  # retCode -> receipts
     requests: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -99,8 +100,18 @@ def load_run(root: Path) -> RunData:
         manifest=json.loads(manifest_path.read_text()) if manifest_path.exists() else None,
         stop=json.loads(stop_path.read_text()) if stop_path.exists() else None,
         go2_done=(root / "go2_done.json").exists(),
+        api_errors=_count_codes(receipts),
         requests={"attempts": count, "bytes": used, "by_class": by_n, "bytes_by_class": by_b},
     )
+
+
+def _count_codes(receipts: list[dict[str, Any]]) -> dict[str, int]:
+    """Receipts that carry a Bybit error envelope, by retCode (the code only, in the report)."""
+    out: dict[str, int] = {}
+    for r in receipts:
+        if "ret_code" in r:
+            out[str(r["ret_code"])] = out.get(str(r["ret_code"]), 0) + 1
+    return dict(sorted(out.items()))
 
 
 def _share(part: int, whole: int) -> float | None:
@@ -263,6 +274,7 @@ def evaluate(data: RunData) -> dict[str, Any]:
         "m6": m6,
         "partial_checks": partial_checks(m2, m4, m5, m6),
         "stop": data.stop,
+        "api_errors": data.api_errors,
         "requests": data.requests,
     }
 
@@ -364,6 +376,7 @@ def evaluate_go1(data: RunData) -> dict[str, Any]:
         ],
         "manifest": data.manifest,
         "stop": data.stop,
+        "api_errors": data.api_errors,
         "requests": data.requests,
     }
 
