@@ -232,7 +232,7 @@ CLASSES: Final[tuple[ClassSpec, ...]] = (
         "category=linear, symbol, interval=1, start=E, end=E, limit=1",
         "column 1 only (the bar start time), existence",
         "open, high, low, close, volume, turnover, unparsed",
-        233,
+        228,
         MAX_LAUNCHES,
         64 * 1024,
         24 * MIB,
@@ -248,7 +248,7 @@ CLASSES: Final[tuple[ClassSpec, ...]] = (
         "category=linear, symbol, interval=60, start=T0+3d, end=min(T0+21d, cut), limit=1000",
         "column 1 only (the bar start time): count, oldest, newest and the runs of missing hours",
         "open, high, low, close, unparsed",
-        233,
+        228,
         MAX_LAUNCHES,
         512 * 1024,
         150 * MIB,
@@ -264,7 +264,7 @@ CLASSES: Final[tuple[ClassSpec, ...]] = (
         "category=linear, symbol, interval=60, start=T0+3d, end=min(T0+21d, cut), limit=1000",
         "column 1 only (the bar start time): count, oldest, newest and the runs of missing hours",
         "open, high, low, close, volume, turnover, unparsed",
-        233,
+        228,
         MAX_LAUNCHES,
         512 * 1024,
         150 * MIB,
@@ -281,7 +281,7 @@ CLASSES: Final[tuple[ClassSpec, ...]] = (
         "fundingRateTimestamp only: per page the row count, oldest, newest and the largest "
         "gap between consecutive timestamps",
         "fundingRate (every row), unparsed",
-        244,
+        239,
         MAX_LAUNCHES * FUNDING_MAX_PAGES,
         256 * 1024,
         300 * MIB,
@@ -1187,6 +1187,12 @@ def build_contract() -> dict[str, Any]:
             "funding_max_pages": FUNDING_MAX_PAGES,
             "funding_max_step_ms": FUNDING_MAX_STEP_MS,
             "read_reserve_bytes": READ_RESERVE_BYTES,
+            "rate_limit_ret_codes": sorted(RET_RATE_LIMIT),
+            "transient_ret_codes": sorted(RET_TRANSIENT),
+            "api_error_rule": "an HTTP 200 envelope with retCode other than 0 records only its "
+            "retCode and retMsg; a retryable code is retried under the pacing rules, any other "
+            "code stops the run naming the code; a wrong envelope shape stops it as a schema "
+            "mismatch",
             "byte_rule": "a request starts only if used + response cap + read reserve fits the "
             "step budget and the class budget; every received byte is accounted; a declared "
             "length over the cap reads nothing; the transport reads at most the reserve per call",
@@ -1268,14 +1274,50 @@ def prior_usage(roots: Iterable[Path]) -> dict[str, dict[str, int]]:
 # The fetcher.
 
 RETRYABLE_STATUS: Final = frozenset({429, 500, 502, 503, 504})
-RATE_LIMIT_RET_CODE: Final = 10006
+# Bybit V5 retCodes in an HTTP 200 envelope. Sources: the repo's own live note (retCode 10016,
+# "svc error: Get kline failed", about 1% of public kline requests on 2026-10-26, in
+# bybit_post_funding_screen.py) and the Bybit V5 error-code page
+# (https://bybit-exchange.github.io/docs/v5/error), recalled and NOT re-read for this change:
+# the reviewer should check the table against that page. A code in neither retryable set is a
+# fatal, named reason, so an unknown code stops the run instead of being guessed.
+RET_RATE_LIMIT: Final = frozenset({10006, 10018})  # too many visits, exceeded the IP rate limit
+RET_TRANSIENT: Final = frozenset({10000, 10016, 10019})  # timeout, server error, restarting
+RET_RETRYABLE: Final = RET_RATE_LIMIT | RET_TRANSIENT
+MAX_RET_MSG: Final = 200
 TERMINAL: Final = frozenset({"ok", "absent", "too_large"})
-FATAL_OUTCOMES: Final = frozenset({"forbidden", "schema_mismatch"})
+FATAL_OUTCOMES: Final = frozenset({"forbidden", "schema_mismatch", "api_error"})
 FILE_CLASSES: Final = frozenset({"D1", "D2h", "D2"})
 
 
+def api_error(body: bytes) -> tuple[int, str] | None:
+    """(retCode, retMsg) of a Bybit error envelope, else None.
+
+    An error envelope (retCode other than 0) carries no market data, so its code and short
+    message are the only thing recorded. A body whose shape is wrong (no integer retCode, no
+    string retMsg, not an object) is not an error envelope: it falls through to the reducer,
+    which stops the run as a schema mismatch.
+    """
+    try:
+        payload = json.loads(body)
+    except ValueError:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    code, message = payload.get("retCode"), payload.get("retMsg")
+    if isinstance(code, bool) or not isinstance(code, int) or code == 0:
+        return None
+    if not isinstance(message, str):
+        return None
+    return code, message[:MAX_RET_MSG]
+
+
+def is_rate_limited(receipt: dict[str, Any]) -> bool:
+    """HTTP 429, or a rate-limit retCode in a 200 envelope: the spacing doubles."""
+    return receipt.get("http_status") == 429 or receipt.get("ret_code") in RET_RATE_LIMIT
+
+
 def classify_status(request: Request, status: int, body: bytes) -> str | None:
-    """None for a usable response, else the outcome. A Bybit rate-limit code is retried."""
+    """None for a usable response, else the outcome. Envelope errors are decided apart."""
     if status == 403:
         return "forbidden"
     if status == 404:
@@ -1286,11 +1328,9 @@ def classify_status(request: Request, status: int, body: bytes) -> str | None:
         return "schema_mismatch"
     if request.url.startswith(BASE_API) and body:
         try:
-            payload = json.loads(body)
+            json.loads(body)
         except ValueError:
             return "schema_mismatch"
-        if isinstance(payload, dict) and payload.get("retCode") == RATE_LIMIT_RET_CODE:
-            return "error"
     return None
 
 
@@ -1388,12 +1428,16 @@ class Fetcher:
         # stop and refuses to continue (every stop kind that has a receipt is covered here).
         for r in self.receipts:
             if r["outcome"] in FATAL_OUTCOMES:
-                what = "HTTP 403" if r["outcome"] == "forbidden" else "schema mismatch"
+                what = {
+                    "forbidden": "HTTP 403",
+                    "schema_mismatch": "schema mismatch",
+                    "api_error": f"api error retCode {r.get('ret_code')}",
+                }[r["outcome"]]
                 reason = f"{r['cls']}: {what} (recovered from its receipt)"
                 self.record_stop(reason)
                 raise FetchStoppedError(f"this run was stopped: {reason}")
         # the slowdown of every earlier HTTP 429 persists across a resume
-        slowed = sum(1 for r in self.receipts if r.get("http_status") == 429)
+        slowed = sum(1 for r in self.receipts if is_rate_limited(r))
         # and so does the server's Retry-After: the next permitted request time is persisted
         self.not_before = max(
             (
@@ -1528,12 +1572,16 @@ class Fetcher:
             if outcome == "forbidden":
                 self.record_stop(f"{request.cls}: HTTP 403")
                 raise FetchStoppedError(f"{request.cls}: HTTP 403, stopped without retry")
+            if outcome == "api_error":
+                reason = f"{request.cls}: api error retCode {receipt['ret_code']}"
+                self.record_stop(reason)
+                raise FetchStoppedError(reason)
             if outcome == "schema_mismatch":
                 reason = f"{request.cls}: schema mismatch ({receipt['reason']})"
                 self.record_stop(reason)
                 raise FetchStoppedError(reason)
             if outcome == "error":
-                if receipt["http_status"] == 429:
+                if is_rate_limited(receipt):
                     self.spacing = min(MAX_SPACING_S, self.spacing * 2)
                 if tries < ATTEMPTS_PER_REQUEST:
                     continue
@@ -1614,6 +1662,12 @@ class Fetcher:
             receipt["retry_after_s"] = asked
         if error is None:
             error = classify_status(request, status, bytes(body))
+        if error is None and status == 200 and request.url.startswith(BASE_API) and body:
+            envelope = api_error(bytes(body))
+            if envelope is not None:
+                # Only the code and the short message of an error envelope are kept.
+                receipt["ret_code"], receipt["ret_msg"] = envelope
+                error = "error" if envelope[0] in RET_RETRYABLE else "api_error"
         if error is None and status == 200 and request.method == "GET":
             try:
                 facts = (

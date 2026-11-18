@@ -886,3 +886,141 @@ def test_the_go_2_attempt_cap_covers_four_funding_pages_for_every_candidate() ->
     assert d6["max_requests"] >= candidates * s1.FUNDING_MAX_PAGES  # 1,032 of 1,200
     go2 = [c for c in contract["classes"] if c["go"] == 2]
     assert sum(c["max_requests"] for c in go2) >= worst_first_attempts
+
+
+# A Bybit error envelope in an HTTP 200 answer
+
+
+D5_HOURLY = ("/v5/market/kline?", "interval=60")  # the hourly trade series, not the entry bar
+SVC = (10016, "svc error: Get kline failed")  # the repo's own live note of 2026-10-26
+
+
+def after_go_1(tmp_path: Path, world: World) -> Path:
+    root = tmp_path / "run"
+    run_go(world, root, 1)
+    return root
+
+
+def test_api_error_of_an_envelope_keeps_only_the_code_and_a_short_message() -> None:
+    body = b'{"retCode":10016,"retMsg":"svc error: Get kline failed","result":{"list":[]},"time":1}'
+    assert s1.api_error(body) == (10016, "svc error: Get kline failed")
+    assert s1.api_error(b'{"retCode":0,"retMsg":"OK","result":{}}') is None  # success: nothing kept
+    long = json.dumps({"retCode": 10001, "retMsg": "x" * 500, "result": {}}).encode()
+    code, message = s1.api_error(long) or (0, "")
+    assert code == 10001 and len(message) == s1.MAX_RET_MSG
+    for bad in (
+        b"[]",
+        b"not json",
+        b'{"retCode":"10016","retMsg":"x"}',
+        b'{"retCode":true,"retMsg":"x"}',
+        b'{"retCode":10016}',
+        b'{"retMsg":"x"}',
+    ):
+        assert s1.api_error(bad) is None  # a wrong shape is not an error envelope
+
+
+def test_a_transient_server_error_envelope_is_retried_and_recorded_not_fatal(
+    tmp_path: Path,
+) -> None:
+    """TUTU regression: a 200 answer with retCode 10016 stopped the run as `schema mismatch`."""
+    world = small_world(4)
+    root = after_go_1(tmp_path, world)
+    world.api_errors.append((D5_HOURLY, *SVC))
+    summary = run_go(world, root, 2)
+    assert not (root / "stop.json").exists()
+    assert summary["outcomes"]["D5"]["ok"] == 3  # T000 is a relist: three candidates, all read
+    receipts = [json.loads(p.read_text()) for p in (root / "receipts").glob("*.json")]
+    errors = [r for r in receipts if "ret_code" in r]
+    assert len(errors) == 1
+    assert errors[0]["outcome"] == "error" and errors[0]["cls"] == "D5"
+    assert (errors[0]["ret_code"], errors[0]["ret_msg"]) == SVC
+    # an error envelope leaves only the code and the message: no body, no market value
+    assert set(errors[0]) >= {"ret_code", "ret_msg"} and "facts" not in errors[0]
+    for sentinel in SENTINELS:
+        assert sentinel not in all_text(root)
+    # and a success envelope records nothing of this kind
+    assert all("ret_code" not in r for r in receipts if r["outcome"] == "ok")
+
+
+def test_a_rate_limit_envelope_is_retried_slows_the_run_and_persists_the_slowdown(
+    tmp_path: Path,
+) -> None:
+    world = small_world(3)
+    world.api_errors.append(
+        (("instruments-info",), 10006, "Too many visits. Exceeded the API Rate Limit.")
+    )
+    root = tmp_path / "run"
+    f, _ = fetcher(world, root)
+    s1.run_go1(f)
+    assert f.spacing == 2.0  # doubled by the rate-limit code, not only by HTTP 429
+    again, _ = fetcher(world, root)
+    assert again.spacing == 2.0  # and the slowdown survives a restart
+    codes = [json.loads(p.read_text()).get("ret_code") for p in (root / "receipts").glob("*.json")]
+    assert codes.count(10006) == 1
+
+
+def test_a_parameter_error_envelope_is_fatal_and_names_the_code(tmp_path: Path) -> None:
+    world = small_world(3)
+    root = after_go_1(tmp_path, world)
+    world.api_errors.append((D5_HOURLY, 10001, "Request parameter error"))
+    f2, _ = fetcher(world, root, go=2)
+    with pytest.raises(s1.FetchStoppedError, match="D5: api error retCode 10001"):
+        s1.run_go2(f2, s1.manifest_sha256(root))
+    stop = json.loads((root / "stop.json").read_text())
+    assert stop["reason"] == "D5: api error retCode 10001"  # a fixed reason naming the code
+    receipt = next(
+        r
+        for r in (json.loads(p.read_text()) for p in (root / "receipts").glob("*.json"))
+        if r.get("ret_code") == 10001
+    )
+    assert receipt["outcome"] == "api_error" and receipt["ret_msg"] == "Request parameter error"
+
+
+def test_an_unknown_error_code_is_fatal_not_guessed(tmp_path: Path) -> None:
+    world = small_world(2)
+    world.api_errors.append((("instruments-info",), 99999, "something new"))
+    f, _ = fetcher(world, tmp_path / "run")
+    with pytest.raises(s1.FetchStoppedError, match="C1: api error retCode 99999"):
+        s1.run_go1(f)
+
+
+def test_a_fatal_api_error_receipt_without_stop_json_still_stops_the_run(tmp_path: Path) -> None:
+    world = small_world(2)
+    world.api_errors.append((("instruments-info",), 10001, "Request parameter error"))
+    root = tmp_path / "run"
+    f, _ = fetcher(world, root)
+    with pytest.raises(s1.FetchStoppedError):
+        s1.run_go1(f)
+    (root / "stop.json").unlink()
+    with pytest.raises(s1.FetchStoppedError, match="api error retCode 10001"):
+        fetcher(world, root)
+    assert "retCode 10001" in json.loads((root / "stop.json").read_text())["reason"]
+
+
+def test_three_transient_envelopes_make_the_request_unavailable_not_a_stop(
+    tmp_path: Path,
+) -> None:
+    world = small_world(3)
+    root = after_go_1(tmp_path, world)
+    for _ in range(3):
+        world.api_errors.append((D5_HOURLY, *SVC))
+    summary = run_go(world, root, 2)
+    assert summary["outcomes"]["D5"]["unavailable"] == 1
+    report = v1.evaluate(v1.load_run(root))
+    assert report["api_errors"] == {"10016": 3}  # counted by code in the report
+    assert report["outcome"] != "stage1_pass_partial"  # a missing series is never green
+
+
+def test_a_wrong_envelope_shape_still_stops_as_a_schema_mismatch(tmp_path: Path) -> None:
+    world = small_world(2)
+    world.raw["instruments-info"] = b'{"retCode":"10016","retMsg":"x"}'  # retCode is a string
+    f, _ = fetcher(world, tmp_path / "run")
+    with pytest.raises(s1.FetchStoppedError, match=r"schema mismatch \(envelope\)"):
+        s1.run_go1(f)
+
+
+def test_the_contract_carries_the_retryable_codes_and_the_rule() -> None:
+    limits = s1.build_contract()["limits"]
+    assert limits["rate_limit_ret_codes"] == [10006, 10018]
+    assert limits["transient_ret_codes"] == [10000, 10016, 10019]
+    assert "records only its retCode and retMsg" in limits["api_error_rule"]

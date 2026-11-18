@@ -67,6 +67,8 @@ class World:
     fail: dict[str, list[int]] = field(default_factory=dict)  # url substring -> statuses
     sizes_scale: int = 1
     retry_after: int = 7
+    # (url substrings that must all match, retCode, retMsg): answered once with a 200 error envelope
+    api_errors: list[tuple[tuple[str, ...], int, str]] = field(default_factory=list)
     extra_dirs: list[tuple[str, str | None]] = field(default_factory=list)  # root listing only
     crash: list[str] = field(default_factory=list)  # a url substring: die once on it
     raw: dict[str, bytes] = field(default_factory=dict)  # a url substring: answer with these bytes
@@ -99,6 +101,18 @@ class World:
     def _respond(self, request: httpx.Request) -> httpx.Response:
         self.requests.append(request)
         url = str(request.url)
+        for entry in self.api_errors:
+            needles, code, message = entry
+            if all(needle in url for needle in needles):
+                self.api_errors.remove(entry)
+                envelope = {
+                    "retCode": code,
+                    "retMsg": message,
+                    "result": {},
+                    "retExtInfo": {},
+                    "time": 1,
+                }
+                return httpx.Response(200, json=envelope)
         for part in self.crash:
             if part in url:
                 self.crash.remove(part)

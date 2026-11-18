@@ -704,7 +704,7 @@ gos needs the owner's go**. **This row records no read: nothing has been fetched
   Bybit `instruments-info` linear catalog fields, the trade-archive root listing and
   per-symbol file listings, and HEAD requests (status and size, no body) for the first daily
   file of each launch.
-- **Go 2, after the owner reviews the go 1 manifest** (1,201 planned requests, at most 2,400,
+- **Go 2, after the owner reviews the go 1 manifest** (1,181 planned requests, at most 2,400,
   attempt cap 2,400, 8.5 GiB, one 512 MiB cap per first file; the combined byte ceiling of both gos is about 8.8 GiB): the first daily trade file of each launch (column 1, the trade
   timestamp, only), one entry minute bar, hourly trade and mark-price series (start times and
   runs of missing hours only) and funding history (timestamps and page boundaries only). Go 2
@@ -713,9 +713,9 @@ gos needs the owner's go**. **This row records no read: nothing has been fetched
 
 Every response also holds prices or rates. They are discarded unparsed and no price, rate,
 volume or return is stored or reported. Hashes: `request_list_sha256`
-`0a0c2ffc5371ce1b7e15ecc3c91419c5dda5edd3fd7e939229407a5b1b05e894`, go 1
-`0937f3b3958515f41efcc6c21d0b5ffa75cf179721053bf068c8b8831aeb4b85`, go 2
-`4ac001707aae5c37a6a482ca8333da3db28bc7ede249c0e72c0531bb5fcd0818`. The order-book archive and
+`3e48fa49a133ea892b07a6faff1110aa050d59dcbef0148c7ba65c68a4220ca0`, go 1
+`b644ab040854f7e9a58b2cb5eeea8c485e097f5982045ef2ff084f410485f018`, go 2
+`a155239ccee4aaddff91582cb056a738e494a860767d70a4b4eff1029f5e0a9d` (request list revision 5, after the Go 2 partial run below). The order-book archive and
 the spot catalog are **not** part of this registration; each is a later decision.
 
 **Cut.** Nothing dated from 2025-10-01 is read, recorded or counted: a catalog row launched from
@@ -757,3 +757,32 @@ discovery year (2024-10-01 to 2025-09-30), needs its own contract and this regis
 row updated before its first request, and needs the owner's separate go. Reusing the
 local carry snapshot (2024-10-01 to 2026-09-28) for I36 would be a discovery-only read
 at a window already seen at the outcomes level. The holdout is not requested.
+
+## I25 stage 1 Go 1 rerun and Go 2 partial read `new-perp-short-v1`, 2026-11-18 (coverage level, stopped)
+
+[Request list, section 6c](new-perp-stage1-request-list-v1.md). Run on the owner's go from a clean
+`e70a1b4`, in a new root (outside Git), bound to `request_list_sha256`
+`0a0c2ffc5371ce1b7e15ecc3c91419c5dda5edd3fd7e939229407a5b1b05e894`.
+
+**Level: coverage, discovery year only (2024-10-01 to 2025-09-30).**
+
+- **Go 1 rerun, complete:** 526 requests (catalog 4, archive root 1, listings 263, HEAD sizes 258),
+  11.4 MB, 08:43:05 to 08:51:56 UTC, outcome `go1_complete`. Manifest SHA-256
+  `759305ceaf5730ff0b7f23963a2c17292590ecb590d0336376cc139a0b5ca76d`: all 258 first files within the
+  512 MiB cap. This is the second coverage-level read of the same metadata.
+- **Go 2, partial, stopped:** 589 receipts, 6.28 GiB, 11:36:05 to 11:49:38 UTC. **D2:** the first daily
+  trade file of all 258 launches (6,425.47 MiB downloaded; column 1, the trade timestamp, kept, every
+  other column discarded unparsed). **D3:** the entry minute bar start time, 110 candidates. **D4:**
+  hourly mark-price series, 110. **D5:** hourly trade series, 109 (start times and runs of missing
+  hours only; the pages hold prices, discarded unparsed). **D6** (funding) not started. The run stopped
+  fail-closed on `D5: schema mismatch (envelope)`: a Bybit error envelope with an unknown retCode, whose
+  body is not kept. No verdict is computed from the partial run.
+
+**Now read at coverage level for this trigger, in addition to the Go 1 read:** the first-trade
+timestamps of 258 discovery-year launches, and the existence and continuity of the entry bar and hourly
+series of 110 candidates. **Nothing at outcome level.** No holdout, HYP-031 test-year or blind-window
+input was requested, and nothing dated from 2025-10-01 was read, recorded or counted.
+
+**Next.** The fix (this change) records the retCode of an error envelope and retries transient codes. Both
+gos are rerun in a new root under the new hashes, which reads the same discovery-year data a further
+time; each rerun needs the owner's go. Receipts and `preflight.json` stay sealed outside Git.

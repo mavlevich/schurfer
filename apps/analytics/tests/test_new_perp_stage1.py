@@ -580,7 +580,7 @@ def test_contract_has_two_gos_with_their_own_counts_caps_and_hashes() -> None:
     assert [c["cls"] for c in go1] == ["C1", "C3", "D1", "D2h"]  # metadata only, no body
     assert [c["cls"] for c in go2] == ["D2", "D3", "D4", "D5", "D6"]
     assert sum(c["expected_requests"] for c in go1) == 526
-    assert sum(c["expected_requests"] for c in go2) == 1201
+    assert sum(c["expected_requests"] for c in go2) == 1181
     assert sum(c["max_requests"] for c in go1) == 761
     assert sum(c["max_requests"] for c in go2) == 2400
     assert contract["go_limits"] == {

@@ -83,7 +83,7 @@
     {
       "cls": "D3",
       "discarded": "open, high, low, close, volume, turnover, unparsed",
-      "expected_requests": 233,
+      "expected_requests": 228,
       "go": 2,
       "max_class_bytes": 25165824,
       "max_requests": 300,
@@ -99,7 +99,7 @@
     {
       "cls": "D4",
       "discarded": "open, high, low, close, unparsed",
-      "expected_requests": 233,
+      "expected_requests": 228,
       "go": 2,
       "max_class_bytes": 157286400,
       "max_requests": 300,
@@ -115,7 +115,7 @@
     {
       "cls": "D5",
       "discarded": "open, high, low, close, volume, turnover, unparsed",
-      "expected_requests": 233,
+      "expected_requests": 228,
       "go": 2,
       "max_class_bytes": 157286400,
       "max_requests": 300,
@@ -131,7 +131,7 @@
     {
       "cls": "D6",
       "discarded": "fundingRate (every row), unparsed",
-      "expected_requests": 244,
+      "expected_requests": 239,
       "go": 2,
       "max_class_bytes": 314572800,
       "max_requests": 1200,
@@ -156,10 +156,11 @@
     }
   },
   "go_sha256": {
-    "1": "0937f3b3958515f41efcc6c21d0b5ffa75cf179721053bf068c8b8831aeb4b85",
-    "2": "4ac001707aae5c37a6a482ca8333da3db28bc7ede249c0e72c0531bb5fcd0818"
+    "1": "b644ab040854f7e9a58b2cb5eeea8c485e097f5982045ef2ff084f410485f018",
+    "2": "a155239ccee4aaddff91582cb056a738e494a860767d70a4b4eff1029f5e0a9d"
   },
   "limits": {
+    "api_error_rule": "an HTTP 200 envelope with retCode other than 0 records only its retCode and retMsg; a retryable code is retried under the pacing rules, any other code stops the run naming the code; a wrong envelope shape stops it as a schema mismatch",
     "attempts_per_request": 3,
     "backoff_s": [10, 30, 60],
     "byte_rule": "a request starts only if used + response cap + read reserve fits the step budget and the class budget; every received byte is accounted; a declared length over the cap reads nothing; the transport reads at most the reserve per call",
@@ -171,11 +172,13 @@
     "max_retry_after_s": 300,
     "max_spacing_s": 8.0,
     "per_file_cap_bytes": 536870912,
+    "rate_limit_ret_codes": [10006, 10018],
     "read_reserve_bytes": 65536,
-    "spacing_s": 1.0
+    "spacing_s": 1.0,
+    "transient_ret_codes": [10000, 10016, 10019]
   },
   "protocol": "docs/research/new-perp-short-lab-protocol-v1.md",
-  "request_list_sha256": "0a0c2ffc5371ce1b7e15ecc3c91419c5dda5edd3fd7e939229407a5b1b05e894",
+  "request_list_sha256": "3e48fa49a133ea892b07a6faff1110aa050d59dcbef0148c7ba65c68a4220ca0",
   "rules": "new_perp_stage1_v1",
   "static_requests": [
     {
