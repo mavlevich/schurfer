@@ -1,9 +1,8 @@
-"""Export a day of minute bars to Parquet before Timescale retention drops it.
+"""Export captured minute bars to verified Parquet for offsite archival.
 
-`timeseries.bybit_momentum_bars_1m` is dropped after 35 days. That is the only
-copy: the PostgreSQL dump contains whatever is still in the database when it
-runs, so a bar older than 35 days is gone from the backups too. Every day we do
-not export, we lose a day of history that no amount of backup restores.
+The original automatic 35-day retention was removed in migration 0050.
+Gated deletion now requires verified offsite evidence. The captured flow
+features are still irreplaceable by ordinary OHLCV, so missed exports matter.
 
 This module exports; it does not delete. Deleting only what has been confirmed
 written is a separate change, and the order matters: an export that has never
@@ -378,7 +377,9 @@ def days_needing_fingerprint(out_dir: Path, oldest: date, newest: date) -> tuple
     return tuple(sorted(result))
 
 
-def source_day_range(connection: Any) -> tuple[date, date] | None:
+def source_day_range(
+    connection: Any, *, collection_end: date | None = None
+) -> tuple[date, date] | None:
     """The oldest and newest complete UTC day still present in the source.
 
     Today is excluded: it is still being written, and a file for a day that is
@@ -391,12 +392,41 @@ def source_day_range(connection: Any) -> tuple[date, date] | None:
         return None
     oldest = row[0].astimezone(UTC).date()
     newest_complete = datetime.now(UTC).date() - timedelta(days=1)
+    if collection_end is not None:
+        if row[1].astimezone(UTC).date() > collection_end:
+            raise ValueError("source has rows after collection-end; review closure before resuming")
+        newest_complete = min(newest_complete, collection_end)
     if oldest > newest_complete:
         return None
     return oldest, newest_complete
 
 
 COLLECTION_START_FILE = "collection-start"
+COLLECTION_END_FILE = "collection-end"
+
+
+def read_collection_end(out_dir: Path) -> date | None:
+    """Read an operator-declared final UTC day, never infer a deliberate stop.
+
+    This closes export expectations only. It neither deletes data nor certifies
+    the completeness of the final day. Remove it explicitly before resuming capture.
+    """
+    path = out_dir / COLLECTION_END_FILE
+    if not path.exists():
+        if path.is_symlink():
+            raise ValueError("collection-end is a broken symlink")
+        return None
+    raw = path.read_text().strip()
+    try:
+        end = date.fromisoformat(raw)
+    except ValueError as exc:
+        raise ValueError("collection-end must be a YYYY-MM-DD date") from exc
+    if end.isoformat() != raw or end >= datetime.now(UTC).date():
+        raise ValueError("collection-end must name a past UTC day in YYYY-MM-DD format")
+    start_path = out_dir / COLLECTION_START_FILE
+    if start_path.exists() and end < date.fromisoformat(start_path.read_text().strip()):
+        raise ValueError("collection-end is before collection-start")
+    return end
 
 
 def record_collection_start(out_dir: Path, oldest_day: date) -> date:
@@ -458,9 +488,12 @@ def main() -> None:
 
     with_fingerprint = args.with_fingerprint or args.refresh_fingerprints
 
+    collection_end = read_collection_end(args.out_dir)
+    if args.day is not None and collection_end is not None and args.day > collection_end:
+        raise ValueError("requested day is after collection-end")
     connection = connect(dsn)
     if args.refresh_fingerprints:
-        span = source_day_range(connection)
+        span = source_day_range(connection, collection_end=collection_end)
         if span is None:
             sys.stdout.write("no complete day available to refresh\n")
             return
@@ -470,7 +503,7 @@ def main() -> None:
     elif args.day is not None:
         targets = (args.day,)
     else:
-        span = source_day_range(connection)
+        span = source_day_range(connection, collection_end=collection_end)
         if span is None:
             sys.stdout.write("no complete day available to export\n")
             return
