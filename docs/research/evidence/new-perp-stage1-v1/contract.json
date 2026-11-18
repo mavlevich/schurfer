@@ -156,11 +156,11 @@
     }
   },
   "go_sha256": {
-    "1": "b644ab040854f7e9a58b2cb5eeea8c485e097f5982045ef2ff084f410485f018",
-    "2": "a155239ccee4aaddff91582cb056a738e494a860767d70a4b4eff1029f5e0a9d"
+    "1": "02b5ac65932302e377563cc9d8ce1a1448cd3c94b022cb797a214a4a77f359fe",
+    "2": "5324b08114db77c5cc999aa0f7f79f994ff101968b2a9d04ebb67ff4291713bb"
   },
   "limits": {
-    "api_error_rule": "an HTTP 200 envelope with retCode other than 0 records only its retCode and retMsg; a retryable code is retried under the pacing rules, any other code stops the run naming the code; a wrong envelope shape stops it as a schema mismatch",
+    "api_error_rule": "an HTTP 200 envelope with retCode other than 0 records only its retCode and retMsg; a retryable code is retried under the pacing rules, any other code stops the run naming the code; a wrong envelope shape stops it as a schema mismatch; retCode must be an integer, never a boolean or float, before any success or retry classification; schema stops persist a fixed reason",
     "attempts_per_request": 3,
     "backoff_s": [10, 30, 60],
     "byte_rule": "a request starts only if used + response cap + read reserve fits the step budget and the class budget; every received byte is accounted; a declared length over the cap reads nothing; the transport reads at most the reserve per call",
@@ -175,10 +175,10 @@
     "rate_limit_ret_codes": [10006, 10018],
     "read_reserve_bytes": 65536,
     "spacing_s": 1.0,
-    "transient_ret_codes": [10000, 10016, 10019]
+    "transient_ret_codes": [10000, 10016]
   },
   "protocol": "docs/research/new-perp-short-lab-protocol-v1.md",
-  "request_list_sha256": "3e48fa49a133ea892b07a6faff1110aa050d59dcbef0148c7ba65c68a4220ca0",
+  "request_list_sha256": "8a4758760af4889078f2034eba77c78a8f1885b8269fce6b2cde863259cf9c17",
   "rules": "new_perp_stage1_v1",
   "static_requests": [
     {

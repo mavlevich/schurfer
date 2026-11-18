@@ -942,12 +942,14 @@ def test_a_transient_server_error_envelope_is_retried_and_recorded_not_fatal(
     assert all("ret_code" not in r for r in receipts if r["outcome"] == "ok")
 
 
+@pytest.mark.parametrize("code", [10006, 10018])
 def test_a_rate_limit_envelope_is_retried_slows_the_run_and_persists_the_slowdown(
     tmp_path: Path,
+    code: int,
 ) -> None:
     world = small_world(3)
     world.api_errors.append(
-        (("instruments-info",), 10006, "Too many visits. Exceeded the API Rate Limit.")
+        (("instruments-info",), code, "Too many visits. Exceeded the API Rate Limit.")
     )
     root = tmp_path / "run"
     f, _ = fetcher(world, root)
@@ -956,7 +958,7 @@ def test_a_rate_limit_envelope_is_retried_slows_the_run_and_persists_the_slowdow
     again, _ = fetcher(world, root)
     assert again.spacing == 2.0  # and the slowdown survives a restart
     codes = [json.loads(p.read_text()).get("ret_code") for p in (root / "receipts").glob("*.json")]
-    assert codes.count(10006) == 1
+    assert codes.count(code) == 1
 
 
 def test_a_parameter_error_envelope_is_fatal_and_names_the_code(tmp_path: Path) -> None:
@@ -1022,5 +1024,78 @@ def test_a_wrong_envelope_shape_still_stops_as_a_schema_mismatch(tmp_path: Path)
 def test_the_contract_carries_the_retryable_codes_and_the_rule() -> None:
     limits = s1.build_contract()["limits"]
     assert limits["rate_limit_ret_codes"] == [10006, 10018]
-    assert limits["transient_ret_codes"] == [10000, 10016, 10019]
+    assert limits["transient_ret_codes"] == [10000, 10016]
     assert "records only its retCode and retMsg" in limits["api_error_rule"]
+    assert "never a boolean or float" in limits["api_error_rule"]
+
+
+@pytest.mark.parametrize("code", [False, 0.0, True, "0", None])
+def test_malformed_success_ret_code_is_a_durable_schema_stop(tmp_path: Path, code: Any) -> None:
+    world = small_world(2)
+    world.raw["instruments-info"] = json.dumps(
+        {"retCode": code, "retMsg": "OK", "result": {"list": [], "nextPageCursor": ""}}
+    ).encode()
+    root = tmp_path / "run"
+    f, _ = fetcher(world, root)
+    with pytest.raises(s1.FetchStoppedError, match="C1: schema mismatch \\(envelope\\)"):
+        s1.run_go1(f)
+    assert len(world.requests) == 1
+    receipt = json.loads(next((root / "receipts").glob("*.json")).read_text())
+    assert receipt["outcome"] == "schema_mismatch" and receipt["reason"] == "envelope"
+    assert "facts" not in receipt and "ret_code" not in receipt
+    (root / "stop.json").unlink()
+    with pytest.raises(s1.FetchStoppedError, match="schema mismatch"):
+        fetcher(world, root)
+    assert len(world.requests) == 1
+
+
+@pytest.mark.parametrize("code", [False, 0.0])
+def test_direct_json_reducers_reject_non_integer_success_code(code: Any) -> None:
+    with pytest.raises(s1.SchemaMismatchError, match="envelope"):
+        s1.reduce_catalog_page({"retCode": code, "result": {"list": []}})
+
+
+def test_websocket_restart_code_is_not_retried_by_the_rest_fetcher(tmp_path: Path) -> None:
+    world = small_world(2)
+    world.api_errors.append((("instruments-info",), 10019, "ws trade service is restarting"))
+    root = tmp_path / "run"
+    f, _ = fetcher(world, root)
+    with pytest.raises(s1.FetchStoppedError, match="C1: api error retCode 10019"):
+        s1.run_go1(f)
+    assert len(world.requests) == 1
+    receipt = json.loads(next((root / "receipts").glob("*.json")).read_text())
+    assert receipt["outcome"] == "api_error" and receipt["ret_code"] == 10019
+
+
+def test_non_json_response_stops_with_a_reason_and_recovers_without_resending(
+    tmp_path: Path,
+) -> None:
+    world = small_world(2)
+    world.raw["instruments-info"] = b"not json"
+    root = tmp_path / "run"
+    f, _ = fetcher(world, root)
+    with pytest.raises(s1.FetchStoppedError, match="C1: schema mismatch \\(not_json\\)"):
+        s1.run_go1(f)
+    receipt = json.loads(next((root / "receipts").glob("*.json")).read_text())
+    assert receipt["reason"] == "not_json"
+    (root / "stop.json").unlink()
+    with pytest.raises(s1.FetchStoppedError, match="schema mismatch"):
+        fetcher(world, root)
+    assert len(world.requests) == 1
+
+
+@pytest.mark.parametrize("status", [301, 401, 404, 418])
+def test_unexpected_http_status_has_a_durable_fixed_schema_reason(
+    tmp_path: Path, status: int
+) -> None:
+    world = small_world(2)
+    world.fail["instruments-info"] = [status]
+    root = tmp_path / "run"
+    f, _ = fetcher(world, root)
+    with pytest.raises(
+        s1.FetchStoppedError, match=f"C1: schema mismatch \\(http_status_{status}\\)"
+    ):
+        s1.run_go1(f)
+    receipt = json.loads(next((root / "receipts").glob("*.json")).read_text())
+    assert receipt["reason"] == f"http_status_{status}"
+    assert len(world.requests) == 1 and (root / "stop.json").exists()

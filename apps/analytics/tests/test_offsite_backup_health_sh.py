@@ -113,6 +113,62 @@ def test_a_gap_in_the_middle_is_reported(tmp_path: Path) -> None:
     assert _day(8) in result.stderr
 
 
+def test_intentionally_closed_collection_does_not_expect_new_exports(tmp_path: Path) -> None:
+    state = _state(tmp_path, exported=[_day(index) for index in range(8, 20)])
+    (state / "cold-bars" / "collection-end").write_text(f"{_day(8)}\n")
+    result = _run(state)
+    assert result.returncode == 0, result.stderr
+    assert "collection closed through" in result.stdout
+
+
+def test_closure_does_not_hide_a_gap_before_stop(tmp_path: Path) -> None:
+    state = _state(tmp_path, exported=[_day(index) for index in range(8, 20) if index != 10])
+    (state / "cold-bars" / "collection-end").write_text(f"{_day(8)}\n")
+    result = _run(state)
+    assert result.returncode == 1
+    assert _day(10) in result.stderr
+    assert _day(2) not in result.stderr
+
+
+def test_closed_collection_checks_history_older_than_active_horizon(tmp_path: Path) -> None:
+    state = _state(
+        tmp_path,
+        exported=[_day(index) for index in range(8, 46) if index != 40],
+        collection_start=_day(45),
+    )
+    (state / "cold-bars" / "collection-end").write_text(f"{_day(8)}\n")
+    result = _run(state)
+    assert result.returncode == 1
+    assert _day(40) in result.stderr
+
+
+def test_closed_collection_still_requires_fresh_backups(tmp_path: Path) -> None:
+    state = _state(
+        tmp_path, exported=[_day(index) for index in range(8, 20)], bars_stamp_age_days=3
+    )
+    (state / "cold-bars" / "collection-end").write_text(f"{_day(8)}\n")
+    result = _run(state)
+    assert result.returncode == 1
+    assert "cold bars archive is 72h old" in result.stderr
+
+
+@pytest.mark.parametrize("value", ["", "20261110", "2026-02-30", "tomorrow", "9999-01-01"])
+def test_bad_collection_end_cannot_disable_coverage(tmp_path: Path, value: str) -> None:
+    state = _state(tmp_path, exported=[_day(index) for index in range(8, 20)])
+    (state / "cold-bars" / "collection-end").write_text(value)
+    result = _run(state)
+    assert result.returncode == 1
+    assert "collection end" in result.stderr
+
+
+def test_collection_end_before_start_cannot_disable_coverage(tmp_path: Path) -> None:
+    state = _state(tmp_path, exported=[_day(index) for index in range(8, 20)])
+    (state / "cold-bars" / "collection-end").write_text(f"{_day(21)}\n")
+    result = _run(state)
+    assert result.returncode == 1
+    assert "before collection start" in result.stderr
+
+
 def test_a_stalled_exporter_names_every_missing_day(tmp_path: Path) -> None:
     result = _run(_state(tmp_path, exported=[_day(index) for index in range(5, 20)]))
     assert result.returncode == 1

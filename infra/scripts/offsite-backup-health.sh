@@ -17,13 +17,12 @@
 #                  refuse to delete unconfirmed data. Something has to give,
 #                  and it should give with warning rather than at 100% full.
 #
-#   Bar coverage   minute bars are the one dataset here that cannot be
-#                  regenerated: Timescale drops them after 35 days and no
-#                  exchange sells them back. The export runs nightly, and until
-#                  now nothing watched whether it still did. A broken exporter
-#                  starts a silent 35-day countdown, because the days it skips
-#                  stay in the database and stay recoverable right up to the
-#                  moment retention deletes them.
+#   Bar coverage   captured flow features cannot be replaced by OHLCV. Automatic
+#                  35-day deletion was removed in migration 0050; gated deletion
+#                  now requires verified offsite evidence. Missing exports still
+#                  need attention. An operator-declared collection-end closes the
+#                  expected interval after a deliberate capture stop, while its
+#                  historical manifests and all backup freshness checks remain.
 set -euo pipefail
 
 STATE_DIR="${STATE_DIR:-/opt/schurfer/runtime}"
@@ -32,6 +31,7 @@ RESEARCH_STAMP="${STATE_DIR}/offsite-backup-research.stamp"
 BARS_STAMP="${STATE_DIR}/offsite-backup-bars.stamp"
 COLD_BARS_DIR="${COLD_BARS_DIR:-${STATE_DIR}/cold-bars}"
 COLD_BARS_START_FILE="${COLD_BARS_START_FILE:-${COLD_BARS_DIR}/collection-start}"
+COLD_BARS_END_FILE="${COLD_BARS_END_FILE:-${COLD_BARS_DIR}/collection-end}"
 
 # 36 hours, not 24. The 12-hour margin covers ordinary jitter: the timer's
 # RandomizedDelaySec, a run that started late because a deploy held the lock,
@@ -43,10 +43,8 @@ MAX_AGE_HOURS="${MAX_AGE_HOURS:-36}"
 # Below this, the disk stops being able to absorb a Storage Box outage.
 MIN_FREE_GB="${MIN_FREE_GB:-15}"
 DISK_PATH="${DISK_PATH:-/opt/schurfer}"
-# How far back a missing day still counts as a gap. Matches the retention
-# interval in migration 0024: older than this the source is already gone, so a
-# missing manifest there is history that was lost before this check existed and
-# alerting on it every hour forever would teach everyone to ignore the alert.
+# Existing rolling coverage horizon for an active collector, not a claim about
+# the deployed deletion policy. A closed collection checks its full fixed span.
 RETENTION_DAYS="${RETENTION_DAYS:-35}"
 # The freshest day the exporter is expected to have finished. It runs at 03:30
 # UTC for the previous day, so two days of slack absorbs one missed run without
@@ -54,6 +52,7 @@ RETENTION_DAYS="${RETENTION_DAYS:-35}"
 EXPORT_LAG_DAYS="${EXPORT_LAG_DAYS:-2}"
 
 problems=()
+collection_note=""
 
 check_stamp() {
     local label="$1" file="$2"
@@ -142,6 +141,34 @@ cold bar coverage cannot be checked")
     # ignore the alert.
     [[ "$collection_start" > "$earliest_checked" ]] && earliest_checked="$collection_start"
 
+    if [[ -e "$COLD_BARS_END_FILE" || -L "$COLD_BARS_END_FILE" ]]; then
+        local collection_end normalized_end today
+        if [[ ! -f "$COLD_BARS_END_FILE" || ! -r "$COLD_BARS_END_FILE" ]]; then
+            problems+=("collection end is not a readable file (${COLD_BARS_END_FILE})")
+            return
+        fi
+        collection_end=$(sed 's/^[[:space:]]*//; s/[[:space:]]*$//' "$COLD_BARS_END_FILE")
+        if [[ ! "$collection_end" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+            problems+=("collection end is not a YYYY-MM-DD date")
+            return
+        fi
+        normalized_end=$(date -u -d "$collection_end" +%Y-%m-%d 2>/dev/null) || normalized_end=""
+        today=$(date -u +%Y-%m-%d)
+        if [[ "$normalized_end" != "$collection_end" || ! "$collection_end" < "$today" ]]; then
+            problems+=("collection end must name a valid past UTC day")
+            return
+        fi
+        if [[ "$collection_end" < "$collection_start" ]]; then
+            problems+=("collection end is before collection start")
+            return
+        fi
+        # Closure must never age an existing missing manifest out of monitoring.
+        # The declared final day is exportable already; do not apply active lag.
+        earliest_checked="$collection_start"
+        newest_expected="$collection_end"
+        collection_note="; collection closed through ${collection_end}"
+    fi
+
     cursor="$earliest_checked"
     while [[ ! "$cursor" > "$newest_expected" ]]; do
         if [[ ! -f "${COLD_BARS_DIR}/bars-${cursor}.manifest.json" ]]; then
@@ -151,7 +178,11 @@ cold bar coverage cannot be checked")
     done
 
     if [[ ${#missing[@]} -gt 0 ]]; then
-        problems+=("${#missing[@]} cold bar day(s) inside the ${RETENTION_DAYS}-day retention window have no export: $(printf '%s ' "${missing[@]}")")
+        if [[ -n "$collection_note" ]]; then
+            problems+=("${#missing[@]} cold bar day(s) in the closed collection have no export: $(printf '%s ' "${missing[@]}")")
+        else
+            problems+=("${#missing[@]} cold bar day(s) inside the ${RETENTION_DAYS}-day coverage horizon have no export: $(printf '%s ' "${missing[@]}")")
+        fi
     fi
 }
 
@@ -164,7 +195,7 @@ fi
 
 if [[ ${#problems[@]} -eq 0 ]]; then
     exported_days=$(find "$COLD_BARS_DIR" -maxdepth 1 -name 'bars-*.manifest.json' | wc -l | tr -d ' ')
-    echo "[$(date -Iseconds)] offsite backup healthy; ${free_gb}GB free; ${exported_days} bar days exported"
+    echo "[$(date -Iseconds)] offsite backup healthy; ${free_gb}GB free; ${exported_days} bar days exported${collection_note}"
     exit 0
 fi
 

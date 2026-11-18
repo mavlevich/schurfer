@@ -713,9 +713,9 @@ gos needs the owner's go**. **This row records no read: nothing has been fetched
 
 Every response also holds prices or rates. They are discarded unparsed and no price, rate,
 volume or return is stored or reported. Hashes: `request_list_sha256`
-`3e48fa49a133ea892b07a6faff1110aa050d59dcbef0148c7ba65c68a4220ca0`, go 1
-`b644ab040854f7e9a58b2cb5eeea8c485e097f5982045ef2ff084f410485f018`, go 2
-`a155239ccee4aaddff91582cb056a738e494a860767d70a4b4eff1029f5e0a9d` (request list revision 5, after the Go 2 partial run below). The order-book archive and
+`8a4758760af4889078f2034eba77c78a8f1885b8269fce6b2cde863259cf9c17`, go 1
+`02b5ac65932302e377563cc9d8ce1a1448cd3c94b022cb797a214a4a77f359fe`, go 2
+`5324b08114db77c5cc999aa0f7f79f994ff101968b2a9d04ebb67ff4291713bb` (request list revision 6, reviewed envelope handling after the Go 2 partial run below). The order-book archive and
 the spot catalog are **not** part of this registration; each is a later decision.
 
 **Cut.** Nothing dated from 2025-10-01 is read, recorded or counted: a catalog row launched from
@@ -817,5 +817,6 @@ time; each rerun needs the owner's go. Receipts and `preflight.json` stay sealed
 the TUTUSDT hourly trade kline (`interval=60`, `start=1742638383361`, `end=1744193583361`,
 `limit=1000`) that failed at seq 1115, sent once to `api.bybit.com` with no retry. **Coverage level,
 discovery year only** (the window is 2025-03-22 to 2025-04-09). Only `retCode` and `retMsg` were
-read, and the response was never stored. Result: **`retCode` 0, `retMsg` "OK"**, so the stop at seq
-1115 was transient and did not reproduce; the retCode of the original answer is not established.
+read, and the response was never stored. Result: **`retCode` 0, `retMsg` "OK"**: the stop at seq
+1115 did not reproduce. Its original cause and retCode remain unestablished;
+a later success is consistent with, but does not prove, a transient error.

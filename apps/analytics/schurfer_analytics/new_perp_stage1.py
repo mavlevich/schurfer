@@ -410,8 +410,18 @@ def key_tree(payload: Any, prefix: str = "") -> list[str]:
     return sorted(out)
 
 
+def _ret_code(payload: Any) -> int:
+    """Require an integer code before deciding success, retry or fatal error."""
+    if not isinstance(payload, dict):
+        raise SchemaMismatchError("envelope")
+    code = payload.get("retCode")
+    if isinstance(code, bool) or not isinstance(code, int):
+        raise SchemaMismatchError("envelope")
+    return code
+
+
 def _envelope(payload: Any) -> dict[str, Any]:
-    if not isinstance(payload, dict) or payload.get("retCode") != 0:
+    if _ret_code(payload) != 0:
         raise SchemaMismatchError("envelope")
     result = payload.get("result")
     if not isinstance(result, dict):
@@ -1192,7 +1202,8 @@ def build_contract() -> dict[str, Any]:
             "api_error_rule": "an HTTP 200 envelope with retCode other than 0 records only its "
             "retCode and retMsg; a retryable code is retried under the pacing rules, any other "
             "code stops the run naming the code; a wrong envelope shape stops it as a schema "
-            "mismatch",
+            "mismatch; retCode must be an integer, never a boolean or float, before any "
+            "success or retry classification; schema stops persist a fixed reason",
             "byte_rule": "a request starts only if used + response cap + read reserve fits the "
             "step budget and the class budget; every received byte is accounted; a declared "
             "length over the cap reads nothing; the transport reads at most the reserve per call",
@@ -1274,14 +1285,14 @@ def prior_usage(roots: Iterable[Path]) -> dict[str, dict[str, int]]:
 # The fetcher.
 
 RETRYABLE_STATUS: Final = frozenset({429, 500, 502, 503, 504})
-# Bybit V5 retCodes in an HTTP 200 envelope. Sources: the repo's own live note (retCode 10016,
-# "svc error: Get kline failed", about 1% of public kline requests on 2026-10-26, in
-# bybit_post_funding_screen.py) and the Bybit V5 error-code page
-# (https://bybit-exchange.github.io/docs/v5/error), recalled and NOT re-read for this change:
-# the reviewer should check the table against that page. A code in neither retryable set is a
-# fatal, named reason, so an unknown code stops the run instead of being guessed.
+# Bybit V5 UTA error table, read 2026-11-18:
+# https://bybit-exchange.github.io/docs/v5/error . 10019 belongs to WS OE only;
+# it has no documented REST meaning and is deliberately fatal here. 10018 is
+# deprecated in that table; retain its former IP-rate-limit meaning only as a
+# bounded compatibility case. The repo's 2026-10-26 public-kline note separately
+# observed 10016. Any code outside these explicit sets stops the run.
 RET_RATE_LIMIT: Final = frozenset({10006, 10018})  # too many visits, exceeded the IP rate limit
-RET_TRANSIENT: Final = frozenset({10000, 10016, 10019})  # timeout, server error, restarting
+RET_TRANSIENT: Final = frozenset({10000, 10016})  # timeout, server error (REST)
 RET_RETRYABLE: Final = RET_RATE_LIMIT | RET_TRANSIENT
 MAX_RET_MSG: Final = 200
 TERMINAL: Final = frozenset({"ok", "absent", "too_large"})
@@ -1662,12 +1673,19 @@ class Fetcher:
             receipt["retry_after_s"] = asked
         if error is None:
             error = classify_status(request, status, bytes(body))
+            if error == "schema_mismatch":
+                reason = "not_json" if status == 200 else f"http_status_{status}"
         if error is None and status == 200 and request.url.startswith(BASE_API) and body:
-            envelope = api_error(bytes(body))
-            if envelope is not None:
-                # Only the code and the short message of an error envelope are kept.
-                receipt["ret_code"], receipt["ret_msg"] = envelope
-                error = "error" if envelope[0] in RET_RETRYABLE else "api_error"
+            try:
+                _ret_code(json.loads(body))
+            except SchemaMismatchError as exc:
+                error, reason = "schema_mismatch", exc.reason
+            else:
+                envelope = api_error(bytes(body))
+                if envelope is not None:
+                    # Only the code and the short message of an error envelope are kept.
+                    receipt["ret_code"], receipt["ret_msg"] = envelope
+                    error = "error" if envelope[0] in RET_RETRYABLE else "api_error"
         if error is None and status == 200 and request.method == "GET":
             try:
                 facts = (

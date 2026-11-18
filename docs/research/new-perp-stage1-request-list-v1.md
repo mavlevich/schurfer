@@ -1,4 +1,4 @@
-# I25 stage 1: contract and request list (v1, DRAFT, revision 5, 2026-11-18)
+# I25 stage 1: contract and request list (v1, DRAFT, revision 6, 2026-11-18)
 
 Status: **draft for the colleague's review, then the owner's go.** This document and its
 code fetch nothing. It is the stage 1 gate of the
@@ -27,13 +27,13 @@ for go 1.
 
 ```text
 request_list_sha256 (whole contract, bound into every run) =
-  3e48fa49a133ea892b07a6faff1110aa050d59dcbef0148c7ba65c68a4220ca0
+  8a4758760af4889078f2034eba77c78a8f1885b8269fce6b2cde863259cf9c17
 go 1 approval hash (go_sha256["1"]) =
-  b644ab040854f7e9a58b2cb5eeea8c485e097f5982045ef2ff084f410485f018
+  02b5ac65932302e377563cc9d8ce1a1448cd3c94b022cb797a214a4a77f359fe
 go 2 approval hash (go_sha256["2"]) =
-  a155239ccee4aaddff91582cb056a738e494a860767d70a4b4eff1029f5e0a9d
+  5324b08114db77c5cc999aa0f7f79f994ff101968b2a9d04ebb67ff4291713bb
 contract.json file SHA-256 =
-  f388b4b8ff5933277d49309719730cf7adcaefecb5974e0cc7c69445fdd92961
+  1f59d45a759d8ee13866611abba366807b87f33ba482d1592cde30a3b0475edc
 ```
 
 Check without a network request:
@@ -236,15 +236,23 @@ refused, so a parser fix cannot continue an old run: a corrected revision starts
   and its short `retMsg`** (at most 200 characters) in the receipt: an error envelope carries no
   market data, and a success envelope still records nothing of the kind. **Retried** under the
   pacing rules above: the rate-limit codes 10006 and 10018 (each also doubles the spacing, like an
-  HTTP 429) and the transient codes 10000, 10016 and 10019 (timeout, server error, service
-  restarting). **Any other code is fatal and the stop names it** (`D5: api error retCode 10001`);
+  HTTP 429) and the transient codes 10000 and 10016 (timeout, server error).
+  Code 10018 is deprecated in the source table and retained only as a bounded
+  compatibility case for its former IP-rate-limit meaning. Code 10019 belongs
+  to the WebSocket trade service; this REST fetcher treats it as fatal.
+  **Any other code is fatal and the stop names it** (`D5: api error retCode 10001`);
   an unknown code is never guessed. A body whose shape is wrong (no integer `retCode`, no string
   `retMsg`, not an object) is still a **schema mismatch** and fatal. After three sends a retried
   request is `unavailable`, as for any transient failure. Sources of the table: the repo's own
   live note (retCode 10016, "svc error: Get kline failed", about 1% of public kline requests on
   2026-10-26, in `bybit_post_funding_screen.py`) and the Bybit V5 error-code page
-  (<https://bybit-exchange.github.io/docs/v5/error>), **recalled and not re-read for this change:
-  the reviewer should check the codes against that page.** The tables are part of the contract.
+  (<https://bybit-exchange.github.io/docs/v5/error>), independently read on **2026-11-18**.
+  `retCode` must be an actual integer before success or retry classification;
+  booleans and floats are invalid, including `false` and `0.0`. A successful
+  response needs integer zero and a dictionary `result`; an error envelope
+  additionally needs a string `retMsg`. The tables and type rule are part of the
+  contract. A non-JSON body or unexpected HTTP status records a fixed schema
+  reason before stopping; neither path may escape as an unrecorded `KeyError`.
 - **HTTP 403 stops the whole run at once, no retry.** Any other 4xx, a redirect (not
   followed), a non-JSON or unexpected body, or a schema mismatch also stops it.
 - A 404 on a listing or a file is a **result** (`absent`). After three failed sends a
@@ -502,14 +510,27 @@ curl -sS 'https://api.bybit.com/v5/market/kline?category=linear&symbol=TUTUSDT&i
 
 **Result: `retCode` 0, `retMsg` "OK".** The error that stopped Go 2 at seq 1115 **did not
 reproduce**: the same request, with the same parameters, now succeeds. So the parameters are
-valid and the failure was **transient**, which rules out a deterministic parameter error for that
-request and means the rerun is not expected to stop at TUTU for that reason. **Not established:**
-the retCode of the original answer. The hypothesis of 10016 ("svc error: Get kline failed")
-stays unconfirmed; nothing in a success answer can confirm it, and the success body was not
+accepted at the time of the diagnostic. This is consistent with a transient failure,
+but does not establish its original cause or guarantee a later rerun will succeed.
+**Not established:** the retCode of the original answer. The hypothesis of 10016
+("svc error: Get kline failed") stays unconfirmed; nothing in a success answer can
+confirm it, and the success body was not
 looked at beyond those two fields. The request is **one extra request outside any run budget**
 (coverage level, discovery year, window 2025-03-22T10:13:03.361Z to 2025-04-09T10:13:03.361Z).
 
 ## 7. Interpretations made, and limits stated plainly
+
+**Revision 6, review of PR 618 at `eab8713`.** Synthetic requests reproduced three
+defects: `false` and `0.0` were accepted as successful zero codes; WS-only 10019
+was retried by the REST fetcher; malformed JSON and unexpected HTTP statuses
+could raise `KeyError` while formatting a missing schema reason. Typed code
+validation now precedes API classification and also protects direct reducers;
+10019 stops on its first response; all schema-stop paths persist a fixed reason.
+Regression cases exercise receipt recovery without `stop.json`. The error-code
+page was read independently, and the diagnostic wording above no longer claims
+that one later success proves the earlier error transient. No new market-data
+request was made. Shared rules and all approval hashes change; caps and windows
+do not. Existing roots remain sealed under their original bindings.
 
 1. **M2 (iii) uses the V1 path days** (calendar days from `E` to the last minute of the hold).
    More than 5% of 7 or 8 days means one missing day.

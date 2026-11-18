@@ -453,18 +453,47 @@ gap still inside the window. Days already dropped from the database cannot be
 recovered by any means this system has, which is why the alert is hourly rather
 than daily.
 
-## What this does not cover yet
+## Deliberately stopped cold-bar collection
 
-**The retention policy is still automatic.** Migration 0024 sets
-`add_retention_policy(timeseries.bybit_momentum_bars_1m, INTERVAL '35 days')`,
-and it deletes on schedule whether or not the day was exported. Nothing checks
-the export before the deletion, and the two mechanisms do not know about each
-other.
+Stopping the momentum capture services does not mean the stored dataset or its
+backups should be deleted. It does end the expectation of new daily bars. Record
+the final UTC capture day explicitly in `runtime/cold-bars/collection-end`; do not
+derive it from missing manifests, a quiet feed, or the last successful export.
+This file is operator state, not a claim that the final day is complete.
 
-What the health check above buys is time, not a guarantee: a broken exporter is
-now reported within a day or two, and every skipped day stays recoverable for the
-rest of its 35 days. What it does not do is prevent the deletion of a day nobody
-looked at. Gated deletion -- replacing the automatic policy with an explicit
-`drop_chunks` that runs only after that day's export is verified and confirmed
-offsite -- is the remaining step, and it removes the case where the alert is
-simply ignored for five weeks.
+Before declaring closure:
+
+1. Confirm the stop was intentional and does not interrupt HYP-012 v2 or another
+   registered capture. Record its owner decision and UTC boundary.
+2. Verify source presence and manifests through that final day, including the
+   partial final day if the stop was intraday. Confirm its offsite receipt.
+3. Deploy the reviewed export and health-check changes from clean merged `main`.
+   The exporter runs from the analytics image, so rebuild that image without
+   starting unrelated stopped services. The health check runs the host script.
+4. Write the final day as one `YYYY-MM-DD` line. For the Group 1 stop recorded on
+   2026-11-10, the observed final day is `2026-11-10`. Do not apply this date to a
+   different collection or infer it for a future incident.
+
+The exporter caps automatic and fingerprint-refresh selection at the declared
+day, refuses a later explicit `--day`, and rejects source rows newer than the
+closure. It continues to reject empty days inside the expected interval.
+The health check stops demanding future exports but checks the entire closed
+interval from `collection-start`, including history older than the active
+35-day coverage horizon. Missing or malformed end dates never turn coverage off.
+DB, research, cold-bar archive freshness, restore-drill and disk checks remain.
+Keep the daily backup running: it also archives the closure marker.
+
+Before resuming collection, explicitly remove `collection-end`, verify active
+coverage expectations again, and start only the approved capture services. The
+marker never starts or stops a container, suppresses an unknown outage, or repairs
+an unobserved market path.
+
+### Retention implementation
+
+Migration 0024 originally installed automatic 35-day retention. Migration 0050
+removed it. The gated-deletion job requires verified per-day offsite evidence
+before deleting a source chunk; see [the deployed design](cold-bar-gated-deletion-design-v1.md).
+The active health check's 35-day coverage horizon is not a deletion deadline.
+Verify actual migration and Timescale job state on the host before relying on
+that protection. Export success, backup recency and recoverability remain
+separate checks.

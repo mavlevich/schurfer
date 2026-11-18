@@ -22,6 +22,8 @@ from schurfer_analytics.cold_bar_export import (
     days_to_export,
     existing_days,
     export_day,
+    read_collection_end,
+    source_day_range,
     verify_local,
 )
 
@@ -29,6 +31,71 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 _DAY = date(2026, 8, 20)
+
+
+def test_cli_skips_nonexistent_days_after_declared_stop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    import sys
+
+    from schurfer_analytics import cold_bar_export
+
+    connection = _connection(day=_DAY)
+    (tmp_path / "collection-start").write_text(f"{_DAY}\n")
+    (tmp_path / "collection-end").write_text(f"{_DAY}\n")
+    (tmp_path / f"bars-{_DAY}.manifest.json").write_text("{}")
+    monkeypatch.setenv("DATABASE_URL", "synthetic-only")
+    monkeypatch.setattr(cold_bar_export, "connect", lambda _: connection)
+    monkeypatch.setattr(sys, "argv", ["cold-bar-export", "--out-dir", str(tmp_path)])
+    cold_bar_export.main()
+    assert "nothing to export" in capsys.readouterr().out
+
+
+def test_cli_cannot_export_a_day_after_declared_stop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sys
+
+    from schurfer_analytics import cold_bar_export
+
+    (tmp_path / "collection-end").write_text(f"{_DAY}\n")
+    monkeypatch.setenv("DATABASE_URL", "synthetic-only")
+    monkeypatch.setattr(
+        sys, "argv", ["cold-bar-export", "--out-dir", str(tmp_path), "--day", "2026-08-21"]
+    )
+    with pytest.raises(ValueError, match="requested day is after collection-end"):
+        cold_bar_export.main()
+
+
+def test_closed_collection_does_not_schedule_days_after_stop() -> None:
+    connection = _connection(day=_DAY)
+    assert source_day_range(connection, collection_end=_DAY) == (_DAY, _DAY)
+
+
+def test_closed_collection_refuses_new_source_rows_after_end() -> None:
+    connection = _connection(day=_DAY + timedelta(days=1))
+    with pytest.raises(ValueError, match="rows after collection-end"):
+        source_day_range(connection, collection_end=_DAY)
+
+
+def test_collection_end_is_explicit_not_inferred_from_last_export(tmp_path: Path) -> None:
+    assert read_collection_end(tmp_path) is None
+    (tmp_path / "collection-end").write_text(f"{_DAY}\n")
+    assert read_collection_end(tmp_path) == _DAY
+
+
+@pytest.mark.parametrize("value", ["", "20260820", "2026-02-30", "tomorrow", "9999-01-01"])
+def test_invalid_collection_end_fails_closed(tmp_path: Path, value: str) -> None:
+    (tmp_path / "collection-end").write_text(value)
+    with pytest.raises(ValueError, match="collection-end"):
+        read_collection_end(tmp_path)
+
+
+def test_collection_end_before_start_is_refused(tmp_path: Path) -> None:
+    (tmp_path / "collection-start").write_text("2026-08-21\n")
+    (tmp_path / "collection-end").write_text("2026-08-20\n")
+    with pytest.raises(ValueError, match="before collection-start"):
+        read_collection_end(tmp_path)
 
 
 def _connection(rows: int = 3, *, day: date = _DAY) -> Any:
