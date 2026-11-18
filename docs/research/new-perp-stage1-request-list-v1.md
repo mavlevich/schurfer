@@ -60,7 +60,7 @@ expected about 526 + 526 + 1,430 = 2,480.
 
 **The gate between the gos.** Go 1 ends by writing `manifest.json` and `go1_done.json` in
 the run root: the launch count, the exact D2 request list (as a hash), the preflight (the
-summed `Content-Length` of the first files against the 7 GiB class cap, files over the
+summed `Content-Length` of the first files against the 7,936 MiB (7.75 GiB) class cap, files over the
 512 MiB per-file cap counted apart), and an upper bound on the entry candidates. The go 1
 **report** (`new_perp_stage1_verdict`, aggregate counts only, no symbol) shows the owner
 what is in it. The owner approves go 2 by giving the manifest's SHA-256.
