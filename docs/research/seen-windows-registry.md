@@ -812,3 +812,10 @@ input was requested, and nothing dated from 2025-10-01 was read, recorded or cou
 **Next.** The fix (this change) records the retCode of an error envelope and retries transient codes. Both
 gos are rerun in a new root under the new hashes, which reads the same discovery-year data a further
 time; each rerun needs the owner's go. Receipts and `preflight.json` stay sealed outside Git.
+
+**Diagnostic request, 2026-11-18.** On the owner's go, exactly one request outside any run budget:
+the TUTUSDT hourly trade kline (`interval=60`, `start=1742638383361`, `end=1744193583361`,
+`limit=1000`) that failed at seq 1115, sent once to `api.bybit.com` with no retry. **Coverage level,
+discovery year only** (the window is 2025-03-22 to 2025-04-09). Only `retCode` and `retMsg` were
+read, and the response was never stored. Result: **`retCode` 0, `retMsg` "OK"**, so the stop at seq
+1115 was transient and did not reproduce; the retCode of the original answer is not established.

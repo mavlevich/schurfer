@@ -489,22 +489,25 @@ a root with a different run binding, and per-class carry of the budget. D2 saved
 A fresh root has fresh caps; the totals above are the study's, not any root's. The rerun needs a
 new owner go for Go 1 under the new Go 1 hash and a second for Go 2 on the new manifest hash.
 
-**Diagnostic (optional, one request, needs the owner's go).** The fix records the retCode on the
-next run whatever it is, so the diagnostic is **not needed for correctness**. It is worth one
-request because an unknown or deterministic code for TUTU would stop the rerun again at the same
-candidate, after 7.9 minutes of D2 and 6.3 GiB: if it is one of the retryable codes the table is
-right and nothing changes; if it is a parameter error or an unknown code, the table or the request
-needs a look before the rerun. The exact request (rebuilt from the saved receipts, its key equals
-seq 1115's):
+**Diagnostic (run on the owner's go, one request): retCode 0, retMsg "OK".** The fix records the
+retCode on the next run whatever it is, so the diagnostic was not needed for correctness; it was
+worth one request because an unknown or deterministic code for TUTU would have stopped the rerun
+again at the same candidate, after 7.9 minutes of D2 and 6.3 GiB. The request was rebuilt from the
+saved receipts (its key equals seq 1115's), sent once to `api.bybit.com` with no retry, and only
+`retCode` and `retMsg` were read; the response was piped and never stored:
 
 ```bash
 curl -sS 'https://api.bybit.com/v5/market/kline?category=linear&symbol=TUTUSDT&interval=60&start=1742638383361&end=1744193583361&limit=1000' | jq '{retCode, retMsg}'
 ```
 
-One request, no retry. The window is 2025-03-22T10:13:03.361Z to 2025-04-09T10:13:03.361Z, inside
-the discovery year. Only `retCode` and `retMsg` are printed; the response is piped, never stored,
-and a success body (prices) is discarded by `jq` unseen. Record the two printed values in the
-result record.
+**Result: `retCode` 0, `retMsg` "OK".** The error that stopped Go 2 at seq 1115 **did not
+reproduce**: the same request, with the same parameters, now succeeds. So the parameters are
+valid and the failure was **transient**, which rules out a deterministic parameter error for that
+request and means the rerun is not expected to stop at TUTU for that reason. **Not established:**
+the retCode of the original answer. The hypothesis of 10016 ("svc error: Get kline failed")
+stays unconfirmed; nothing in a success answer can confirm it, and the success body was not
+looked at beyond those two fields. The request is **one extra request outside any run budget**
+(coverage level, discovery year, window 2025-03-22T10:13:03.361Z to 2025-04-09T10:13:03.361Z).
 
 ## 7. Interpretations made, and limits stated plainly
 
