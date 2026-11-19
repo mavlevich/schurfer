@@ -1,0 +1,128 @@
+{
+  "status": "design_only_not_executable",
+  "fetch_ready": false,
+  "study": "I25",
+  "stage": "1b",
+  "window": {
+    "start_inclusive_utc": "2023-02-01T00:00:00Z",
+    "end_exclusive_utc": "2024-09-16T00:00:00Z"
+  },
+  "prerequisite": {
+    "outcome": "stage1_pass_partial",
+    "revision": "49edd5d6f8ab07c1d79f6b801b9f9a2b5a5a00e5",
+    "report_sha256": "38b569aa5dc713179ded3db70f7cdf788cea560db7c0c99c65d9332a879070b8",
+    "evidence_map_sha256": "532d101483c2691c422e1ddce2187423dfce5d460c4de1b719d626b66645ad03"
+  },
+  "metadata_proposal": {
+    "max_catalog_rows": 300,
+    "max_unknown_directories": 1200,
+    "max_unique_directory_requests": 1500,
+    "max_pre_cut_prefix_slots": 16384,
+    "max_first_attempts": 1810,
+    "max_actual_attempts": 2400,
+    "max_sends_per_logical_request": 3,
+    "max_response_bytes_total": 469762048,
+    "read_reserve_bytes": 65536,
+    "spacing_seconds": 1,
+    "classes": [
+      {
+        "class": "C1",
+        "method": "GET",
+        "url": "https://api.bybit.com/v5/market/instruments-info",
+        "params": {
+          "category": "linear",
+          "status": ["Trading", "Delivering", "Closed"],
+          "limit": 1000,
+          "cursor": "RAM only; bounded complete pagination"
+        },
+        "max_logical_requests": 9,
+        "max_response_bytes": 3145728,
+        "max_class_bytes": 29360128
+      },
+      {
+        "class": "C3",
+        "method": "GET",
+        "url": "https://public.bybit.com/trading/",
+        "max_logical_requests": 1,
+        "max_response_bytes": 4194304,
+        "max_class_bytes": 9437184
+      },
+      {
+        "class": "D1",
+        "method": "GET",
+        "url": "https://public.bybit.com/trading/{opaque_directory}/",
+        "max_logical_requests": 1500,
+        "max_response_bytes": 1048576,
+        "max_class_bytes": 402653184
+      },
+      {
+        "class": "D2h",
+        "method": "HEAD",
+        "url": "https://public.bybit.com/trading/{opaque_directory}/{first_file}",
+        "max_logical_requests": 300,
+        "max_response_bytes": 0,
+        "max_class_bytes": 0
+      }
+    ],
+    "success_outcome": "metadata_complete_coverage_pending"
+  },
+  "body_phase": {
+    "authorized": false,
+    "budget_assigned": false,
+    "requires": [
+      "sealed metadata manifest and hashes",
+      "reviewed exact D2-D6 queue and byte/attempt limits",
+      "explicit approval of physical receipt of value-bearing responses",
+      "separate owner authorization"
+    ]
+  },
+  "m2": {
+    "unit": "observed_pre_cut_file_prefix_cohort",
+    "scope": "directories outside the frozen holdout catalog",
+    "share": "a/(N+a), N is this holdout catalog count",
+    "max_share": 0.05,
+    "zero_catalog": "insufficient evidence",
+    "mixed_noncanonical_or_collision": "block positive result and set share null",
+    "known_failure_over_uncertainty": true,
+    "pre_window_date_retention": "boolean only; no exact earlier date or solely pre-window label",
+    "archive_only_proven": false
+  },
+  "retention": {
+    "private_root_mode": "0700",
+    "private_plan": true,
+    "raw_responses": false,
+    "public": "whole-window aggregates, reasons, budgets and provenance hashes only",
+    "historical_label": "requires matching in-window filename evidence before persistence",
+    "fresh_root_only": true,
+    "resume": false,
+    "prior_allowance_reuse": false
+  },
+  "not_implemented": [
+    "body/coverage queue and budget after sealed metadata manifest",
+    "body/coverage fetch, exact T0 and full M1-M6 verdict",
+    "exam outcome read"
+  ],
+  "out_of_scope": [
+    "price or return interpretation",
+    "funding/bar/book requests in the metadata phase",
+    "exam outcome read",
+    "AWS or Hyperliquid registration",
+    "deployment, paper trading or orders"
+  ],
+  "review_clarifications": {
+    "exit_end": "censor X>cut only; X==cut ends an in-window bar",
+    "catalog_pre_window": "RAM dates -> fixed near-launch/day-class/reuse predicates; no pre-window HEAD/CSV",
+    "catalog_parser": "shared strict parser; all catalog canonical prefixes protect M2(ii) collisions",
+    "denominator": "every in-window C1 row remains N even no_archive or unnamed"
+  },
+  "implementation_status": {
+    "metadata": "revision 2 code/contract proposal; needs implementation review and fresh owner go",
+    "body_coverage": "not implemented"
+  },
+  "revision_2": {
+    "catalog_calendar": "days_in_window for safe labels only; no D1 refetch needed for M2(iii)",
+    "m1": "known day class before pre-window unreadability; t0_ambiguous reason for ambiguity",
+    "m2_i": "known lower bound >5% survives later HTTP stop if N and source binding valid",
+    "lint": "use pinned Ruff 0.8.4 and protocol-specific do_GET suppression"
+  }
+}

@@ -999,3 +999,33 @@ unchanged and incomplete/unlinked as originally recorded. Report SHA-256:
 `38b569aa5dc713179ded3db70f7cdf788cea560db7c0c99c65d9332a879070b8`. Evidence-map SHA-256:
 `532d101483c2691c422e1ddce2187423dfce5d460c4de1b719d626b66645ad03`. No profitability claim or further data
 access follows from this record.
+
+## I25 Stage 1b metadata registration, 2026-11-19 (proposed, not read)
+
+The [metadata code/contract proposal](new-perp-stage1b-metadata-v1.md) binds the
+completed discovery v3 report and all four sealed source roots. It proposes
+coverage-level C1/C3/D1/D2h only for the backward holdout
+`[2023-02-01, 2024-09-16)`, with private opaque cohort/manifest and aggregate
+output. No holdout provider request or read has occurred in this work. Tests use
+synthetic responses and a loopback server only. Architecture approval is not
+fetch approval. No CSV GET, bars, funding, books, AWS, returns or exam is included.
+
+Proposed new caps: 2400 attempts, 469762048 response bytes (448 MiB), at most
+300 catalog rows and 1200 outside-cohort folders. A fresh 0700 sibling root is
+required; no old allowances or source facts are repurposed as holdout data.
+Early filenames/catalog rows contribute only the agreed RAM predicates, never
+exact pre-window dates or unadmitted names on disk. Unknown/colliding labels
+cannot disappear from the frozen catalog denominator. Metadata cannot return
+`stage1b_pass_partial`; a body-phase manifest review and separate go remain.
+
+Proposed request-list SHA-256:
+`31ae1a57970e7af98d2e52fd75534cf2604cd4a79bb889f25cd2f6a90fbada96`.
+
+Revision 2 supersedes the unexecuted metadata-v1 hash `e4513b79bfc4e2f8b31d1e691a3879565ad3f0e7372ab20ffd9793c69f772c9f`.
+It retains the in-window catalog calendar for M2(iii), preserves date-proven M1
+ambiguity/reasons and known M2(i) lower-bound failures after later HTTP stops.
+Rules are `new_perp_stage1b_metadata_v2`; caps and endpoints are unchanged. No
+holdout request was made under the superseded proposal or this revision.
+Code/contract review, clean merge, green CI and the owner's go for this exact
+hash/caps are required before any holdout access. The shared exam stays sealed;
+no parameter tuning on holdout facts is permitted.

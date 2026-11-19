@@ -368,6 +368,26 @@ checks and the primary cohort are unchanged. Old reports remain immutable and
 incomplete. This proposal requires a fresh full HTML snapshot, review, merged code
 and a new owner go; it authorizes no request or repetition of CSV/Go 1/Go 2.
 
+**Proposed Amendment 5 (2026-11-19, sealed Stage 1b metadata only).** After
+discovery's reviewed `stage1_pass_partial`, the
+[metadata proposal](new-perp-stage1b-metadata-v1.md) implements C1/C3/D1/D2h only
+for `[2023-02-01, 2024-09-16)`, with a sealed cohort/manifest and aggregate output.
+It grants no request and no body/coverage or exam read. All in-window catalog rows
+remain in N even when their names cannot be admitted; missing archive evidence is
+not removed from coverage/identity counters. Prior catalog names/bases and early
+filename dates are RAM-only predicates. A first file before the window remains
+`t0_pre_window_unreadable` only when its day does not already prove ambiguity;
+known ambiguity retains `t0_ambiguous`. No HEAD/CSV access outside the window.
+Safe catalog labels retain only their in-window file-day calendar for M2(iii).
+A proven M2(i) missing-share lower bound is not hidden by a later HTTP stop when
+the catalog denominator and source integrity remain valid. Catalog
+and unknown folders share the strict parser; all canonical catalog-folder
+pre-cut prefixes protect the unknown-folder collision set. X is an exit-bar end,
+so only `X > cut` censors it, while start timestamps remain below cut. Discovery
+code, contracts, reports and partial checks are unchanged. The metadata proposal
+requires its own code/contract review, merged clean code, registry row and owner
+go for its exact new hash/caps. A body queue and budget need a later separate go.
+
 **Order books are not a gate.** Existence and depth of the order-book archive are
 **recorded, not required**: the share of episodes with a book at entry and at exit, at
 each order size, is reported. It decides only which cost source scenario L uses for
