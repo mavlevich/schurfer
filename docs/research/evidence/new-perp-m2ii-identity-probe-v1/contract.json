@@ -1,0 +1,57 @@
+{
+  "rules": "new_perp_m2ii_identity_probe_v1",
+  "source_report_sha256": "0590a619d8bc5ddac11e928a958038f360ad4616d3685b11c53dc11be31a1f23",
+  "source_evidence_map_sha256": "751a2f1bb1af744d26df25e68b928e729da93e122477abba0513b5ca9da408fe",
+  "source_revision": "7e958b82105675409e0cad8f297aaaac9dc0bf36",
+  "base_input_map_sha256": "cc20f7d5b06208a18772d3df4f0a3427e1975750aea6f94a17845e5f627b4c5e",
+  "ordinals": [80, 245],
+  "max_unknown_directories": 1200,
+  "classes": [
+    {
+      "cls": "C3",
+      "name": "opaque_archive_root",
+      "phase": 0,
+      "method": "GET",
+      "url": "https://public.bybit.com/trading/",
+      "params": "none",
+      "parsed": "root identities in RAM, or private pre-cut filename prefix evidence",
+      "discarded": "post-cut identity/date/count, raw HTML, URLs, schema keys and body hashes",
+      "expected": 1,
+      "max_requests": 1,
+      "max_response_bytes": 4194304,
+      "max_class_bytes": 20971520,
+      "go": 1,
+      "note": "fixed current positions; no identity inference, search fallback or resume"
+    },
+    {
+      "cls": "D1",
+      "name": "opaque_archive_dates",
+      "phase": 1,
+      "method": "GET",
+      "url": "https://public.bybit.com/trading/{SYMBOL}/",
+      "params": "two fresh ordinal positions",
+      "parsed": "root identities in RAM, or private pre-cut filename prefix evidence",
+      "discarded": "post-cut identity/date/count, raw HTML, URLs, schema keys and body hashes",
+      "expected": 2,
+      "max_requests": 2,
+      "max_response_bytes": 1048576,
+      "max_class_bytes": 20971520,
+      "go": 1,
+      "note": "fixed current positions; no identity inference, search fallback or resume"
+    }
+  ],
+  "go_limits": {
+    "1": {
+      "max_attempts": 9,
+      "max_bytes": 20971520
+    }
+  },
+  "target_guard": "fresh sorted root minus frozen 263; known directories present; no search fallback",
+  "retention": "private pre-cut filename prefixes and first/last day/count, never verified asset identity",
+  "directory_name": "only with an exact matching pre-cut filename; otherwise opaque token only",
+  "continuity": "ordinal similarity proves no linkage to old directories; old M2 remains incomplete",
+  "failure": "missing ordinal, changed target, invalid schema, integrity or budget stops diagnostic",
+  "restart": "fresh sibling root only; no resume or modification of sealed roots",
+  "publication": "aggregates only; private prefix evidence stays outside Git",
+  "request_list_sha256": "617cb488517081071727108945afe7634345fcf1baec22ff05fbfe500cd4ee21"
+}

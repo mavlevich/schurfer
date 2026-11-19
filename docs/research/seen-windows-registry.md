@@ -890,3 +890,19 @@ is unresolved. All previously spent attempts and bytes remain spent.
 V2 request-list SHA-256: `88bebd47b124f1492f049a89ed428a78a2a9f1b03b22d285b92eba88736e6834`.
 This is a proposal only, with no new archive access. Review, merge and separate
 owner approval for this hash and a fresh root are required before execution.
+
+## I25 targeted filename diagnostic registration, 2026-11-19 (proposed, not read)
+
+The [proposed diagnostic](new-perp-m2ii-identity-probe-v1.md) binds the sealed v2
+report/input map and the original Stage 1. It uses one fresh root HTML and two
+current opaque positions (80, 245), with no search fallback. Maximum nine new
+attempts and 20 MiB. It proposes private retention of prefixes evidenced by valid
+pre-cut filenames and their pre-cut day/count summaries, not verified asset
+identity. Directory names require their own matching pre-cut filename evidence.
+Post-cut names/dates/counts and raw responses are not retained. Private evidence
+is not published. Ordinal matching does not prove linkage to the old directories;
+no old report or M2 verdict can be promoted by this diagnostic.
+
+Proposed request-list SHA-256: `617cb488517081071727108945afe7634345fcf1baec22ff05fbfe500cd4ee21`.
+No new archive request was made. Review, merged code and separate owner approval
+of this exact new hash/caps in a fresh root are required before fetch.
