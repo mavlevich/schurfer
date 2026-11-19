@@ -11,6 +11,8 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 import pytest
+from schurfer_analytics import bybit_presettlement_bounded_fetch as transport
+from schurfer_analytics import bybit_presettlement_economics as publication
 from schurfer_analytics import new_perp_m2ii as m
 from schurfer_analytics import new_perp_stage1 as s
 
@@ -408,3 +410,157 @@ def test_companion_report_binds_its_own_code_and_captured_inputs(tmp_path: Path)
     hashes = json.loads((root / "evidence-hashes.json").read_text())
     assert "run.json" in hashes and "combined-stage1-report.json" not in hashes
     assert all(s.digest((root / name).read_bytes()) == sha for name, sha in hashes.items())
+
+
+def test_pre_cut_foreign_prefix_continues_scan_but_never_passes(tmp_path: Path) -> None:
+    report, calls = execute(
+        tmp_path,
+        {FUTURE: html("FOREIGNUSDT2025-02-01.csv.gz"), OLD: html(OLD + "2025-03-01.csv.gz")},
+    )
+    root = tmp_path / "supplement"
+    assert len(calls) == 3 and report["supplement"]["complete"] is True
+    assert report["outcome"] == "stage1_incomplete" and report["m2"]["pass"] is False
+    assert report["m2"]["archive_only_assessed"] is False
+    assert report["m2"]["shares"]["archive_only"] is None
+    assert report["not_assessed"] == ["m2_archive_filename_identity_unverified"]
+    assert report["m2"]["counts"]["archive_only_in_window"] == 1
+    assert report["m2"]["counts"]["archive_filename_identity_unverified"] == 1
+    assert FUTURE not in all_text(root) and "FOREIGNUSDT" not in all_text(root)
+    issues = list((root / "identity-unverified").glob("*.json"))
+    assert len(issues) == 1
+    assert json.loads(issues[0].read_text()) == {"identity_status": "unverified_pre_cut_filename"}
+    assert "2025-02-01" not in all_text(root)
+
+
+@pytest.mark.parametrize("foreign_day", ["2024-01-01", "2024-10-01", "2025-09-30"])
+def test_mixed_prefixes_never_admit_either_name(tmp_path: Path, foreign_day: str) -> None:
+    report, _ = execute(
+        tmp_path,
+        {FUTURE: html(FUTURE + "2025-03-01.csv.gz", "FOREIGNUSDT" + foreign_day + ".csv.gz")},
+    )
+    assert report["outcome"] == "stage1_incomplete"
+    assert report["m2"]["counts"]["archive_only_in_window"] == 0
+    assert not (tmp_path / "supplement/admitted").exists()
+    assert FUTURE not in all_text(tmp_path / "supplement")
+    assert "FOREIGNUSDT" not in all_text(tmp_path / "supplement")
+
+
+def test_valid_postcut_foreign_prefix_addition_changes_no_scientific_fact(tmp_path: Path) -> None:
+    base, _ = execute(tmp_path / "a", {OLD: html(OLD + "2025-02-01.csv.gz")})
+    extra, _ = execute(
+        tmp_path / "b", {OLD: html(OLD + "2025-02-01.csv.gz", "FOREIGNUSDT2026-10-01.csv.gz")}
+    )
+    assert base["m2"] == extra["m2"] and base["outcome"] == extra["outcome"]
+    assert "FOREIGNUSDT" not in all_text(tmp_path) and "2026-10-01" not in all_text(tmp_path)
+
+
+def test_only_postcut_foreign_files_do_not_admit_directory(tmp_path: Path) -> None:
+    report, _ = execute(tmp_path, {FUTURE: html("FOREIGNUSDT2026-10-01.csv.gz")})
+    assert report["outcome"] == "stage1_pass_partial"
+    assert report["m2"]["counts"]["archive_only_in_window"] == 0
+    assert not (tmp_path / "supplement/identity-unverified").exists()
+    assert FUTURE not in all_text(tmp_path) and "FOREIGNUSDT" not in all_text(tmp_path)
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        "FOREIGNUSDT2025-02-30.csv.gz",
+        "FOREIGNUSDT2025-02-01.csv",
+        "nested/FOREIGNUSDT2025-02-01.csv.gz",
+    ],
+)
+def test_foreign_prefix_does_not_relax_other_schema_guards(tmp_path: Path, bad: str) -> None:
+    report, _ = execute(tmp_path, {FUTURE: html(bad)})
+    assert not report["supplement"]["complete"]
+    assert report["outcome"] == "stage1_incomplete"
+    assert not (tmp_path / "supplement/identity-unverified").exists()
+
+
+def test_known_coverage_failure_not_masked_by_foreign_prefix_uncertainty(tmp_path: Path) -> None:
+    pages = {f"MISSING{i:02}USDT": html(f"MISSING{i:02}USDT2025-02-01.csv.gz") for i in range(14)}
+    pages[FUTURE] = html("FOREIGNUSDT2025-02-01.csv.gz")
+    report, _ = execute(tmp_path, pages)
+    assert report["outcome"] == "incomplete_coverage"
+    assert "incomplete_coverage" in report["stop_codes"]
+    assert report["m2"]["shares"]["archive_only"] is None
+    assert report["m2"]["counts"]["archive_only_in_window"] == 14
+
+
+def test_completed_scan_marker_does_not_claim_identity_complete(tmp_path: Path) -> None:
+    report, _ = execute(tmp_path, {FUTURE: html("FOREIGNUSDT2025-02-01.csv.gz")})
+    assert report["supplement"]["identity_check_complete"] is False
+    marker = json.loads((tmp_path / "supplement/supplement_done.json").read_text())
+    assert marker == {"complete": True, "identity_check_complete": False}
+    hashes = json.loads((tmp_path / "supplement/evidence-hashes.json").read_text())
+    assert any(name.startswith("identity-unverified/") for name in hashes)
+
+
+def test_uncertainty_preserved_when_later_request_fails(tmp_path: Path) -> None:
+    report, _ = execute(
+        tmp_path, {"AAAUSDT": html("FOREIGNUSDT2025-02-01.csv.gz"), "ZZZUSDT": b"bad"}
+    )
+    assert report["supplement"]["identity_unverified_directories"] == 1
+    assert report["supplement"]["identity_check_complete"] is False
+    assert report["supplement"]["complete"] is False
+    assert report["outcome"] == "stage1_incomplete"
+
+
+def test_v1_approval_cannot_authorize_v2() -> None:
+    with pytest.raises(ValueError, match="approval differs"):
+        m.main(
+            [
+                "fetch",
+                "--source",
+                "/unused",
+                "--root",
+                "/unused",
+                "--approved-sha256",
+                "4ca2124139eb28e4c38dc00e40b4a245eb7a5c357c5729028842f61221854a7c",
+            ]
+        )
+
+
+def test_cli_nonzero_when_scan_complete_but_identity_unassessed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(m, "load_source", lambda _: source(tmp_path))
+    monkeypatch.setattr(transport, "clean_revision", lambda: "synthetic")
+    monkeypatch.setattr(publication, "publication", lambda _: {})
+    monkeypatch.setattr(
+        m,
+        "run",
+        lambda *args, **kwargs: {
+            "outcome": "stage1_incomplete",
+            "supplement": {"complete": True},
+            "not_assessed": ["m2_archive_filename_identity_unverified"],
+        },
+    )
+    assert (
+        m.main(
+            [
+                "fetch",
+                "--source",
+                str(tmp_path),
+                "--root",
+                str(tmp_path / "unused"),
+                "--approved-sha256",
+                m.build_contract()["request_list_sha256"],
+            ]
+        )
+        == 1
+    )
+
+
+@pytest.mark.parametrize("prefix", ["FOREIGNUSD", "other-prefix_", "lowercaseusdt"])
+def test_noncanonical_prefix_never_becomes_an_admitted_instrument(
+    tmp_path: Path, prefix: str
+) -> None:
+    report, _ = execute(tmp_path, {FUTURE: html(prefix + "2025-02-01.csv.gz")})
+    assert report["supplement"]["complete"] is True
+    assert report["outcome"] == "stage1_incomplete"
+    assert report["supplement"]["identity_check_complete"] is False
+    assert report["m2"]["shares"]["archive_only"] is None
+    assert not (tmp_path / "supplement/admitted").exists()
+    assert prefix not in all_text(tmp_path / "supplement")

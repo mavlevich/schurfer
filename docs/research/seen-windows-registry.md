@@ -861,3 +861,32 @@ Supplement request-list SHA-256:
 `4ca2124139eb28e4c38dc00e40b4a245eb7a5c357c5729028842f61221854a7c`.
 This registration is a proposal, not evidence of a read or authorization for one.
 The owner must approve this exact scope/hash separately after review and merge.
+
+## I25 M2(ii) v1 actual read and link-format probe, 2026-11-19
+
+Coverage-level metadata only. Approved supplement v1 on clean merged `84f2ba5`
+made 81 attempts (one C3, 80 D1), read 4,421,748 bytes, and stopped on
+`unsupported_file_anchor`. No complete M2(ii) result was produced. A separate
+owner-authorized format probe made two GETs, read 174,885 bytes, and retained only
+`foreign_prefix_dated_csv_gz`. Current ordinal 80 does not prove continuity with
+the stopped directory. The probe's frozen caps were six attempts and 6 MiB;
+no names, hrefs, dates, raw bodies, CSV values, prices or rates were retained.
+These activities spent 83 attempts and 4,596,633 bytes; they did not modify the
+original Stage 1 root or the stopped supplement root. The probe verified both.
+
+Diagnostic report SHA-256:
+`59c02213bd70a2d2d52966cf33b15aaedb407782601446a988da947ff8fd3cc4`.
+
+## I25 M2(ii) v2 registration, 2026-11-19 (proposed, not read)
+
+The amended [contract](new-perp-m2ii-supplement-v1.md) keeps the frozen source,
+archive endpoints, 1,200-directory cap, 1,500-attempt cap and 128-MiB cap. It adds
+opaque pre-cut filename identity issues: scan completion never clears such an
+issue, and a positive M2(ii) verdict remains blocked. Matching directory/file
+prefixes are not inferred to equal foreign prefixes. Valid post-cut-only files
+leave no scientific identity, date or count. Exact share is null while identity
+is unresolved. All previously spent attempts and bytes remain spent.
+
+V2 request-list SHA-256: `88bebd47b124f1492f049a89ed428a78a2a9f1b03b22d285b92eba88736e6834`.
+This is a proposal only, with no new archive access. Review, merge and separate
+owner approval for this hash and a fresh root are required before execution.

@@ -339,6 +339,17 @@ companion preserves M4/M5/M6 and the remaining partial limits. Observed archive
 coverage never proves all market launches or historical instrument identity.
 This proposal authorizes no read.
 
+**Proposed Amendment 3 (2026-11-19, M2(ii) filename identity).** Supplement v2
+recognizes dated CSV-gzip filenames independently of their containing directory.
+A pre-cut foreign prefix never establishes shared identity: retain only an opaque
+unresolved issue, continue the metadata scan, and block a positive M2(ii) verdict.
+Mixed-prefix directories do not admit even their matching-prefix dates. Valid
+post-cut-only files retain no identity, date or scientific count. The exact share
+is unavailable while identity issues remain; a known matching-prefix numerator
+above 5% still fails. Scan completion is separate from identity-check completion.
+This proposal changes no episode selection and authorizes no read or reuse of
+stopped roots. Review, merge and an owner go for the new hash are required.
+
 **Order books are not a gate.** Existence and depth of the order-book archive are
 **recorded, not required**: the share of episodes with a book at entry and at exit, at
 each order size, is reported. It decides only which cost source scenario L uses for
