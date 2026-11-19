@@ -891,6 +891,31 @@ V2 request-list SHA-256: `88bebd47b124f1492f049a89ed428a78a2a9f1b03b22d285b92eba
 This is a proposal only, with no new archive access. Review, merge and separate
 owner approval for this hash and a fresh root are required before execution.
 
+## I25 M2(ii) v2 actual read, 2026-11-19
+
+Approved coverage-only supplement on clean merged `7e958b8`, contract
+`88bebd47b124f1492f049a89ed428a78a2a9f1b03b22d285b92eba88736e6834`.
+The full archive HTML scan used 889 attempts and 42,631,655 response bytes:
+one C3 root, 888 D1 directory listings, all HTTP 200, no retries or stops.
+The 1,500-attempt and 128-MiB caps were respected. No CSV, price, bar, mark,
+funding, order-book or AWS request was included.
+
+One exact-prefix archive directory outside the frozen catalog has its first
+archived day in the discovery window. Two directories have unresolved pre-cut
+filename identity. Their names/dates were not retained; no identity is inferred
+and neither directory is silently zeroed. The scan is complete, the identity
+check is incomplete, and Stage 1 remains `stage1_incomplete`, with only
+`m2_archive_filename_identity_unverified` unassessed. Its exact share is null.
+The 228 primary episodes and existing partial-check limitations are unchanged.
+
+The [aggregate evidence](evidence/new-perp-m2ii-v2-result/README.md) preserves
+exact JSON bytes, hashes and an independent check of 2,233 captured inputs.
+Report SHA-256:
+`0590a619d8bc5ddac11e928a958038f360ad4616d3685b11c53dc11be31a1f23`.
+The sealed completed source and stopped v1 were verified unchanged. Earlier v1
+and probe spending (83 attempts, 4,596,633 bytes) remains spent separately.
+No further stage or metadata request is authorized by this record.
+
 ## I25 targeted filename diagnostic registration, 2026-11-19 (proposed, not read)
 
 The [proposed diagnostic](new-perp-m2ii-identity-probe-v1.md) binds the sealed v2
