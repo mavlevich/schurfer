@@ -61,7 +61,7 @@ an unknown symbol.
 
 The parser requires complete HTML and recognized link grammar. Parent links alone,
 malformed dates or unsupported anchors do not establish a post-cut folder and
-leave the scan incomplete. Valid dated USDT CSV-gzip filenames may have a prefix
+leave the scan incomplete. Dated CSV-gzip filenames with an alphanumeric, underscore or hyphen prefix may have a prefix
 different from the directory. This is format recognition only, never evidence of
 a rename or common instrument identity.
 

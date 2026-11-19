@@ -466,7 +466,6 @@ def test_only_postcut_foreign_files_do_not_admit_directory(tmp_path: Path) -> No
     "bad",
     [
         "FOREIGNUSDT2025-02-30.csv.gz",
-        "FOREIGNUSD2025-02-01.csv.gz",
         "FOREIGNUSDT2025-02-01.csv",
         "nested/FOREIGNUSDT2025-02-01.csv.gz",
     ],
@@ -552,3 +551,16 @@ def test_cli_nonzero_when_scan_complete_but_identity_unassessed(
         )
         == 1
     )
+
+
+@pytest.mark.parametrize("prefix", ["FOREIGNUSD", "other-prefix_", "lowercaseusdt"])
+def test_noncanonical_prefix_never_becomes_an_admitted_instrument(
+    tmp_path: Path, prefix: str
+) -> None:
+    report, _ = execute(tmp_path, {FUTURE: html(prefix + "2025-02-01.csv.gz")})
+    assert report["supplement"]["complete"] is True
+    assert report["outcome"] == "stage1_incomplete"
+    assert report["supplement"]["identity_check_complete"] is False
+    assert report["m2"]["shares"]["archive_only"] is None
+    assert not (tmp_path / "supplement/admitted").exists()
+    assert prefix not in all_text(tmp_path / "supplement")

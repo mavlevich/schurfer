@@ -340,7 +340,7 @@ coverage never proves all market launches or historical instrument identity.
 This proposal authorizes no read.
 
 **Proposed Amendment 3 (2026-11-19, M2(ii) filename identity).** Supplement v2
-recognizes valid dated USDT filenames independently of their containing directory.
+recognizes dated CSV-gzip filenames independently of their containing directory.
 A pre-cut foreign prefix never establishes shared identity: retain only an opaque
 unresolved issue, continue the metadata scan, and block a positive M2(ii) verdict.
 Mixed-prefix directories do not admit even their matching-prefix dates. Valid

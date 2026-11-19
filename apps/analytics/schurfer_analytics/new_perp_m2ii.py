@@ -87,6 +87,7 @@ def build_contract() -> dict[str, Any]:
         "privacy": "random opaque request keys; no unadmitted names, raw bodies or body hashes",
         "identity": "exact directory/file prefix only; first archived day is not a launch date",
         "foreign_prefix": "valid pre-cut foreign-prefix file blocks M2(ii); opaque issue only",
+        "filename_grammar": "[A-Za-z0-9_-]+YYYY-MM-DD.csv.gz; exact prefix required for admission",
         "restart": "no resume; existing output roots are refused before HTTP",
         "failure": "any incomplete source, response, scan or budget leaves stage1_incomplete",
         "operational_counts": "attempts and bytes may vary; no post-cut launch metric is kept",
@@ -205,7 +206,7 @@ def listing(symbol: str, body: bytes) -> dict[str, Any]:
     before: list[str] = []
     recognized = False
     foreign_before = False
-    pattern = re.compile(r"([A-Z0-9]+USDT)(\d{4}-\d{2}-\d{2})\.csv\.gz")
+    pattern = re.compile(r"([A-Za-z0-9_-]+)(\d{4}-\d{2}-\d{2})\.csv\.gz")
     for href in links(body):
         if href == "../":
             continue
