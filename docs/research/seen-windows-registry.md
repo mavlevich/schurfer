@@ -970,3 +970,32 @@ AWS request is included. All earlier spending remains spent. No v3 request
 has been made. Review, clean merged code and a new owner go are required.
 
 Proposed request-list SHA-256: `11e5275769540faa7d1b03b3e66cecec074f836c33ff36546afeb75dc1a25de0`.
+
+## I25 M2(ii) v3 actual read, 2026-11-19
+
+Owner-approved fresh HTML metadata scan on clean merged `49edd5d`,
+contract `11e5275769540faa7d1b03b3e66cecec074f836c33ff36546afeb75dc1a25de0`. The reviewed tree matched the merge tree; CI 6/6 passed
+on the reviewed head before merge. This run made 889 HTTP attempts,
+read 42631655 response bytes, and used 0 retries.
+Status counts: `{"200": 889}`.
+Caps of 1500 new attempts and 128 MiB were respected. No CSV, price, funding,
+trade/mark bar, book or AWS request was included; old allowances were not reused.
+
+Outcome `stage1_pass_partial`, HTTP scan complete `true`,
+file-prefix check complete `true`.
+Globally admitted pre-cut filename series: 453;
+first file before the discovery window: 452;
+first file inside the discovery window: 1.
+Unverified directories: 0; collision
+directories: 0. Exact M2(ii) share:
+`0.003787878787878788`. This is the approved observed-prefix partial cohort, not historical
+asset identity or a census of real launches. Known catalog-directory contents
+were not rescanned. Private prefixes and dates are not published.
+
+The 228 primary episodes, 48 ISO weeks and inherited
+M3/M4/M5/M6 limitations are unchanged. Three sealed source roots and all
+2233 captured v3 inputs were verified. Old reports remain
+unchanged and incomplete/unlinked as originally recorded. Report SHA-256:
+`38b569aa5dc713179ded3db70f7cdf788cea560db7c0c99c65d9332a879070b8`. Evidence-map SHA-256:
+`532d101483c2691c422e1ddce2187423dfce5d460c4de1b719d626b66645ad03`. No profitability claim or further data
+access follows from this record.
