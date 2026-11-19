@@ -820,3 +820,44 @@ discovery year only** (the window is 2025-03-22 to 2025-04-09). Only `retCode` a
 read, and the response was never stored. Result: **`retCode` 0, `retMsg` "OK"**: the stop at seq
 1115 did not reproduce. Its original cause and retCode remain unestablished;
 a later success is consistent with, but does not prove, a transient error.
+
+## I25 Stage 1 completed rerun, 2026-11-19 (coverage only, incomplete)
+
+On the owner's separate gos, the sealed `i25-stage1-v3-8748d9e` run executed
+Go 1 and Go 2 on clean revision `8748d9ef664b4b0c65f885420692166dd8ad7a54`.
+The approved discovery window is 2024-10-01 through 2025-09-30. Go 2 finished
+at 2026-11-18T23:17:11Z (2026-11-19 00:17 Europe/Warsaw).
+
+- Go 1: 526 attempts, 11,413,845 response-body bytes.
+- Go 2: 1,200 attempts, 6,753,329,719 bytes, no retries or API errors.
+- D2: all 258 first files, including the 22 above the former 64 MiB cap.
+- The frozen catalog has 263 launches; primary selection is 228 episodes in
+  48 ISO weeks. M4 is coarse, M5 minute continuity is deferred, M6 is static.
+- Outcome: `stage1_incomplete`; only M2(ii) is unassessed because root dates
+  were not extracted. This is not a trading outcome or a profitability test.
+
+Access was coverage level: file timestamps, bar/funding timestamps and metadata.
+Exchange bodies contained prices/rates, which were not extracted or retained.
+No test-year/holdout/blind-window outcome or new order path was read or run.
+The source remains sealed outside Git. Aggregate evidence is committed as
+`evidence/new-perp-stage1-v3/{stage1-report,manifest,stage1-verification}.json.gz`;
+decompression yields the original JSON, not private per-symbol inputs.
+
+Report SHA-256: `400f635ea29ac52dc5999caa866b152fa14cea1b82381ce91270012821a853ca`.
+Manifest SHA-256: `759305ceaf5730ff0b7f23963a2c17292590ecb590d0336376cc139a0b5ca76d`.
+
+## I25 M2(ii) supplement registration, 2026-11-19 (proposed, not read)
+
+The [separate contract](new-perp-m2ii-supplement-v1.md) binds that sealed report,
+manifest and source input hashes. It uses the frozen 263 symbols, not a fresh
+catalog. Only archive root/directory HTML may be requested, capped at 1,200
+unknown directories, 1,500 attempts and 128 MiB, including retries/reserves.
+Unknown names remain in memory until a pre-cut file admits them. Random opaque
+journal identifiers and operational counters are permitted; post-cut identities,
+dates and launch counts are not persisted. No CSV, price, bar, funding or book
+request is part of this supplement. There is no resume or mutation of the source.
+
+Supplement request-list SHA-256:
+`4ca2124139eb28e4c38dc00e40b4a245eb7a5c357c5729028842f61221854a7c`.
+This registration is a proposal, not evidence of a read or authorization for one.
+The owner must approve this exact scope/hash separately after review and merge.

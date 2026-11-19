@@ -326,6 +326,19 @@ list.
   first files, entry bars, hourly series and funding after the owner reviews the manifest of
   the first. See the [stage 1 request list](new-perp-stage1-request-list-v1.md).
 
+**Proposed Amendment 2 (2026-11-19, separate M2(ii) metadata contract).** The
+[M2(ii) supplement](new-perp-m2ii-supplement-v1.md) can assess the observed
+archive using first daily-file dates rather than a root modification date.
+It binds the completed run's frozen 263 catalog symbols; a fresh catalog is
+not subtracted. Unknown names stay in RAM until a pre-cut file admits the name.
+Before admission only opaque operational attempt/byte accounting is retained,
+without names, URLs, raw-body hashes, schema keys or post-cut launch metrics.
+This is a separate capped go, not a continuation of either original go.
+Incomplete scans remain incomplete. The original report stays immutable; the
+companion preserves M4/M5/M6 and the remaining partial limits. Observed archive
+coverage never proves all market launches or historical instrument identity.
+This proposal authorizes no read.
+
 **Order books are not a gate.** Existence and depth of the order-book archive are
 **recorded, not required**: the share of episodes with a book at entry and at exit, at
 each order size, is reported. It decides only which cost source scenario L uses for

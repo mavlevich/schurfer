@@ -1,0 +1,57 @@
+{
+  "rules": "new_perp_m2ii_v1",
+  "source_revision": "8748d9ef664b4b0c65f885420692166dd8ad7a54",
+  "source_report_sha256": "400f635ea29ac52dc5999caa866b152fa14cea1b82381ce91270012821a853ca",
+  "source_manifest_sha256": "759305ceaf5730ff0b7f23963a2c17292590ecb590d0336376cc139a0b5ca76d",
+  "source_input_map_sha256": "cc20f7d5b06208a18772d3df4f0a3427e1975750aea6f94a17845e5f627b4c5e",
+  "window": ["2024-10-01", "2025-10-01"],
+  "classes": [
+    {
+      "cls": "C3",
+      "name": "opaque_archive_root",
+      "phase": 0,
+      "method": "GET",
+      "url": "https://public.bybit.com/trading/",
+      "params": "none",
+      "parsed": "observed USDT directory names in RAM only",
+      "discarded": "raw HTML, unadmitted identities, dates, schema keys and body hashes",
+      "expected": 1,
+      "max_requests": 1,
+      "max_response_bytes": 4194304,
+      "max_class_bytes": 134217728,
+      "go": 1,
+      "note": "single snapshot; no C1, persisted candidate-name plan or resume"
+    },
+    {
+      "cls": "D1",
+      "name": "opaque_archive_dates",
+      "phase": 1,
+      "method": "GET",
+      "url": "https://public.bybit.com/trading/{SYMBOL}/",
+      "params": "one request per in-window launch and one per archive-only candidate",
+      "parsed": "admitted symbol, first archived day, last pre-cut day and pre-cut file count",
+      "discarded": "post-cut names, dates and counts; raw HTML, schema keys and body hashes",
+      "expected": 0,
+      "max_requests": 1200,
+      "max_response_bytes": 1048576,
+      "max_class_bytes": 134217728,
+      "go": 1,
+      "note": "plan size unknown before the root; frozen catalog subtraction, no resume"
+    }
+  ],
+  "go_limits": {
+    "1": {
+      "max_attempts": 1500,
+      "max_bytes": 134217728
+    }
+  },
+  "max_directories": 1200,
+  "threshold": "archive_only/(frozen_catalog+archive_only) <= 0.05",
+  "catalog_policy": "frozen window symbols only; no fresh C1 subtraction",
+  "privacy": "random opaque request keys; no unadmitted names, raw bodies or body hashes",
+  "identity": "first archived day, not a verified instrument launch date",
+  "restart": "no resume; existing output roots are refused before HTTP",
+  "failure": "any incomplete source, response, scan or budget leaves stage1_incomplete",
+  "operational_counts": "attempts and bytes may vary; no post-cut launch metric is kept",
+  "request_list_sha256": "4ca2124139eb28e4c38dc00e40b4a245eb7a5c357c5729028842f61221854a7c"
+}
