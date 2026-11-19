@@ -931,3 +931,42 @@ no old report or M2 verdict can be promoted by this diagnostic.
 Proposed request-list SHA-256: `617cb488517081071727108945afe7634345fcf1baec22ff05fbfe500cd4ee21`.
 No new archive request was made. Review, merged code and separate owner approval
 of this exact new hash/caps in a fresh root are required before fetch.
+
+## I25 targeted filename diagnostic actual read, 2026-11-19
+
+Approved diagnostic on clean merged `3cf37ca`, contract
+`617cb488517081071727108945afe7634345fcf1baec22ff05fbfe500cd4ee21`.
+Three HTML GET attempts (one C3, two D1), all HTTP 200, 214,739 response bytes,
+no retries/stops, within nine attempts and 20 MiB. Private pre-cut prefix
+observations were captured; names/dates are not published. Each current folder
+has one pre-cut prefix with its first archived day before 2024-10-01, and neither
+folder has its own admitted pre-cut name. This is filename evidence only, not a
+rename, instrument identity or proof of linkage to the two prior v2 directories.
+
+Outcome `diagnostic_complete_unlinked`, continuity `not_proven`; sealed M2/Stage 1
+remain `stage1_incomplete`. Both sealed sources and all ten captured inputs
+were independently verified. No CSV, prices, funding, bars, books or AWS request
+was included. The original 228 episodes and partial checks are unchanged.
+Report SHA-256:
+`4449921d31dc9efdb61925d8f83b33c5ca0a39885f80de910cd5344b96017b49`.
+Further access or a revised M2 definition requires a separate reviewed decision.
+
+## I25 M2(ii) v3 registration, 2026-11-19 (proposed, not read)
+
+The [v3 contract](new-perp-m2ii-file-prefix-v3.md) proposes a fresh full archive
+HTML scan by observed canonical pre-cut filename series, not historical asset
+identity. Frozen catalog/source fingerprints and sealed prior v2/diagnostic
+inputs are verified. Exactly one canonical prefix per directory, disjoint from
+frozen_263 and unique across all unknown directories, is required for admission.
+Mixed/noncanonical cases and all prefix collisions remain anonymous blockers;
+canonical prefixes in mixed directories participate in collision detection too.
+No cross-directory merge or inferred rename. Admitted file_prefix is private;
+directory_name is retained only when equal to that admitted prefix.
+
+Caps: 1200 unknown directories, 1500 new attempts, 128 MiB, plus a fail-closed
+16384 pre-cut prefix-slot RAM cap. No provisional admission before full scan.
+No old run is resumed or rewritten; no CSV, market value, funding/bar/book or
+AWS request is included. All earlier spending remains spent. No v3 request
+has been made. Review, clean merged code and a new owner go are required.
+
+Proposed request-list SHA-256: `11e5275769540faa7d1b03b3e66cecec074f836c33ff36546afeb75dc1a25de0`.
