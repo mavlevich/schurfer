@@ -1254,6 +1254,7 @@ def ledger_totals(
     attempts: list[dict[str, Any]],
     receipts: list[dict[str, Any]],
     classes: frozenset[str] | None = None,
+    specs: dict[str, ClassSpec] | None = None,
 ) -> tuple[int, int, dict[str, int], dict[str, int]]:
     """Attempts and bytes used, in total and by class. An attempt with no receipt (a crash
     between its charge and its result) is charged the full response cap of its class."""
@@ -1263,7 +1264,7 @@ def ledger_totals(
     for a in attempts:
         if classes is not None and a["cls"] not in classes:
             continue
-        cap = reserve(CLASS_BY_ID[a["cls"]])  # a crashed send may have received up to this
+        cap = reserve((CLASS_BY_ID if specs is None else specs)[a["cls"]])
         by_n[a["cls"]] = by_n.get(a["cls"], 0) + 1
         by_b[a["cls"]] = by_b.get(a["cls"], 0) + done.get(a["seq"], cap)
     return sum(by_n.values()), sum(by_b.values()), by_n, by_b
@@ -1401,12 +1402,21 @@ class Fetcher:
         sleep: Callable[[float], None] = time.sleep,
         prior: dict[str, dict[str, int]] | None = None,
         wall: Callable[[], float] = time.time,
+        specs: dict[str, ClassSpec] | None = None,
     ) -> None:
         self.root, self.client, self.now, self.sleep, self.go = root, client, now, sleep, go
         self.wall = wall
         self.contract = json.loads(json.dumps(contract))
+        self.specs = dict(CLASS_BY_ID if specs is None else specs)
         if contract_hash(self.contract) != self.contract["request_list_sha256"]:
             raise ValueError("contract does not match its own hash")
+        for cls in self.contract["classes"] if specs is not None else []:
+            spec = self.specs.get(cls["cls"])
+            if spec is None or any(
+                cls[name] != getattr(spec, name)
+                for name in ("max_requests", "max_response_bytes", "max_class_bytes")
+            ):
+                raise ValueError("class specs differ from the contract")
         if go not in (1, 2):
             raise ValueError("go must be 1 or 2")
         stop = root / "stop.json"
@@ -1475,7 +1485,9 @@ class Fetcher:
 
     def totals(self) -> tuple[int, int, dict[str, int], dict[str, int]]:
         """Usage of this go's classes, plus earlier roots, and by class."""
-        count, used, by_n, by_b = ledger_totals(self.attempts, self.receipts, self.enabled)
+        count, used, by_n, by_b = ledger_totals(
+            self.attempts, self.receipts, self.enabled, self.specs
+        )
         earlier = self.prior.get(str(self.go), {})
         return (
             count + int(earlier.get("attempts", 0)),
@@ -1492,7 +1504,7 @@ class Fetcher:
         return number
 
     def _charge(self, request: Request) -> int:
-        spec = CLASS_BY_ID[request.cls]
+        spec = self.specs[request.cls]
         if request.cls not in self.enabled:
             raise FetchStoppedError(f"class {request.cls} is not in go {self.go}")
         count, used, by_n, by_b = self.totals()
@@ -1608,7 +1620,7 @@ class Fetcher:
         request: Request,
         reduce: Callable[[bytes], dict[str, Any]] | None,
     ) -> tuple[dict[str, Any], dict[str, Any] | None, int | None]:
-        spec = CLASS_BY_ID[request.cls]
+        spec = self.specs[request.cls]
         receipt: dict[str, Any] = {
             "seq": seq,
             "cls": request.cls,
