@@ -350,6 +350,24 @@ above 5% still fails. Scan completion is separate from identity-check completion
 This proposal changes no episode selection and authorizes no read or reuse of
 stopped roots. Review, merge and an owner go for the new hash are required.
 
+**Proposed Amendment 4 (2026-11-19, fresh M2(ii) v3 filename cohort).** The
+[new v3 contract](new-perp-m2ii-file-prefix-v3.md) measures only the
+`observed_pre_cut_file_prefix_cohort`. A directory must have exactly one
+canonical pre-cut filename prefix, absent from the frozen 263 and unique across
+all unknown directories. Mixed/noncanonical prefixes and any cross-directory or
+frozen-catalog collision block a positive result without retaining blocked names.
+Canonical prefixes inside mixed directories participate in collision detection.
+Admission is delayed until the complete snapshot; no normalization, merge or
+inferred rename is allowed. Directory names are retained only when equal to the
+admitted prefix. Post-cut names/dates/counts disappear before scientific counters.
+The first pre-cut file day defines the observed series; pre-window series remain
+outside the numerator even if they continue into the window. The threshold stays
+`a/(263+a) <= 0.05` (13 passes, 14 fails), with explicit partial-archive labels and
+no claim of actual instrument identity or all market launches. Other Stage 1
+checks and the primary cohort are unchanged. Old reports remain immutable and
+incomplete. This proposal requires a fresh full HTML snapshot, review, merged code
+and a new owner go; it authorizes no request or repetition of CSV/Go 1/Go 2.
+
 **Order books are not a gate.** Existence and depth of the order-book archive are
 **recorded, not required**: the share of episodes with a book at entry and at exit, at
 each order size, is reported. It decides only which cost source scenario L uses for
