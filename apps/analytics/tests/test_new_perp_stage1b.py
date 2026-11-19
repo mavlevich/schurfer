@@ -15,6 +15,7 @@ import httpx
 import pytest
 from schurfer_analytics import new_perp_m2ii as m
 from schurfer_analytics import new_perp_stage1 as s
+from schurfer_analytics import new_perp_stage1_verdict as verdict
 from schurfer_analytics import new_perp_stage1b as b
 from schurfer_analytics.new_perp_window import HOLDOUT, CoverageWindow
 
@@ -510,19 +511,23 @@ def test_catalog_pre_window_gaps_and_prior_live_multiplier(tmp_path: Path) -> No
 
 
 def test_old_authorization_rejected_before_paths_or_http(tmp_path: Path) -> None:
-    with pytest.raises(ValueError, match="approval or checked-in"):
-        b.main(
-            [
-                "fetch-metadata",
-                "--approved-sha256",
-                "11e52757",
-                *[
-                    arg
-                    for name in ("base", "v2", "diagnostic", "discovery", "root")
-                    for arg in ("--" + name, str(tmp_path / name))
-                ],
-            ]
-        )
+    for stale in (
+        "11e52757",
+        "e4513b79bfc4e2f8b31d1e691a3879565ad3f0e7372ab20ffd9793c69f772c9f",
+    ):
+        with pytest.raises(ValueError, match="approval or checked-in"):
+            b.main(
+                [
+                    "fetch-metadata",
+                    "--approved-sha256",
+                    stale,
+                    *[
+                        arg
+                        for name in ("base", "v2", "diagnostic", "discovery", "root")
+                        for arg in ("--" + name, str(tmp_path / name))
+                    ],
+                ]
+            )
 
 
 def test_unknown_prefix_collision_and_mixed_prefixes_block_all_owners(tmp_path: Path) -> None:
@@ -607,7 +612,8 @@ def local_server(
     calls: list[str] = []
 
     class Handler(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:
+        # Ruff versions differ on stdlib overrides; the HTTP hook name is fixed.
+        def do_GET(self) -> None:  # noqa: N802, RUF100
             calls.append(self.path)
             self.send_response(status)
             if declared is not None:
@@ -616,7 +622,7 @@ def local_server(
             if declared is None or declared == len(body):
                 self.wfile.write(body)
 
-        def log_message(self, format: str, *args: Any) -> None:
+        def log_message(self, _format: str, *_args: Any) -> None:
             pass
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
@@ -664,3 +670,84 @@ def test_real_local_forbidden_receipt_prevents_recovery_send(tmp_path: Path) -> 
             m.PrivateFetcher(root, b.build_contract(), client, specs=b.class_specs())
     assert len(calls) == 1
     assert (root / "stop.json").exists()
+
+
+def test_round2_sealed_calendar_supports_path_coverage_without_refetch(tmp_path: Path) -> None:
+    path_days = verdict.path_days(s.day_ms("2023-04-08"), s.day_ms("2023-04-15"))
+    available = ["2023-04-01", *[day for day in path_days if day != "2023-04-09"]]
+    report, calls = run_case(
+        tmp_path,
+        [row()],
+        {SYNTH: html(*(SYNTH + day + ".csv.gz" for day in available), SYNTH + "2024-09-16.csv.gz")},
+    )
+    assert report["complete"]
+    call_count = len(calls)
+    stored = facts(tmp_path)[0]
+    assert stored["days_in_window"] == available
+    missing = sorted(set(path_days) - set(stored["days_in_window"]))
+    assert missing == ["2023-04-09"]
+    assert len(missing) > 0.05 * len(path_days)
+    assert len(calls) == call_count
+    assert "2024-09-16" not in json.dumps(stored)
+
+
+def test_round2_calendar_never_stores_pre_window_or_cut_days() -> None:
+    before = b.listing(
+        html(
+            SYNTH + "2023-01-31.csv.gz",
+            SYNTH + "2023-02-01.csv.gz",
+            SYNTH + "2024-09-15.csv.gz",
+            SYNTH + "2024-09-16.csv.gz",
+        )
+    )
+    stored = b.catalog_facts(parsed_row(day="2023-02-01"), before, "ok")
+    assert stored["days_in_window"] == ["2023-02-01", "2024-09-15"]
+    assert "2023-01-31" not in json.dumps(stored)
+    assert "2024-09-16" not in json.dumps(stored)
+
+
+@pytest.mark.parametrize(
+    "first,launch,status,reason",
+    [
+        ("2023-04-03", "2023-04-01", "premarket_or_ambiguous", "t0_ambiguous"),
+        ("2022-12-01", "2023-04-01", "premarket_or_ambiguous", "t0_ambiguous"),
+        ("2022-12-01", "2023-02-01", "premarket_or_ambiguous", "t0_ambiguous"),
+        ("2023-01-31", "2023-02-01", "t0_pre_window_unreadable", "t0_unavailable"),
+        ("2023-04-01", "2023-04-01", "csv_pending", "csv_pending"),
+    ],
+)
+def test_round2_filename_class_precedes_pre_window_unreadability(
+    first: str, launch: str, status: str, reason: str
+) -> None:
+    stored = b.catalog_facts(parsed_row(day=launch), {SYNTH: {first}}, "ok")
+    assert stored["t0_status"] == status
+    assert stored["reason"] == reason
+    if first < HOLDOUT.start_day:
+        assert "first_file_day" not in stored
+        assert first not in json.dumps(stored)
+
+
+@pytest.mark.parametrize("failure_phase", ["unknown", "head", "catalog"])
+def test_round2_known_m2_failure_survives_later_scan_stop(
+    tmp_path: Path, failure_phase: str
+) -> None:
+    missing, good = "ASYNTHMISSUSDT", "BSYNTHGOODUSDT"
+    listings = {missing: None, good: html(good + "2023-04-01.csv.gz")}
+    if failure_phase == "unknown":
+        listings[FOREIGN] = None
+
+    def fail_later(request: httpx.Request) -> httpx.Response | None:
+        if failure_phase == "head" and request.method == "HEAD":
+            return httpx.Response(403)
+        if failure_phase == "catalog" and request.url.path == f"/trading/{good}/":
+            return httpx.Response(403)
+        return None
+
+    report, _ = run_case(tmp_path, [row(missing), row(good)], listings, custom=fail_later)
+    assert not report["complete"] and report["binding_valid"]
+    assert report["catalog_count"] == report["catalog_slots"] == 2
+    assert report["m2_i_no_file_near_launch"] == 1
+    assert report["outcome"] == "incomplete_coverage"
+    assert "m2_catalog_no_file_near_launch" in report["known_coverage_failures"]
+    assert "metadata_scan_incomplete" in report["not_assessed"]
+    assert not (tmp_path / "run/metadata_done.json").exists()

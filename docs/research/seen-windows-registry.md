@@ -1019,7 +1019,13 @@ cannot disappear from the frozen catalog denominator. Metadata cannot return
 `stage1b_pass_partial`; a body-phase manifest review and separate go remain.
 
 Proposed request-list SHA-256:
-`e4513b79bfc4e2f8b31d1e691a3879565ad3f0e7372ab20ffd9793c69f772c9f`.
+`31ae1a57970e7af98d2e52fd75534cf2604cd4a79bb889f25cd2f6a90fbada96`.
+
+Revision 2 supersedes the unexecuted metadata-v1 hash `e4513b79bfc4e2f8b31d1e691a3879565ad3f0e7372ab20ffd9793c69f772c9f`.
+It retains the in-window catalog calendar for M2(iii), preserves date-proven M1
+ambiguity/reasons and known M2(i) lower-bound failures after later HTTP stops.
+Rules are `new_perp_stage1b_metadata_v2`; caps and endpoints are unchanged. No
+holdout request was made under the superseded proposal or this revision.
 Code/contract review, clean merge, green CI and the owner's go for this exact
 hash/caps are required before any holdout access. The shared exam stays sealed;
 no parameter tuning on holdout facts is permitted.

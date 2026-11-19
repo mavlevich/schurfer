@@ -185,15 +185,20 @@ stop/incomplete result, never a stage pass.
    the ninth full response. D2h's shared-budget sentinel is integer zero.
 3. Unknown M2(ii) folders retain only a pre-window boolean. Catalog folders
    compute near-launch, day class and ticker-reuse predicates in RAM from all
-   pre-cut dates, without persisting dates before the window. A first file before
-   the window gives `t0_pre_window_unreadable`, no T0 is invented and neither
-   HEAD nor CSV GET is allowed. An early launch's later lookback exclusion does
+   pre-cut dates, without persisting dates before the window. A day-proven
+   ambiguous class wins first; only an otherwise undecidable pre-window first
+   file gives `t0_pre_window_unreadable`. No exact T0 is invented and neither
+   HEAD nor CSV GET outside the window is allowed. An early launch's lookback exclusion does
    not silently make its M1 clock known.
 4. Both directory classes use the same strict HTML parser. Canonical prefixes
    from catalog folders, including foreign/mixed prefixes, protect the M2(ii)
    frozen collision set. C1 rows lacking an admitted label remain opaque catalog
    slots in N and the M1/M2(i)/M3/reason counters. Prior C1 labels/bases are RAM
    only for relist/multiplier predicates.
+
+Safe catalog labels retain the in-window day calendar for the later M2(iii)
+check. A known M2(i) lower-bound failure remains a failure after a later HTTP stop,
+provided the catalog denominator and source integrity remain valid.
 
 The [metadata executable proposal](new-perp-stage1b-metadata-v1.md) is separate
 from this architectural draft. It implements no body/coverage fetch.

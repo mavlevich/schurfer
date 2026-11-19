@@ -116,7 +116,13 @@
     "denominator": "every in-window C1 row remains N even no_archive or unnamed"
   },
   "implementation_status": {
-    "metadata": "local code proposal; not reviewed/merged/authorized",
+    "metadata": "revision 2 code/contract proposal; needs implementation review and fresh owner go",
     "body_coverage": "not implemented"
+  },
+  "revision_2": {
+    "catalog_calendar": "days_in_window for safe labels only; no D1 refetch needed for M2(iii)",
+    "m1": "known day class before pre-window unreadability; t0_ambiguous reason for ambiguity",
+    "m2_i": "known lower bound >5% survives later HTTP stop if N and source binding valid",
+    "lint": "use pinned Ruff 0.8.4 and protocol-specific do_GET suppression"
   }
 }

@@ -28,7 +28,7 @@ from .new_perp_window import HOLDOUT, CoverageWindow
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-VERSION = "new_perp_stage1b_metadata_v1"
+VERSION = "new_perp_stage1b_metadata_v2"
 DOC = "docs/research/new-perp-stage1b-metadata-v1.md"
 CONTRACT = "docs/research/evidence/new-perp-stage1b-metadata-v1/contract.json"
 SOURCE_REPORT = "38b569aa5dc713179ded3db70f7cdf788cea560db7c0c99c65d9332a879070b8"
@@ -91,7 +91,9 @@ def build_contract() -> dict[str, Any]:
         "catalog_numeric_fields": ["min_notional", "qty_step", "min_order_qty", "max_leverage"],
         "clock": "E=ceil_minute(T0+7d); X=E+7d; censor X>cut, not X==cut",
         "before_window": "RAM-only filename dates and catalog labels; fixed predicates persist",
-        "pre_window_first_file": "t0_pre_window_unreadable; never HEAD or GET",
+        "pre_window_first_file": "known day class wins; else t0_pre_window_unreadable; no HEAD/GET",
+        "m1_reasons": "known ambiguity=t0_ambiguous; pending=csv_pending; else=t0_unavailable",
+        "catalog_calendar": "safe labels retain days_in_window; no outside-window dates",
         "catalog_denominator": "every in-window row remains N, even no_archive or unnamed",
         "catalog_d1": "strict shared HTML parser; foreign prefixes unverified and in frozen set",
         "listing_grammar": "full filename prefix + ISO YYYY-MM-DD.csv.gz, complete UTF-8 HTML",
@@ -109,7 +111,10 @@ def build_contract() -> dict[str, Any]:
         "body_phase": "not implemented, not authorized; separate reviewed manifest/hash/go",
         "restart": "fresh root only; no resume, source modification or reused allowance",
         "success": "metadata_complete_coverage_pending, never stage1b_pass_partial",
-        "known_metadata_failure": "M2(i) or M2(ii) known share >5% outranks uncertainty",
+        "known_metadata_failure": (
+            "proven M2(i) lower bound >5% survives later HTTP failure; "
+            "M2(ii) needs complete global admission; source-integrity failure outranks both"
+        ),
     }
     contract["request_list_sha256"] = s.contract_hash(contract)
     return contract
@@ -293,30 +298,39 @@ def catalog_facts(
         )
     )
     safe_label = bool(not foreign and any(window.contains_day(day) for day in days))
+    day_cls = s.class_from_first_day(first, launch)
     if state == "absent":
         clock = "no_archive"
     elif foreign:
         clock = "filename_identity_unverified"
     elif first is None:
         clock = "no_pre_cut_file"
+    elif day_cls is not None:
+        clock = day_cls
     elif first < window.start_day:
         clock = "t0_pre_window_unreadable"
     else:
-        clock = s.class_from_first_day(first, launch) or "csv_pending"
+        clock = "csv_pending"
+    reason = "t0_unavailable"
+    if clock == "premarket_or_ambiguous":
+        reason = "t0_ambiguous"
+    elif clock == "csv_pending":
+        reason = "csv_pending"
     facts: dict[str, Any] = {
         "launch_ms": launch,
         "listing_state": state,
         "has_pre_window_file": any(day < window.start_day for day in days),
         "first_file_within_1d_of_launch": within,
-        "first_file_class_from_day": s.class_from_first_day(first, launch),
+        "first_file_class_from_day": day_cls,
         "ticker_reuse_suspected": reuse,
         "filename_identity_unverified": foreign,
         "t0_status": clock,
-        "reason": "t0_unavailable" if clock != "csv_pending" else "csv_pending",
+        "reason": reason,
     }
     if safe_label:
         facts["symbol"] = symbol
         facts.update({key: value for key, value in row.items() if key not in ("symbol", "base")})
+        facts["days_in_window"] = [day for day in days if window.contains_day(day)]
     if safe_label and within and first is not None and window.contains_day(first):
         facts["first_file_day"] = first
     return facts
@@ -536,7 +550,7 @@ def run(
         for row in facts.values()
     )
     known_failures = []
-    if complete and n and missing_near / n > 0.05:
+    if catalog_complete and n and missing_near / n > 0.05:
         known_failures.append("m2_catalog_no_file_near_launch")
     if complete and n and count / (n + count) > 0.05:
         known_failures.append("m2_archive_only_share")

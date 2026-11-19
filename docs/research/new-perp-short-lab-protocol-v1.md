@@ -376,7 +376,11 @@ It grants no request and no body/coverage or exam read. All in-window catalog ro
 remain in N even when their names cannot be admitted; missing archive evidence is
 not removed from coverage/identity counters. Prior catalog names/bases and early
 filename dates are RAM-only predicates. A first file before the window remains
-`t0_pre_window_unreadable`, with no HEAD/CSV access outside the window. Catalog
+`t0_pre_window_unreadable` only when its day does not already prove ambiguity;
+known ambiguity retains `t0_ambiguous`. No HEAD/CSV access outside the window.
+Safe catalog labels retain only their in-window file-day calendar for M2(iii).
+A proven M2(i) missing-share lower bound is not hidden by a later HTTP stop when
+the catalog denominator and source integrity remain valid. Catalog
 and unknown folders share the strict parser; all canonical catalog-folder
 pre-cut prefixes protect the unknown-folder collision set. X is an exit-bar end,
 so only `X > cut` censors it, while start timestamps remain below cut. Discovery
