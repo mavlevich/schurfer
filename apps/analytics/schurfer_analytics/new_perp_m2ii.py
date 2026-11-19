@@ -9,7 +9,7 @@ import re
 import secrets
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field, replace
-from datetime import date
+from datetime import UTC, date, datetime
 from functools import partial
 from html.parser import HTMLParser
 from pathlib import Path
@@ -405,6 +405,17 @@ def run(
     report = combined_report(source, accepted, complete, usage, contract)
     if not source_intact:
         report["outcome"] = "source_integrity_error"
+    evidence = {
+        str(path.relative_to(root)): s.digest(path.read_bytes())
+        for path in sorted(root.rglob("*.json"))
+    }
+    evidence_sha = publish_once(root / "evidence-hashes.json", evidence)
+    report["supplement"].update(
+        code=code,
+        binding_valid=source_intact,
+        evidence_sha256=evidence_sha,
+        finished_at_utc=datetime.now(UTC).isoformat(),
+    )
     publish_once(root / "combined-stage1-report.json", report)
     if complete:
         publish_once(root / "supplement_done.json", {"complete": True})
@@ -431,6 +442,7 @@ def main(argv: list[str] | None = None) -> int:
     source = load_source(args.source)
     code = {
         "revision": transport.clean_revision(),
+        "git_clean_before": True,
         "publication": publication.publication(list(PUBLISHED)),
         "source": source.binding,
     }

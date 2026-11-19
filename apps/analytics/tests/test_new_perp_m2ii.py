@@ -394,3 +394,17 @@ def test_other_market_directories_do_not_break_the_root_parser() -> None:
 def test_unrecognized_usdt_symbol_syntax_is_not_silently_skipped() -> None:
     with pytest.raises(s.SchemaMismatchError, match="unsupported_usdt_directory"):
         m.root_symbols(html("BTCUSDT/", "UNRECOGNIZED-USDT/"))
+
+
+def test_companion_report_binds_its_own_code_and_captured_inputs(tmp_path: Path) -> None:
+    report, _ = execute(tmp_path, {OLD: html(OLD + "2025-02-01.csv.gz")})
+    root = tmp_path / "supplement"
+    assert report["supplement"]["code"] == {"synthetic": True}
+    assert report["supplement"]["binding_valid"] is True
+    assert (
+        s.digest((root / "evidence-hashes.json").read_bytes())
+        == report["supplement"]["evidence_sha256"]
+    )
+    hashes = json.loads((root / "evidence-hashes.json").read_text())
+    assert "run.json" in hashes and "combined-stage1-report.json" not in hashes
+    assert all(s.digest((root / name).read_bytes()) == sha for name, sha in hashes.items())
