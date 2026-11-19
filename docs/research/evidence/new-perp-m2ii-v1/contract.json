@@ -1,5 +1,5 @@
 {
-  "rules": "new_perp_m2ii_v1",
+  "rules": "new_perp_m2ii_v2",
   "source_revision": "8748d9ef664b4b0c65f885420692166dd8ad7a54",
   "source_report_sha256": "400f635ea29ac52dc5999caa866b152fa14cea1b82381ce91270012821a853ca",
   "source_manifest_sha256": "759305ceaf5730ff0b7f23963a2c17292590ecb590d0336376cc139a0b5ca76d",
@@ -29,7 +29,7 @@
       "method": "GET",
       "url": "https://public.bybit.com/trading/{SYMBOL}/",
       "params": "one request per in-window launch and one per archive-only candidate",
-      "parsed": "admitted symbol, first archived day, last pre-cut day and pre-cut file count",
+      "parsed": "exact-prefix pre-cut facts, or opaque pre-cut filename identity uncertainty",
       "discarded": "post-cut names, dates and counts; raw HTML, schema keys and body hashes",
       "expected": 0,
       "max_requests": 1200,
@@ -49,9 +49,10 @@
   "threshold": "archive_only/(frozen_catalog+archive_only) <= 0.05",
   "catalog_policy": "frozen window symbols only; no fresh C1 subtraction",
   "privacy": "random opaque request keys; no unadmitted names, raw bodies or body hashes",
-  "identity": "first archived day, not a verified instrument launch date",
+  "identity": "exact directory/file prefix only; first archived day is not a launch date",
+  "foreign_prefix": "valid pre-cut foreign-prefix file blocks M2(ii); opaque issue only",
   "restart": "no resume; existing output roots are refused before HTTP",
   "failure": "any incomplete source, response, scan or budget leaves stage1_incomplete",
   "operational_counts": "attempts and bytes may vary; no post-cut launch metric is kept",
-  "request_list_sha256": "4ca2124139eb28e4c38dc00e40b4a245eb7a5c357c5729028842f61221854a7c"
+  "request_list_sha256": "58d1b275cbbade46d62a7fb7fc98e0f1a3c69e06f82ded14f3c95baef1b3d5c0"
 }

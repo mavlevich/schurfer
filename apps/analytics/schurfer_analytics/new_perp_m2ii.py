@@ -25,7 +25,7 @@ from .bybit_carry_feasibility import publish_once
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
-VERSION = "new_perp_m2ii_v1"
+VERSION = "new_perp_m2ii_v2"
 SOURCE_REVISION = "8748d9ef664b4b0c65f885420692166dd8ad7a54"
 SOURCE_REPORT = "400f635ea29ac52dc5999caa866b152fa14cea1b82381ce91270012821a853ca"
 SOURCE_MANIFEST = "759305ceaf5730ff0b7f23963a2c17292590ecb590d0336376cc139a0b5ca76d"
@@ -64,7 +64,7 @@ def class_specs() -> dict[str, s.ClassSpec]:
             max_requests=MAX_DIRECTORIES,
             max_class_bytes=MAX_BYTES,
             expected=0,
-            parsed="admitted symbol, first archived day, last pre-cut day and pre-cut file count",
+            parsed="exact-prefix pre-cut facts, or opaque pre-cut filename identity uncertainty",
             discarded="post-cut names, dates and counts; raw HTML, schema keys and body hashes",
             note="plan size unknown before the root; frozen catalog subtraction, no resume",
         ),
@@ -85,7 +85,8 @@ def build_contract() -> dict[str, Any]:
         "threshold": "archive_only/(frozen_catalog+archive_only) <= 0.05",
         "catalog_policy": "frozen window symbols only; no fresh C1 subtraction",
         "privacy": "random opaque request keys; no unadmitted names, raw bodies or body hashes",
-        "identity": "first archived day, not a verified instrument launch date",
+        "identity": "exact directory/file prefix only; first archived day is not a launch date",
+        "foreign_prefix": "valid pre-cut foreign-prefix file blocks M2(ii); opaque issue only",
         "restart": "no resume; existing output roots are refused before HTTP",
         "failure": "any incomplete source, response, scan or budget leaves stage1_incomplete",
         "operational_counts": "attempts and bytes may vary; no post-cut launch metric is kept",
@@ -203,7 +204,8 @@ def root_symbols(body: bytes) -> dict[str, Any]:
 def listing(symbol: str, body: bytes) -> dict[str, Any]:
     before: list[str] = []
     recognized = False
-    pattern = re.compile(re.escape(symbol) + r"(\d{4}-\d{2}-\d{2})\.csv\.gz")
+    foreign_before = False
+    pattern = re.compile(r"([A-Z0-9]+USDT)(\d{4}-\d{2}-\d{2})\.csv\.gz")
     for href in links(body):
         if href == "../":
             continue
@@ -211,14 +213,20 @@ def listing(symbol: str, body: bytes) -> dict[str, Any]:
         if not match:
             raise s.SchemaMismatchError("unsupported_file_anchor")
         try:
-            day = date.fromisoformat(match[1]).isoformat()
+            day = date.fromisoformat(match[2]).isoformat()
         except ValueError as exc:
             raise s.SchemaMismatchError("invalid_file_day") from exc
         recognized = True
         if day < s.CUT_DAY:
-            before.append(day)
+            if match[1] == symbol:
+                before.append(day)
+            else:
+                foreign_before = True
     if not recognized:
         raise s.SchemaMismatchError("unverifiable_listing")
+    if foreign_before:
+        # Neither prefix is admitted as an instrument, even alongside matching files.
+        return {"identity_status": "unverified_pre_cut_filename"}
     if not before:
         return {}  # Positive format evidence, no post-cut identity/date/count survives.
     days = sorted(set(before))
@@ -288,12 +296,14 @@ def combined_report(
     complete: bool,
     usage: dict[str, Any],
     contract: dict[str, Any],
+    *,
+    identity_unverified: int = 0,
 ) -> dict[str, Any]:
     report: dict[str, Any] = json.loads(json.dumps(source.report))
     archive_only = sum(s.WINDOW_START_DAY <= r["first_day"] < s.CUT_DAY for r in accepted)
     n = len(source.symbols)
     share = archive_only / (n + archive_only)
-    report["version"] += "+m2ii_v1"
+    report["version"] += "+m2ii_v2"
     if complete:
         report["m2"]["counts"]["archive_only_in_window"] = archive_only
         report["m2"]["counts"]["archive_only_unlisted"] = 0
@@ -320,9 +330,31 @@ def combined_report(
             report["stop_codes"].append("incomplete_coverage")
         elif not report["not_assessed"] and not report["stop_codes"] and report["m2"]["pass"]:
             report["outcome"] = "stage1_pass_partial"
+    if complete and identity_unverified:
+        # A completed HTTP scan is not a completed identity check. Never assign a
+        # mismatched prefix to the directory or erase it from the denominator.
+        report["m2"]["counts"]["archive_filename_identity_unverified"] = identity_unverified
+        report["m2"]["counts"]["archive_only_unlisted"] = None
+        report["m2"]["counts"]["candidates_listed"] = None
+        report["m2"]["shares"]["archive_only"] = None
+        report["m2"].update(
+            archive_only_assessed=False,
+            archive_only_status="filename_identity_unverified",
+            **{"pass": False},
+        )
+        report["not_assessed"].append("m2_archive_filename_identity_unverified")
+        report["partial_checks"].append(
+            "m2(ii): pre-cut foreign-prefix filenames have unresolved identity; "
+            "no prefix is assigned to an instrument and no positive verdict is allowed"
+        )
+        # A known threshold breach remains a failure; uncertainty cannot mask it.
+        if share <= 0.05:
+            report["outcome"] = "stage1_incomplete"
     report["supplement"] = {
         "rules": VERSION,
         "complete": complete,
+        "identity_check_complete": complete and not identity_unverified,
+        "identity_unverified_directories": identity_unverified,
         "source": source.binding,
         "request_list_sha256": contract["request_list_sha256"],
         "requests": usage,
@@ -361,6 +393,7 @@ def run(
         **options,
     )
     accepted: list[dict[str, Any]] = []
+    identity_unverified = 0
     complete = False
     source_intact = True
     with private_logs():
@@ -383,7 +416,10 @@ def run(
                 if result["outcome"] != "ok":
                     raise s.FetchStoppedError("listing_unavailable")
                 facts = result["facts"]
-                if facts:
+                if facts.get("identity_status") == "unverified_pre_cut_filename":
+                    identity_unverified += 1
+                    publish_once(root / "identity-unverified" / f"{request.key}.json", facts)
+                elif facts:
                     accepted.append(facts)
                     publish_once(root / "admitted" / f"{request.key}.json", facts)
             complete = True
@@ -402,7 +438,9 @@ def run(
                 complete = False
                 fetcher.record_stop("source_integrity_error")
     usage = fetcher.summary()
-    report = combined_report(source, accepted, complete, usage, contract)
+    report = combined_report(
+        source, accepted, complete, usage, contract, identity_unverified=identity_unverified
+    )
     if not source_intact:
         report["outcome"] = "source_integrity_error"
     evidence = {
@@ -418,7 +456,10 @@ def run(
     )
     publish_once(root / "combined-stage1-report.json", report)
     if complete:
-        publish_once(root / "supplement_done.json", {"complete": True})
+        publish_once(
+            root / "supplement_done.json",
+            {"complete": True, "identity_check_complete": not identity_unverified},
+        )
     return report
 
 
@@ -465,7 +506,7 @@ def main(argv: list[str] | None = None) -> int:
             validate_source=validate_inputs,
         )
     print(json.dumps({"outcome": report["outcome"], "complete": report["supplement"]["complete"]}))  # noqa: T201
-    return 0 if report["supplement"]["complete"] else 1
+    return 0 if report["supplement"]["complete"] and not report["not_assessed"] else 1
 
 
 if __name__ == "__main__":
