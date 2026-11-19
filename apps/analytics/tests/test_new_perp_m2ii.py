@@ -384,3 +384,13 @@ def test_checked_in_contract_and_public_aggregates_match_frozen_bindings() -> No
     ]:
         raw = gzip.decompress((evidence / name).read_bytes())
         assert s.digest(raw) == expected and b"USDT" not in raw
+
+
+def test_other_market_directories_do_not_break_the_root_parser() -> None:
+    result = m.root_symbols(html("BTCUSDT/", "BTCUSDT-27DEC24/", "BTCUSD/", "spot/"))
+    assert result == {"symbols": ["BTCUSDT"]}
+
+
+def test_unrecognized_usdt_symbol_syntax_is_not_silently_skipped() -> None:
+    with pytest.raises(s.SchemaMismatchError, match="unsupported_usdt_directory"):
+        m.root_symbols(html("BTCUSDT/", "UNRECOGNIZED-USDT/"))

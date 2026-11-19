@@ -187,10 +187,12 @@ def root_symbols(body: bytes) -> dict[str, Any]:
     for href in links(body):
         if href in ("../", "/"):
             continue
-        match = re.fullmatch(r"([A-Z0-9]+)/", href)
+        match = re.fullmatch(r"([A-Za-z0-9_-]+)/", href)
         if not match:
             raise s.SchemaMismatchError("unsupported_root_anchor")
         symbol = match[1]
+        if symbol.endswith("USDT") and not s.SYMBOL.fullmatch(symbol):
+            raise s.SchemaMismatchError("unsupported_usdt_directory")
         if s.SYMBOL.fullmatch(symbol):
             names.add(symbol)
     if not names:
