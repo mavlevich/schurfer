@@ -39,8 +39,9 @@ stops that route; another window cannot silently replace it.
 - Keep the registered ages 3/7/14 days and seven-day hold; V1 decides. For V1,
   `E = ceil_to_minute(T0 + 7 days)` and `X = E + 7 days`. The full path and the
   `E - 30 days` lookback must remain inside the holdout. Compare exact timestamps,
-  not an approximate launch-day cutoff. Equality with the exclusive end is not
-  an eligible exit observation.
+  not an approximate launch-day cutoff. X is the end of the exit bar `[X - 1 minute, X)`: `X == cut` is
+  eligible, and only `X > cut` is window-censored. Bar/trade/settlement starts
+  remain strictly below cut; funding for an open position uses `E < stamp < X`.
 - Never query an out-of-window bar to rescue an entry, lookback, path or sample
   size. Funding/trade/mark coverage requests must be clipped to this window too.
   An internal data gap is not a delisting; no nearest-bar substitution is allowed.
@@ -61,7 +62,7 @@ Proposed metadata ceilings are intentionally finite and do not promise completio
 
 | Class |       Logical request ceiling | Per-response cap |  Class byte ceiling |
 | ----- | ----------------------------: | ---------------: | ------------------: |
-| C1    | 9 pages across three statuses |            3 MiB |              27 MiB |
+| C1    | 9 pages across three statuses |            3 MiB |              28 MiB |
 | C3    |                        1 root |            4 MiB |               9 MiB |
 | D1    |      1,500 unique directories |            1 MiB |             384 MiB |
 | D2h   |          300 first-file HEADs |     0 body bytes | shared stage budget |
@@ -175,6 +176,27 @@ from completed partial checks. A failure is not erased by missing evidence. At
 most `stage1b_pass_partial` may be proposed after all contracted checks finish;
 metadata alone must return `metadata_complete_coverage_pending` or an explicit
 stop/incomplete result, never a stage pass.
+
+## Four review clarifications, implemented in the metadata proposal
+
+1. X is an exit-bar end: censor only `X > cut`. A bar ending exactly at cut is
+   wholly within the window; no start timestamp at cut is admitted.
+2. C1 class bytes are 28 MiB, including room to reserve 3 MiB plus 64 KiB on
+   the ninth full response. D2h's shared-budget sentinel is integer zero.
+3. Unknown M2(ii) folders retain only a pre-window boolean. Catalog folders
+   compute near-launch, day class and ticker-reuse predicates in RAM from all
+   pre-cut dates, without persisting dates before the window. A first file before
+   the window gives `t0_pre_window_unreadable`, no T0 is invented and neither
+   HEAD nor CSV GET is allowed. An early launch's later lookback exclusion does
+   not silently make its M1 clock known.
+4. Both directory classes use the same strict HTML parser. Canonical prefixes
+   from catalog folders, including foreign/mixed prefixes, protect the M2(ii)
+   frozen collision set. C1 rows lacking an admitted label remain opaque catalog
+   slots in N and the M1/M2(i)/M3/reason counters. Prior C1 labels/bases are RAM
+   only for relist/multiplier predicates.
+
+The [metadata executable proposal](new-perp-stage1b-metadata-v1.md) is separate
+from this architectural draft. It implements no body/coverage fetch.
 
 ## Implementation and review gates before any request
 

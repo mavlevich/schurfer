@@ -37,7 +37,7 @@
         },
         "max_logical_requests": 9,
         "max_response_bytes": 3145728,
-        "max_class_bytes": 28311552
+        "max_class_bytes": 29360128
       },
       {
         "class": "C3",
@@ -61,7 +61,7 @@
         "url": "https://public.bybit.com/trading/{opaque_directory}/{first_file}",
         "max_logical_requests": 300,
         "max_response_bytes": 0,
-        "max_class_bytes": null
+        "max_class_bytes": 0
       }
     ],
     "success_outcome": "metadata_complete_coverage_pending"
@@ -98,11 +98,9 @@
     "prior_allowance_reuse": false
   },
   "not_implemented": [
-    "explicit window configuration preserving discovery behavior",
-    "private C1 and D2h transport/planning/reporting",
-    "synthetic and local fake-server verification",
-    "executable request-list and transitive publication hash",
-    "proposed seen-windows registration for executable contract"
+    "body/coverage queue and budget after sealed metadata manifest",
+    "body/coverage fetch, exact T0 and full M1-M6 verdict",
+    "exam outcome read"
   ],
   "out_of_scope": [
     "price or return interpretation",
@@ -110,5 +108,15 @@
     "exam outcome read",
     "AWS or Hyperliquid registration",
     "deployment, paper trading or orders"
-  ]
+  ],
+  "review_clarifications": {
+    "exit_end": "censor X>cut only; X==cut ends an in-window bar",
+    "catalog_pre_window": "RAM dates -> fixed near-launch/day-class/reuse predicates; no pre-window HEAD/CSV",
+    "catalog_parser": "shared strict parser; all catalog canonical prefixes protect M2(ii) collisions",
+    "denominator": "every in-window C1 row remains N even no_archive or unnamed"
+  },
+  "implementation_status": {
+    "metadata": "local code proposal; not reviewed/merged/authorized",
+    "body_coverage": "not implemented"
+  }
 }
