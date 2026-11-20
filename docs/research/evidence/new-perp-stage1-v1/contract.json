@@ -1,0 +1,258 @@
+{
+  "classes": [
+    {
+      "cls": "C1",
+      "discarded": "priceFilter (every field), upperFundingRate, lowerFundingRate, preListingInfo contents, every other field",
+      "expected_requests": 4,
+      "go": 1,
+      "max_class_bytes": 28311552,
+      "max_requests": 9,
+      "max_response_bytes": 3145728,
+      "method": "GET",
+      "name": "catalog_linear",
+      "note": "rows launched from 2025-10-01 are dropped before any other field is read",
+      "params": "category=linear, status in (Trading, Delivering, Closed), limit=1000, cursor",
+      "parsed": "symbol, baseCoin, contractType, settleCoin, status, launchTime, deliveryTime, fundingInterval, isPreListing (presence), lotSizeFilter.minNotionalValue, lotSizeFilter.qtyStep, lotSizeFilter.minOrderQty, leverageFilter.maxLeverage",
+      "phase": 0,
+      "url": "https://api.bybit.com/v5/market/instruments-info"
+    },
+    {
+      "cls": "C3",
+      "discarded": "the page itself, every directory with no date or a date from the cut or a catalog symbol, and any count of directories",
+      "expected_requests": 1,
+      "go": 1,
+      "max_class_bytes": 9437184,
+      "max_requests": 2,
+      "max_response_bytes": 4194304,
+      "method": "GET",
+      "name": "archive_root",
+      "note": "reduced in memory against the whole catalog; an unknown date is not kept; max 2 because an interrupted phase 0 repeats once",
+      "params": "none",
+      "parsed": "directory names ending USDT that are absent from the whole catalog and whose modification date is inside the window; for them the date, compared only with the window",
+      "phase": 0,
+      "url": "https://public.bybit.com/trading/"
+    },
+    {
+      "cls": "D1",
+      "discarded": "file names and dates from 2025-10-01 (dropped uncounted), sizes, every other byte",
+      "expected_requests": 263,
+      "go": 1,
+      "max_class_bytes": 268435456,
+      "max_requests": 450,
+      "max_response_bytes": 1048576,
+      "method": "GET",
+      "name": "archive_listing",
+      "note": "",
+      "params": "one request per in-window launch and one per archive-only candidate",
+      "parsed": "file names matching SYMBOL + YYYY-MM-DD + .csv.gz and their dates, only dates before 2025-10-01 are kept",
+      "phase": 1,
+      "url": "https://public.bybit.com/trading/{SYMBOL}/"
+    },
+    {
+      "cls": "D2h",
+      "discarded": "everything else (a HEAD has no body)",
+      "expected_requests": 258,
+      "go": 1,
+      "max_class_bytes": 0,
+      "max_requests": 300,
+      "max_response_bytes": 0,
+      "method": "HEAD",
+      "name": "first_file_head",
+      "note": "proves the first file exists and gives its size for the preflight of D2",
+      "params": "none; only launches whose first listed day is within one day of launchTime",
+      "parsed": "HTTP status and Content-Length",
+      "phase": 2,
+      "url": "https://public.bybit.com/trading/{SYMBOL}/{SYMBOL}{FIRST_DAY}.csv.gz"
+    },
+    {
+      "cls": "D2",
+      "discarded": "columns 2 and later of every row (side, size, price, ids, notionals), unparsed; the file is never stored",
+      "expected_requests": 258,
+      "go": 2,
+      "max_class_bytes": 8321499136,
+      "max_requests": 300,
+      "max_response_bytes": 536870912,
+      "method": "GET",
+      "name": "first_file",
+      "note": "runs only if the summed Content-Length of D2h is at most the class byte cap",
+      "params": "none; the whole first daily file, streamed and gunzipped in memory",
+      "parsed": "column 1 only (the trade timestamp): minimum, maximum, first, last, row count",
+      "phase": 2,
+      "url": "https://public.bybit.com/trading/{SYMBOL}/{SYMBOL}{FIRST_DAY}.csv.gz"
+    },
+    {
+      "cls": "D3",
+      "discarded": "open, high, low, close, volume, turnover, unparsed",
+      "expected_requests": 228,
+      "go": 2,
+      "max_class_bytes": 25165824,
+      "max_requests": 300,
+      "max_response_bytes": 65536,
+      "method": "GET",
+      "name": "entry_trade_bar",
+      "note": "one V1 entry bar per entry candidate; decides entry_unavailable",
+      "params": "category=linear, symbol, interval=1, start=E, end=E, limit=1",
+      "parsed": "column 1 only (the bar start time), existence",
+      "phase": 3,
+      "url": "https://api.bybit.com/v5/market/kline"
+    },
+    {
+      "cls": "D4",
+      "discarded": "open, high, low, close, unparsed",
+      "expected_requests": 228,
+      "go": 2,
+      "max_class_bytes": 157286400,
+      "max_requests": 300,
+      "max_response_bytes": 524288,
+      "method": "GET",
+      "name": "mark_hourly",
+      "note": "hourly mark-price series over days 3 to 21, one page per launch",
+      "params": "category=linear, symbol, interval=60, start=T0+3d, end=min(T0+21d, cut), limit=1000",
+      "parsed": "column 1 only (the bar start time): count, oldest, newest and the runs of missing hours",
+      "phase": 3,
+      "url": "https://api.bybit.com/v5/market/mark-price-kline"
+    },
+    {
+      "cls": "D5",
+      "discarded": "open, high, low, close, volume, turnover, unparsed",
+      "expected_requests": 228,
+      "go": 2,
+      "max_class_bytes": 157286400,
+      "max_requests": 300,
+      "max_response_bytes": 524288,
+      "method": "GET",
+      "name": "trade_hourly",
+      "note": "hourly trade-bar series over days 3 to 21, one page per launch",
+      "params": "category=linear, symbol, interval=60, start=T0+3d, end=min(T0+21d, cut), limit=1000",
+      "parsed": "column 1 only (the bar start time): count, oldest, newest and the runs of missing hours",
+      "phase": 3,
+      "url": "https://api.bybit.com/v5/market/kline"
+    },
+    {
+      "cls": "D6",
+      "discarded": "fundingRate (every row), unparsed",
+      "expected_requests": 239,
+      "go": 2,
+      "max_class_bytes": 314572800,
+      "max_requests": 1200,
+      "max_response_bytes": 262144,
+      "method": "GET",
+      "name": "funding_history",
+      "note": "paged by the HYP-036 rule; at most four pages per launch",
+      "params": "category=linear, symbol, startTime=T0+3d, endTime paged backwards, limit=200",
+      "parsed": "fundingRateTimestamp only: per page the row count, oldest, newest and the largest gap between consecutive timestamps",
+      "phase": 3,
+      "url": "https://api.bybit.com/v5/market/funding/history"
+    }
+  ],
+  "go_limits": {
+    "1": {
+      "max_attempts": 1000,
+      "max_bytes": 314572800
+    },
+    "2": {
+      "max_attempts": 2400,
+      "max_bytes": 9126805504
+    }
+  },
+  "go_sha256": {
+    "1": "02b5ac65932302e377563cc9d8ce1a1448cd3c94b022cb797a214a4a77f359fe",
+    "2": "5324b08114db77c5cc999aa0f7f79f994ff101968b2a9d04ebb67ff4291713bb"
+  },
+  "limits": {
+    "api_error_rule": "an HTTP 200 envelope with retCode other than 0 records only its retCode and retMsg; a retryable code is retried under the pacing rules, any other code stops the run naming the code; a wrong envelope shape stops it as a schema mismatch; retCode must be an integer, never a boolean or float, before any success or retry classification; schema stops persist a fixed reason",
+    "attempts_per_request": 3,
+    "backoff_s": [10, 30, 60],
+    "byte_rule": "a request starts only if used + response cap + read reserve fits the step budget and the class budget; every received byte is accounted; a declared length over the cap reads nothing; the transport reads at most the reserve per call",
+    "funding_max_pages": 4,
+    "funding_max_step_ms": 28800000,
+    "funding_page_limit": 200,
+    "max_archive_only": 150,
+    "max_launches": 300,
+    "max_retry_after_s": 300,
+    "max_spacing_s": 8.0,
+    "per_file_cap_bytes": 536870912,
+    "rate_limit_ret_codes": [10006, 10018],
+    "read_reserve_bytes": 65536,
+    "spacing_s": 1.0,
+    "transient_ret_codes": [10000, 10016]
+  },
+  "protocol": "docs/research/new-perp-short-lab-protocol-v1.md",
+  "request_list_sha256": "8a4758760af4889078f2034eba77c78a8f1885b8269fce6b2cde863259cf9c17",
+  "rules": "new_perp_stage1_v1",
+  "static_requests": [
+    {
+      "cls": "C1",
+      "method": "GET",
+      "params": [
+        ["category", "linear"],
+        ["status", "Trading"],
+        ["limit", "1000"]
+      ],
+      "url": "https://api.bybit.com/v5/market/instruments-info"
+    },
+    {
+      "cls": "C1",
+      "method": "GET",
+      "params": [
+        ["category", "linear"],
+        ["status", "Delivering"],
+        ["limit", "1000"]
+      ],
+      "url": "https://api.bybit.com/v5/market/instruments-info"
+    },
+    {
+      "cls": "C1",
+      "method": "GET",
+      "params": [
+        ["category", "linear"],
+        ["status", "Closed"],
+        ["limit", "1000"]
+      ],
+      "url": "https://api.bybit.com/v5/market/instruments-info"
+    },
+    {
+      "cls": "C3",
+      "method": "GET",
+      "params": [],
+      "url": "https://public.bybit.com/trading/"
+    }
+  ],
+  "stop_codes": [
+    "not_reconstructible",
+    "incomplete_coverage",
+    "identity_unresolved",
+    "insufficient_events",
+    "capital_infeasible"
+  ],
+  "study": "new-perp-short-v1",
+  "thresholds": {
+    "lifecycle_unrebuildable_max": 0.15,
+    "m1_aligned_from_ms": -300000,
+    "m1_aligned_to_ms": 3600000,
+    "m1_ambiguous_max": 0.1,
+    "m1_delayed_to_ms": 86400000,
+    "m1_readable_min": 0.9,
+    "m2_archive_only_max": 0.05,
+    "m2_near_launch_days": 1,
+    "m2_no_file_near_launch_max": 0.05,
+    "m2_path_days_missing_max": 0.05,
+    "m3_contradicting_max": 0.1,
+    "m3_unverifiable_max": 0.2,
+    "m4_funding_uncovered_max": 0.05,
+    "m5_bars_min": 0.95,
+    "m5_entry_or_unresolved_max": 0.05,
+    "m6_feasible_min": 0.9,
+    "m6_min_leverage": 2,
+    "m6_order_notional_usd": 50,
+    "min_episodes": 100,
+    "min_weeks": 26,
+    "ticker_reuse_first_file_days": 60,
+    "ticker_reuse_gap_days": 30
+  },
+  "windows": {
+    "cut": "2025-10-01T00:00:00+00:00",
+    "discovery_start": "2024-10-01T00:00:00+00:00",
+    "note": "nothing dated from the cut is read, recorded or counted"
+  }
+}

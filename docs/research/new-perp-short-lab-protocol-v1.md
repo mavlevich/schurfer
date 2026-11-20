@@ -296,6 +296,98 @@ undefined, so **no position was modelled**, the slot is never taken, and the epi
 only, not from prices**, and it is counted in the M5 coverage share and in the 5% gate of
 section 8 (example A9).
 
+**Amendment 1 (2026-11-17, stage 1 contract, with the owner's and the colleague's
+decisions).** The stage 1 evidence for M4, M5 and M6 is fixed as follows. It deviates from the
+text of the M4 to M6 table above, which is why it is written here and not left to the request
+list.
+
+- **M5 at stage 1** proves (a) the 1-minute trade bar that starts at `E` exists (else
+  `entry_unavailable`), and (b) **hourly** trade and mark-price series are **continuous** over
+  the V1 path, from the hour of `E` to the hour before `X`: a missing hour inside the path is a
+  gap, a series that ends early is a gap unless a catalog delivery time at or before the first
+  missing hour confirms the end, and a page that may be cut by its row limit proves nothing.
+  **Continuity at minute level over the whole path is proven at stage 4**, when those bars are
+  fetched; the gap rule of 5.3 is unchanged. Stage 1 does not request minute bars.
+- **M4 at stage 1** is a **coarse check, not proof**: finishing the pagination is not enough,
+  and coverage passes only if the funding timestamps form one chain with no step above 8 hours,
+  start at most one step after the span start and end at most one step before its end (or the
+  catalog delivered the symbol). It is labelled "no gap longer than 8 h". It does not show that
+  every settlement is present when the real interval is shorter than 8 hours, and the catalog
+  `fundingInterval` is a current snapshot, so the report counts those launches apart.
+- **M6 at stage 1 is a partial check** on catalog fields only. It can fail an order, and it
+  never shows that an order opens: no price, quantity rounding, risk limit or depth is checked.
+- **Not read at stage 1:** order-book existence (item 7 stays a later decision), the spot
+  catalog, announcements, and the first bar with volume: `T0` is the first public trade.
+- **M2, second share** is assessed only for archive directories that are absent from the catalog
+  and whose last file is inside the window. A directory whose date is unknown or later is not
+  kept, because the cut forbids recording a launch date of the test year. It is a lower bound
+  and is **never proven**: it can fail the gate, not prove it.
+- **Stage 1 runs as two gos:** metadata only (catalog, archive names, listings, file sizes), then
+  first files, entry bars, hourly series and funding after the owner reviews the manifest of
+  the first. See the [stage 1 request list](new-perp-stage1-request-list-v1.md).
+
+**Proposed Amendment 2 (2026-11-19, separate M2(ii) metadata contract).** The
+[M2(ii) supplement](new-perp-m2ii-supplement-v1.md) can assess the observed
+archive using first daily-file dates rather than a root modification date.
+It binds the completed run's frozen 263 catalog symbols; a fresh catalog is
+not subtracted. Unknown names stay in RAM until a pre-cut file admits the name.
+Before admission only opaque operational attempt/byte accounting is retained,
+without names, URLs, raw-body hashes, schema keys or post-cut launch metrics.
+This is a separate capped go, not a continuation of either original go.
+Incomplete scans remain incomplete. The original report stays immutable; the
+companion preserves M4/M5/M6 and the remaining partial limits. Observed archive
+coverage never proves all market launches or historical instrument identity.
+This proposal authorizes no read.
+
+**Proposed Amendment 3 (2026-11-19, M2(ii) filename identity).** Supplement v2
+recognizes dated CSV-gzip filenames independently of their containing directory.
+A pre-cut foreign prefix never establishes shared identity: retain only an opaque
+unresolved issue, continue the metadata scan, and block a positive M2(ii) verdict.
+Mixed-prefix directories do not admit even their matching-prefix dates. Valid
+post-cut-only files retain no identity, date or scientific count. The exact share
+is unavailable while identity issues remain; a known matching-prefix numerator
+above 5% still fails. Scan completion is separate from identity-check completion.
+This proposal changes no episode selection and authorizes no read or reuse of
+stopped roots. Review, merge and an owner go for the new hash are required.
+
+**Proposed Amendment 4 (2026-11-19, fresh M2(ii) v3 filename cohort).** The
+[new v3 contract](new-perp-m2ii-file-prefix-v3.md) measures only the
+`observed_pre_cut_file_prefix_cohort`. A directory must have exactly one
+canonical pre-cut filename prefix, absent from the frozen 263 and unique across
+all unknown directories. Mixed/noncanonical prefixes and any cross-directory or
+frozen-catalog collision block a positive result without retaining blocked names.
+Canonical prefixes inside mixed directories participate in collision detection.
+Admission is delayed until the complete snapshot; no normalization, merge or
+inferred rename is allowed. Directory names are retained only when equal to the
+admitted prefix. Post-cut names/dates/counts disappear before scientific counters.
+The first pre-cut file day defines the observed series; pre-window series remain
+outside the numerator even if they continue into the window. The threshold stays
+`a/(263+a) <= 0.05` (13 passes, 14 fails), with explicit partial-archive labels and
+no claim of actual instrument identity or all market launches. Other Stage 1
+checks and the primary cohort are unchanged. Old reports remain immutable and
+incomplete. This proposal requires a fresh full HTML snapshot, review, merged code
+and a new owner go; it authorizes no request or repetition of CSV/Go 1/Go 2.
+
+**Proposed Amendment 5 (2026-11-19, sealed Stage 1b metadata only).** After
+discovery's reviewed `stage1_pass_partial`, the
+[metadata proposal](new-perp-stage1b-metadata-v1.md) implements C1/C3/D1/D2h only
+for `[2023-02-01, 2024-09-16)`, with a sealed cohort/manifest and aggregate output.
+It grants no request and no body/coverage or exam read. All in-window catalog rows
+remain in N even when their names cannot be admitted; missing archive evidence is
+not removed from coverage/identity counters. Prior catalog names/bases and early
+filename dates are RAM-only predicates. A first file before the window remains
+`t0_pre_window_unreadable` only when its day does not already prove ambiguity;
+known ambiguity retains `t0_ambiguous`. No HEAD/CSV access outside the window.
+Safe catalog labels retain only their in-window file-day calendar for M2(iii).
+A proven M2(i) missing-share lower bound is not hidden by a later HTTP stop when
+the catalog denominator and source integrity remain valid. Catalog
+and unknown folders share the strict parser; all canonical catalog-folder
+pre-cut prefixes protect the unknown-folder collision set. X is an exit-bar end,
+so only `X > cut` censors it, while start timestamps remain below cut. Discovery
+code, contracts, reports and partial checks are unchanged. The metadata proposal
+requires its own code/contract review, merged clean code, registry row and owner
+go for its exact new hash/caps. A body queue and budget need a later separate go.
+
 **Order books are not a gate.** Existence and depth of the order-book archive are
 **recorded, not required**: the share of episodes with a book at entry and at exit, at
 each order size, is reported. It decides only which cost source scenario L uses for

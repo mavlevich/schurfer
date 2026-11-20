@@ -1,0 +1,64 @@
+{
+  "rules": "new_perp_m2ii_v3",
+  "unit": "observed_pre_cut_file_prefix_cohort",
+  "source_report_sha256": "400f635ea29ac52dc5999caa866b152fa14cea1b82381ce91270012821a853ca",
+  "source_input_map_sha256": "cc20f7d5b06208a18772d3df4f0a3427e1975750aea6f94a17845e5f627b4c5e",
+  "prior_v2_report_sha256": "0590a619d8bc5ddac11e928a958038f360ad4616d3685b11c53dc11be31a1f23",
+  "prior_v2_input_map_sha256": "751a2f1bb1af744d26df25e68b928e729da93e122477abba0513b5ca9da408fe",
+  "diagnostic_report_sha256": "4449921d31dc9efdb61925d8f83b33c5ca0a39885f80de910cd5344b96017b49",
+  "diagnostic_input_map_sha256": "9a47070688e546eaf44715c37ed48cf6e9ac19407e0da7a9d37cecddd1ee8492",
+  "window": ["2024-10-01", "2025-10-01"],
+  "classes": [
+    {
+      "cls": "C3",
+      "name": "opaque_archive_root",
+      "phase": 0,
+      "method": "GET",
+      "url": "https://public.bybit.com/trading/",
+      "params": "none",
+      "parsed": "RAM-only pre-cut prefix facts; global admission after full scan",
+      "discarded": "post-cut identities/dates/counts, raw HTML, URLs, schema and body hashes",
+      "expected": 1,
+      "max_requests": 1,
+      "max_response_bytes": 4194304,
+      "max_class_bytes": 134217728,
+      "go": 1,
+      "note": "single snapshot; no C1, persisted candidate-name plan or resume"
+    },
+    {
+      "cls": "D1",
+      "name": "opaque_archive_dates",
+      "phase": 1,
+      "method": "GET",
+      "url": "https://public.bybit.com/trading/{SYMBOL}/",
+      "params": "one unknown directory GET, no query parameters",
+      "parsed": "RAM-only pre-cut prefix facts; global admission after full scan",
+      "discarded": "post-cut identities/dates/counts, raw HTML, URLs, schema and body hashes",
+      "expected": 0,
+      "max_requests": 1200,
+      "max_response_bytes": 1048576,
+      "max_class_bytes": 134217728,
+      "go": 1,
+      "note": "plan size unknown before the root; frozen catalog subtraction, no resume"
+    }
+  ],
+  "go_limits": {
+    "1": {
+      "max_attempts": 1500,
+      "max_bytes": 134217728
+    }
+  },
+  "max_directories": 1200,
+  "directory_scope": "unknown root directories only; frozen directory contents not rescanned",
+  "max_pre_cut_prefix_slots": 16384,
+  "admission": "one canonical pre-cut prefix per unknown directory, absent from frozen catalog",
+  "collision": "any shared canonical pre-cut prefix blocks all owners; no merge or normalization",
+  "threshold": "archive_only_in_window/(263+archive_only_in_window) <= 0.05",
+  "retention": "private file_prefix, first/last pre-cut day and count after global admission",
+  "directory_name": "only if exactly equal to the admitted pre-cut file_prefix",
+  "blocked_facts": "opaque status only; no blocked prefix or directory name persists",
+  "restart": "fresh sibling root; no resume or old report modification",
+  "failure": "incomplete scan, invalid source/schema or any cap prevents a positive result",
+  "partial": "observed archive filename cohort, not verified assets or all real launches",
+  "request_list_sha256": "11e5275769540faa7d1b03b3e66cecec074f836c33ff36546afeb75dc1a25de0"
+}

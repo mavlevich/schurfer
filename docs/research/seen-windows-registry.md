@@ -613,6 +613,42 @@ Completed on the owner's go, 2026-11-16:
   at the holdout titles of A2, not a confirmation read. The backward holdout keeps its
   registered status. [Diagnostic](catalyst-feasibility-a2-diagnostic-2026-11-16.md), section 6.
 
+## Bybit against Hyperliquid cost-only `bybit-hl-cost-only-v1`, drafted 2026-11-17
+
+[Contract draft](bybit-hl-cost-only-v1.md), Stage 2A of the
+[consilium plan](../consilium/plan.md). **Not registered for any request yet.** This row,
+the code and the colleague's design review must be in main before the first request.
+There is no AWS credential in the program: the owner has not decided to provide one, and
+every listing, request and download needs the owner's separate go. No request has been
+made and no market value has been read.
+
+Two steps, hard-separated:
+
+- **Step A, listing only.** Signed requester-pays `ListObjectsV2` of the Hyperliquid
+  archive bucket, `market_data/[date]/0/l2Book/` for 2023-02-01 to 2025-09-30, plus an
+  hourly refinement for coins first seen in the discovery year. At most 12,000 attempts,
+  256 MiB of response bytes, 3 requests per second. Object keys, dates and sizes only; no
+  object body, no price, no order book. **Level: coverage.** Discovery year: per-coin
+  results published. Backward holdout (2023-02-01 to 2024-09-15): aggregate counts only,
+  coin list sealed outside Git. Gap week (2024-09-16 to 2024-09-30): lookback only, no
+  per-date output.
+- **Step B, cost only.** One instant per date and pair, 2024-10-01 to 2025-09-30 only:
+  `T = D 00:00:30 UTC`, at most 12 dates and 108 pair observations, read from a `Range`
+  prefix of one Bybit `ob200` (else `ob500`) day file and one Hyperliquid `l2Book` hour 0
+  file. Stored: half spread and executable non-fee cost `x` in bps at USD 50, 250, 500 and 1,000,
+  statuses, and a boolean price-ratio diagnostic flag. Never stored or published: a price
+  level, a mid, a cross-venue ratio. At most
+  512 MiB of response bytes. **Level: features (cost only), discovery year only.** No
+  return, no price move between instants, no funding rate, no basis level, no open
+  interest.
+
+Not requested, in either step: the HYP-031 test year (2025-10-01 to 2026-09-28) and every
+date on or after 2026-09-29. The request builder refuses them. Step B never touches the
+backward holdout. The discovery year is already open at outcome level (the Bybit and
+Hyperliquid rows above); Step B is laboratory exposure on it, not a confirmation window.
+The test year is `reserved` here and unassigned in the program plan; the contract does
+not use it and lists the disagreement as an open question.
+
 ## I25 new-perp short `new-perp-short-v1`, draft protocol, 2026-11-16 (design only)
 
 [Draft protocol](new-perp-short-lab-protocol-v1.md), revision 10 after the colleague's
@@ -656,6 +692,54 @@ help-center and API documentation pages (the margin-change notice, the Insurance
 page, the Innovation Zone fee FAQ and the fee-group endpoint page), opened on
 2026-11-16 in the browser pane and by web search. They hold no market value.
 
+## I25 stage 1 registration `new-perp-short-v1`, request list v1 revision 2, 2026-11-17 (pending the owner's go)
+
+[Request list and contract](new-perp-stage1-request-list-v1.md), frozen as
+[`contract.json`](evidence/new-perp-stage1-v1/contract.json). This row, the code, the
+contract JSON and the request list must be in main before the first request; **each of the two
+gos needs the owner's go**. **This row records no read: nothing has been fetched.**
+
+**Level: coverage, discovery year only (2024-10-01 to 2025-09-30).**
+
+- **Go 1, metadata only** (526 planned requests, measured by the first read; at most 761, attempt cap 1,000, 300 MiB):
+  Bybit `instruments-info` linear catalog fields, the trade-archive root listing and
+  per-symbol file listings, and HEAD requests (status and size, no body) for the first daily
+  file of each launch.
+- **Go 2, after the owner reviews the go 1 manifest** (1,181 planned requests, at most 2,400,
+  attempt cap 2,400, 8.5 GiB, one 512 MiB cap per first file; the combined byte ceiling of both gos is about 8.8 GiB): the first daily trade file of each launch (column 1, the trade
+  timestamp, only), one entry minute bar, hourly trade and mark-price series (start times and
+  runs of missing hours only) and funding history (timestamps and page boundaries only). Go 2
+  also contains the mark-price, funding and bar coverage reads that protocol section 11 item 2
+  names, and it cannot start without a finished go 1 and the manifest hash.
+
+Every response also holds prices or rates. They are discarded unparsed and no price, rate,
+volume or return is stored or reported. Hashes: `request_list_sha256`
+`8a4758760af4889078f2034eba77c78a8f1885b8269fce6b2cde863259cf9c17`, go 1
+`02b5ac65932302e377563cc9d8ce1a1448cd3c94b022cb797a214a4a77f359fe`, go 2
+`5324b08114db77c5cc999aa0f7f79f994ff101968b2a9d04ebb67ff4291713bb` (request list revision 6, reviewed envelope handling after the Go 2 partial run below). The order-book archive and
+the spot catalog are **not** part of this registration; each is a later decision.
+
+**Cut.** Nothing dated from 2025-10-01 is read, recorded or counted: a catalog row launched from
+the cut is skipped before any other field is read, listing names from the cut are dropped
+uncounted, no total row count is stored, and an archive directory is kept only if it is absent
+from the catalog and its modification date is proven inside the window (an unknown date is not
+kept). No span of any series ends after 2025-09-30T23:59:59.999Z. This is how the HYP-031
+test year (2025-10-01 to 2026-09-28) and the HYP-012 v2 blind window (from 2026-09-29) stay
+unread and uncounted at metadata level too. A launch whose path would cross the cut is
+`window_censored` and gets no bar, mark or funding request.
+
+**Holdout.** Not requested. Catalog rows launched before 2024-10-01 are reduced to symbol, base
+and, only if it falls inside the window, a delivery date, kept as closed service material
+outside Git for `relist` and `multiplier_ambiguous` only. No date or count of them is
+published. Stage 1b stays a separate go.
+
+**Recorded after each go (not yet).** An aggregate report of counts, shares and stop codes (no
+symbol, no price), the run's `request_list_sha256`, the go hash and the code revision. The
+receipts stay sealed outside Git. After go 2 the discovery-year launches count as read at
+coverage level for this trigger, and nothing at outcome level. Stage 3 and stage 4 reads need
+their own request lists and rows. M5 at stage 1 proves the entry minute bar and hourly
+continuity only; minute-level continuity is proven at stage 4 (protocol Amendment 1).
+
 ## Stage 2C paper screens `stage-2c-paper-screens-v1`, 2026-11-17
 
 [Paper screens](stage-2c-paper-screens-v1.md) of I36, I35, I26, I27 and I45 at the
@@ -674,3 +758,275 @@ discovery year (2024-10-01 to 2025-09-30), needs its own contract and this regis
 row updated before its first request, and needs the owner's separate go. Reusing the
 local carry snapshot (2024-10-01 to 2026-09-28) for I36 would be a discovery-only read
 at a window already seen at the outcomes level. The holdout is not requested.
+
+## I25 stage 1 Go 1 read `new-perp-short-v1`, 2026-11-17 (coverage level, completed)
+
+[Result record](new-perp-stage1-go1-result-2026-11-17.md). Go 1 of the
+[stage 1 request list](new-perp-stage1-request-list-v1.md) was run on the owner's go from a clean
+`f6eb5c3`, bound to `request_list_sha256`
+`023b9863d1af73dbeaff5cc7cf64d0e77f3c0fdba295e4158f7c0e54982d6fe3`.
+
+**Level: coverage, discovery year only (2024-10-01 to 2025-09-30).** 526 requests, no retry, no
+stop: Bybit linear `instruments-info` catalog fields (4), the trade-archive root listing (1),
+per-symbol file listings (263) and HEAD requests (status and size, no body) for the first daily
+file of each launch (258). 11.4 MB of response bytes. **No price, rate, volume or return was read;
+no first daily file was downloaded.** Nothing dated from 2025-10-01 was read, recorded or counted,
+and no holdout, HYP-031 test-year or HYP-012 v2 blind-window input was requested.
+
+**Now read at coverage level for this trigger:** the discovery-year launch catalog fields, the
+archive file names and dates of those launches, and the sizes of their first daily files. Nothing
+at outcome level.
+
+**Findings recorded.** 22 of 258 first files exceed the 64 MiB per-file cap (a selection limit
+against the most active launches); M2 (ii) archive-only share is `not_assessed` (the root page has
+no modification dates). Manifest SHA-256
+`72395099c6110427f4b841cfb6bf4a477ed142bc829b6c0905fed158105317a0`. The lifted per-file cap is the
+reason for the contract amendment (PR 615); Go 1 is rerun in a new root under the new hashes, so
+the discovery-year metadata will be read at coverage level a second time. Receipts and
+`preflight.json` (per-symbol sizes and the 22 names) stay sealed outside Git.
+
+## I25 stage 1 Go 1 rerun and Go 2 partial read `new-perp-short-v1`, 2026-11-18 (coverage level, stopped)
+
+[Request list, section 6c](new-perp-stage1-request-list-v1.md). Run on the owner's go from a clean
+`e70a1b4`, in a new root (outside Git), bound to `request_list_sha256`
+`0a0c2ffc5371ce1b7e15ecc3c91419c5dda5edd3fd7e939229407a5b1b05e894`.
+
+**Level: coverage, discovery year only (2024-10-01 to 2025-09-30).**
+
+- **Go 1 rerun, complete:** 526 requests (catalog 4, archive root 1, listings 263, HEAD sizes 258),
+  11.4 MB, 08:43:05 to 08:51:56 UTC, outcome `go1_complete`. Manifest SHA-256
+  `759305ceaf5730ff0b7f23963a2c17292590ecb590d0336376cc139a0b5ca76d`: all 258 first files within the
+  512 MiB cap. This is the second coverage-level read of the same metadata.
+- **Go 2, partial, stopped:** 589 receipts, 6.28 GiB, 11:36:05 to 11:49:38 UTC. **D2:** the first daily
+  trade file of all 258 launches (6,425.47 MiB downloaded; column 1, the trade timestamp, kept, every
+  other column discarded unparsed). **D3:** the entry minute bar start time, 110 candidates. **D4:**
+  hourly mark-price series, 110. **D5:** hourly trade series, 109 (start times and runs of missing
+  hours only; the pages hold prices, discarded unparsed). **D6** (funding) not started. The run stopped
+  fail-closed on `D5: schema mismatch (envelope)`: a Bybit error envelope with an unknown retCode, whose
+  body is not kept. No verdict is computed from the partial run.
+
+**Now read at coverage level for this trigger, in addition to the Go 1 read:** the first-trade
+timestamps of 258 discovery-year launches, and the existence and continuity of the entry bar and hourly
+series of 110 candidates. **Nothing at outcome level.** No holdout, HYP-031 test-year or blind-window
+input was requested, and nothing dated from 2025-10-01 was read, recorded or counted.
+
+**Next.** The fix (this change) records the retCode of an error envelope and retries transient codes. Both
+gos are rerun in a new root under the new hashes, which reads the same discovery-year data a further
+time; each rerun needs the owner's go. Receipts and `preflight.json` stay sealed outside Git.
+
+**Diagnostic request, 2026-11-18.** On the owner's go, exactly one request outside any run budget:
+the TUTUSDT hourly trade kline (`interval=60`, `start=1742638383361`, `end=1744193583361`,
+`limit=1000`) that failed at seq 1115, sent once to `api.bybit.com` with no retry. **Coverage level,
+discovery year only** (the window is 2025-03-22 to 2025-04-09). Only `retCode` and `retMsg` were
+read, and the response was never stored. Result: **`retCode` 0, `retMsg` "OK"**: the stop at seq
+1115 did not reproduce. Its original cause and retCode remain unestablished;
+a later success is consistent with, but does not prove, a transient error.
+
+## I25 Stage 1 completed rerun, 2026-11-19 (coverage only, incomplete)
+
+On the owner's separate gos, the sealed `i25-stage1-v3-8748d9e` run executed
+Go 1 and Go 2 on clean revision `8748d9ef664b4b0c65f885420692166dd8ad7a54`.
+The approved discovery window is 2024-10-01 through 2025-09-30. Go 2 finished
+at 2026-11-18T23:17:11Z (2026-11-19 00:17 Europe/Warsaw).
+
+- Go 1: 526 attempts, 11,413,845 response-body bytes.
+- Go 2: 1,200 attempts, 6,753,329,719 bytes, no retries or API errors.
+- D2: all 258 first files, including the 22 above the former 64 MiB cap.
+- The frozen catalog has 263 launches; primary selection is 228 episodes in
+  48 ISO weeks. M4 is coarse, M5 minute continuity is deferred, M6 is static.
+- Outcome: `stage1_incomplete`; only M2(ii) is unassessed because root dates
+  were not extracted. This is not a trading outcome or a profitability test.
+
+Access was coverage level: file timestamps, bar/funding timestamps and metadata.
+Exchange bodies contained prices/rates, which were not extracted or retained.
+No test-year/holdout/blind-window outcome or new order path was read or run.
+The source remains sealed outside Git. Aggregate evidence is committed as
+`evidence/new-perp-stage1-v3/{stage1-report,manifest,stage1-verification}.json.gz`;
+decompression yields the original JSON, not private per-symbol inputs.
+
+Report SHA-256: `400f635ea29ac52dc5999caa866b152fa14cea1b82381ce91270012821a853ca`.
+Manifest SHA-256: `759305ceaf5730ff0b7f23963a2c17292590ecb590d0336376cc139a0b5ca76d`.
+
+## I25 M2(ii) supplement registration, 2026-11-19 (proposed, not read)
+
+The [separate contract](new-perp-m2ii-supplement-v1.md) binds that sealed report,
+manifest and source input hashes. It uses the frozen 263 symbols, not a fresh
+catalog. Only archive root/directory HTML may be requested, capped at 1,200
+unknown directories, 1,500 attempts and 128 MiB, including retries/reserves.
+Unknown names remain in memory until a pre-cut file admits them. Random opaque
+journal identifiers and operational counters are permitted; post-cut identities,
+dates and launch counts are not persisted. No CSV, price, bar, funding or book
+request is part of this supplement. There is no resume or mutation of the source.
+
+Supplement request-list SHA-256:
+`4ca2124139eb28e4c38dc00e40b4a245eb7a5c357c5729028842f61221854a7c`.
+This registration is a proposal, not evidence of a read or authorization for one.
+The owner must approve this exact scope/hash separately after review and merge.
+
+## I25 M2(ii) v1 actual read and link-format probe, 2026-11-19
+
+Coverage-level metadata only. Approved supplement v1 on clean merged `84f2ba5`
+made 81 attempts (one C3, 80 D1), read 4,421,748 bytes, and stopped on
+`unsupported_file_anchor`. No complete M2(ii) result was produced. A separate
+owner-authorized format probe made two GETs, read 174,885 bytes, and retained only
+`foreign_prefix_dated_csv_gz`. Current ordinal 80 does not prove continuity with
+the stopped directory. The probe's frozen caps were six attempts and 6 MiB;
+no names, hrefs, dates, raw bodies, CSV values, prices or rates were retained.
+These activities spent 83 attempts and 4,596,633 bytes; they did not modify the
+original Stage 1 root or the stopped supplement root. The probe verified both.
+
+Diagnostic report SHA-256:
+`59c02213bd70a2d2d52966cf33b15aaedb407782601446a988da947ff8fd3cc4`.
+
+## I25 M2(ii) v2 registration, 2026-11-19 (proposed, not read)
+
+The amended [contract](new-perp-m2ii-supplement-v1.md) keeps the frozen source,
+archive endpoints, 1,200-directory cap, 1,500-attempt cap and 128-MiB cap. It adds
+opaque pre-cut filename identity issues: scan completion never clears such an
+issue, and a positive M2(ii) verdict remains blocked. Matching directory/file
+prefixes are not inferred to equal foreign prefixes. Valid post-cut-only files
+leave no scientific identity, date or count. Exact share is null while identity
+is unresolved. All previously spent attempts and bytes remain spent.
+
+V2 request-list SHA-256: `88bebd47b124f1492f049a89ed428a78a2a9f1b03b22d285b92eba88736e6834`.
+This is a proposal only, with no new archive access. Review, merge and separate
+owner approval for this hash and a fresh root are required before execution.
+
+## I25 M2(ii) v2 actual read, 2026-11-19
+
+Approved coverage-only supplement on clean merged `7e958b8`, contract
+`88bebd47b124f1492f049a89ed428a78a2a9f1b03b22d285b92eba88736e6834`.
+The full archive HTML scan used 889 attempts and 42,631,655 response bytes:
+one C3 root, 888 D1 directory listings, all HTTP 200, no retries or stops.
+The 1,500-attempt and 128-MiB caps were respected. No CSV, price, bar, mark,
+funding, order-book or AWS request was included.
+
+One exact-prefix archive directory outside the frozen catalog has its first
+archived day in the discovery window. Two directories have unresolved pre-cut
+filename identity. Their names/dates were not retained; no identity is inferred
+and neither directory is silently zeroed. The scan is complete, the identity
+check is incomplete, and Stage 1 remains `stage1_incomplete`, with only
+`m2_archive_filename_identity_unverified` unassessed. Its exact share is null.
+The 228 primary episodes and existing partial-check limitations are unchanged.
+
+The [aggregate evidence](evidence/new-perp-m2ii-v2-result/README.md) preserves
+exact JSON bytes, hashes and an independent check of 2,233 captured inputs.
+Report SHA-256:
+`0590a619d8bc5ddac11e928a958038f360ad4616d3685b11c53dc11be31a1f23`.
+The sealed completed source and stopped v1 were verified unchanged. Earlier v1
+and probe spending (83 attempts, 4,596,633 bytes) remains spent separately.
+No further stage or metadata request is authorized by this record.
+
+## I25 targeted filename diagnostic registration, 2026-11-19 (proposed, not read)
+
+The [proposed diagnostic](new-perp-m2ii-identity-probe-v1.md) binds the sealed v2
+report/input map and the original Stage 1. It uses one fresh root HTML and two
+current opaque positions (80, 245), with no search fallback. Maximum nine new
+attempts and 20 MiB. It proposes private retention of prefixes evidenced by valid
+pre-cut filenames and their pre-cut day/count summaries, not verified asset
+identity. Directory names require their own matching pre-cut filename evidence.
+Post-cut names/dates/counts and raw responses are not retained. Private evidence
+is not published. Ordinal matching does not prove linkage to the old directories;
+no old report or M2 verdict can be promoted by this diagnostic.
+
+Proposed request-list SHA-256: `617cb488517081071727108945afe7634345fcf1baec22ff05fbfe500cd4ee21`.
+No new archive request was made. Review, merged code and separate owner approval
+of this exact new hash/caps in a fresh root are required before fetch.
+
+## I25 targeted filename diagnostic actual read, 2026-11-19
+
+Approved diagnostic on clean merged `3cf37ca`, contract
+`617cb488517081071727108945afe7634345fcf1baec22ff05fbfe500cd4ee21`.
+Three HTML GET attempts (one C3, two D1), all HTTP 200, 214,739 response bytes,
+no retries/stops, within nine attempts and 20 MiB. Private pre-cut prefix
+observations were captured; names/dates are not published. Each current folder
+has one pre-cut prefix with its first archived day before 2024-10-01, and neither
+folder has its own admitted pre-cut name. This is filename evidence only, not a
+rename, instrument identity or proof of linkage to the two prior v2 directories.
+
+Outcome `diagnostic_complete_unlinked`, continuity `not_proven`; sealed M2/Stage 1
+remain `stage1_incomplete`. Both sealed sources and all ten captured inputs
+were independently verified. No CSV, prices, funding, bars, books or AWS request
+was included. The original 228 episodes and partial checks are unchanged.
+Report SHA-256:
+`4449921d31dc9efdb61925d8f83b33c5ca0a39885f80de910cd5344b96017b49`.
+Further access or a revised M2 definition requires a separate reviewed decision.
+
+## I25 M2(ii) v3 registration, 2026-11-19 (proposed, not read)
+
+The [v3 contract](new-perp-m2ii-file-prefix-v3.md) proposes a fresh full archive
+HTML scan by observed canonical pre-cut filename series, not historical asset
+identity. Frozen catalog/source fingerprints and sealed prior v2/diagnostic
+inputs are verified. Exactly one canonical prefix per directory, disjoint from
+frozen_263 and unique across all unknown directories, is required for admission.
+Mixed/noncanonical cases and all prefix collisions remain anonymous blockers;
+canonical prefixes in mixed directories participate in collision detection too.
+No cross-directory merge or inferred rename. Admitted file_prefix is private;
+directory_name is retained only when equal to that admitted prefix.
+
+Caps: 1200 unknown directories, 1500 new attempts, 128 MiB, plus a fail-closed
+16384 pre-cut prefix-slot RAM cap. No provisional admission before full scan.
+No old run is resumed or rewritten; no CSV, market value, funding/bar/book or
+AWS request is included. All earlier spending remains spent. No v3 request
+has been made. Review, clean merged code and a new owner go are required.
+
+Proposed request-list SHA-256: `11e5275769540faa7d1b03b3e66cecec074f836c33ff36546afeb75dc1a25de0`.
+
+## I25 M2(ii) v3 actual read, 2026-11-19
+
+Owner-approved fresh HTML metadata scan on clean merged `49edd5d`,
+contract `11e5275769540faa7d1b03b3e66cecec074f836c33ff36546afeb75dc1a25de0`. The reviewed tree matched the merge tree; CI 6/6 passed
+on the reviewed head before merge. This run made 889 HTTP attempts,
+read 42631655 response bytes, and used 0 retries.
+Status counts: `{"200": 889}`.
+Caps of 1500 new attempts and 128 MiB were respected. No CSV, price, funding,
+trade/mark bar, book or AWS request was included; old allowances were not reused.
+
+Outcome `stage1_pass_partial`, HTTP scan complete `true`,
+file-prefix check complete `true`.
+Globally admitted pre-cut filename series: 453;
+first file before the discovery window: 452;
+first file inside the discovery window: 1.
+Unverified directories: 0; collision
+directories: 0. Exact M2(ii) share:
+`0.003787878787878788`. This is the approved observed-prefix partial cohort, not historical
+asset identity or a census of real launches. Known catalog-directory contents
+were not rescanned. Private prefixes and dates are not published.
+
+The 228 primary episodes, 48 ISO weeks and inherited
+M3/M4/M5/M6 limitations are unchanged. Three sealed source roots and all
+2233 captured v3 inputs were verified. Old reports remain
+unchanged and incomplete/unlinked as originally recorded. Report SHA-256:
+`38b569aa5dc713179ded3db70f7cdf788cea560db7c0c99c65d9332a879070b8`. Evidence-map SHA-256:
+`532d101483c2691c422e1ddce2187423dfce5d460c4de1b719d626b66645ad03`. No profitability claim or further data
+access follows from this record.
+
+## I25 Stage 1b metadata registration, 2026-11-19 (proposed, not read)
+
+The [metadata code/contract proposal](new-perp-stage1b-metadata-v1.md) binds the
+completed discovery v3 report and all four sealed source roots. It proposes
+coverage-level C1/C3/D1/D2h only for the backward holdout
+`[2023-02-01, 2024-09-16)`, with private opaque cohort/manifest and aggregate
+output. No holdout provider request or read has occurred in this work. Tests use
+synthetic responses and a loopback server only. Architecture approval is not
+fetch approval. No CSV GET, bars, funding, books, AWS, returns or exam is included.
+
+Proposed new caps: 2400 attempts, 469762048 response bytes (448 MiB), at most
+300 catalog rows and 1200 outside-cohort folders. A fresh 0700 sibling root is
+required; no old allowances or source facts are repurposed as holdout data.
+Early filenames/catalog rows contribute only the agreed RAM predicates, never
+exact pre-window dates or unadmitted names on disk. Unknown/colliding labels
+cannot disappear from the frozen catalog denominator. Metadata cannot return
+`stage1b_pass_partial`; a body-phase manifest review and separate go remain.
+
+Proposed request-list SHA-256:
+`31ae1a57970e7af98d2e52fd75534cf2604cd4a79bb889f25cd2f6a90fbada96`.
+
+Revision 2 supersedes the unexecuted metadata-v1 hash `e4513b79bfc4e2f8b31d1e691a3879565ad3f0e7372ab20ffd9793c69f772c9f`.
+It retains the in-window catalog calendar for M2(iii), preserves date-proven M1
+ambiguity/reasons and known M2(i) lower-bound failures after later HTTP stops.
+Rules are `new_perp_stage1b_metadata_v2`; caps and endpoints are unchanged. No
+holdout request was made under the superseded proposal or this revision.
+Code/contract review, clean merge, green CI and the owner's go for this exact
+hash/caps are required before any holdout access. The shared exam stays sealed;
+no parameter tuning on holdout facts is permitted.

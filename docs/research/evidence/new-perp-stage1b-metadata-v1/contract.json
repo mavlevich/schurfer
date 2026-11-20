@@ -1,0 +1,114 @@
+{
+  "before_window": "RAM-only filename dates and catalog labels; fixed predicates persist",
+  "body_phase": "not implemented, not authorized; separate reviewed manifest/hash/go",
+  "canonical_prefix": "[A-Z0-9]{1,30}USDT",
+  "catalog_calendar": "safe labels retain days_in_window; no outside-window dates",
+  "catalog_d1": "strict shared HTML parser; foreign prefixes unverified and in frozen set",
+  "catalog_denominator": "every in-window row remains N, even no_archive or unnamed",
+  "catalog_numeric_fields": ["min_notional", "qty_step", "min_order_qty", "max_leverage"],
+  "catalog_pagination": {
+    "full_page_without_cursor": "unproven stop",
+    "limit": 1000,
+    "max_pages_per_status": 3
+  },
+  "classes": [
+    {
+      "cls": "C1",
+      "discarded": "raw response, excluded labels/dates, values, schema and body hash",
+      "expected": 0,
+      "go": 1,
+      "max_class_bytes": 29360128,
+      "max_requests": 9,
+      "max_response_bytes": 3145728,
+      "method": "GET",
+      "name": "catalog_linear",
+      "note": "no CSV GET, bars, funding, books, resume or stage pass",
+      "params": "bounded metadata parameters; cursor and target in RAM only",
+      "parsed": "sealed holdout metadata allowlist; RAM-only outside-window labels",
+      "phase": 0,
+      "url": "https://api.bybit.com/v5/market/instruments-info"
+    },
+    {
+      "cls": "C3",
+      "discarded": "raw response, excluded labels/dates, values, schema and body hash",
+      "expected": 0,
+      "go": 1,
+      "max_class_bytes": 9437184,
+      "max_requests": 1,
+      "max_response_bytes": 4194304,
+      "method": "GET",
+      "name": "archive_root",
+      "note": "no CSV GET, bars, funding, books, resume or stage pass",
+      "params": "bounded metadata parameters; cursor and target in RAM only",
+      "parsed": "sealed holdout metadata allowlist; RAM-only outside-window labels",
+      "phase": 0,
+      "url": "https://public.bybit.com/trading/"
+    },
+    {
+      "cls": "D1",
+      "discarded": "raw response, excluded labels/dates, values, schema and body hash",
+      "expected": 0,
+      "go": 1,
+      "max_class_bytes": 402653184,
+      "max_requests": 1500,
+      "max_response_bytes": 1048576,
+      "method": "GET",
+      "name": "archive_listing",
+      "note": "no CSV GET, bars, funding, books, resume or stage pass",
+      "params": "bounded metadata parameters; cursor and target in RAM only",
+      "parsed": "sealed holdout metadata allowlist; RAM-only outside-window labels",
+      "phase": 1,
+      "url": "https://public.bybit.com/trading/{SYMBOL}/"
+    },
+    {
+      "cls": "D2h",
+      "discarded": "raw response, excluded labels/dates, values, schema and body hash",
+      "expected": 0,
+      "go": 1,
+      "max_class_bytes": 0,
+      "max_requests": 300,
+      "max_response_bytes": 0,
+      "method": "HEAD",
+      "name": "first_file_head",
+      "note": "no CSV GET, bars, funding, books, resume or stage pass",
+      "params": "bounded metadata parameters; cursor and target in RAM only",
+      "parsed": "sealed holdout metadata allowlist; RAM-only outside-window labels",
+      "phase": 2,
+      "url": "https://public.bybit.com/trading/{SYMBOL}/{SYMBOL}{FIRST_DAY}.csv.gz"
+    }
+  ],
+  "clock": "E=ceil_minute(T0+7d); X=E+7d; censor X>cut, not X==cut",
+  "go_limits": {
+    "1": {
+      "max_attempts": 2400,
+      "max_bytes": 469762048
+    }
+  },
+  "known_metadata_failure": "proven M2(i) lower bound >5% survives later HTTP failure; M2(ii) needs complete global admission; source-integrity failure outranks both",
+  "listing_grammar": "full filename prefix + ISO YYYY-MM-DD.csv.gz, complete UTF-8 HTML",
+  "m1_reasons": "known ambiguity=t0_ambiguous; pending=csv_pending; else=t0_unavailable",
+  "m2": "observed pre-cut file-prefix series outside catalog; a/(N+a)<=0.05; N=0 stops",
+  "m2_frozen": "holdout catalog labels and all canonical pre-cut catalog-folder prefixes",
+  "max_catalog_rows": 300,
+  "max_pre_cut_prefix_slots": 16384,
+  "max_unknown_directories": 1200,
+  "pre_window_first_file": "known day class wins; else t0_pre_window_unreadable; no HEAD/GET",
+  "prerequisite_evidence_map_sha256": "532d101483c2691c422e1ddce2187423dfce5d460c4de1b719d626b66645ad03",
+  "prerequisite_report_sha256": "38b569aa5dc713179ded3db70f7cdf788cea560db7c0c99c65d9332a879070b8",
+  "request_list_sha256": "31ae1a57970e7af98d2e52fd75534cf2604cd4a79bb889f25cd2f6a90fbada96",
+  "restart": "fresh root only; no resume, source modification or reused allowance",
+  "retention": "0700 sealed facts; in-window-evidenced names only; public aggregates",
+  "rules": "new_perp_stage1b_metadata_v2",
+  "success": "metadata_complete_coverage_pending, never stage1b_pass_partial",
+  "transport": {
+    "max_retry_after_s": 300,
+    "max_sends": 3,
+    "read_reserve_bytes": 65536,
+    "spacing_s": 1.0
+  },
+  "unknown_pre_window": "boolean only; prefix requires matching in-window filename",
+  "window": {
+    "cut_day": "2024-09-16",
+    "start_day": "2023-02-01"
+  }
+}
