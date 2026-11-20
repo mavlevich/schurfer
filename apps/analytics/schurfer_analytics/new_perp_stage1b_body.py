@@ -1,7 +1,7 @@
 """Sealed I25 Stage 1b BODY phase (coverage level) on the backward holdout.
 
 Contract: docs/research/new-perp-stage1b-body-v1.md and the frozen JSON next to it. Protocol:
-docs/research/new-perp-short-lab-protocol-v1.md, sections 2, 4, 5, 8 to 11 and Amendments 1 to 5.
+docs/research/new-perp-short-lab-protocol-v1.md, sections 2, 4, 5, 8 to 11 and Amendments 1 to 6.
 
 Two gos in one fresh root. Go A reads the first daily file of every launch whose first-file
 HEAD size is sealed (column 1 only). Go B reads the entry bar, the hourly mark and trade series
