@@ -1078,7 +1078,7 @@ def test_document_registry_and_protocol_state_the_contract_numbers() -> None:
     for needle in (c["request_list_sha256"], c["go_sha256"]["1"], "228", "684", "48 MiB", "9,804"):
         assert needle in doc, needle
     assert c["request_list_sha256"] in registry and "I25 Stage 3" in registry
-    assert "Proposed Amendment 6" in protocol and "new-perp-stage3-power-calibration-v1" in protocol
+    assert "Proposed Amendment 7" in protocol and "new-perp-stage3-power-calibration-v1" in protocol
     for path in (
         t.DOC,
         t.CONTRACT_PATH,

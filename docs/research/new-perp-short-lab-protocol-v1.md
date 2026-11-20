@@ -939,7 +939,7 @@ next to the per-episode net.
   read**. At `n = 205` this needs `SD * sqrt(DEFF)` of about 2,050 bps or less. The 400
   bps is a planning limit, chosen as an effect that would be material against costs and
   still believable; it is question Q5.
-- **Proposed Amendment 6 (2026-11-20, stage 3 contract).** The
+- **Proposed Amendment 7 (2026-11-20, stage 3 contract).** The
   [stage 3 contract](new-perp-stage3-power-calibration-v1.md) fixes the calibration above and
   deviates from the text above in six places, which is why it is written here. (1) The proxy is
   read from 1-hour trade bars, not 1-minute bars: section 10 said both "1-minute" and
@@ -1074,7 +1074,7 @@ in stage 2, in a request list with a hash, before any request, as for HYP-036.
 | ----- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------- |
 | 1     | discovery year only: trade-archive file listings and the first daily file per launch; catalog fields; machine-timed Bybit announcements already in hand; Bybit spot catalog; existence lists for trade bars, mark bars, funding and books                                                                                                        | on the order of 1,000 requests and a few GiB                               |
 | 1b    | backward holdout, after stage 1 passes and on a further go: the same checks, sealed output                                                                                                                                                                                                                                                       | on the order of 1,000 requests; output is aggregate counts and hashes      |
-| 3     | 1-hour trade bars for the pre-entry proxy window of the stage 1 primary episodes (Amendment 6; first drafted as 1-minute bars)                                                                                                                                                                                                                   | 228 symbols x 1 request                                                    |
+| 3     | 1-hour trade bars for the pre-entry proxy window of the stage 1 primary episodes (Amendment 7; first drafted as 1-minute bars)                                                                                                                                                                                                                   | 228 symbols x 1 request                                                    |
 | 4     | 1-minute trade bars and 1-minute mark-price bars for days 3 to 21 (about 26 requests per symbol each); hourly mark bars at settlements (1 per symbol); funding history (about 1 to 3 pages per symbol); liquid-pool hourly bars (about 400 requests); order-book snapshots for V1 entry and exit (up to about 526 symbol-days, each 1 to 460 MB) | about 14,000 API requests and a book-archive volume that needs its own cap |
 
 **Exposure for the seen-windows registry** (row added with this document; it reads

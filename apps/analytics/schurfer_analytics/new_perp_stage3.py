@@ -69,7 +69,7 @@ DAY_MS: Final = s.DAY_MS
 MINUTE_MS: Final = s.MINUTE_MS
 MIB: Final = s.MIB
 
-# The estimand (protocol 7.4, Amendment 6): hour grid points A and B inside [T0 + 1 d, E].
+# The estimand (protocol 7.4, Amendment 7): hour grid points A and B inside [T0 + 1 d, E].
 PROXY_FIRST_DAY: Final = 1
 HOLD_HOURS: Final = 168  # the V1 hold, the scale of the planning variance (protocol: 7/6 of 6 d)
 MIN_WINDOW_HOURS: Final = 143  # B - A for every T0: 143 or 144 hours

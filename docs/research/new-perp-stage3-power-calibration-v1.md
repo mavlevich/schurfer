@@ -5,7 +5,7 @@ This document, its frozen contract and its code fetch nothing and read no price.
 tested only against a mock transport and a synthetic Bybit; it was never run against a network.
 It is the stage 3 gate of the [I25 laboratory protocol](new-perp-short-lab-protocol-v1.md)
 (sections 7.4, 8, 10 and 11) and it changes the protocol text only through the proposed
-Amendment 6 of section 11 below.
+Amendment 7 of section 11 below.
 
 - Frozen contract: [`contract.json`](evidence/new-perp-stage3-v1/contract.json).
 - Code: `apps/analytics/schurfer_analytics/new_perp_stage3.py`. It reuses the stage 1 fetcher,
@@ -254,21 +254,21 @@ effect.** A true mean between about 20 and 400 bps would be worth having and can
 
 ## 7. Pre-registered decision table
 
-First applicable row; the orders follow protocol 8. Every number is unrounded. No row reads a
+First applicable row. The `Order` column is the **local** order within stage 3 (0 to 5); the global orders of protocol section 8 are different numbers for the same rows: `incomplete_coverage` is global order 2, `insufficient_events` global order 4 and `insufficient_power` global order 6, and the relative order of these three is the same in both. The contract's `order` field is the local one. Every number is unrounded. No row reads a
 return.
 
-| Order | Verdict               | Condition                                                                                                              | Consequence                                                                                                                                                          |
-| ----- | --------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0     | `stage3_stopped`      | the run has a `stop.json` (HTTP 403, a fatal `retCode`, a schema mismatch, a cap, a transport chunk above the reserve) | counts only; no statistic; no verdict; a stopped root never continues; a corrected revision starts a fresh root                                                      |
-| 0     | `stage3_incomplete`   | no `done.json`, or fewer than 228 finished requests                                                                    | counts only; no statistic; the same root may continue under the same binding only                                                                                    |
-| 1     | `incomplete_coverage` | defined proxies below 95% of the 228 episodes (`defined * 100 < 95 * 228`, so 217 passes and 216 fails)                | stop code `incomplete_coverage`; counts only; I25 stops; no return is read                                                                                           |
-| 2     | `insufficient_events` | fewer than 100 defined episodes, or fewer than 26 ISO weeks with a defined episode                                     | stop code `insufficient_events`; counts only; I25 stops; no return is read                                                                                           |
-| 3     | `not_estimable`       | zero or non-finite variance, a draw without an episode, or a block longer than the week sequence                       | no MDE statement; stage 4 closed under this contract; no return is read; a new design needs its own registration                                                     |
-| 4     | `insufficient_power`  | `MDE_gate > 400` bps                                                                                                   | stop code `insufficient_power`; **I25 stops before any return is read**; the aggregate report (all of section 10) is the record                                      |
-| 5     | `power_gate_passed`   | `MDE_gate <= 400` bps                                                                                                  | stage 4 **may be proposed**: its own contract, request list, hash, code and registry row, then the owner's separate go for the read of returns. No effect is implied |
+| Local order | Verdict               | Condition                                                                                                              | Consequence                                                                                                                                                          |
+| ----------- | --------------------- | ---------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 0           | `stage3_stopped`      | the run has a `stop.json` (HTTP 403, a fatal `retCode`, a schema mismatch, a cap, a transport chunk above the reserve) | counts only; no statistic; no verdict; a stopped root never continues; a corrected revision starts a fresh root                                                      |
+| 0           | `stage3_incomplete`   | no `done.json`, or fewer than 228 finished requests                                                                    | counts only; no statistic; the same root may continue under the same binding only                                                                                    |
+| 1           | `incomplete_coverage` | defined proxies below 95% of the 228 episodes (`defined * 100 < 95 * 228`, so 217 passes and 216 fails)                | stop code `incomplete_coverage`; counts only; I25 stops; no return is read                                                                                           |
+| 2           | `insufficient_events` | fewer than 100 defined episodes, or fewer than 26 ISO weeks with a defined episode                                     | stop code `insufficient_events`; counts only; I25 stops; no return is read                                                                                           |
+| 3           | `not_estimable`       | zero or non-finite variance, a draw without an episode, or a block longer than the week sequence                       | no MDE statement; stage 4 closed under this contract; no return is read; a new design needs its own registration                                                     |
+| 4           | `insufficient_power`  | `MDE_gate > 400` bps                                                                                                   | stop code `insufficient_power`; **I25 stops before any return is read**; the aggregate report (all of section 10) is the record                                      |
+| 5           | `power_gate_passed`   | `MDE_gate <= 400` bps                                                                                                  | stage 4 **may be proposed**: its own contract, request list, hash, code and registry row, then the owner's separate go for the read of returns. No effect is implied |
 
-Rows 1, 2 and 4 use the codes already named in protocol section 8 (orders 2, 4 and 6); Amendment
-6 adds stage 3 to the stage column of orders 2 and 4. `not_estimable` is the status the protocol
+Local rows 1, 2 and 4 use the codes already named in protocol section 8 (global orders 2, 4 and 6); Amendment
+7 adds stage 3 to the stage column of orders 2 and 4. `not_estimable` is the status the protocol
 names in 7.4 for a calibration that cannot be computed, and it has no section-8 code. When a
 verdict is one of rows 1 to 3 no dispersion, dependence or power number is emitted, so a cohort
 that failed its floors does not also leak its variance. `returns_read` is always `false`.
@@ -358,9 +358,9 @@ count, not a price) and the count of windows of 143 and 144 hours; `sd_bps`, `sd
 requests, results by outcome, error codes seen). Formal-report fields (code revision, publication
 hashes, clean-tree state) come from the run binding. No cost model applies (no net is formed).
 
-## 11. Protocol change: proposed Amendment 6
+## 11. Protocol change: proposed Amendment 7
 
-Stage 3 departs from the protocol text in six places, each recorded as **Proposed Amendment 6**
+Stage 3 departs from the protocol text in six places, each recorded as **Proposed Amendment 7**
 in section 7.4 of the protocol (a paragraph, not a change of any rule that was fixed for stage
 4), and the stage column of section 8 and the stage 3 row of section 10 are aligned:
 
@@ -424,7 +424,7 @@ in section 7.4 of the protocol (a paragraph, not a change of any rule that was f
 
 | Q   | Question                                                                                                                                                                            | Recommendation                                                                                                                                                                              |
 | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Q1  | Accept the six deviations of Amendment 6 (hourly bars, 228 requests, hour-grid window, exact scaling, floor and statistic named, stop-code reach)?                                  | Yes. The alternative, 1-minute bars, is about nine times the requests and parses far more prices to estimate one dispersion                                                                 |
+| Q1  | Accept the six deviations of Amendment 7 (hourly bars, 228 requests, hour-grid window, exact scaling, floor and statistic named, stop-code reach)?                                  | Yes. The alternative, 1-minute bars, is about nine times the requests and parses far more prices to estimate one dispersion                                                                 |
 | Q2  | The protocol multiplier 2.80 gates; 2.487 and 2.123 are reported only. Should the gate use 2.123, the multiplier matching stage 4's 90% bound?                                      | Keep 2.80. It was fixed with the 400 bps limit before any price; changing it after a design discussion about its effect would be tuning, and the other two are in the report for the reader |
 | Q3  | The 400 bps limit is about 100% a year on reserved capital and about 20 times the 5% hurdle's requirement (section 6.5). Is it the intended economic requirement?                   | Keep. A smaller effect cannot be proven on 228 episodes at any plausible dispersion, and the cheap stop is the protocol's declared outcome                                                  |
 | Q4  | `DEFF` is for the cluster-weighted mean (the stage 4 statistic) and so includes the effect of equal cluster weights; the episode-weighted ratio is reported beside it. Which gates? | Cluster-weighted, as written in protocol 7.2 and 7.4                                                                                                                                        |
