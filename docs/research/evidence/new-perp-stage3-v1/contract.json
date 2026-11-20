@@ -1,0 +1,196 @@
+{
+  "budget": {
+    "attempt_ceiling": 684,
+    "attempts_per_request": 3,
+    "class_byte_cap": 50331648,
+    "expected_attempts": 228,
+    "expected_bytes_note": "about 3 MB: Stage 1 D5 averaged 34.6 KB for up to 433 rows",
+    "go_byte_cap": 50331648,
+    "read_reserve_bytes": 65536,
+    "requests": 228,
+    "response_cap_bytes": 65536,
+    "seconds_all_retries": 9804,
+    "seconds_expected": 228,
+    "seconds_note": "at one request per second; a Retry-After of up to 300 s replaces the backoff of that request",
+    "worst_case_response_bytes": 44826624
+  },
+  "classes": [
+    {
+      "cls": "P1",
+      "discarded": "open, high, low, volume, turnover of every row, and the close of every other row, unparsed; the two closes are reduced to their log ratio and are not kept",
+      "expected": 228,
+      "go": 1,
+      "max_class_bytes": 50331648,
+      "max_requests": 228,
+      "max_response_bytes": 65536,
+      "method": "GET",
+      "name": "proxy_hourly_trade",
+      "note": "one page per primary V1 episode; a row outside the requested range stops the run",
+      "params": "category=linear, symbol, interval=60, start=A-1h, end=B-1h, limit=200",
+      "parsed": "per row: column 1 (the bar start time) and the row length; of the two rows that start at A-1h and B-1h only: column 5 (the close)",
+      "phase": 1,
+      "url": "https://api.bybit.com/v5/market/kline"
+    }
+  ],
+  "decision_table": [
+    {
+      "condition": "defined proxies below 95% of the 228 episodes (defined * 100 < 95 * 228)",
+      "consequence": "stop code incomplete_coverage; no statistic emitted; no return read",
+      "order": 1,
+      "verdict": "incomplete_coverage"
+    },
+    {
+      "condition": "fewer than 100 defined episodes, or fewer than 26 ISO weeks with one",
+      "consequence": "stop code insufficient_events; no statistic emitted; no return read",
+      "order": 2,
+      "verdict": "insufficient_events"
+    },
+    {
+      "condition": "zero or non-finite variance, a draw without an episode, or a block longer than the week sequence",
+      "consequence": "no MDE statement; stage 4 closed under this contract; no return read",
+      "order": 3,
+      "verdict": "not_estimable"
+    },
+    {
+      "condition": "gate MDE = 2.80 * SE with DEFF = max(largest of blocks 2, 4, 8; 1.0) is above 400 bps (unrounded)",
+      "consequence": "stop code insufficient_power; I25 stops; no return is read",
+      "order": 4,
+      "verdict": "insufficient_power"
+    },
+    {
+      "condition": "gate MDE at or below 400 bps",
+      "consequence": "stage 4 may be proposed: its own contract, request list, hash and registry row, then the owner's separate go; nothing about an effect is implied",
+      "order": 5,
+      "verdict": "power_gate_passed"
+    }
+  ],
+  "document": "docs/research/new-perp-stage3-power-calibration-v1.md",
+  "estimand": {
+    "closes": "C(t) is the close of the 1 h trade bar that starts at t - 1 h",
+    "log_return": "L = ln(C(B) / C(A))",
+    "never_read": "any bar that starts after B - 1 h, any bar at or after E, the entry bar, any exit, any bar from the cut",
+    "planning_variable_bps": "Y = 10,000 * (exp(Z) - 1)",
+    "scaled_log_return": "Z = L * sqrt(168 / h)",
+    "window_end": "B = floor_hour(E), E = ceil_minute(T0 + 7 d)",
+    "window_hours": "h = (B - A) / 1 h, always 143 or 144",
+    "window_start": "A = ceil_hour(T0 + 1 d)"
+  },
+  "forbidden_output_names": [
+    "mean",
+    "median",
+    "average",
+    "min",
+    "max",
+    "quantile",
+    "percentile",
+    "skew",
+    "kurtosis",
+    "sign",
+    "net",
+    "outcome",
+    "pnl",
+    "profit",
+    "close",
+    "price",
+    "symbol",
+    "raw_moment",
+    "sum"
+  ],
+  "go_limits": {
+    "1": {
+      "max_attempts": 684,
+      "max_bytes": 50331648
+    }
+  },
+  "go_sha256": {
+    "1": "c735f79a2838ab38eec5e14cc4096ba6be4ea7520d9fa93712e9ce98c45f0254"
+  },
+  "level": "features",
+  "limits": {
+    "api_error_rule": "an HTTP 200 envelope with retCode other than 0 records only its retCode and retMsg (200 characters at most); 10006 and 10018 are rate limits (retried, the spacing doubles), 10000 and 10016 are transient (retried), any other code stops the run naming it; retCode must be an integer, never a boolean or a float; a wrong envelope shape stops the run as a schema mismatch",
+    "attempts_per_request": 3,
+    "backoff_s": [10, 30, 60],
+    "max_retry_after_s": 300,
+    "max_spacing_s": 8.0,
+    "persisted_stop": "stop.json ends the root; nothing continues in it",
+    "rate_limit_ret_codes": [10006, 10018],
+    "read_reserve_bytes": 65536,
+    "restart": "a fresh root per contract; a resumed root must carry the same binding (contract hash, prior usage, code revision and file hashes), else it is refused",
+    "spacing_s": 1.0,
+    "transient_ret_codes": [10000, 10016]
+  },
+  "output_allowlist": [
+    "cohort",
+    "dependence",
+    "dispersion",
+    "portfolio",
+    "power",
+    "returns_read",
+    "run",
+    "stop_code",
+    "variants",
+    "verdict",
+    "version",
+    "window"
+  ],
+  "prerequisites": {
+    "cohort": {
+      "episodes": 228,
+      "iso_weeks": 48,
+      "source": "primary V1 episodes of the sealed Stage 1 run, derived locally and checked against the reviewed report before any request"
+    },
+    "m2ii_v3_evidence_map_sha256": "532d101483c2691c422e1ddce2187423dfce5d460c4de1b719d626b66645ad03",
+    "m2ii_v3_report_sha256": "38b569aa5dc713179ded3db70f7cdf788cea560db7c0c99c65d9332a879070b8",
+    "stage1_manifest_sha256": "759305ceaf5730ff0b7f23963a2c17292590ecb590d0336376cc139a0b5ca76d",
+    "stage1_report_sha256": "400f635ea29ac52dc5999caa866b152fa14cea1b82381ce91270012821a853ca"
+  },
+  "protocol": "docs/research/new-perp-short-lab-protocol-v1.md",
+  "request": {
+    "class": "P1",
+    "endpoint": "https://api.bybit.com/v5/market/kline",
+    "params": "category=linear, symbol, interval=60, start=A-1h, end=B-1h, limit=200",
+    "per_episode": 1,
+    "row_rule": "a row starting outside [A-1h, B-1h], a duplicate start, a page of 200 rows, a wrong symbol or a bad close stops the run as a schema mismatch",
+    "undefined_proxy": "the bar at A-1h or at B-1h is absent; no imputation"
+  },
+  "request_list_sha256": "48864588d2e44628e0421fda43367b218baaf7c50bcda9e0951ad4a5ec59b15e",
+  "retention": {
+    "public": "the allowlisted aggregate report only: no symbol, date, close, per-launch value, mean, sign, quantile, minimum or maximum",
+    "sealed_root": "0700 outside Git: attempts, receipts (the log return of each episode is the only price-derived value), cohort.json, run.json, stop.json"
+  },
+  "rules": "new_perp_stage3_v1",
+  "stop_codes": ["insufficient_power", "incomplete_coverage", "insufficient_events"],
+  "study": "new-perp-short-v1",
+  "thresholds": {
+    "block_lengths": [2, 4, 8],
+    "bootstrap_draws": 10000,
+    "capitals_usd": [50, 250, 3000, 5000],
+    "deff_floor": 1.0,
+    "defined_min_percent": 95,
+    "gate_multiplier": 2.8,
+    "hold_hours": 168,
+    "hurdle": 0.05,
+    "mde_limit_bps": 400.0,
+    "min_episodes": 100,
+    "min_weeks": 26,
+    "primary_block": 4,
+    "proxy_limit": 200,
+    "seed": 25030001,
+    "sensitivity_multipliers": [2.487, 2.123],
+    "slot_share_percent": 90,
+    "variant_ages_days": {
+      "V1": 7,
+      "V2": 3,
+      "V3": 14
+    },
+    "window_days": 365,
+    "window_hours": [143, 144]
+  },
+  "windows": {
+    "backward_holdout": "not touched",
+    "blind_window_start": "2026-09-29T00:00:00+00:00",
+    "cut": "2025-10-01T00:00:00+00:00",
+    "discovery_start": "2024-10-01T00:00:00+00:00",
+    "note": "every request ends before E of its episode, and E + 7 d is at or before the cut; nothing dated from the cut or from the blind window is requested"
+  }
+}
