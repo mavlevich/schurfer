@@ -26,11 +26,11 @@ Proposed Amendment 6, added by this change).
 
 ```text
 request_list_sha256 (whole contract, bound into every run) =
-  9a09f9d80fb38a915ff877d3f9e6f6a7226f7f1ef78bf0bfe811e76fda2be57e
+  a25eb6b9460728e1a6691f8c0b750310ce52bef04f23c16cb070ef1d86b044a2
 go A approval hash (go_sha256["1"]) =
-  f6b2eed1eb82a1a8c04dd49bb6272cbde1669bf962c77af14ef8fbab239b1e8d
+  f218364a747154cadc480a4e433e5201e801f7daaaafbddc16284bb0999558ca
 go B approval hash (go_sha256["2"]) =
-  48644268b51a9200053a3433be48183f23fff27d0539177c90712166cd7603e3
+  0fc8c8c2a9b6992552c5bcedca4738231b9fb4ef2ce63cc7e7bf1af7c53b6bff
 ```
 
 Go B is approved by its own hash **and** by the SHA-256 of `queue_b.json`, which Go A writes. The
@@ -80,8 +80,9 @@ earlier sealed root. Nothing of discovery's 8.5 GiB or the metadata allowance is
 - Every API span ends at `cut - 1 ms` and starts no earlier than the window start. A request that
   would break this cannot be built: the request class validates URL, parameters, window and meta
   on construction.
-- A row from the cut on is dropped uncounted from an API page. In a first file such a row, or a
-  row before the window start, stops the run with a fixed reason and is never recorded.
+- A row from the cut on is dropped uncounted from an API page (this is the one fixed policy for
+  such rows). In a first file such a row, or a row before the window start, stops the run with a
+  fixed reason and is never recorded.
 - 2024-09-16 to 2024-09-30, the discovery year, the HYP-031 test year and the HYP-012 v2 blind
   window are not touched. No data from 2025-10-01 or 2026-09-29 is requested.
 
@@ -102,7 +103,10 @@ would otherwise change by size. Any mismatch stops the same way.
 
 **Parse.** The gzip stream is read in memory in 64 KiB chunks. Only column 1 of each row (the
 trade timestamp) is parsed, in nanoseconds, from up to nine fractional digits; columns 2 and
-later (side, size, price, ids) are cut at the first comma and never read. The facts kept per file
+later (side, size, price, ids) are cut at the first comma and never read. The file must be
+**exactly one gzip member with no trailing byte**: a second member or any byte after the first
+ends the run with the fixed reason `gzip_trailing_data`, because the minimum over the whole file
+would otherwise be unproven (open question 13). The facts kept per file
 are the row count, the minimum and the maximum timestamp. The file is never stored. `T0` is the
 **minimum**, not the first row.
 
@@ -174,6 +178,14 @@ coverage is undecided; four full pages without reaching the start are `paginatio
 `queue_b.json` holds the exact first-round list (D3, D4, D5 and the first D6 page of every
 candidate) as a hash, plus counts. Later D6 pages cannot be listed before the responses exist;
 they are bounded by four per candidate and by the Go B ceilings.
+
+**Response bounds, checked per row before any other field.** The reducers receive the exact bounds
+of their own request. A bar start must lie on the step grid (hour for D4 and D5, minute for D3),
+inside `[the hour or minute that contains the requested start, the requested end]`, and appear
+once; a funding stamp must lie inside `[startTime, endTime]` and appear once. A row from the cut
+is dropped uncounted (section 2). Anything else (`bar_off_grid`, `bar_out_of_range`,
+`bar_duplicate`, `funding_out_of_range`, `funding_duplicate`) is a fixed schema stop, so a stale,
+shifted or duplicated series can never look covered.
 
 **Parse.** D3, D4, D5 keep the bar start times only (count, oldest, newest, runs of missing
 hours, at most 20 runs, and whether the page may be cut by its limit); open, high, low, close,
@@ -262,14 +274,18 @@ fact tunes any of them.** "Candidates" and "episodes after funding" are as in se
   one chain with no step above 8 hours, start at most one step after the span start and end at
   most one step before its end unless the catalog delivered the symbol. Status `partial_pass`,
   never proof: it cannot show a missing settlement of a 1 h or 4 h schedule, and the catalog
-  `fundingInterval` is a current snapshot. Uncovered share at most 5%. Unknown funding is never
-  taken as zero. A diagnostic counts uncovered launches by launch quarter and by whether the
+  `fundingInterval` is a current snapshot. Uncovered share at most 5% of the candidates, a
+  denominator fixed after Go A: a share above the limit is a **known failure even while launches
+  are pending or a later stop occurs**, and a pass needs a complete assessment. Unknown funding is
+  never taken as zero. A diagnostic counts uncovered launches by launch quarter and by whether the
   symbol was delivered inside the window.
 - **M5** over episodes after funding: the entry trade bar at `E` exists, the hourly trade and mark
   series are continuous from the hour of `E` to the hour before `X`, at least 95%. A missing last
   file is a gap unless a catalog delivery at or before the first missing hour confirms an end. A
   page that may be cut by its limit, or whose gap list was truncated, is `unproven` and never
-  green. Minute continuity over the whole path stays deferred to stage 4 (Amendment 1).
+  green. Minute continuity over the whole path stays deferred to stage 4 (Amendment 1). A known
+  failure is the optimistic share below 95%: an episode that is pending, unproven or still waiting
+  for its funding decision counts as a success, an episode with a decided gap counts as bad.
 - **M6** static catalog fields over episodes after funding: `minNotionalValue` at most USD 50,
   `maxLeverage` at least 2, `qtyStep` and `minOrderQty` present, at least 90%. It can fail an
   order and never shows that one opens: no price, rounding, risk limit or depth is checked.
@@ -311,6 +327,14 @@ The holdout stays one shared sealed exam batch: this phase reads coverage, never
   any other change starts a new root. A finished Go A or Go B cannot be run again.
 - After a stop the only way on is a new root, a corrected revision and a new owner decision.
   Spent attempts and bytes are never refunded or carried to another root.
+- **Nothing positive is published before the last check.** After the last response, and before
+  any queue, report or done marker, the runner verifies again the sealed metadata root (every
+  hash and every row), the clean revision and the publication of every bound file. Any exception
+  writes the fixed stop `source_integrity_error`, seals the root and publishes only a stopped
+  report. The `report` command prints a stored report only if its go finished, or if a stop sealed
+  the root and the report is not positive.
+- The output root must be outside the Git tree and disjoint from the sealed metadata root. This is
+  checked before any file or HTTP client exists.
 - The CLI runs only a clean, merged revision whose published files equal `origin/main`, whose
   checked-in contract equals `build_contract()`, and whose registry names this study.
 
@@ -324,7 +348,7 @@ discovery year, the test year and the blind window. Ceilings in section 0.
 
 Ledger text (for the discovery ledger, after a result exists; this change adds no row): "I25
 Stage 1b body phase, backward holdout, coverage level. Two gos on `request_list_sha256`
-`9a09f9d8...e57e`. Counts, shares and stop codes only; no price, rate, volume or return read; the
+`a25eb6b9...44a2`. Counts, shares and stop codes only; no price, rate, volume or return read; the
 holdout remains one shared sealed exam batch; +0 tested variants, +0 parameters." The ledger row
 is written only with the result record.
 
@@ -365,9 +389,13 @@ blind-window input exists anywhere in it.
 5. **T0 in nanoseconds** instead of discovery's millisecond truncation. _Recommend accept._
 6. **M4 diagnostic by launch quarter, not month.** Thirteen launches a month make a month cell
    close to a single launch; a quarter is not. _Recommend quarter._
-7. **M3 unverifiable** has no base-coin check because the metadata rows do not retain `baseCoin`.
-   _Recommend accept, labelled in the partial-check list._
-8. **Zero-trade hours as gaps** at hourly resolution (discovery question 1). _Recommend accept._
+7. **M3 is partial only.** The current catalog and file lists cannot prove historical identity
+   known at `E`: the absence of a contradiction is not proof. "Unverifiable" has no base-coin
+   check because the metadata rows do not retain `baseCoin`. _Recommend accept, labelled in the
+   partial-check list._
+8. **A missing hourly bar is a gap.** The code reads no volume, so an absent bar is not told apart
+   from a bar with zero volume; both count as a gap at hourly resolution (discovery question 1).
+   _Recommend accept._
 9. **The 8 h funding step** stays a coarse partial check (discovery question 2); stage 4 fetches
    the exact rows. _Recommend accept._
 10. **Go B refused after any definitive Go A stop code.** _Recommend yes_: it spends no read on a
@@ -377,6 +405,9 @@ blind-window input exists anywhere in it.
 12. **Merge order.** This change needs the Stage 1b metadata result record merged first; both
     append to the seen-windows registry, so the later one needs `git merge origin/main`.
     _Recommend merge the result record first._
+13. **Exactly one gzip member per first file.** A second member or a trailing byte stops the run;
+    a legitimate multi-member archive file would stop it too (fail closed, no new request is
+    wasted). _Recommend keep; relax only in a new contract after seeing why._
 
 ## 13. Verification performed
 

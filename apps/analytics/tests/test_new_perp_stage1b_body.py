@@ -321,18 +321,23 @@ def test_kline_reducer_drops_rows_from_the_cut_uncounted() -> None:
     """The discovery reducer cuts at 2025-10-01; the holdout cut is 2024-09-16."""
     last = CUT - s.HOUR_MS
     starts = [last - 2 * s.HOUR_MS, last - s.HOUR_MS, last, CUT, CUT + s.HOUR_MS]
+    low = last - 2 * s.HOUR_MS
     facts = body.reduce_kline_window(
-        kline_payload("SYMUSDT", starts), "SYMUSDT", 7, s.HOUR_MS, 1000
+        kline_payload("SYMUSDT", starts), "SYMUSDT", 7, s.HOUR_MS, 1000, low, CUT - 1
     )
     assert facts["n"] == 3 and facts["newest_ms"] == last
     assert facts["full"] is False and PRICE not in json.dumps(facts)
     discovery = s.reduce_kline(kline_payload("SYMUSDT", starts), "SYMUSDT", 7, s.HOUR_MS, 1000)
     assert discovery["n"] == 5  # the discovery cut would have counted the rows from the cut
     # a page that is full by its raw row count may be cut by its limit, even if rows were dropped
-    full = body.reduce_kline_window(kline_payload("SYMUSDT", starts), "SYMUSDT", 7, s.HOUR_MS, 5)
+    full = body.reduce_kline_window(
+        kline_payload("SYMUSDT", starts), "SYMUSDT", 7, s.HOUR_MS, 5, low, CUT - 1
+    )
     assert full["full"] is True and full["n"] == 3
     with pytest.raises(s.SchemaMismatchError, match="symbol"):
-        body.reduce_kline_window(kline_payload("OTHERUSDT", starts), "SYMUSDT", 7, s.HOUR_MS, 5)
+        body.reduce_kline_window(
+            kline_payload("OTHERUSDT", starts), "SYMUSDT", 7, s.HOUR_MS, 5, low, CUT - 1
+        )
 
 
 def funding_payload(symbol: str, stamps: list[int]) -> dict[str, Any]:
@@ -345,7 +350,9 @@ def funding_payload(symbol: str, stamps: list[int]) -> dict[str, Any]:
 def test_funding_reducer_drops_rows_from_the_cut_and_never_keeps_a_rate() -> None:
     eight = 8 * s.HOUR_MS
     stamps = [CUT - 2 * eight, CUT - eight, CUT, CUT + eight]
-    facts = body.reduce_funding_window(funding_payload("SYMUSDT", stamps), "SYMUSDT")
+    facts = body.reduce_funding_window(
+        funding_payload("SYMUSDT", stamps), "SYMUSDT", CUT - 2 * eight, CUT - 1
+    )
     assert facts["n"] == 2 and facts["newest_ms"] == CUT - eight and facts["max_gap_ms"] == eight
     assert RATE not in json.dumps(facts)
     assert s.reduce_funding(funding_payload("SYMUSDT", stamps), "SYMUSDT")["n"] == 4
@@ -1042,14 +1049,11 @@ def d4_request(requests: list[body.BodyRequest]) -> body.BodyRequest:
 
 
 def reducer_for(request: body.BodyRequest) -> Any:
-    return body.kline_reducer(dict(request.params)["symbol"], 5, s.HOUR_MS, 1000)
+    return body.request_reducer(request)
 
 
 def reducer_any(request: body.BodyRequest) -> Any:
-    width, step, limit = {"D3": (7, s.MINUTE_MS, 1), "D4": (5, s.HOUR_MS, 1000)}.get(
-        request.cls, (7, s.HOUR_MS, 1000)
-    )
-    return body.kline_reducer(dict(request.params)["symbol"], width, step, limit)
+    return body.request_reducer(request)
 
 
 def test_go_b_error_envelopes_keep_only_a_code_and_a_short_message(tmp_path: Path) -> None:

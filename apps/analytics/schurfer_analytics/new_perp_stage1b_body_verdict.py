@@ -276,8 +276,8 @@ def partial_checks(m4: dict[str, Any] | None, m5: dict[str, Any] | None) -> list
         "nonzero-volume bar and does not date the regular launch",
         "m2(ii): an observed file series outside the catalog, not a census of launches and "
         "not verified instruments",
-        "m3: the current catalog and file lists only; historical identity known at E is not "
-        "proven, and change_known_at_entry is not observable",
+        "m3: the current catalog and file lists only; the absence of a contradiction does not "
+        "prove historical identity known at E, and change_known_at_entry is not observable",
         "m6: static catalog fields only; no price, quantity rounding, risk limit or depth",
     ]
     if m4 is not None:
@@ -487,6 +487,7 @@ def _m4(eligible: list[dict[str, Any]], not_assessed: list[str]) -> dict[str, An
         "share": share,
         "partial": True,
         "status": _m4_status(assessed, share),
+        "fail": (share or 0) > T["m4_funding_uncovered_max"],
         "rule": "pagination finished and no gap longer than 8 h (a coarse check, not proof of "
         "every settlement)",
         "covered_by_interval_snapshot": {
@@ -503,27 +504,45 @@ def _m4(eligible: list[dict[str, Any]], not_assessed: list[str]) -> dict[str, An
     }
 
 
+BAD_BAR_STATES: Final = ("starts_late", "interior_gap", "ends_early", "unavailable", "empty")
+
+
 def _m5(
     data: BodyData,
     episodes: list[dict[str, Any]],
     candidates: dict[str, body.Candidate],
     not_assessed: list[str],
 ) -> dict[str, Any]:
+    """M5 over the episodes after funding.
+
+    `fail` is a proven lower-bound failure: an episode with a decided gap is bad whatever is
+    still pending, an episode that is pending, unproven or still waiting for its funding
+    decision may yet be fine (or leave the denominator), so it counts as a success. If even
+    that optimistic share is below the limit the failure is known.
+    """
     states: dict[str, dict[str, int]] = {"entry": {}, "mark": {}, "trade": {}}
-    ok = 0
+    ok = unknown = 0
     for r in episodes:
         c = candidates[r["slot"]]
         delivery = r["row"].get("delivery_ms")
         entry = _entry_state(data, c)
         mark = discovery.bar_state(data.mark_hourly.get(c.slot), c.entry_ms, c.exit_ms, delivery)
         trade = discovery.bar_state(data.trade_hourly.get(c.slot), c.entry_ms, c.exit_ms, delivery)
-        for key, value in (("entry", entry), ("mark", mark), ("trade", trade)):
+        parts = (("entry", entry), ("mark", mark), ("trade", trade))
+        for key, value in parts:
             states[key][value] = states[key].get(value, 0) + 1
+        values = [value for _, value in parts]
         covered = ("covered", "confirmed_event")
         if entry == "present" and mark in covered and trade in covered:
             ok += 1
+        elif r["funding"] == "pending" or (
+            not any(x in ("absent", "unavailable", *BAD_BAR_STATES) for x in values)
+            and any(x in ("not_run", "unproven") for x in values)
+        ):
+            unknown += 1
     n = len(episodes)
     share = _share(ok, n)
+    optimistic = _share(ok + unknown, n)
     assessed = n > 0 and not any("not_run" in per for per in states.values())
     if not assessed and n:
         not_assessed.append("m5_bars_not_run")
@@ -538,7 +557,7 @@ def _m5(
         "level": "entry minute bar (trade) and hourly trade and mark series over the V1 path",
         "minute_level_path": "not_assessed_at_stage_1b",
         "assessed": assessed,
-        "fail": assessed and not _at_least(share, T["m5_bars_min"]),
+        "fail": n > 0 and (optimistic or 0) < T["m5_bars_min"],
         "pass": assessed and _at_least(share, T["m5_bars_min"]),
     }
 
@@ -582,7 +601,7 @@ def _stops(
     out: list[str] = []
     if m1["fail"]:
         out.append("not_reconstructible")
-    m4_fail = m4 is not None and m4["assessed"] and not m4["pass"]
+    m4_fail = m4 is not None and m4["fail"]  # a known failure needs no complete assessment
     m5_fail = m5 is not None and m5["fail"]
     if m2["fail"] or m4_fail or m5_fail:
         out.append("incomplete_coverage")

@@ -1049,9 +1049,9 @@ window and anything from 2024-09-16 on. Public output is aggregate counts only.
 Two separate owner gos. Go A: 247 requests, 494 attempts, 5,185,208,320 response bytes (4,945
 MiB). Go B: at most 1,729 first attempts, 2,162 attempts, 670,040,064 bytes (639 MiB), asked for
 only if Go A leaves no stop code, on the SHA-256 of `queue_b.json`. Proposed request-list SHA-256:
-`9a09f9d80fb38a915ff877d3f9e6f6a7226f7f1ef78bf0bfe811e76fda2be57e`; go hashes
-`f6b2eed1eb82a1a8c04dd49bb6272cbde1669bf962c77af14ef8fbab239b1e8d` (A) and
-`48644268b51a9200053a3433be48183f23fff27d0539177c90712166cd7603e3` (B). A fresh 0700 root is
+`a25eb6b9460728e1a6691f8c0b750310ce52bef04f23c16cb070ef1d86b044a2`; go hashes
+`f218364a747154cadc480a4e433e5201e801f7daaaafbddc16284bb0999558ca` (A) and
+`0fc8c8c2a9b6992552c5bcedca4738231b9fb4ef2ce63cc7e7bf1af7c53b6bff` (B). A fresh 0700 root is
 required; no earlier allowance or root is reused. Code and contract review, a clean merge with
 green CI and the owner's go for each exact hash are required before any request.
 

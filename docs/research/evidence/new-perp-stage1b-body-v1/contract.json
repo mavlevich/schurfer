@@ -94,8 +94,8 @@
     }
   },
   "go_sha256": {
-    "1": "f6b2eed1eb82a1a8c04dd49bb6272cbde1669bf962c77af14ef8fbab239b1e8d",
-    "2": "48644268b51a9200053a3433be48183f23fff27d0539177c90712166cd7603e3"
+    "1": "f218364a747154cadc480a4e433e5201e801f7daaaafbddc16284bb0999558ca",
+    "2": "0fc8c8c2a9b6992552c5bcedca4738231b9fb4ef2ce63cc7e7bf1af7c53b6bff"
   },
   "limits": {
     "attempts_per_request": 3,
@@ -135,6 +135,7 @@
     "stage1b_a_complete",
     "stage1b_pass_partial"
   ],
+  "output_root": "outside the Git tree and disjoint from the sealed metadata root, checked before any file or HTTP client exists",
   "pins": {
     "catalog_slots": 254,
     "first_bytes": 2323690559,
@@ -145,13 +146,16 @@
   },
   "protocol": "docs/research/new-perp-short-lab-protocol-v1.md",
   "public_report": "aggregate counts only: no symbol, slot, URL, per-launch date or result; M4 diagnostics by launch quarter and delivery state",
+  "publish_order": "the sealed source, the clean revision and the publication of every bound file are verified again before any queue, report or done marker is published; a failure writes the fixed stop source_integrity_error",
   "queue": {
     "gate": "Go B needs Go A in the same root, the sha256 of queue_b.json, and no definitive stop code from Go A",
     "go_a": "D2 for every sealed launch with first_file_day and an ok HEAD size, sorted by opaque slot; preflight binds launches, files and bytes to the public record",
     "go_b": "D3, D4, D5 and the first D6 page per candidate, sorted by opaque slot; later D6 pages by the HYP-036 rule, at most four per candidate",
     "t0_ambiguous": "a launch whose T0 is ambiguous gets no request after Go A"
   },
-  "request_list_sha256": "9a09f9d80fb38a915ff877d3f9e6f6a7226f7f1ef78bf0bfe811e76fda2be57e",
+  "reducer_rules": "first file: exactly one gzip member, no trailing byte, every row inside the window; API bars: start on the step grid, inside the hour (or minute) containing the requested start and the requested end, no duplicate; funding rows inside [startTime, endTime], no duplicate; a row from the cut is dropped uncounted; any other deviation is a fixed schema stop",
+  "report_command": "prints a stored report only if its go finished, or if a stop sealed the root and the report is not positive",
+  "request_list_sha256": "a25eb6b9460728e1a6691f8c0b750310ce52bef04f23c16cb070ef1d86b044a2",
   "restart": "fresh root; no resume under different code; a stop seals the root",
   "retention": "sealed 0700 root; opaque slots and keys, no symbol, URL or raw body hash in any receipt; public output is aggregate counts only",
   "rules": "new_perp_stage1b_body_v1",
@@ -204,8 +208,8 @@
     "m1": "d = first trade - launchTime; aligned -5 min to +60 min, delayed_open up to +24 h, else premarket_or_ambiguous; ambiguous at most 10%, readable at least 90%, unreadable at most 15%, all over the catalog launches",
     "m2": "(i) no file within one day of launch, at most 5% of the catalog; (ii) the metadata share a/(N+a), at most 5%; (iii) candidates missing more than 5% of their V1 path days, at most 5% of the candidates",
     "m3": "survivors are readable launches with a file near launch; contradicting at most 10%, unverifiable (no listing or unverified filename identity) at most 20%, survivors less contradicting at least 100; no baseCoin check",
-    "m4": "pagination finished and no gap longer than 8 h over days 3 to 21 after T0, clipped to the window: partial_pass, never proof; uncovered at most 5% of candidates",
-    "m5": "entry bar at E exists, hourly trade and mark series continuous from the hour of E to the hour before X, at least 95% of the episodes after funding; a series that may be cut by its limit is unproven and never green; minute level deferred",
+    "m4": "pagination finished and no gap longer than 8 h over days 3 to 21 after T0, clipped to the window: partial_pass, never proof; uncovered at most 5% of candidates; a share above the limit over the fixed candidate count is a known failure even while launches are pending",
+    "m5": "entry bar at E exists, hourly trade and mark series continuous from the hour of E to the hour before X, at least 95% of the episodes after funding; a series that may be cut by its limit is unproven and never green; minute level deferred; a known failure is an optimistic share below 95% (pending, unproven and funding-pending episodes counted as successes)",
     "m6": "static catalog fields: minNotionalValue at most USD 50, maxLeverage at least 2, qtyStep and minOrderQty present, at least 90% of the episodes; partial",
     "outcome": "the first stop code of the known failures, else stage1b_stopped if the root is sealed, else stage1b_incomplete if a check is not assessed, else stage1b_a_complete after Go A, else stage1b_pass_partial"
   },

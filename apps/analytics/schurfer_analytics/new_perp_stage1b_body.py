@@ -18,6 +18,8 @@ import argparse
 import contextlib
 import json
 import re
+import shutil
+import subprocess
 import sys
 import zlib
 from dataclasses import asdict, dataclass, replace
@@ -219,6 +221,23 @@ class FirstFileWindowReducer(s.FirstFileReducer):
         self.min_ns = ns if self.min_ns is None else min(self.min_ns, ns)
         self.max_ns = ns if self.max_ns is None else max(self.max_ns, ns)
 
+    def feed(self, chunk: bytes) -> None:
+        """Exactly one gzip member. A second member or any trailing byte is a fixed stop: the
+        minimum over the whole file would otherwise be unproven."""
+        if self._zlib.eof:
+            if chunk:
+                raise s.SchemaMismatchError("gzip_trailing_data")
+            return
+        try:
+            data = self._tail + self._zlib.decompress(chunk)
+        except zlib.error as exc:
+            raise s.SchemaMismatchError("not_gzip") from exc
+        if self._zlib.unused_data:
+            raise s.SchemaMismatchError("gzip_trailing_data")
+        *lines, self._tail = data.split(b"\n")
+        for line in lines:
+            self._line(line.rstrip(b"\r"))
+
     def finish(self) -> dict[str, Any]:
         try:
             self._tail += self._zlib.flush()
@@ -226,60 +245,89 @@ class FirstFileWindowReducer(s.FirstFileReducer):
             raise s.SchemaMismatchError("not_gzip") from exc
         if not self._zlib.eof:
             raise s.SchemaMismatchError("truncated_gzip")
+        if self._zlib.unused_data:
+            raise s.SchemaMismatchError("gzip_trailing_data")
         self._line(self._tail.rstrip(b"\r\n"))
         if self.rows == 0:
             raise s.SchemaMismatchError("no_rows")
         return {"rows": self.rows, "min_ns": self.min_ns, "max_ns": self.max_ns}
 
 
-def _drop_from_cut(payload: Any) -> tuple[Any, int | None]:
-    """The kline payload without rows at or after the cut, and the raw row count."""
-    try:
-        rows = payload["result"]["list"]
-    except (KeyError, TypeError):
-        return payload, None
+def _result_list(payload: Any, symbol: str | None) -> tuple[dict[str, Any], list[Any]]:
+    result = s._envelope(payload)
+    if symbol is not None and result.get("symbol") != symbol:
+        raise s.SchemaMismatchError("symbol")
+    rows = result.get("list")
     if not isinstance(rows, list):
-        return payload, None
-    kept = []
-    for row in rows:
-        try:
-            late = s._int_ms(row[0]) >= HOLDOUT.cut_ms
-        except (TypeError, ValueError, IndexError, KeyError):
-            late = False  # a malformed row reaches the discovery reducer, which stops the run
-        if not late:
-            kept.append(row)
-    result = {**payload["result"], "list": kept}
-    return {**payload, "result": result}, len(rows)
+        raise s.SchemaMismatchError("list")
+    return result, rows
 
 
 def reduce_kline_window(
-    payload: Any, symbol: str, width: int, step_ms: int, limit: int
+    payload: Any, symbol: str, width: int, step_ms: int, limit: int, start: int, end: int
 ) -> dict[str, Any]:
-    """Discovery's start-time reducer, with rows from the holdout cut dropped uncounted."""
-    clipped, raw = _drop_from_cut(payload)
-    facts = s.reduce_kline(clipped, symbol, width, step_ms, limit)
-    if raw is not None:
-        facts["full"] = raw >= limit  # the raw page decides whether it may be cut by its limit
+    """Bar start times of one response, checked against the exact request.
+
+    Per row, before any other field: a row from the cut is dropped uncounted (the fixed
+    cut policy); every other start must lie on the step grid, inside the hour (or minute)
+    that contains the requested start and the requested end, and appear once. Anything else
+    is a fixed schema stop, so a stale, shifted or duplicated series can never look covered.
+    """
+    result, rows = _result_list(payload, symbol)
+    low = start - start % step_ms
+    seen: set[int] = set()
+    kept = []
+    for item in rows:
+        if not isinstance(item, list) or len(item) < width:
+            raise s.SchemaMismatchError("row")
+        try:
+            stamp = s._int_ms(item[0])
+        except (TypeError, ValueError) as exc:
+            raise s.SchemaMismatchError("bad:start") from exc
+        if stamp >= HOLDOUT.cut_ms:
+            continue
+        if stamp % step_ms:
+            raise s.SchemaMismatchError("bar_off_grid")
+        if not low <= stamp <= end:
+            raise s.SchemaMismatchError("bar_out_of_range")
+        if stamp in seen:
+            raise s.SchemaMismatchError("bar_duplicate")
+        seen.add(stamp)
+        kept.append(item)
+    facts = s.reduce_kline(
+        {**payload, "result": {**result, "list": kept}}, symbol, width, step_ms, limit
+    )
+    facts["full"] = len(rows) >= limit  # the raw page decides whether it may be cut by its limit
     return facts
 
 
-def reduce_funding_window(payload: Any, symbol: str) -> dict[str, Any]:
-    """Discovery's funding-timestamp reducer, with rows from the holdout cut dropped uncounted."""
-    try:
-        items = payload["result"]["list"]
-    except (KeyError, TypeError):
-        return s.reduce_funding(payload, symbol)
-    if not isinstance(items, list):
-        return s.reduce_funding(payload, symbol)
+def reduce_funding_window(payload: Any, symbol: str, start: int, end: int) -> dict[str, Any]:
+    """Funding timestamps of one page, checked against the page bounds.
+
+    A row from the cut is dropped uncounted; every other stamp must lie inside
+    [startTime, endTime] of the request and appear once, else a fixed schema stop.
+    """
+    result, items = _result_list(payload, None)
+    seen: set[int] = set()
     kept = []
     for item in items:
+        if not isinstance(item, dict) or item.get("symbol") != symbol:
+            raise s.SchemaMismatchError("row")
         try:
-            late = s._int_ms(item["fundingRateTimestamp"]) >= HOLDOUT.cut_ms
-        except (TypeError, ValueError, KeyError):
-            late = False
-        if not late:
-            kept.append(item)
-    facts = s.reduce_funding({**payload, "result": {**payload["result"], "list": kept}}, symbol)
+            stamp = s._int_ms(item["fundingRateTimestamp"])
+        except KeyError as exc:
+            raise s.SchemaMismatchError("missing:fundingRateTimestamp") from exc
+        except (TypeError, ValueError) as exc:
+            raise s.SchemaMismatchError("bad:fundingRateTimestamp") from exc
+        if stamp >= HOLDOUT.cut_ms:
+            continue
+        if not start <= stamp <= end:
+            raise s.SchemaMismatchError("funding_out_of_range")
+        if stamp in seen:
+            raise s.SchemaMismatchError("funding_duplicate")
+        seen.add(stamp)
+        kept.append(item)
+    facts = s.reduce_funding({**payload, "result": {**result, "list": kept}}, symbol)
     facts["full"] = len(items) >= s.FUNDING_PAGE_LIMIT
     return facts
 
@@ -689,6 +737,18 @@ def build_contract(pins: Pins = PINS) -> dict[str, Any]:
         "E - 30 d >= window start; every API span ends at cut - 1 ms; a row from the cut is "
         "dropped uncounted from an API page and stops the run in a first file, as does a row "
         "before the window start",
+        "reducer_rules": "first file: exactly one gzip member, no trailing byte, every row "
+        "inside the window; API bars: start on the step grid, inside the hour (or minute) "
+        "containing the requested start and the requested end, no duplicate; funding rows "
+        "inside [startTime, endTime], no duplicate; a row from the cut is dropped uncounted; "
+        "any other deviation is a fixed schema stop",
+        "publish_order": "the sealed source, the clean revision and the publication of every "
+        "bound file are verified again before any queue, report or done marker is published; "
+        "a failure writes the fixed stop source_integrity_error",
+        "output_root": "outside the Git tree and disjoint from the sealed metadata root, "
+        "checked before any file or HTTP client exists",
+        "report_command": "prints a stored report only if its go finished, or if a stop sealed "
+        "the root and the report is not positive",
         "statuses": list(REASONS),
         "outcomes": list(OUTCOMES),
         "m1_unreadable": list(UNREADABLE),
@@ -703,10 +763,14 @@ def build_contract(pins: Pins = PINS) -> dict[str, Any]:
             "10%, unverifiable (no listing or unverified filename identity) at most 20%, "
             "survivors less contradicting at least 100; no baseCoin check",
             "m4": "pagination finished and no gap longer than 8 h over days 3 to 21 after T0, "
-            "clipped to the window: partial_pass, never proof; uncovered at most 5% of candidates",
+            "clipped to the window: partial_pass, never proof; uncovered at most 5% of candidates; "
+            "a share above the limit over the fixed candidate count is a known failure even while "
+            "launches are pending",
             "m5": "entry bar at E exists, hourly trade and mark series continuous from the hour "
             "of E to the hour before X, at least 95% of the episodes after funding; a series "
-            "that may be cut by its limit is unproven and never green; minute level deferred",
+            "that may be cut by its limit is unproven and never green; minute level deferred; "
+            "a known failure is an optimistic share below 95% (pending, unproven and "
+            "funding-pending episodes counted as successes)",
             "m6": "static catalog fields: minNotionalValue at most USD 50, maxLeverage at least "
             "2, qtyStep and minOrderQty present, at least 90% of the episodes; partial",
             "floor": "n_primary at least 100 and at least 26 ISO weeks of primary launches",
@@ -862,6 +926,45 @@ def _publish_stop_report(on_stop: Callable[[], None]) -> None:
         on_stop()
 
 
+def check_source(
+    fetcher: s.Fetcher, verify: Callable[[], None] | None, on_stop: Callable[[], None]
+) -> None:
+    """The last check before anything positive is published: any exception seals the root."""
+    if verify is None:
+        return
+    try:
+        with m.private_logs():
+            verify()
+    except Exception:
+        fetcher.record_stop("source_integrity_error")
+        _publish_stop_report(on_stop)
+        raise s.FetchStoppedError("source_integrity_error") from None
+
+
+def make_verify(
+    source: Path,
+    sealed: Sealed,
+    pins: Pins,
+    bound: dict[str, Any] | None,
+    *,
+    revision: Callable[[], str] = transport.clean_revision,
+    published: Callable[[list[str]], dict[str, str]] = publication.publication,
+) -> Callable[[], None]:
+    """The final integrity check: the sealed metadata root (every hash, every row), the clean
+    revision and the publication of every bound file are as they were at the start."""
+
+    def verify() -> None:
+        again = load_sealed(source, pins)
+        if again.report != sealed.report or again.rows != sealed.rows:
+            raise ValueError("sealed metadata changed")
+        if bound is not None and (
+            revision() != bound["revision"] or published(list(PUBLISHED)) != bound["publication"]
+        ):
+            raise ValueError("code publication changed")
+
+    return verify
+
+
 def stop_report(
     fetcher: s.Fetcher, sealed: Sealed, phase: str, code: dict[str, Any], name: str
 ) -> Callable[[], None]:
@@ -874,15 +977,30 @@ def stop_report(
 
 
 def kline_reducer(
-    symbol: str, width: int, step_ms: int, limit: int
+    symbol: str, width: int, step_ms: int, limit: int, start: int, end: int
 ) -> Callable[[bytes], dict[str, Any]]:
     return s._json_reducer(
-        lambda payload: reduce_kline_window(payload, symbol, width, step_ms, limit)
+        lambda payload: reduce_kline_window(payload, symbol, width, step_ms, limit, start, end)
     )
 
 
-def funding_reducer(symbol: str) -> Callable[[bytes], dict[str, Any]]:
-    return s._json_reducer(lambda payload: reduce_funding_window(payload, symbol))
+def funding_reducer(symbol: str, start: int, end: int) -> Callable[[bytes], dict[str, Any]]:
+    return s._json_reducer(lambda payload: reduce_funding_window(payload, symbol, start, end))
+
+
+def request_reducer(request: BodyRequest) -> Callable[[bytes], dict[str, Any]]:
+    """The reducer of one API request, bound to that request's own symbol and bounds."""
+    params = dict(request.params)
+    if request.cls == "D6":
+        return funding_reducer(params["symbol"], int(params["startTime"]), int(params["endTime"]))
+    width, step, limit = {
+        "D3": (7, s.MINUTE_MS, 1),
+        "D4": (5, s.HOUR_MS, 1000),
+        "D5": (7, s.HOUR_MS, 1000),
+    }[request.cls]
+    return kline_reducer(
+        params["symbol"], width, step, limit, int(params["start"]), int(params["end"])
+    )
 
 
 def _publish_plan(fetcher: s.Fetcher, name: str, requests: list[BodyRequest]) -> None:
@@ -910,7 +1028,11 @@ def final_report(
 
 
 def run_a(
-    fetcher: s.Fetcher, sealed: Sealed, pins: Pins = PINS, code: dict[str, Any] | None = None
+    fetcher: s.Fetcher,
+    sealed: Sealed,
+    pins: Pins = PINS,
+    code: dict[str, Any] | None = None,
+    verify: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     """Go A: the first daily file of every sealed launch. No later request is derived here
     except the queue manifest the owner reviews before Go B."""
@@ -930,7 +1052,9 @@ def run_a(
             fetcher.run_request(request)
         return {}
 
-    _guard(fetcher, work, stop_report(fetcher, sealed, "a", code or {}, "go_a_report.json"))
+    on_stop = stop_report(fetcher, sealed, "a", code or {}, "go_a_report.json")
+    _guard(fetcher, work, on_stop)
+    check_source(fetcher, verify, on_stop)  # before any queue, report or done marker
     return finish_a(fetcher, sealed, code or {})
 
 
@@ -984,6 +1108,7 @@ def run_b(
     sealed: Sealed,
     approved_queue_sha256: str,
     code: dict[str, Any] | None = None,
+    verify: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
     """Go B: entry bar, hourly series and funding of the Go A candidates."""
     if fetcher.go != 2:
@@ -1007,26 +1132,24 @@ def run_b(
     if s.digest(s.canonical(sorted(r.key for r in first_round))) != approved["keys_sha256"]:
         fetcher.record_stop("queue_b_differs")
         raise s.FetchStoppedError("queue_b_differs")
-    shape = {"D3": (7, s.MINUTE_MS, 1), "D4": (5, s.HOUR_MS, 1000), "D5": (7, s.HOUR_MS, 1000)}
 
     def work() -> dict[str, Any]:
         bars = [r for r in first_round if r.cls != "D6"]
         _publish_plan(fetcher, "go_b_bars", bars)
         for request in bars:
-            width, step, limit = shape[request.cls]
-            fetcher.run_request(
-                request, kline_reducer(dict(request.params)["symbol"], width, step, limit)
-            )
+            fetcher.run_request(request, request_reducer(request))
         for round_no in range(1, s.FUNDING_MAX_PAGES + 1):
             pending = funding_round(candidates, sealed.rows, funding_pages(fetcher))
             if not pending:
                 break
             _publish_plan(fetcher, f"go_b_funding_round{round_no}", pending)
             for request in pending:
-                fetcher.run_request(request, funding_reducer(dict(request.params)["symbol"]))
+                fetcher.run_request(request, request_reducer(request))
         return {}
 
-    _guard(fetcher, work, stop_report(fetcher, sealed, "final", code or {}, "body_report.json"))
+    on_stop = stop_report(fetcher, sealed, "final", code or {}, "body_report.json")
+    _guard(fetcher, work, on_stop)
+    check_source(fetcher, verify, on_stop)  # before the report or the done marker
     report = final_report(fetcher, sealed, "final", code or {})
     publish_or_same(root / "body_report.json", report)
     publish_or_same(root / "go_b_done.json", {"go": 2})
@@ -1058,6 +1181,45 @@ def binding(pins: Pins = PINS) -> dict[str, Any]:
         "publication": published,
         "request_list_sha256": saved["request_list_sha256"],
     }
+
+
+def repo_root() -> Path:
+    git = shutil.which("git")
+    if git is None:
+        raise ValueError("git is required to locate the repository")
+    out = subprocess.check_output([git, "rev-parse", "--show-toplevel"], text=True)  # noqa: S603
+    return Path(out.strip()).resolve()
+
+
+def check_root_location(root: Path, source: Path, repo: Path) -> None:
+    """The sealed output root is outside the Git tree and disjoint from the sealed source:
+    per-launch timestamps and receipts must never be writable into a tracked directory."""
+    r, src, tree = root.resolve(), source.resolve(), repo.resolve()
+    if r.is_relative_to(tree) or tree.is_relative_to(r):
+        raise ValueError("the output root must be outside the Git tree")
+    if r.is_relative_to(src) or src.is_relative_to(r):
+        raise ValueError("the output root and the sealed metadata root must be disjoint")
+
+
+POSITIVE: Final = ("stage1b_pass_partial", "stage1b_a_complete")
+
+
+def show_report(root: Path, phase: str) -> int:
+    """Print the stored aggregate report only if its go finished, or if a stop sealed the root
+    and the report is not positive. Nothing positive is ever shown from a sealed root."""
+    name, done = (
+        ("go_a_report.json", "go_a_done.json")
+        if phase == "a"
+        else ("body_report.json", "go_b_done.json")
+    )
+    stored = json.loads((root / name).read_text())
+    if (root / "stop.json").exists():
+        if stored.get("outcome") in POSITIVE:
+            raise ValueError("the root is sealed by a stop and holds no positive report")
+    elif not (root / done).exists():
+        raise ValueError("the go is not finished in this root")
+    _emit(json.dumps(stored, indent=2, sort_keys=True))
+    return 0
 
 
 def root_state(go: int, root: Path) -> str:
@@ -1102,9 +1264,7 @@ def main(argv: list[str] | None = None) -> int:
         _emit(json.dumps(contract, indent=2, sort_keys=True))
         return 0
     if args.command == "report":
-        name = "go_a_report.json" if args.phase == "a" else "body_report.json"
-        _emit((args.root / name).read_text().rstrip())
-        return 0
+        return show_report(args.root, args.phase)
     if args.command == "write-contract":
         path = Path(CONTRACT_PATH)
         if args.check:
@@ -1118,10 +1278,7 @@ def main(argv: list[str] | None = None) -> int:
         raise ValueError("go 2 needs --queue-sha256")
     root: Path = args.root
     source: Path = args.metadata_root
-    if root.resolve().is_relative_to(source.resolve()) or source.resolve().is_relative_to(
-        root.resolve()
-    ):
-        raise ValueError("the output root and the sealed metadata root must be disjoint")
+    check_root_location(root, source, repo_root())
     state = root_state(args.go, root)
     bound = binding()
     p.require_merged(bound["revision"])
@@ -1131,14 +1288,11 @@ def main(argv: list[str] | None = None) -> int:
         root.mkdir(mode=0o700, parents=True)
     with httpx.Client(timeout=60.0, follow_redirects=False) as client:
         fetcher = BodyFetcher(root, contract, client, go=args.go, code=bound, specs=class_specs())
+        verify = make_verify(source, sealed, PINS, code)
         if args.go == 1:
-            report = run_a(fetcher, sealed, code=code)
+            report = run_a(fetcher, sealed, code=code, verify=verify)
         else:
-            report = run_b(fetcher, sealed, args.queue_sha256, code=code)
-        again = load_sealed(source)
-        if again.report != sealed.report or transport.clean_revision() != bound["revision"]:
-            fetcher.record_stop("source_integrity_error")
-            raise s.FetchStoppedError("source_integrity_error")
+            report = run_b(fetcher, sealed, args.queue_sha256, code=code, verify=verify)
     _emit(json.dumps({"outcome": report["outcome"], "stops": report["stop_codes"]}))
     return 0
 
