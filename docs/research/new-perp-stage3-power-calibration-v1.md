@@ -11,7 +11,7 @@ Amendment 7 of section 11 below.
 - Code: `apps/analytics/schurfer_analytics/new_perp_stage3.py`. It reuses the stage 1 fetcher,
   reducers, verdict loader and cohort rules by import (`new_perp_stage1.py`,
   `new_perp_stage1_verdict.py`); no new dependency.
-- Tests: `apps/analytics/tests/test_new_perp_stage3.py` (82 tests, section 15).
+- Tests: `apps/analytics/tests/test_new_perp_stage3.py` (88 tests, section 15).
 - Registry: the section "I25 Stage 3 registration" of the
   [seen-windows registry](seen-windows-registry.md).
 
@@ -23,11 +23,11 @@ merge.
 
 ```text
 request_list_sha256 (whole contract, bound into the run) =
-  48864588d2e44628e0421fda43367b218baaf7c50bcda9e0951ad4a5ec59b15e
+  3392f75267e684e46093cbc0fb55e0714036df585a98d220b416dae4594a08d9
 go_sha256["1"] (what the owner approves) =
-  c735f79a2838ab38eec5e14cc4096ba6be4ea7520d9fa93712e9ce98c45f0254
+  701fcfd51b9d10f0e4093ef9eeb585b8a97a95e66bba7685dcfd9666dead7daf
 contract.json file SHA-256 (as formatted by prettier) =
-  e77de30e34d632e43a104d76885eab31375ae2da04da18b9452f7195d8e1e39a
+  3d5b7b9e3740a97df167378ee756a05c94d008874ac6d5329bd866710a24f659
 ```
 
 Check without a network request (the first two are the only commands run in this work; the third reads the sealed
@@ -68,16 +68,28 @@ touched, and no holdout fact tunes any parameter here).
   Git) is read through `new_perp_stage1_verdict.load_run`, the stage 1 launch statuses are
   recomputed by the stage 1 functions, and the episodes with reason `primary` are the cohort.
   Before any request the code requires that (a) the root's `manifest.json` has SHA-256
-  `759305ceaf5730ff0b7f23963a2c17292590ecb590d0336376cc139a0b5ca76d`, (b) the committed
-  report decompresses to SHA-256
+  `759305ceaf5730ff0b7f23963a2c17292590ecb590d0336376cc139a0b5ca76d` (this fixes the Go 1 plan,
+  not the Go 2 results), (b) the committed report decompresses to SHA-256
   `400f635ea29ac52dc5999caa866b152fa14cea1b82381ce91270012821a853ca`, (c) the recomputed
   `n_primary`, ISO weeks and the full `reasons` table equal that report, (d) the report has
-  no stop code and no stop, and (e) the cohort is 228 episodes in 48 weeks. Any difference
-  stops before the first request.
-- **Documentary only:** the M2(ii) v3 report (`38b569aa...`, `stage1_pass_partial`) and its
-  evidence map (`532d1014...`) are recorded in the contract. The M2(ii) completion did not
-  change the 228 episodes (registry, 2026-11-19), and the sealed combined report is not in
-  Git, so the code does not read it.
+  no stop code and no stop, (e) the cohort is 228 episodes in 48 weeks, and (f) **the actual
+  inputs are fingerprinted**: a SHA-256 over the sorted map path to file SHA-256 of
+  `phase0.json`, `manifest.json`, `go2_done.json` and every attempt and receipt of the root
+  (a stop file is refused), taken before and after the derivation (it must not change). Counts
+  that match an aggregate report do not prove equal inputs, so the owner approves the **cohort
+  SHA-256** printed by the `cohort` command and `fetch` refuses any other (`--expected-cohort-sha256`);
+  the fingerprint is stored in the sealed cohort file, exported in the report and re-checked
+  against the root at report time. Limit: no committed hash covers these files, so the
+  fingerprint's first value is trusted at the `cohort` step; the earlier `input_hash_map_sha256`
+  (`cc20f7d5...`) has no committed file list to reproduce it from. Any difference stops before
+  the first request.
+- **Verified by code versus documentary only.** Checked by the code: the manifest hash, the
+  committed report hash, the recomputed counts and reasons, the source fingerprint, the cohort
+  hash. **Documentary only, not checked here:** the M2(ii) v3 report (`38b569aa...`,
+  `stage1_pass_partial`), its evidence map (`532d1014...`) and the Stage 1 input-map hash
+  (`cc20f7d5...`); they are in the contract under `documentary_only`. The M2(ii) completion did
+  not change the 228 episodes (registry, 2026-11-19), and the sealed files they cover are not
+  in Git, so the code does not read them.
 - **The week of an episode** is the ISO week of the catalog `launchTime`, the same assignment
   as the 48 weeks of Stage 1 (question Q8).
 
@@ -98,8 +110,13 @@ Y  = 10,000 * ( exp(Z) - 1 )            the planning variable, in bps
 
 `Y` is the price return of a 7-day hold, in bps, of the pre-entry proxy window. A short's net is
 about `-Y` plus funding and fees, so the dispersion of `Y` is the dispersion of one episode's
-net up to the stop truncation (section 13). The scaling `sqrt(168 / h)` is the protocol's "7/6
-as a variance scale" (7.4) with the exact window length: at `h = 144` it is `sqrt(7/6)`.
+net **only as a planning assumption** (section 13: stops, gaps, funding, costs and liquidation
+make the real net differ). The factor `168 / h` is the **variance** scale and `sqrt(168 / h)` its
+**standard-deviation** scale, applied to the log return `L`. The protocol's "7/6 as a variance
+scale" (7.4) is the case `h = 144`, where the variance factor is `7/6` and the SD factor is
+`sqrt(7/6)`. The scaling is exact for the variance of `L` under independent increments; after
+`exp(Z) - 1` it is **not** an exact linear scaling of the simple-return variance, which is why
+`sd_bps` is computed on `Y` itself and `sd_log_7d` on `Z`.
 
 ### 3.1 The window arithmetic
 
@@ -163,9 +180,12 @@ top5     = share of the sum of squared deviations of Y from its five largest abs
 ```
 
 `sd_bps` uses the simple return (not the log) because a short's net is linear in the simple
-return, and an uncapped simple-return variance is at least as large as the variance of the
-stop-truncated net (question Q5). The mean is formed in memory to take deviations and is never
-emitted.
+return (question Q5). It is the dispersion of a **terminal** return over a pre-entry window and
+**not an upper bound** of the dispersion of the real net: the stop and liquidation rules of 5.3
+act on the path (two paths with the same terminal return can have different stopped results),
+and funding, dynamic costs, gaps and fills beyond the stop are not in it. It is a planning
+scale, with its limits listed in section 13. The mean is formed in memory to take deviations
+and is never emitted.
 
 ### 6.2 Dependence: moving-block bootstrap over ISO weeks
 
@@ -186,7 +206,9 @@ emitted.
   `deff_episode_weighted` so a reader can see the split (question Q4).
 - `DEFF_used = max( max over b of DEFF(b), 1.0 )`: the **largest** of the three block lengths,
   never the favorable one (protocol 7.4), and never below independence (question Q9).
-  `n_eff = n / DEFF_used`.
+  `n_eff = n / DEFF_used`. The maximum of three bootstrap estimates is a planning choice that
+  avoids picking the favorable one; it is **not** a guaranteed upper confidence bound of the
+  true design effect, which 48 weeks cannot bound.
 
 ### 6.3 The gate
 
@@ -223,9 +245,10 @@ its entry inside 2024-10-01). `n_V` is therefore a **lower bound** of the varian
 count, because the variant's own cut can admit launches that V1's cut removed. Each variant is
 reported with `episodes`, `weeks`, `floors_met` (at least 100 episodes **and** 26 ISO weeks) and
 its MDE. A variant below a floor is reported and decides nothing; V2 and V3 never decide
-(protocol 5.1). The one calibrated `SE` for all three assumes the volatility of days 1 to 7 is not
-below that of days 3 to 10 and 14 to 21 (volatility decays with age): conservative if true, an
-assumption otherwise (section 13).
+(protocol 5.1). The V2 and V3 MDE is a **conditional extrapolation** of V1's calibrated `SE` (the
+report labels it `conditional_extrapolation_from_v1_se`), not a measurement of those variants.
+It also assumes the dispersion of days 3 to 10 and 14 to 21 is not above that of the days 1 to 7
+read here; if post-entry dispersion is larger, the extrapolation understates (section 13).
 
 ### 6.5 The portfolio against the 5% hurdle (does not gate)
 
@@ -247,10 +270,15 @@ The report also gives `hurdle` and `at_mde` in dollars per year for `C` = 50, 25
 5,000 (protocol 6.4). Planning arithmetic only: at `k = 8`, `entered = 205`, the hurdle needs
 about 19.5 bps (protocol 6.4 says about 20), and an effect equal to the gate limit of 400 bps is
 `0.04 * 205 / 8 = 102.5%` a year on reserved capital, 20.5 times the hurdle's requirement. So the
-hurdle is never the binding bar: **the statistical bar is, and what passes it is a very large
-effect.** A true mean between about 20 and 400 bps would be worth having and cannot be proven on
-228 episodes; the protocol's wording for that outcome stands ("an answer, and a cheap one",
-7.4). Question Q3 asks the colleague whether that is the intended economic requirement.
+400 bps is the pre-chosen **spending rule** (a ceiling of the allowed MDE), not the achieved MDE.
+Detectability is stated through the **achieved** `MDE_gate` the report gives: for example, at
+`sd_bps * sqrt(DEFF_used) = 600` and `n = 228` the achieved MDE is about 111 bps, so a 200 bps
+effect would not be excluded, and the hurdle's 20 bps requirement can still lie far below it.
+Whether the hurdle binds depends on the achieved MDE: it is below the statistical bar whenever
+`mde_over_hurdle` is above 1, and the report gives that ratio. Nothing is declared unprovable
+before the read. Question Q3 asks the colleague whether 400 bps is the intended spending rule.
+If `k` or `entered` change after any outcome is read, that needs a pre-registered amendment
+(question Q12).
 
 ## 7. Pre-registered decision table
 
@@ -341,13 +369,18 @@ request that is not the kline endpoint; the only `httpx.Client` is built in the 
   row outside the range) stops the run fail-closed. A one-symbol pilot would prove nothing the
   stop rules do not (question Q6).
 - **Run procedure, after the go and not now.** Merge, clean `main`, `plan`, `write-contract
---check`, then `fetch --approved-sha256 <go_sha256["1"]> --stage1-root <sealed root> --root
-<fresh 0700 root>` and `report --root <root>`; commit only the report. I run none of these.
+--check`, then `cohort --stage1-root <sealed root>` (the owner approves the printed cohort SHA-256),
+  `fetch --approved-sha256 <go_sha256["1"]> --expected-cohort-sha256 <cohort SHA-256>
+--stage1-root <sealed root> --root <fresh 0700 root>`, then `report --root <root> --stage1-root
+<sealed root>`; commit only the report. `report` refuses a root whose contract hash or code
+  binding differs from the executing implementation or whose sources changed, and stores the first
+  report of a finished or stopped root immutably (section 10). I run none of these.
 
 ## 10. The report: allowlist
 
 Top-level keys: `version`, `verdict`, `stop_code`, `returns_read`, `cohort`, `window`,
-`dispersion`, `dependence`, `power`, `variants`, `portfolio`, `run`. Inside them, only: episode,
+`dispersion`, `dependence`, `power`, `variants`, `portfolio`, `reason`, `run`. `reason` is present
+only for `not_estimable` and holds one fixed code. Inside them, only: episode,
 week, slot and defined/undefined counts; the share of hour rows missing inside windows (a time
 count, not a price) and the count of windows of 143 and 144 hours; `sd_bps`, `sd_log_7d`,
 `top5_share_of_squared_deviations`; per block length the two bootstrap variances' ratios
@@ -355,8 +388,10 @@ count, not a price) and the count of windows of 143 and 144 hours; `sd_bps`, `sd
 `deff_largest`, `deff_used`, `deff_floor_applied`, `n_eff`; `se_bps`, `multiplier`,
 `mde_gate_bps`, `limit_bps`, `passes`, `sensitivity_bps`; the variant and portfolio tables of
 6.4 and 6.5; and the run block (request-list hash, cohort SHA-256, attempts, bytes, finished
-requests, results by outcome, error codes seen). Formal-report fields (code revision, publication
-hashes, clean-tree state) come from the run binding. No cost model applies (no net is formed).
+requests, results by outcome, error codes seen, the source fingerprint, and the binding: rules
+version, code revision, publication hashes and whether the tree was clean at the run). The V2 and
+V3 entries carry `basis: conditional_extrapolation_from_v1_se`. No cost model applies (no net is
+formed).
 
 ## 11. Protocol change: proposed Amendment 7
 
@@ -370,8 +405,9 @@ in section 7.4 of the protocol (a paragraph, not a change of any rule that was f
    200 MB, and many more prices parsed). The dispersion of a 6-day return needs two prices per
    launch. Hourly bars give it in one request of 145 rows. Stage 4 still reads minute bars.
 2. **228 requests, not 263.** The cohort is the stage 1 `n_primary` (section 2).
-3. **A window on the hour grid inside `[T0 + 1 d, E)`.** The protocol's window is the
-   continuous `[T0 + 1 d, E)`; the hourly grid makes it `[A, B]` with `h` 143 or 144 hours
+3. **A window on the hour grid inside `[T0 + 1 d, E]`.** The protocol's window is the
+   continuous `[T0 + 1 d, E)`; the right bound is included in the sense that `B = E` when `E` is on
+   the hour, and the last bar ends at `B` (no bar starting at or after `E` is read); the hourly grid makes it `[A, B]` with `h` 143 or 144 hours
    (section 3).
 4. **Exact variance scaling.** `sqrt(168 / h)` per episode replaces the flat factor `7/6`
    (equal at `h = 144`).
@@ -402,11 +438,15 @@ in section 7.4 of the protocol (a paragraph, not a change of any rule that was f
 
 ## 13. Limits, stated plainly
 
-- **A proxy, not the outcome.** The dispersion is measured on days 1 to 7; the hold is days 7 to 14. Volatility is assumed not to rise with age. If it does not decay, `sd_bps` understates the
-  hold's dispersion; the 168/h scale accounts for length, not for decay.
-- **Stop truncation.** The stage 4 net has the 30% stop (5.3), which truncates the loss; the
-  proxy has no stop, so `sd_bps` overstates the truncated net's dispersion. The two biases act
-  in opposite directions and are not netted here.
+- **A proxy, not the outcome.** The dispersion is measured on days 1 to 7; the hold is days 7 to 14. The transfer of `SD` and `DEFF` to the post-entry net is a **planning assumption, not an
+  upper bound**. The risk is not that volatility fails to decay; it is that post-entry dispersion
+  or dependence is larger than the pre-entry proxy, or that another assumption breaks. The
+  168/h scale accounts for window length only.
+- **What the proxy leaves out.** Stops and liquidation (they depend on the path, and two paths
+  with the same terminal return give different stopped results; the protocol promises no loss
+  ceiling), gaps and fills beyond the stop, funding, dynamic costs, and unresolved episodes. None
+  of these is a guaranteed over- or understatement; their net effect on the real variance is
+  unknown before stage 4.
 - **Dependence transfers by assumption.** Pre-entry dependence (a common market factor across
   neighboring weeks) is taken to describe post-entry dependence. HYP-037's `DEFF` of 111 for one
   candidate shows how large that factor can be. 48 weeks give a noisy estimate of it; the largest
@@ -422,40 +462,43 @@ in section 7.4 of the protocol (a paragraph, not a change of any rule that was f
 
 ## 14. Open questions, each with my recommendation
 
-| Q   | Question                                                                                                                                                                            | Recommendation                                                                                                                                                                              |
-| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Q1  | Accept the six deviations of Amendment 7 (hourly bars, 228 requests, hour-grid window, exact scaling, floor and statistic named, stop-code reach)?                                  | Yes. The alternative, 1-minute bars, is about nine times the requests and parses far more prices to estimate one dispersion                                                                 |
-| Q2  | The protocol multiplier 2.80 gates; 2.487 and 2.123 are reported only. Should the gate use 2.123, the multiplier matching stage 4's 90% bound?                                      | Keep 2.80. It was fixed with the 400 bps limit before any price; changing it after a design discussion about its effect would be tuning, and the other two are in the report for the reader |
-| Q3  | The 400 bps limit is about 100% a year on reserved capital and about 20 times the 5% hurdle's requirement (section 6.5). Is it the intended economic requirement?                   | Keep. A smaller effect cannot be proven on 228 episodes at any plausible dispersion, and the cheap stop is the protocol's declared outcome                                                  |
-| Q4  | `DEFF` is for the cluster-weighted mean (the stage 4 statistic) and so includes the effect of equal cluster weights; the episode-weighted ratio is reported beside it. Which gates? | Cluster-weighted, as written in protocol 7.2 and 7.4                                                                                                                                        |
-| Q5  | `sd_bps` is the dispersion of the simple 7-day return, not of a stop-truncated net and not of the log return                                                                        | Simple return; the log version is reported. It is conservative against truncation and equals what a short's net is linear in                                                                |
-| Q6  | One go or two (a pilot first)?                                                                                                                                                      | One. 228 requests, about 3 MB, a class already proven by Stage 1, fail-closed stops                                                                                                         |
-| Q7  | V2 and V3 use V1's calibrated `SE` scaled by their own count, with `n_V` counted on V1-primary episodes (a lower bound). Instead read their own proxy windows (2 days and 13 days)? | No. They decide nothing; a second window per variant would add reads for statements nobody acts on                                                                                          |
-| Q8  | Week of an episode: `launchTime` week (as Stage 1's 48 weeks), not the week of `T0`. A `T0` up to 24 hours after `launchTime` can fall in the next week                             | `launchTime`, for consistency with the stage 1 count and the protocol's "week of the launch". Blocks of 2 to 8 weeks make the boundary case likely immaterial                               |
-| Q9  | `DEFF_used` is never below 1.0 (HYP-037 used a floor of 1.2). Floor at 1.0?                                                                                                         | Yes: a measured `DEFF` below one on a pre-entry window is not evidence that stage 4 returns are negatively dependent                                                                        |
-| Q10 | A calendar-day (market-wide day) clustering diagnostic beside the weeks?                                                                                                            | No. Windows of six days overlap across weeks; blocks of up to 8 weeks are the protocol's treatment of that                                                                                  |
-| Q11 | The `not_estimable` status has no stop code and, as designed, closes stage 4 under this contract. Instead give it a section-8 code?                                                 | Keep as is: it is a computation failure, not a finding about the market. The record says why and a new design needs its own registration                                                    |
-| Q12 | Should stage 4's `k` be frozen from the value written here, or recomputed after stage 4's own cohort checks?                                                                        | Frozen from here if the cohort is unchanged; the stage 4 contract states it and any difference with its reason                                                                              |
+| Q   | Question                                                                                                                                                                            | Recommendation                                                                                                                                                                                                                                                                   |
+| --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Q1  | Accept the six deviations of Amendment 7 (hourly bars, 228 requests, hour-grid window, exact scaling, floor and statistic named, stop-code reach)?                                  | Yes. The alternative, 1-minute bars, is about nine times the requests and parses far more prices to estimate one dispersion                                                                                                                                                      |
+| Q2  | The protocol multiplier 2.80 gates; 2.487 and 2.123 are reported only. Should the gate use 2.123, the multiplier matching stage 4's 90% bound?                                      | Keep 2.80. It was fixed with the 400 bps limit before any price; changing it after a design discussion about its effect would be tuning, and the other two are in the report for the reader                                                                                      |
+| Q3  | The 400 bps limit is about 100% a year on reserved capital and about 20 times the 5% hurdle's requirement (section 6.5). Is it the intended economic requirement?                   | Keep. A smaller effect cannot be proven on 228 episodes at any plausible dispersion, and the cheap stop is the protocol's declared outcome                                                                                                                                       |
+| Q4  | `DEFF` is for the cluster-weighted mean (the stage 4 statistic) and so includes the effect of equal cluster weights; the episode-weighted ratio is reported beside it. Which gates? | Cluster-weighted, as written in protocol 7.2 and 7.4                                                                                                                                                                                                                             |
+| Q5  | `sd_bps` is the dispersion of the simple 7-day return, not of a stop-truncated net and not of the log return                                                                        | Simple return; the log version is reported. A short's net is linear in it; it is a planning scale, not an upper bound                                                                                                                                                            |
+| Q6  | One go or two (a pilot first)?                                                                                                                                                      | One. 228 requests, about 3 MB, a class already proven by Stage 1, fail-closed stops                                                                                                                                                                                              |
+| Q7  | V2 and V3 use V1's calibrated `SE` scaled by their own count, with `n_V` counted on V1-primary episodes (a lower bound). Instead read their own proxy windows (2 days and 13 days)? | No. They decide nothing and their MDE is labelled a conditional extrapolation; a second window per variant would add reads for statements nobody acts on                                                                                                                         |
+| Q8  | Week of an episode: `launchTime` week (as Stage 1's 48 weeks), not the week of `T0`. A `T0` up to 24 hours after `launchTime` can fall in the next week                             | `launchTime`, for consistency with the stage 1 count and the protocol's "week of the launch". Blocks of 2 to 8 weeks make the boundary case likely immaterial                                                                                                                    |
+| Q9  | `DEFF_used` is never below 1.0 (HYP-037 used a floor of 1.2). Floor at 1.0?                                                                                                         | Yes: a measured `DEFF` below one on a pre-entry window is not evidence that stage 4 returns are negatively dependent                                                                                                                                                             |
+| Q10 | A calendar-day (market-wide day) clustering diagnostic beside the weeks?                                                                                                            | No. Windows of six days overlap across weeks; blocks of up to 8 weeks are the protocol's treatment of that                                                                                                                                                                       |
+| Q11 | The `not_estimable` status has no stop code and, as designed, closes stage 4 under this contract. Instead give it a section-8 code?                                                 | Keep as is: it is a computation failure, not a finding about the market. The report now carries a fixed reason code (`zero_variance`, `nonfinite_variance`, `empty_draw`, `block_longer_than_weeks`, `nonfinite_bootstrap_variance`) and a new design needs its own registration |
+| Q12 | Should stage 4's `k` be frozen from the value written here, or recomputed after stage 4's own cohort checks?                                                                        | Frozen from here if the cohort is unchanged; the stage 4 contract states it and any difference with its reason. A change of `k` after any outcome is read needs a pre-registered amendment                                                                                       |
 
 ## 15. Tests: regression table
 
-82 tests, all synthetic (a real Stage 1 run against the synthetic Bybit of `new_perp_world`, and a
+88 tests, all synthetic (a real Stage 1 run against the synthetic Bybit of `new_perp_world`, and a
 mock hourly kline server in the test file). Each row names what a failing test would mean.
 
-| Area                | Tests (names abbreviated)                                                                                                                                                                                                                                                       | What would break                                                                      |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| Contract            | deterministic and checked in; every pre-registered rule moves both hashes; one go, one class, budget arithmetic; decision table order and thresholds                                                                                                                            | a rule changed without a new hash; a budget number that disagrees with its derivation |
-| Window              | 4,000 start times: A, B, `h` in 143 or 144, last bar ends by `E`; entry on the hour does not request the bar that starts at `E`; refusal of late, early, wrong-clock episodes; boundary at `X == cut`                                                                           | a bar at or after `E` read; an episode priced although its path leaves the year       |
-| Reducer             | only two closes parsed (garbage elsewhere); missing endpoint is undefined; a row at `E`, before the first bar, off the grid, a duplicate, 200 rows, a short row, wrong symbol, bad envelope, nine bad closes                                                                    | a post-entry bar parsed; a bad number accepted; a close or start time kept            |
-| Cohort              | primary episodes only, censored launches absent; mismatch with the reviewed report, wrong manifest hash, wrong size, incomplete Stage 1 run all refused; repository evidence matches its pins                                                                                   | a cohort that differs from the reviewed 228 reaching the fetcher                      |
-| Run                 | 228 requests on the kline endpoint, each ending before its entry and 7 days before the cut; no closing price in any sealed file; stored log return exact                                                                                                                        | a request outside the plan; a price persisted                                         |
-| Error envelope      | every retryable code retried with only code and message stored (truncated to 200); other code stops, named, persisted, no retry; boolean, float, string, null `retCode` is a schema mismatch; three failed sends are undefined not a stop; a row after `E` stops the run unread | the discovery fixes lost; a price or message body persisted                           |
-| Root                | fresh root is 0700 and outside the repository, stray files refused; resume under another revision or contract refused, same code continues (229 sends after one crash); other cohort or size refused                                                                            | resume under different code; a silent second cohort                                   |
-| Statistics          | by-hand scaling; variance and top-5 share; `DEFF` near 1 for independent weeks and large for a common factor; largest block decides; MDE identity; floor at 1.0; degenerate variance; gate at exactly 400 and one ulp over; shift invariance; empty weeks kept                  | a wrong MDE, a favorable block chosen, a mean-dependent statistic                     |
-| Decision table      | nine cases including 217 versus 216 of 228 and 100 versus 99 episodes, 26 versus 25 weeks, and the order of rows                                                                                                                                                                | a boundary moved                                                                      |
-| Variants, slots     | each variant's own cuts and floors; slot count against a plain reference and shuffled; hurdle arithmetic and dollars                                                                                                                                                            | a wrong `k`, hurdle or variant count                                                  |
-| Verdicts end to end | insufficient power, pass (recomputed independently), coverage 216 and 217, one-valued cohort, fatal code mid-run, partial run, tampered cohort file; the firewall (keys, symbols, closes, timestamps) on every report                                                           | a statistic emitted from a failed cohort; a symbol, close or timestamp in a report    |
-| Wiring              | the only HTTP client is built in `fetch`; `plan`, `--check` and the `cohort` summary (aggregates only) make no request; a wrong approved hash raises before anything is created; document, registry and protocol carry the hashes and numbers; no em dash                       | document drift; a request without the exact hash                                      |
+| Area                | Tests (names abbreviated)                                                                                                                                                                                                                                                                                                                                                                                               | What would break                                                                      |
+| ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| Contract            | deterministic and checked in; every pre-registered rule moves both hashes; one go, one class, budget arithmetic; decision table order and thresholds                                                                                                                                                                                                                                                                    | a rule changed without a new hash; a budget number that disagrees with its derivation |
+| Window              | 4,000 start times: A, B, `h` in 143 or 144, last bar ends by `E`; entry on the hour does not request the bar that starts at `E`; refusal of late, early, wrong-clock episodes; boundary at `X == cut`                                                                                                                                                                                                                   | a bar at or after `E` read; an episode priced although its path leaves the year       |
+| Reducer             | only two closes parsed (garbage elsewhere); missing endpoint is undefined; a row at `E`, before the first bar, off the grid, a duplicate, 200 rows, a short row, wrong symbol, bad envelope, nine bad closes                                                                                                                                                                                                            | a post-entry bar parsed; a bad number accepted; a close or start time kept            |
+| Cohort              | primary episodes only, censored launches absent; mismatch with the reviewed report, wrong manifest hash, wrong size, incomplete Stage 1 run all refused; repository evidence matches its pins                                                                                                                                                                                                                           | a cohort that differs from the reviewed 228 reaching the fetcher                      |
+| Run                 | 228 requests on the kline endpoint, each ending before its entry and 7 days before the cut; no closing price in any sealed file; stored log return exact                                                                                                                                                                                                                                                                | a request outside the plan; a price persisted                                         |
+| Error envelope      | every retryable code retried with only code and message stored (truncated to 200); other code stops, named, persisted, no retry; boolean, float, string, null `retCode` is a schema mismatch; three failed sends are undefined not a stop; a row after `E` stops the run unread                                                                                                                                         | the discovery fixes lost; a price or message body persisted                           |
+| Root                | fresh root is 0700 and outside the repository, stray files refused; resume under another revision or contract refused, same code continues (229 sends after one crash); other cohort or size refused                                                                                                                                                                                                                    | resume under different code; a silent second cohort                                   |
+| Report binding      | a root is refused by `evaluate` when the stored contract hash differs from the executing implementation (the changed-MDE-limit flip), when the stored code binding differs, or when the Stage 1 sources differ from the recorded fingerprint; the report exports revision, publication hashes and clean-tree state; the first report of a finished root is stored once and returned unchanged; a running root gets none | a root re-analysed by other code under its old hash                                   |
+| Cohort inputs       | the fingerprint of the Stage 1 source files is stable, changes when one receipt moves by a second (same counts), is refused with a stop file, and the owner's expected cohort SHA-256 is enforced                                                                                                                                                                                                                       | counts that match while inputs differ                                                 |
+| Reserve violation   | a receipt with `reserve_exceeded` and no stop file leaves the root stopped for `evaluate` and refuses further requests (Stage 3's own safeguard; the fetcher's recovery is a separate PR)                                                                                                                                                                                                                               | a transport-limit violation forgotten after a crash                                   |
+| Statistics          | by-hand scaling; variance and top-5 share; `DEFF` near 1 for independent weeks and large for a common factor; largest block decides; MDE identity; floor at 1.0; degenerate variance; gate at exactly 400 and one ulp over; shift invariance; empty weeks kept                                                                                                                                                          | a wrong MDE, a favorable block chosen, a mean-dependent statistic                     |
+| Decision table      | nine cases including 217 versus 216 of 228 and 100 versus 99 episodes, 26 versus 25 weeks, and the order of rows                                                                                                                                                                                                                                                                                                        | a boundary moved                                                                      |
+| Variants, slots     | each variant's own cuts and floors; slot count against a plain reference and shuffled; hurdle arithmetic and dollars                                                                                                                                                                                                                                                                                                    | a wrong `k`, hurdle or variant count                                                  |
+| Verdicts end to end | insufficient power, pass (recomputed independently), coverage 216 and 217, one-valued cohort, fatal code mid-run, partial run, tampered cohort file; the firewall (keys, symbols, closes, timestamps) on every report                                                                                                                                                                                                   | a statistic emitted from a failed cohort; a symbol, close or timestamp in a report    |
+| Wiring              | the only HTTP client is built in `fetch`; `plan`, `--check` and the `cohort` summary (aggregates only) make no request; a wrong approved hash raises before anything is created; document, registry and protocol carry the hashes and numbers; no em dash                                                                                                                                                               | document drift; a request without the exact hash                                      |
 
 ## 16. Verification performed
 

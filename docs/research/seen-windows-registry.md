@@ -1058,8 +1058,10 @@ same year at outcome level; whether the days 1 to 7 of each of these 228 launche
 those reads is not verified. A laboratory result on this year is a hypothesis (protocol 9).
 
 Hashes: `request_list_sha256`
-`48864588d2e44628e0421fda43367b218baaf7c50bcda9e0951ad4a5ec59b15e`, `go_sha256["1"]`
-`c735f79a2838ab38eec5e14cc4096ba6be4ea7520d9fa93712e9ce98c45f0254`. Prerequisites pinned: Stage 1
+`3392f75267e684e46093cbc0fb55e0714036df585a98d220b416dae4594a08d9`, `go_sha256["1"]`
+`701fcfd51b9d10f0e4093ef9eeb585b8a97a95e66bba7685dcfd9666dead7daf`. Prerequisites pinned: Stage 1
 report `400f635ea29ac52dc5999caa866b152fa14cea1b82381ce91270012821a853ca`, manifest
 `759305ceaf5730ff0b7f23963a2c17292590ecb590d0336376cc139a0b5ca76d`. After a read this row is
 updated with the root's report and the outcome; until then, nothing at features level is spent.
+The owner also approves the cohort SHA-256 that the `cohort` command prints for the sealed Stage 1
+root (it fixes the actual input files by fingerprint), and the stored report of a root is immutable.

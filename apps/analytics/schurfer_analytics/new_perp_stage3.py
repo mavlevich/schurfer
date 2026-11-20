@@ -59,6 +59,7 @@ PUBLISHED: Final = tuple(dict.fromkeys((*s.PUBLISHED, DOC, CONTRACT_PATH, MODULE
 STAGE1_REPORT_SHA256: Final = "400f635ea29ac52dc5999caa866b152fa14cea1b82381ce91270012821a853ca"
 STAGE1_MANIFEST_SHA256: Final = "759305ceaf5730ff0b7f23963a2c17292590ecb590d0336376cc139a0b5ca76d"
 M2II_V3_REPORT_SHA256: Final = "38b569aa5dc713179ded3db70f7cdf788cea560db7c0c99c65d9332a879070b8"
+STAGE1_INPUT_MAP_SHA256: Final = "cc20f7d5b06208a18772d3df4f0a3427e1975750aea6f94a17845e5f627b4c5e"
 M2II_V3_MAP_SHA256: Final = "532d101483c2691c422e1ddce2187423dfce5d460c4de1b719d626b66645ad03"
 COHORT_EPISODES: Final = 228
 COHORT_WEEKS: Final = 48
@@ -151,6 +152,7 @@ REPORT_KEYS: Final = {
     "power",
     "variants",
     "portfolio",
+    "reason",
     "run",
 }
 FORBIDDEN_NAMES: Final = (
@@ -175,6 +177,22 @@ FORBIDDEN_NAMES: Final = (
     "sum",
 )
 
+
+class NotEstimableError(ValueError):
+    """A calibration that cannot be computed, with a fixed reason code (never a value)."""
+
+    def __init__(self, reason: str) -> None:
+        super().__init__(f"not estimable: {reason}")
+        self.reason = reason
+
+
+NOT_ESTIMABLE_REASONS: Final = (
+    "zero_variance",
+    "nonfinite_variance",
+    "empty_draw",
+    "block_longer_than_weeks",
+    "nonfinite_bootstrap_variance",
+)
 
 # Small helpers.
 
@@ -438,9 +456,32 @@ def slots_needed(spans: Sequence[tuple[int, int]]) -> tuple[int, int]:
     raise AssertionError("unreachable: k = count enters every episode")
 
 
-def cohort_summary(episodes: Sequence[Episode]) -> dict[str, Any]:
+def source_fingerprint(stage1_root: Path) -> str:
+    """SHA-256 over the Stage 1 files the cohort is actually derived from.
+
+    The files are `phase0.json`, `manifest.json`, `go2_done.json` and every attempt and receipt;
+    the map is path to file SHA-256, serialized with sorted keys and compact separators. A
+    stop file in the root is refused. The map is not committed (it names sealed files), and no
+    committed hash covers these files, so the value is recorded in the sealed cohort file,
+    printed by the `cohort` command for the owner, and re-checked at report time.
+    """
+    if (stage1_root / "stop.json").exists():
+        raise ValueError("the Stage 1 prerequisite run has a stop file")
+    names = ["phase0.json", "manifest.json", "go2_done.json"]
+    for kind in ("attempts", "receipts"):
+        names += [f"{kind}/{p.name}" for p in sorted((stage1_root / kind).glob("*.json"))]
+    entries = {}
+    for name in names:
+        path = stage1_root / name
+        if not path.is_file():
+            raise ValueError("a Stage 1 source file is missing")
+        entries[name] = s.digest(path.read_bytes())
+    return s.digest(json.dumps(entries, sort_keys=True, separators=(",", ":")).encode())
+
+
+def cohort_summary(episodes: Sequence[Episode], fingerprint: str | None = None) -> dict[str, Any]:
     """Aggregates of a cohort for the owner's check before the go: no symbol, no date."""
-    document = cohort_document(episodes)
+    document = cohort_document(episodes, fingerprint)
     counts = {
         name: sum(1 for e in episodes if variant_eligible(e.t0_ms, age))
         for name, age in VARIANT_AGES.items()
@@ -452,16 +493,18 @@ def cohort_summary(episodes: Sequence[Episode]) -> dict[str, Any]:
         "entered_at_k": document["slots"]["entered"],
         "variant_episodes_lower_bound": counts,
         "cohort_sha256": document["cohort_sha256"],
+        "source_fingerprint": fingerprint,
     }
 
 
-def cohort_document(episodes: Sequence[Episode]) -> dict[str, Any]:
+def cohort_document(episodes: Sequence[Episode], fingerprint: str | None = None) -> dict[str, Any]:
     rows = [asdict(e) for e in episodes]
     k, entered = slots_needed([(e.entry_ms, e.exit_ms) for e in episodes])
     return {
         "version": VERSION,
         "episodes": rows,
         "slots": {"k": k, "entered": entered, "episodes": len(rows)},
+        "source_fingerprint": fingerprint,
         "cohort_sha256": s.digest(s.canonical(rows)),
     }
 
@@ -503,7 +546,7 @@ def block_bootstrap(
     """
     m = len(weeks)
     if block > m:
-        raise ValueError("block longer than the weeks")
+        raise NotEstimableError("block_longer_than_weeks")
     rng = random.Random(seed * 100 + block)  # noqa: S311 - a fixed-seed resampler, not secrets
     blocks = -(-m // block)
     cluster: list[float] = []
@@ -517,7 +560,7 @@ def block_bootstrap(
         means = [weeks[j][0] / weeks[j][1] for j in picked if weeks[j][1]]
         count = sum(weeks[j][1] for j in picked)
         if not means:
-            raise ValueError("a draw without an episode")
+            raise NotEstimableError("empty_draw")
         cluster.append(math.fsum(means) / len(means))
         episode.append(math.fsum(weeks[j][0] for j in picked) / count)
     return sample_variance(cluster), sample_variance(episode)
@@ -540,16 +583,19 @@ def calibrate(
 ) -> dict[str, Any]:
     """Dispersion, dependence and the power gate from (week ordinal, bps, log return).
 
-    Returns the public numbers only. A zero or non-finite variance raises ValueError, which
-    the caller reports as `not_estimable`.
+    Returns the public numbers only. A zero or non-finite variance, an empty draw or a block
+    longer than the week sequence raises NotEstimableError with a fixed reason code, which the
+    caller reports as `not_estimable`.
     """
     n = len(items)
     draws = BOOTSTRAP_DRAWS if draws is None else draws
     bps = [b for _, b, _ in items]
     logs = [z for _, _, z in items]
     variance = sample_variance(bps)
-    if not math.isfinite(variance) or variance <= 0:
-        raise ValueError("degenerate variance")
+    if not math.isfinite(variance):
+        raise NotEstimableError("nonfinite_variance")
+    if variance <= 0:
+        raise NotEstimableError("zero_variance")
     weeks = week_sequence([(w, b) for w, b, _ in items])
     independent = variance / n
     blocks: dict[str, Any] = {}
@@ -557,7 +603,7 @@ def calibrate(
     for block in BLOCK_LENGTHS:
         cluster_var, episode_var = block_bootstrap(weeks, block, draws, SEED)
         if not (math.isfinite(cluster_var) and math.isfinite(episode_var)):
-            raise ValueError("non-finite bootstrap variance")
+            raise NotEstimableError("nonfinite_bootstrap_variance")
         blocks[str(block)] = {
             "cluster_weighted_variance": cluster_var,
             "deff_cluster_weighted": cluster_var / independent,
@@ -611,6 +657,7 @@ def variant_table(defined: Sequence[Episode], mde_v1: float) -> dict[str, Any]:
         n = len(members)
         weeks = len({e.week for e in members})
         out[name] = {
+            "basis": "calibrated" if name == "V1" else "conditional_extrapolation_from_v1_se",
             "age_days": age,
             "episodes": n,
             "weeks": weeks,
@@ -679,19 +726,42 @@ def _facts(result: dict[str, Any]) -> float | None:
     return float(value)
 
 
-def evaluate(root: Path) -> dict[str, Any]:
-    """The public report of a root, from its sealed files. It makes no request."""
+def evaluate(
+    root: Path, *, code: dict[str, Any] | None = None, stage1_root: Path | None = None
+) -> dict[str, Any]:
+    """The public report of a root, from its sealed files. It makes no request.
+
+    The root must have been run under this implementation's contract hash. When `code` (the
+    current binding) is given it must equal the binding stored in the root, and when
+    `stage1_root` is given its sources must still match the cohort's recorded fingerprint: a
+    root is never re-analysed by other code or against changed inputs under its old hash.
+    """
     cohort = json.loads((root / "cohort.json").read_text())
     if cohort["cohort_sha256"] != s.digest(s.canonical(cohort["episodes"])):
         raise ValueError("the cohort file differs from its own hash")
+    stored = json.loads((root / "run.json").read_text())
+    if stored["request_list_sha256"] != build_contract()["request_list_sha256"]:
+        raise ValueError("the root was run under another contract hash than this implementation")
+    if code is not None and stored["code"] != json.loads(json.dumps(code)):
+        raise ValueError("the root's code binding differs from this implementation")
+    if stage1_root is not None and source_fingerprint(stage1_root) != cohort["source_fingerprint"]:
+        raise ValueError("the Stage 1 sources differ from the cohort's recorded fingerprint")
     episodes = [Episode(**row) for row in cohort["episodes"]]
     results, receipts = results_by_symbol(root)
     stop_path = root / "stop.json"
     stop = json.loads(stop_path.read_text()) if stop_path.exists() else None
     count, used, _, _ = s.ledger_totals(_load(root, "attempts"), receipts, None, SPECS)
+    bound = stored["code"]
     run = {
-        "request_list_sha256": json.loads((root / "run.json").read_text())["request_list_sha256"],
+        "request_list_sha256": stored["request_list_sha256"],
+        "binding": {
+            "rules": bound.get("rules"),
+            "revision": bound.get("revision"),
+            "publication": bound.get("publication"),
+            "clean_tree_at_run": bool(bound.get("revision")),
+        },
         "cohort_sha256": cohort["cohort_sha256"],
+        "source_fingerprint": cohort["source_fingerprint"],
         "attempts": count,
         "bytes": used,
         "requests_finished": len(results),
@@ -711,7 +781,7 @@ def evaluate(root: Path) -> dict[str, Any]:
         "run": run,
     }
     done = (root / "done.json").exists()
-    if stop is not None:
+    if stop is not None or reserve_violation(root):
         return {**base, "verdict": "stage3_stopped", "stop_code": None}
     if not done or len(results) != n_cohort:
         return {**base, "verdict": "stage3_incomplete", "stop_code": None}
@@ -724,6 +794,7 @@ def evaluate(root: Path) -> dict[str, Any]:
     estimable = len(defined) * 100 >= DEFINED_MIN_PERCENT * n_cohort
     estimable = estimable and len(defined) >= MIN_EPISODES and weeks >= MIN_WEEKS
     numbers: dict[str, Any] | None = None
+    reason: str | None = None
     if estimable:
         prepared: list[tuple[int, float, float]] = []
         for e, log_return in defined:
@@ -731,19 +802,39 @@ def evaluate(root: Path) -> dict[str, Any]:
             prepared.append((week_ordinal(e.week), bps, scaled))
         try:
             numbers = calibrate(prepared)
-        except ValueError:
-            numbers = None
+        except NotEstimableError as exc:
+            reason = exc.reason
     verdict = decide(
         n_cohort, len(defined), weeks, None if numbers is None else numbers["power"]["passes"]
     )
     out = {**base, "verdict": verdict, "stop_code": STOP_CODE_OF.get(verdict)}
     out["cohort"]["weeks_with_defined"] = weeks
+    if verdict == "not_estimable":
+        out["reason"] = reason
     if numbers is not None:
         mde = numbers["power"]["mde_gate_bps"]
         out.update(numbers)
         out["variants"] = variant_table([e for e, _ in defined], mde)
         out["portfolio"] = portfolio_table(cohort["slots"], mde)
     return out
+
+
+def report_once(
+    root: Path, *, code: dict[str, Any] | None = None, stage1_root: Path | None = None
+) -> dict[str, Any]:
+    """The immutable report of a root: computed once under the verified binding, then kept.
+
+    A root that is still running (`stage3_incomplete`) gets no stored report. A later call, by
+    any version of the code, returns the stored bytes; a new analysis of the same root is a
+    separately registered version with its own contract, hash and root.
+    """
+    path = root / "report.json"
+    if path.exists():
+        return json.loads(path.read_text())  # type: ignore[no-any-return]
+    report = evaluate(root, code=code, stage1_root=stage1_root)
+    if report["verdict"] != "stage3_incomplete":
+        publish_once(path, report)
+    return report
 
 
 def _outcome_counts(results: dict[str, dict[str, Any]]) -> dict[str, int]:
@@ -874,10 +965,23 @@ def build_contract() -> dict[str, Any]:
             "the cut; nothing dated from the cut or from the blind window is requested",
         },
         "prerequisites": {
-            "stage1_report_sha256": STAGE1_REPORT_SHA256,
-            "stage1_manifest_sha256": STAGE1_MANIFEST_SHA256,
-            "m2ii_v3_report_sha256": M2II_V3_REPORT_SHA256,
-            "m2ii_v3_evidence_map_sha256": M2II_V3_MAP_SHA256,
+            "verified_by_code": {
+                "stage1_report_sha256": STAGE1_REPORT_SHA256,
+                "stage1_manifest_sha256": STAGE1_MANIFEST_SHA256,
+                "source_fingerprint": "SHA-256 of the sorted map path to file SHA-256 over "
+                "phase0.json, manifest.json, go2_done.json and every attempt and receipt of the "
+                "sealed Stage 1 root, no stop file; computed before the cohort is derived and "
+                "again after, recorded in cohort.json, printed by the cohort command, matched "
+                "to the owner's expected cohort SHA-256 before the first request, and re-checked "
+                "against the root at report time",
+            },
+            "documentary_only": {
+                "m2ii_v3_report_sha256": M2II_V3_REPORT_SHA256,
+                "m2ii_v3_evidence_map_sha256": M2II_V3_MAP_SHA256,
+                "stage1_input_hash_map_sha256": STAGE1_INPUT_MAP_SHA256,
+                "note": "recorded for provenance; the code does not read the sealed files these "
+                "hashes cover, so they are not checked here",
+            },
             "cohort": {
                 "episodes": COHORT_EPISODES,
                 "iso_weeks": COHORT_WEEKS,
@@ -928,6 +1032,17 @@ def build_contract() -> dict[str, Any]:
         "stop_codes": list(STOP_CODE_OF.values()),
         "output_allowlist": sorted(REPORT_KEYS),
         "forbidden_output_names": list(FORBIDDEN_NAMES),
+        "report": {
+            "binding": "the report command refuses a root whose stored contract hash or code "
+            "binding (revision, publication hashes) differs from the executing implementation, "
+            "or whose Stage 1 sources differ from the recorded fingerprint",
+            "immutable": "the first report of a finished or stopped root is stored once in the "
+            "root and returned unchanged afterwards; a new analysis is a separately registered "
+            "version with its own contract hash and root",
+            "exported_binding": "revision, publication hashes, rules version and whether the "
+            "tree was clean at the run",
+            "not_estimable_reasons": list(NOT_ESTIMABLE_REASONS),
+        },
         "retention": {
             "sealed_root": "0700 outside Git: attempts, receipts (the log return of each "
             "episode is the only price-derived value), cohort.json, run.json, stop.json",
@@ -981,6 +1096,28 @@ def binding() -> dict[str, Any]:
     }
 
 
+def verified_cohort(
+    stage1_root: Path, expected_cohort_sha256: str | None = None, **derive: Any
+) -> tuple[list[Episode], str]:
+    """The cohort and the fingerprint of the sources it came from, checked twice.
+
+    The fingerprint is taken before and after the derivation and must not change; when the
+    owner's expected cohort SHA-256 is given it must equal the derived one.
+    """
+    before = source_fingerprint(stage1_root)
+    episodes = derive_cohort(stage1_root, **derive)
+    for ep in episodes:
+        check_episode(ep)
+    if source_fingerprint(stage1_root) != before:
+        raise ValueError("the Stage 1 sources changed while the cohort was derived")
+    if (
+        expected_cohort_sha256 is not None
+        and cohort_document(episodes)["cohort_sha256"] != expected_cohort_sha256
+    ):
+        raise ValueError("the derived cohort is not the one the owner approved")
+    return episodes, before
+
+
 def prepare_root(root: Path) -> None:
     """A fresh sealed root, or a root that already carries a run binding (a resume).
 
@@ -993,12 +1130,22 @@ def prepare_root(root: Path) -> None:
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
 
 
-def run_stage3(fetcher: s.Fetcher, episodes: Sequence[Episode]) -> dict[str, Any]:
+def reserve_violation(root: Path) -> bool:
+    """A receipt with a transport chunk over the read reserve closes the root for good."""
+    return any(r.get("reserve_exceeded") for r in _load(root, "receipts"))
+
+
+def run_stage3(
+    fetcher: s.Fetcher, episodes: Sequence[Episode], fingerprint: str | None = None
+) -> dict[str, Any]:
     """One request per episode, in launch order. The cohort is written before the first one."""
     if len(episodes) != REQUESTS:
         raise ValueError("the cohort is not the size the contract binds")
     requests = [proxy_request(e) for e in episodes]  # every guard, before any request
-    document = cohort_document(episodes)
+    if reserve_violation(fetcher.root):
+        fetcher.record_stop("this root holds a transport-limit violation")
+        raise s.FetchStoppedError("this run was stopped: a transport limit was violated")
+    document = cohort_document(episodes, fingerprint)
     path = fetcher.root / "cohort.json"
     if path.exists():
         if json.loads(path.read_text()) != json.loads(json.dumps(document)):
@@ -1033,9 +1180,13 @@ def main(argv: list[str] | None = None) -> int:
     fetch = sub.add_parser("fetch", help="the one go; needs the owner's go for the exact hash")
     fetch.add_argument("--approved-sha256", required=True, help="the go_sha256 the owner approved")
     fetch.add_argument("--stage1-root", type=Path, required=True)
+    fetch.add_argument(
+        "--expected-cohort-sha256", required=True, help="the cohort SHA-256 the owner approved"
+    )
     fetch.add_argument("--root", type=Path, required=True)
     report = sub.add_parser("report", help="the public report of a finished root; no network")
     report.add_argument("--root", type=Path, required=True)
+    report.add_argument("--stage1-root", type=Path, required=True)
     args = parser.parse_args(argv)
     contract = build_contract()
     if args.command == "plan":
@@ -1061,24 +1212,23 @@ def main(argv: list[str] | None = None) -> int:
         path.write_bytes(s.canonical(contract))
         return 0
     if args.command == "cohort":
-        episodes = derive_cohort(args.stage1_root)
-        for ep in episodes:
-            check_episode(ep)
-        _emit(json.dumps(cohort_summary(episodes), indent=2, sort_keys=True))
+        episodes, fingerprint = verified_cohort(args.stage1_root)
+        _emit(json.dumps(cohort_summary(episodes, fingerprint), indent=2, sort_keys=True))
         return 0
     if args.command == "report":
-        _emit(json.dumps(evaluate(args.root), indent=2, sort_keys=True))
+        done = report_once(args.root, code=binding(), stage1_root=args.stage1_root)
+        _emit(json.dumps(done, indent=2, sort_keys=True))
         return 0
     if args.approved_sha256 != contract["go_sha256"]["1"]:
         raise ValueError("the approved hash is not this contract's go hash")
     bound = binding()
-    episodes = derive_cohort(args.stage1_root)
+    episodes, fingerprint = verified_cohort(args.stage1_root, args.expected_cohort_sha256)
     prepare_root(args.root)
     with httpx.Client(timeout=60.0, follow_redirects=False) as client:
         fetcher = s.Fetcher(
             args.root, contract, client, go=1, code=bound, prior={}, specs=dict(SPECS)
         )
-        _emit(json.dumps(run_stage3(fetcher, episodes), indent=2, sort_keys=True))
+        _emit(json.dumps(run_stage3(fetcher, episodes, fingerprint), indent=2, sort_keys=True))
     return 0
 
 

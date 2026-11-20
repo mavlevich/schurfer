@@ -87,6 +87,7 @@ class Hourly:
         errors: list[tuple[str, Any, str]] | None = None,
         crash: list[str] | None = None,
         extra_row: dict[str, int] | None = None,
+        pad: dict[str, int] | None = None,
     ) -> None:
         self.by_symbol = {e.symbol: e for e in episodes}
         self.log_returns = log_returns
@@ -94,6 +95,7 @@ class Hourly:
         self.errors = errors if errors is not None else []
         self.crash = crash if crash is not None else []
         self.extra_row = extra_row or {}
+        self.pad = pad or {}
         self.requests: list[httpx.Request] = []
         self.end_closes: set[str] = set()
 
@@ -133,6 +135,8 @@ class Hourly:
             "retMsg": "OK",
             "result": {"symbol": symbol, "category": "linear", "list": rows[: int(q["limit"])]},
         }
+        if symbol in self.pad:
+            body["pad"] = "x" * self.pad[symbol]  # one chunk over the 64 KiB read reserve
         return self._response(body)
 
     @staticmethod
@@ -177,12 +181,15 @@ def run_full(
     episodes: list[t.Episode],
     transport: Hourly,
     monkeypatch: pytest.MonkeyPatch | None = None,
+    *,
+    code: dict[str, Any] | None = None,
+    fingerprint: str | None = None,
 ) -> dict[str, Any]:
     if monkeypatch is not None:
         monkeypatch.setattr(t, "BOOTSTRAP_DRAWS", 400)
     root = tmp_path / "run"
-    f, _ = fetcher_for(root, transport)
-    t.run_stage3(f, episodes)
+    f, _ = fetcher_for(root, transport, code=code)
+    t.run_stage3(f, episodes, fingerprint)
     return t.evaluate(root)
 
 
@@ -617,7 +624,8 @@ def test_a_sealed_root_inside_the_repository_is_refused() -> None:
 def test_the_cohort_summary_is_aggregates_only_and_the_command_needs_the_pinned_root(
     stage1: dict[str, Any], tmp_path: Path
 ) -> None:
-    summary = t.cohort_summary(stage1["episodes"])
+    summary = t.cohort_summary(stage1["episodes"], "e" * 64)
+    assert summary["source_fingerprint"] == "e" * 64
     assert summary["episodes"] == 228 and summary["slots_k"] >= 1
     assert summary["variant_episodes_lower_bound"]["V1"] == 228
     text = json.dumps(summary)
@@ -773,8 +781,18 @@ def test_a_design_effect_below_one_is_floored_at_independence() -> None:
 
 def test_a_degenerate_variance_is_not_estimable() -> None:
     flat = [(2_900 + w, 100.0, 0.01) for w in range(30) for _ in range(5)]
-    with pytest.raises(ValueError, match="degenerate"):
+    with pytest.raises(t.NotEstimableError) as caught:
         t.calibrate(flat, draws=100)
+    assert caught.value.reason == "zero_variance"
+    with pytest.raises(t.NotEstimableError) as empty:
+        t.block_bootstrap([(0.0, 0)] * 8, 2, 10, 1)  # every drawn week is empty
+    assert empty.value.reason == "empty_draw"
+    with pytest.raises(t.NotEstimableError) as short:
+        t.block_bootstrap([(1.0, 1)] * 5, 8, 10, 1)
+    assert short.value.reason == "block_longer_than_weeks"
+    assert {"zero_variance", "empty_draw", "block_longer_than_weeks"} <= set(
+        t.NOT_ESTIMABLE_REASONS
+    )
 
 
 def test_the_gate_compares_unrounded_values_at_exactly_400(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -807,7 +825,7 @@ def test_the_bootstrap_is_deterministic_and_an_empty_week_stays_in_the_sequence(
     weeks = t.week_sequence(items)
     assert [n for _, n in weeks] == [6, 0, 3, 6, 3]  # week 11 is empty and counted
     assert t.block_bootstrap(weeks, 2, 300, 7) == t.block_bootstrap(weeks, 2, 300, 7)
-    with pytest.raises(ValueError, match="block longer"):
+    with pytest.raises(t.NotEstimableError, match="block_longer"):
         t.block_bootstrap(weeks, 8, 10, 7)
     assert t.week_ordinal("2024-W50") + 1 == t.week_ordinal("2024-W51")
     assert t.week_ordinal("2024-W52") + 1 == t.week_ordinal("2025-W01")
@@ -849,6 +867,8 @@ def test_variant_floors_and_their_own_cuts() -> None:
     table = t.variant_table([early, late, middle], 100.0)
     assert [table[k]["episodes"] for k in ("V1", "V2", "V3")] == [3, 2, 2]
     assert table["V1"]["mde_bps"] == pytest.approx(100.0)
+    assert table["V1"]["basis"] == "calibrated"
+    assert table["V2"]["basis"] == table["V3"]["basis"] == "conditional_extrapolation_from_v1_se"
     assert table["V2"]["mde_bps"] == pytest.approx(100.0 * math.sqrt(3 / 2))
     assert not any(table[k]["floors_met"] for k in table)
     many = [replace(middle, week=f"2025-W{w % 40 + 1:02d}", symbol=f"S{w}USDT") for w in range(120)]
@@ -1003,7 +1023,7 @@ def test_a_cohort_with_one_value_is_not_estimable(
     server = Hourly(episodes, {e.symbol: 0.01 for e in episodes})
     report = run_full(tmp_path, episodes, server, monkeypatch)
     assert report["verdict"] == "not_estimable" and report["stop_code"] is None
-    assert "power" not in report
+    assert report["reason"] == "zero_variance" and "power" not in report
     assert_firewall(report, episodes)
 
 
@@ -1038,6 +1058,154 @@ def test_a_tampered_cohort_file_is_refused(
         t.evaluate(tmp_path / "run")
 
 
+# The report is bound to the code and the inputs that produced the root
+
+
+CODE = {
+    "rules": "new_perp_stage3_v1",
+    "revision": "a" * 40,
+    "publication": {"apps/analytics/schurfer_analytics/new_perp_stage3.py": "b" * 64},
+    "request_list_sha256": t.build_contract()["request_list_sha256"],
+}
+
+
+def test_a_root_is_not_re_analysed_by_other_code_or_constants_under_its_old_hash(
+    stage1: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: changing only the current MDE limit used to flip insufficient_power to
+    power_gate_passed while the stored contract hash stayed the same."""
+    episodes: list[t.Episode] = stage1["episodes"]
+    server = Hourly(episodes, draw_returns(episodes, sd=0.6, week_sd=0.2))
+    report = run_full(tmp_path, episodes, server, monkeypatch, code=CODE)
+    assert report["verdict"] == "insufficient_power"
+    root = tmp_path / "run"
+    with monkeypatch.context() as patch:
+        patch.setattr(t, "MDE_LIMIT_BPS", 1e9)  # the executing implementation now differs
+        with pytest.raises(ValueError, match="another contract hash"):
+            t.evaluate(root)
+    with pytest.raises(ValueError, match="code binding differs"):
+        t.evaluate(root, code={**CODE, "revision": "c" * 40})
+    with pytest.raises(ValueError, match="code binding differs"):
+        t.evaluate(root, code={**CODE, "publication": {"x": "y"}})
+    assert t.evaluate(root, code=CODE)["verdict"] == "insufficient_power"
+
+
+def test_the_report_exports_the_revision_the_publication_hashes_and_the_clean_tree_state(
+    stage1: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episodes: list[t.Episode] = stage1["episodes"]
+    server = Hourly(episodes, draw_returns(episodes))
+    run_full(tmp_path, episodes, server, monkeypatch, code=CODE)
+    binding = t.evaluate(tmp_path / "run", code=CODE)["run"]["binding"]
+    assert binding == {
+        "rules": "new_perp_stage3_v1",
+        "revision": "a" * 40,
+        "publication": CODE["publication"],
+        "clean_tree_at_run": True,
+    }
+
+
+def test_the_first_report_of_a_finished_root_is_stored_once_and_returned_unchanged(
+    stage1: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episodes: list[t.Episode] = stage1["episodes"]
+    server = Hourly(episodes, draw_returns(episodes))
+    run_full(tmp_path, episodes, server, monkeypatch, code=CODE)
+    root = tmp_path / "run"
+    first = t.report_once(root, code=CODE)
+    assert (root / "report.json").exists() and first["verdict"] == "power_gate_passed"
+    with monkeypatch.context() as patch:
+        patch.setattr(t, "MDE_LIMIT_BPS", 1.0)  # a later version cannot change the stored report
+        assert t.report_once(root, code=CODE) == first
+        assert t.report_once(root) == first
+
+
+def test_a_running_root_gets_no_stored_report(
+    stage1: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    episodes: list[t.Episode] = stage1["episodes"]
+    server = Hourly(episodes, draw_returns(episodes), crash=[episodes[10].symbol])
+    root = tmp_path / "run"
+    f, _ = fetcher_for(root, server)
+    with pytest.raises(RuntimeError, match="died"):
+        t.run_stage3(f, episodes, "f" * 64)
+    assert t.report_once(root)["verdict"] == "stage3_incomplete"
+    assert not (root / "report.json").exists()
+
+
+def test_the_cohort_is_bound_to_the_stage1_source_files_not_only_to_aggregates(
+    stage1: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: the manifest and the aggregate counts did not fix the Go 2 inputs. Moving a
+    first-trade time inside its day changes no count, week or reason, only the fingerprint."""
+    import shutil
+
+    root: Path = stage1["root"]
+    fingerprint = t.source_fingerprint(root)
+    assert fingerprint == t.source_fingerprint(root) and len(fingerprint) == 64
+    episodes: list[t.Episode] = stage1["episodes"]
+    server = Hourly(episodes, draw_returns(episodes))
+    run_full(tmp_path, episodes, server, monkeypatch, fingerprint=fingerprint)
+    assert t.evaluate(tmp_path / "run", stage1_root=root)["verdict"] == "power_gate_passed"
+    copy = tmp_path / "tampered"
+    shutil.copytree(root, copy)
+    target = next(
+        p for p in sorted((copy / "receipts").glob("*.json")) if '"min_ms"' in p.read_text()
+    )
+    document = json.loads(target.read_text())
+    document["facts"]["min_ms"] += 1_000  # one second later: same day, same class, same counts
+    target.write_text(json.dumps(document))
+    assert t.source_fingerprint(copy) != fingerprint
+    with pytest.raises(ValueError, match="sources differ"):
+        t.evaluate(tmp_path / "run", stage1_root=copy)
+    # and the cohort derived from the tampered copy has the same counts and a different hash
+    base = t.verified_cohort(
+        root, report=stage1["report"], manifest_sha256=s1.manifest_sha256(root), bound=None
+    )
+    assert base[1] == fingerprint
+    with pytest.raises(ValueError, match="owner approved"):
+        t.verified_cohort(
+            root,
+            "0" * 64,
+            report=stage1["report"],
+            manifest_sha256=s1.manifest_sha256(root),
+            bound=None,
+        )
+    stop = tmp_path / "stopped"
+    shutil.copytree(root, stop)
+    (stop / "stop.json").write_text("{}")
+    with pytest.raises(ValueError, match="stop file"):
+        t.source_fingerprint(stop)
+
+
+def test_a_reserve_violation_receipt_keeps_the_root_stopped_after_a_crash(
+    stage1: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Stage 3 safeguard that does not depend on the fetcher's own recovery: a receipt with
+    reserve_exceeded closes the root (reporting and running) even with no stop file."""
+    episodes: list[t.Episode] = stage1["episodes"]
+    server = Hourly(episodes, draw_returns(episodes), pad={episodes[3].symbol: 100_000})
+    root = tmp_path / "run"
+    f, _ = fetcher_for(root, server)
+
+    def die(_self: s1.Fetcher, _reason: str) -> None:
+        raise RuntimeError("the process died before the stop file")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(s1.Fetcher, "record_stop", die)
+        with pytest.raises(RuntimeError, match="died"):
+            t.run_stage3(f, episodes, "f" * 64)
+    assert not (root / "stop.json").exists() and t.reserve_violation(root)
+    report = t.evaluate(root)
+    assert report["verdict"] == "stage3_stopped" and "dispersion" not in report
+    sent = len(server.requests)
+    with pytest.raises(s1.FetchStoppedError):
+        g, _ = fetcher_for(root, server)
+        t.run_stage3(g, episodes, "f" * 64)
+    assert len(server.requests) == sent  # nothing was sent after the violation
+    assert (root / "stop.json").exists()
+
+
 # Wiring, documents and the registry
 
 
@@ -1063,6 +1231,8 @@ def test_plan_and_check_commands_make_no_request_and_the_fetch_needs_the_exact_h
                 "0" * 64,
                 "--stage1-root",
                 str(tmp_path),
+                "--expected-cohort-sha256",
+                "0" * 64,
                 "--root",
                 str(tmp_path / "r"),
             ]

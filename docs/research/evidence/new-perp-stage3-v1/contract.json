@@ -103,7 +103,7 @@
     }
   },
   "go_sha256": {
-    "1": "c735f79a2838ab38eec5e14cc4096ba6be4ea7520d9fa93712e9ce98c45f0254"
+    "1": "701fcfd51b9d10f0e4093ef9eeb585b8a97a95e66bba7685dcfd9666dead7daf"
   },
   "level": "features",
   "limits": {
@@ -125,6 +125,7 @@
     "dispersion",
     "portfolio",
     "power",
+    "reason",
     "returns_read",
     "run",
     "stop_code",
@@ -139,12 +140,31 @@
       "iso_weeks": 48,
       "source": "primary V1 episodes of the sealed Stage 1 run, derived locally and checked against the reviewed report before any request"
     },
-    "m2ii_v3_evidence_map_sha256": "532d101483c2691c422e1ddce2187423dfce5d460c4de1b719d626b66645ad03",
-    "m2ii_v3_report_sha256": "38b569aa5dc713179ded3db70f7cdf788cea560db7c0c99c65d9332a879070b8",
-    "stage1_manifest_sha256": "759305ceaf5730ff0b7f23963a2c17292590ecb590d0336376cc139a0b5ca76d",
-    "stage1_report_sha256": "400f635ea29ac52dc5999caa866b152fa14cea1b82381ce91270012821a853ca"
+    "documentary_only": {
+      "m2ii_v3_evidence_map_sha256": "532d101483c2691c422e1ddce2187423dfce5d460c4de1b719d626b66645ad03",
+      "m2ii_v3_report_sha256": "38b569aa5dc713179ded3db70f7cdf788cea560db7c0c99c65d9332a879070b8",
+      "note": "recorded for provenance; the code does not read the sealed files these hashes cover, so they are not checked here",
+      "stage1_input_hash_map_sha256": "cc20f7d5b06208a18772d3df4f0a3427e1975750aea6f94a17845e5f627b4c5e"
+    },
+    "verified_by_code": {
+      "source_fingerprint": "SHA-256 of the sorted map path to file SHA-256 over phase0.json, manifest.json, go2_done.json and every attempt and receipt of the sealed Stage 1 root, no stop file; computed before the cohort is derived and again after, recorded in cohort.json, printed by the cohort command, matched to the owner's expected cohort SHA-256 before the first request, and re-checked against the root at report time",
+      "stage1_manifest_sha256": "759305ceaf5730ff0b7f23963a2c17292590ecb590d0336376cc139a0b5ca76d",
+      "stage1_report_sha256": "400f635ea29ac52dc5999caa866b152fa14cea1b82381ce91270012821a853ca"
+    }
   },
   "protocol": "docs/research/new-perp-short-lab-protocol-v1.md",
+  "report": {
+    "binding": "the report command refuses a root whose stored contract hash or code binding (revision, publication hashes) differs from the executing implementation, or whose Stage 1 sources differ from the recorded fingerprint",
+    "exported_binding": "revision, publication hashes, rules version and whether the tree was clean at the run",
+    "immutable": "the first report of a finished or stopped root is stored once in the root and returned unchanged afterwards; a new analysis is a separately registered version with its own contract hash and root",
+    "not_estimable_reasons": [
+      "zero_variance",
+      "nonfinite_variance",
+      "empty_draw",
+      "block_longer_than_weeks",
+      "nonfinite_bootstrap_variance"
+    ]
+  },
   "request": {
     "class": "P1",
     "endpoint": "https://api.bybit.com/v5/market/kline",
@@ -153,7 +173,7 @@
     "row_rule": "a row starting outside [A-1h, B-1h], a duplicate start, a page of 200 rows, a wrong symbol or a bad close stops the run as a schema mismatch",
     "undefined_proxy": "the bar at A-1h or at B-1h is absent; no imputation"
   },
-  "request_list_sha256": "48864588d2e44628e0421fda43367b218baaf7c50bcda9e0951ad4a5ec59b15e",
+  "request_list_sha256": "3392f75267e684e46093cbc0fb55e0714036df585a98d220b416dae4594a08d9",
   "retention": {
     "public": "the allowlisted aggregate report only: no symbol, date, close, per-launch value, mean, sign, quantile, minimum or maximum",
     "sealed_root": "0700 outside Git: attempts, receipts (the log return of each episode is the only price-derived value), cohort.json, run.json, stop.json"
