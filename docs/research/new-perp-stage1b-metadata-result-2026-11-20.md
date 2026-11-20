@@ -23,8 +23,10 @@ is **not authorized** and has not been run.
 
 ## What ran
 
-- **Window:** backward holdout `[2023-02-01, 2024-09-16)`. Nothing from the discovery year, the
-  HYP-031 test year or the HYP-012 v2 blind window was requested.
+- **Window:** backward holdout `[2023-02-01, 2024-09-16)`. No price series of the discovery
+  year, the HYP-031 test year or the HYP-012 v2 blind window was requested. The shared metadata
+  responses (the catalog and the HTML listings) can physically hold entries outside the holdout;
+  their content was filtered by the registered rules during processing.
 - **Requests:** 1,402 attempts, all outcome `ok`, no retry, no stop, `complete` true:
   C1 4 (catalog, linear), C3 1 (archive root), D1 1,150 (folder listings), D2h 247 (HEAD of the
   first in-window daily file: status and size, no body). The ceiling was 2,400 attempts.
