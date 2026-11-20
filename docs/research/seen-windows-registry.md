@@ -1000,7 +1000,7 @@ unchanged and incomplete/unlinked as originally recorded. Report SHA-256:
 `532d101483c2691c422e1ddce2187423dfce5d460c4de1b719d626b66645ad03`. No profitability claim or further data
 access follows from this record.
 
-## I25 Stage 1b metadata registration, 2026-11-19 (proposed, not read)
+## I25 Stage 1b metadata registration, 2026-11-19 (proposed; executed 2026-11-20, see below)
 
 The [metadata code/contract proposal](new-perp-stage1b-metadata-v1.md) binds the
 completed discovery v3 report and all four sealed source roots. It proposes
@@ -1029,3 +1029,31 @@ holdout request was made under the superseded proposal or this revision.
 Code/contract review, clean merge, green CI and the owner's go for this exact
 hash/caps are required before any holdout access. The shared exam stays sealed;
 no parameter tuning on holdout facts is permitted.
+
+### Executed 2026-11-20: Stage 1b metadata read, coverage level, backward holdout
+
+**Level: coverage (metadata) only.** Authorized by the owner, confirmed in chat to the
+coordinating session on 2026-11-20; the run itself happened before the recording session, in
+another working session. Run `i25-stage1b-metadata-v2-e01d67c`, 00:15 to 00:53 Europe/Warsaw
+(`finished_at_utc` 2026-11-19T23:53:05Z), clean revision
+`e01d67ce32cb46826cb570102db76b193055fa80`, rules `new_perp_stage1b_metadata_v2`, request-list
+SHA-256 `31ae1a57970e7af98d2e52fd75534cf2604cd4a79bb889f25cd2f6a90fbada96`, window
+`[2023-02-01, 2024-09-16)` (the backward holdout).
+
+- **Requests:** 1,402 attempts (C1 4, C3 1, D1 1,150, D2h 247), all `ok`, no retry, no stop;
+  53,956,397 response bytes of the 448 MiB cap; attempt ceiling 2,400.
+- **Outcome:** `metadata_complete_coverage_pending`, complete, binding valid, no stop code;
+  `body_phase_authorized` false.
+- **What was read:** the Bybit instruments catalog (254 launches in the window), the archive
+  root listing, per-folder listings, and the HEAD (status and size, no body) of the first
+  in-window daily file of 247 launches. Aggregate counts only are published.
+- **Not read:** no CSV GET, no trade or mark bars, no funding, no order books, no AWS object, no
+  price, no return, no exam. M1, M3 identity, M4, M5 and M6 are `not_assessed`.
+- **Record:** [result note](new-perp-stage1b-metadata-result-2026-11-20.md) and
+  [aggregate evidence](evidence/new-perp-stage1b-metadata-v2-result-2026-11-20/); the run
+  manifest (SHA-256 `f3098e0840be489df640fbdab66c464257bac3d6aa5315d58e70d86d594d1341`) and the
+  per-launch folders stay sealed outside Git.
+
+**Holdout status is unchanged: one shared sealed exam batch.** This is a coverage-level look
+(counts of launches, file dates and sizes), not an outcome read. No holdout fact may tune Stage 3
+parameters, and the body phase for the holdout needs its own design, review and owner go.
