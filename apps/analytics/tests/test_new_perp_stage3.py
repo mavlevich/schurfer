@@ -1206,6 +1206,37 @@ def test_a_reserve_violation_receipt_keeps_the_root_stopped_after_a_crash(
     assert (root / "stop.json").exists()
 
 
+def test_the_fetchers_own_recovery_closes_a_stage3_root_after_a_reserve_crash(
+    stage1: dict[str, Any], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With the Stage 1 fix (#630) the reopened Fetcher itself raises from the receipt and writes
+    the stop file, so after such a crash the root stays stopped and no statistics are published."""
+    episodes: list[t.Episode] = stage1["episodes"]
+    server = Hourly(episodes, draw_returns(episodes), pad={episodes[3].symbol: 100_000})
+    root = tmp_path / "run"
+    f, _ = fetcher_for(root, server)
+
+    def die(_self: s1.Fetcher, _reason: str) -> None:
+        raise RuntimeError("the process died before the stop file")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(s1.Fetcher, "record_stop", die)
+        with pytest.raises(RuntimeError, match="died"):
+            t.run_stage3(f, episodes, "f" * 64)
+    assert not (root / "stop.json").exists()
+    sent = len(server.requests)
+    with pytest.raises(s1.FetchStoppedError, match="larger than the read reserve"):
+        fetcher_for(root, server)  # the fetcher's own recovery, not the Stage 3 check
+    assert (root / "stop.json").exists()
+    with pytest.raises(s1.FetchStoppedError, match="was stopped"):
+        fetcher_for(root, server)
+    report = t.evaluate(root)
+    assert report["verdict"] == "stage3_stopped"
+    assert "dispersion" not in report and "variants" not in report
+    assert t.evaluate(root) == report  # the stored report is returned unchanged
+    assert len(server.requests) == sent  # nothing was sent after the crash
+
+
 # Wiring, documents and the registry
 
 
