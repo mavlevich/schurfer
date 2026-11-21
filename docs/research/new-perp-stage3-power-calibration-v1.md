@@ -1,6 +1,9 @@
 # I25 stage 3: power calibration, dispersion only (v1, DRAFT, 2026-11-20)
 
-Status: **draft for two external reviews, then the owner's separate go for the price read.**
+Status: **RUN 2026-11-21, verdict `insufficient_power`, I25 stopped; see the
+[result note](new-perp-stage3-result-2026-11-21.md).** The text below is the pre-run design and
+is kept unchanged. Earlier status: draft for two external reviews, then the owner's separate go
+for the price read.
 This document, its frozen contract and its code fetch nothing and read no price. The code was
 tested only against a mock transport and a synthetic Bybit; it was never run against a network.
 It is the stage 3 gate of the [I25 laboratory protocol](new-perp-short-lab-protocol-v1.md)
