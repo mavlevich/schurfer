@@ -1058,3 +1058,31 @@ SHA-256 `31ae1a57970e7af98d2e52fd75534cf2604cd4a79bb889f25cd2f6a90fbada96`, wind
 **Holdout status is unchanged: one shared sealed exam batch.** This is a coverage-level look
 (counts of launches, file dates and sizes), not an outcome read. No holdout fact may tune Stage 3
 parameters, and the body phase for the holdout needs its own design, review and owner go.
+
+## I25 Stage 1b body registration, 2026-11-20 (proposed, not read)
+
+The [body-phase contract](new-perp-stage1b-body-v1.md) binds the finished Stage 1b metadata run
+(manifest SHA-256 `f3098e0840be489df640fbdab66c464257bac3d6aa5315d58e70d86d594d1341`, report
+SHA-256 `173347ae6785dd2fe5a5bbbce7e6fdfc10b82db37d98908e7ba0fc6f64458352`, metadata request-list
+SHA-256 `31ae1a57970e7af98d2e52fd75534cf2604cd4a79bb889f25cd2f6a90fbada96`). No request was made and
+no sealed file was read in this work; the tests use a synthetic sealed root and a mock server.
+
+**Level: coverage only.** Window: the backward holdout `[2023-02-01, 2024-09-16)`. If run, it
+reads: the first daily trade file of each of 247 launches (column 1 timestamps and counts only),
+then for the launches that stay entry candidates the entry-minute bar start, hourly mark-price
+and trade bar start times, and funding timestamps (days 3 to 21 after `T0`, clipped to the
+window). Never read or stored: any price, rate, volume, return, order book, announcement, spot
+catalog or per-launch result; the discovery year, the HYP-031 test year, the HYP-012 v2 blind
+window and anything from 2024-09-16 on. Public output is aggregate counts only.
+
+Two separate owner gos. Go A: 247 requests, 494 attempts, 5,185,208,320 response bytes (4,945
+MiB). Go B: at most 1,729 first attempts, 2,162 attempts, 670,040,064 bytes (639 MiB), asked for
+only if Go A leaves no stop code, on the SHA-256 of `queue_b.json`. Proposed request-list SHA-256:
+`4fa65c35b75b587d55b520833c7c0e84c404c2eadcb56040c3d063f7ab9c4bf2`; go hashes
+`1811a7559ec6e1be0aa40821eb6cd586145c0b0343a2d1a2621e6e6363d7af69` (A) and
+`b9bc4e6ab07a0964dbbd4b1955ccfd6a222562748a51855097035b8bfbcc77f5` (B). A fresh 0700 root is
+required; no earlier allowance or root is reused. Code and contract review, a clean merge with
+green CI and the owner's go for each exact hash are required before any request.
+
+**Holdout status is unchanged: one shared sealed exam batch.** `stage1b_pass_partial` would be a
+coverage statement, never an economic result, and no holdout fact may tune a Stage 3 parameter.
