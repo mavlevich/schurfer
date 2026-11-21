@@ -1086,3 +1086,39 @@ green CI and the owner's go for each exact hash are required before any request.
 
 **Holdout status is unchanged: one shared sealed exam batch.** `stage1b_pass_partial` would be a
 coverage statement, never an economic result, and no holdout fact may tune a Stage 3 parameter.
+
+## I25 Stage 3 registration `new-perp-short-v1`, 2026-11-20 (proposed, not read)
+
+The [Stage 3 contract](new-perp-stage3-power-calibration-v1.md), frozen as
+[`contract.json`](evidence/new-perp-stage3-v1/contract.json), with its code and synthetic tests,
+proposes the power calibration of protocol 7.4 (dispersion and dependence only). **This row records
+no read: nothing has been fetched, no price was read, and the code ran only against a mock
+transport.** The owner's separate go for the exact hash below is required after review and merge.
+
+**Level: features, discovery year only (2024-10-01 to 2025-09-30).** One hourly trade-bar page
+(`/v5/market/kline`, `interval=60`) for each of the 228 primary V1 episodes of the completed
+Stage 1 run, covering the whole-hour window `[A, B]` inside days 1 to 7 after the first trade
+(`A = ceil_hour(T0 + 1 d)`, `B = floor_hour(E)`), so that every bar ends at or before the entry
+minute. Of each page only the bar start times and two closes are parsed; the closes become one
+log return per episode, kept in a sealed run root outside Git. Published: aggregates only
+(dispersion, week-block dependence, MDE, counts). 228 requests, at most 684 attempts, 48 MiB
+(about 3 MB expected), about 4 minutes at one request per second.
+
+**Not read:** any bar at or after any entry minute, the entry bar, any exit or hold-week bar,
+anything from 2025-10-01 (HYP-031 test year) or from 2026-09-29 (HYP-012 v2 blind window), the
+backward holdout, mark prices, funding, order books, minute bars. No holdout fact tunes a
+parameter. The discovery ledger count is unchanged at stage 3 (no variant outcome is read).
+
+**Overlap, stated:** the hourly trade klines of live and delisted USDT perpetuals of this year
+were read at features level by HYP-032 step 1 and the 2026-11-11 exploratory series touched the
+same year at outcome level; whether the days 1 to 7 of each of these 228 launches were among
+those reads is not verified. A laboratory result on this year is a hypothesis (protocol 9).
+
+Hashes: `request_list_sha256`
+`3392f75267e684e46093cbc0fb55e0714036df585a98d220b416dae4594a08d9`, `go_sha256["1"]`
+`701fcfd51b9d10f0e4093ef9eeb585b8a97a95e66bba7685dcfd9666dead7daf`. Prerequisites pinned: Stage 1
+report `400f635ea29ac52dc5999caa866b152fa14cea1b82381ce91270012821a853ca`, manifest
+`759305ceaf5730ff0b7f23963a2c17292590ecb590d0336376cc139a0b5ca76d`. After a read this row is
+updated with the root's report and the outcome; until then, nothing at features level is spent.
+The owner also approves the cohort SHA-256 that the `cohort` command prints for the sealed Stage 1
+root (it fixes the actual input files by fingerprint), and the stored report of a root is immutable.
