@@ -388,6 +388,19 @@ code, contracts, reports and partial checks are unchanged. The metadata proposal
 requires its own code/contract review, merged clean code, registry row and owner
 go for its exact new hash/caps. A body queue and budget need a later separate go.
 
+**Proposed Amendment 6 (2026-11-20, sealed Stage 1b body phase).** The
+[body-phase contract](new-perp-stage1b-body-v1.md) binds to the finished metadata run by its
+report and manifest hashes and carries M1, M4, M5 and M6 (and the body part of M2 and M3) for
+`[2023-02-01, 2024-09-16)` as two separate gos: first daily files (column 1 only), then the
+entry bar, hourly mark and trade series and funding timestamps of the candidates, derived from
+`T0` and gated on Go A and an approved queue hash. It changes no threshold of this protocol.
+Two deviations are stated here and nowhere else: `T0` is kept in nanoseconds so that `E` rounds
+up exactly, and the M4 diagnostic of the holdout is counted by launch quarter, not month, and
+never per launch. The 8 h funding step, the hourly zero-trade rule and the unread minute path are
+Amendment 1, unchanged. Output is aggregate counts only, `stage1b_pass_partial` is a coverage
+statement and not an economic result, no holdout fact may tune a Stage 3 parameter, and the
+holdout stays one shared sealed exam batch. This proposal authorizes no request.
+
 **Order books are not a gate.** Existence and depth of the order-book archive are
 **recorded, not required**: the share of episodes with a book at entry and at exit, at
 each order size, is reported. It decides only which cost source scenario L uses for

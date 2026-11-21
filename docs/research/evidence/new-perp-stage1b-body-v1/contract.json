@@ -1,0 +1,220 @@
+{
+  "classes": [
+    {
+      "cls": "D2",
+      "discarded": "columns 2 and later of every row, unparsed; the file is never stored",
+      "expected": 247,
+      "go": 1,
+      "max_class_bytes": 5185208320,
+      "max_requests": 247,
+      "max_response_bytes": 536870912,
+      "method": "GET",
+      "name": "first_file",
+      "note": "sorted by opaque slot; preflight binds count and bytes to the public record",
+      "params": "none; first in-window daily file of each sealed launch, by opaque slot",
+      "parsed": "column 1 only (trade timestamp): row count, minimum, maximum, nanoseconds",
+      "phase": 2,
+      "url": "https://public.bybit.com/trading/{SYMBOL}/{SYMBOL}{FIRST_DAY}.csv.gz"
+    },
+    {
+      "cls": "D3",
+      "discarded": "open, high, low, close, volume, turnover, unparsed",
+      "expected": 0,
+      "go": 2,
+      "max_class_bytes": 20971520,
+      "max_requests": 247,
+      "max_response_bytes": 65536,
+      "method": "GET",
+      "name": "entry_trade_bar",
+      "note": "clipped to the window; counts are derived after Go A, ceilings are not",
+      "params": "derived from the Go A first-trade time of each candidate, by opaque slot",
+      "parsed": "column 1 only (the bar start time), existence",
+      "phase": 3,
+      "url": "https://api.bybit.com/v5/market/kline"
+    },
+    {
+      "cls": "D4",
+      "discarded": "open, high, low, close, unparsed",
+      "expected": 0,
+      "go": 2,
+      "max_class_bytes": 162529280,
+      "max_requests": 247,
+      "max_response_bytes": 524288,
+      "method": "GET",
+      "name": "mark_hourly",
+      "note": "clipped to the window; counts are derived after Go A, ceilings are not",
+      "params": "derived from the Go A first-trade time of each candidate, by opaque slot",
+      "parsed": "column 1 only (the bar start time): count, oldest, newest and the runs of missing hours",
+      "phase": 3,
+      "url": "https://api.bybit.com/v5/market/mark-price-kline"
+    },
+    {
+      "cls": "D5",
+      "discarded": "open, high, low, close, volume, turnover, unparsed",
+      "expected": 0,
+      "go": 2,
+      "max_class_bytes": 162529280,
+      "max_requests": 247,
+      "max_response_bytes": 524288,
+      "method": "GET",
+      "name": "trade_hourly",
+      "note": "clipped to the window; counts are derived after Go A, ceilings are not",
+      "params": "derived from the Go A first-trade time of each candidate, by opaque slot",
+      "parsed": "column 1 only (the bar start time): count, oldest, newest and the runs of missing hours",
+      "phase": 3,
+      "url": "https://api.bybit.com/v5/market/kline"
+    },
+    {
+      "cls": "D6",
+      "discarded": "fundingRate (every row), unparsed",
+      "expected": 0,
+      "go": 2,
+      "max_class_bytes": 324009984,
+      "max_requests": 988,
+      "max_response_bytes": 262144,
+      "method": "GET",
+      "name": "funding_history",
+      "note": "clipped to the window; counts are derived after Go A, ceilings are not",
+      "params": "derived from the Go A first-trade time of each candidate, by opaque slot",
+      "parsed": "fundingRateTimestamp only: per page the row count, oldest, newest and the largest gap between consecutive timestamps",
+      "phase": 3,
+      "url": "https://api.bybit.com/v5/market/funding/history"
+    }
+  ],
+  "clock": "T0 = minimum column-1 timestamp of the first in-window daily file, in nanoseconds; E = T0 + 7 d up to the next whole minute; X = E + 7 d",
+  "cut_rules": "X > cut censors the path and X == cut is allowed; lookback needs E - 30 d >= window start; every API span ends at cut - 1 ms; a row from the cut is dropped uncounted from an API page and stops the run in a first file, as does a row before the window start",
+  "go_limits": {
+    "1": {
+      "max_attempts": 494,
+      "max_bytes": 5185208320
+    },
+    "2": {
+      "max_attempts": 2162,
+      "max_bytes": 670040064
+    }
+  },
+  "go_sha256": {
+    "1": "1811a7559ec6e1be0aa40821eb6cd586145c0b0343a2d1a2621e6e6363d7af69",
+    "2": "b9bc4e6ab07a0964dbbd4b1955ccfd6a222562748a51855097035b8bfbcc77f5"
+  },
+  "limits": {
+    "attempts_per_request": 3,
+    "backoff_s": [10, 30, 60],
+    "byte_rule": "a request starts only if used + response cap + read reserve fits the go budget and the class budget; every received byte is accounted; a declared length over the cap reads nothing; Accept-Encoding is identity",
+    "file_passes": 2,
+    "funding_max_pages": 4,
+    "funding_max_step_ms": 28800000,
+    "funding_page_limit": 200,
+    "max_candidates": 247,
+    "max_retry_after_s": 300,
+    "max_spacing_s": 8.0,
+    "per_file_cap_bytes": 536870912,
+    "rate_limit_ret_codes": [10006, 10018],
+    "read_reserve_bytes": 65536,
+    "ret_code_rule": "retCode must be an int and not a bool; a nonzero code keeps only retCode and a short retMsg; only 10006 and 10018 (rate limit) and 10000 and 10016 (transient) are retried; any other code stops the run naming it",
+    "retry_headroom_percent_api": 125,
+    "spacing_s": 1.0,
+    "transient_ret_codes": [10000, 10016]
+  },
+  "m1_unreadable": [
+    "no_archive",
+    "no_pre_cut_file",
+    "t0_pre_window_unreadable",
+    "filename_identity_unverified",
+    "listing_unavailable",
+    "t0_unreadable"
+  ],
+  "outcomes": [
+    "not_reconstructible",
+    "incomplete_coverage",
+    "identity_unresolved",
+    "insufficient_events",
+    "capital_infeasible",
+    "stage1b_stopped",
+    "stage1b_incomplete",
+    "stage1b_a_complete",
+    "stage1b_pass_partial"
+  ],
+  "output_root": "outside the Git tree and disjoint from the sealed metadata root, checked before any file or HTTP client exists",
+  "pins": {
+    "catalog_slots": 254,
+    "first_bytes": 2323690559,
+    "first_files": 247,
+    "manifest_sha256": "f3098e0840be489df640fbdab66c464257bac3d6aa5315d58e70d86d594d1341",
+    "metadata_contract_sha256": "31ae1a57970e7af98d2e52fd75534cf2604cd4a79bb889f25cd2f6a90fbada96",
+    "metadata_report_sha256": "173347ae6785dd2fe5a5bbbce7e6fdfc10b82db37d98908e7ba0fc6f64458352"
+  },
+  "protocol": "docs/research/new-perp-short-lab-protocol-v1.md",
+  "public_report": "aggregate counts only: no symbol, slot, URL, per-launch date or result; M4 diagnostics by launch quarter and delivery state",
+  "publish_order": "the sealed source, the clean revision and the publication of every bound file are verified again before any queue, report or done marker is published; a failure writes the fixed stop source_integrity_error",
+  "queue": {
+    "gate": "Go B needs Go A in the same root, the sha256 of queue_b.json, and no definitive stop code from Go A",
+    "go_a": "D2 for every sealed launch with first_file_day and an ok HEAD size, sorted by opaque slot; preflight binds launches, files and bytes to the public record",
+    "go_b": "D3, D4, D5 and the first D6 page per candidate, sorted by opaque slot; later D6 pages by the HYP-036 rule, at most four per candidate",
+    "t0_ambiguous": "a launch whose T0 is ambiguous gets no request after Go A"
+  },
+  "reducer_rules": "first file: exactly one gzip member, no trailing byte, every row inside the window; API bars: start on the step grid, inside the hour (or minute) containing the requested start and the requested end, no duplicate; funding rows inside [startTime, endTime], no duplicate; a row from the cut is dropped uncounted; any other deviation is a fixed schema stop",
+  "report_command": "prints a stored report only if its go finished, or if a stop sealed the root and the report is not positive",
+  "request_list_sha256": "4fa65c35b75b587d55b520833c7c0e84c404c2eadcb56040c3d063f7ab9c4bf2",
+  "restart": "fresh root; no resume under different code; a stop seals the root",
+  "retention": "sealed 0700 root; opaque slots and keys, no symbol, URL or raw body hash in any receipt; public output is aggregate counts only",
+  "rules": "new_perp_stage1b_body_v1",
+  "statuses": [
+    "t0_unavailable",
+    "t0_ambiguous",
+    "identity_excluded",
+    "window_censored",
+    "lookback_censored",
+    "funding_uncovered",
+    "entry_unavailable",
+    "primary"
+  ],
+  "stop_codes": [
+    "not_reconstructible",
+    "incomplete_coverage",
+    "identity_unresolved",
+    "insufficient_events",
+    "capital_infeasible"
+  ],
+  "study": "new-perp-short-v1",
+  "success": "stage1b_pass_partial is a coverage statement, never an economic result",
+  "thresholds": {
+    "lifecycle_unrebuildable_max": 0.15,
+    "m1_aligned_from_ms": -300000,
+    "m1_aligned_to_ms": 3600000,
+    "m1_ambiguous_max": 0.1,
+    "m1_delayed_to_ms": 86400000,
+    "m1_readable_min": 0.9,
+    "m2_archive_only_max": 0.05,
+    "m2_near_launch_days": 1,
+    "m2_no_file_near_launch_max": 0.05,
+    "m2_path_days_missing_max": 0.05,
+    "m3_contradicting_max": 0.1,
+    "m3_unverifiable_max": 0.2,
+    "m4_funding_uncovered_max": 0.05,
+    "m5_bars_min": 0.95,
+    "m5_entry_or_unresolved_max": 0.05,
+    "m6_feasible_min": 0.9,
+    "m6_min_leverage": 2,
+    "m6_order_notional_usd": 50,
+    "min_episodes": 100,
+    "min_weeks": 26,
+    "ticker_reuse_first_file_days": 60,
+    "ticker_reuse_gap_days": 30
+  },
+  "verdict_rules": {
+    "floor": "n_primary at least 100 and at least 26 ISO weeks of primary launches",
+    "go_a": "Go B is allowed only with no stop code from M1, M2, M3 or the floor upper bound, no stop state and no pending first file; M4, M5, M6 and n_primary are decided only after Go B",
+    "m1": "d = first trade - launchTime; aligned -5 min to +60 min, delayed_open up to +24 h, else premarket_or_ambiguous; ambiguous at most 10%, readable at least 90%, unreadable at most 15%, all over the catalog launches",
+    "m2": "(i) no file within one day of launch, at most 5% of the catalog; (ii) the metadata share a/(N+a), at most 5%; (iii) candidates missing more than 5% of their V1 path days, at most 5% of the candidates",
+    "m3": "survivors are readable launches with a file near launch; contradicting at most 10%, unverifiable (no listing or unverified filename identity) at most 20%, survivors less contradicting at least 100; no baseCoin check",
+    "m4": "pagination finished and no gap longer than 8 h over days 3 to 21 after T0, clipped to the window: partial_pass, never proof; uncovered at most 5% of candidates; a share above the limit over the fixed candidate count is a known failure even while launches are pending",
+    "m5": "entry bar at E exists, hourly trade and mark series continuous from the hour of E to the hour before X, at least 95% of the episodes after funding; a series that may be cut by its limit is unproven and never green; minute level deferred; a known failure is an optimistic share below 95% (pending, unproven and funding-pending episodes counted as successes)",
+    "m6": "static catalog fields: minNotionalValue at most USD 50, maxLeverage at least 2, qtyStep and minOrderQty present, at least 90% of the episodes; partial; provisional while any episode awaits funding, and a known failure is an optimistic share below 90% (a pending episode that is not feasible leaves the denominator, every other episode stays)",
+    "outcome": "the first stop code of the known failures, else stage1b_stopped if the root is sealed, else stage1b_incomplete if a check is not assessed, else stage1b_a_complete after Go A, else stage1b_pass_partial"
+  },
+  "window": {
+    "cut": "2024-09-16",
+    "start": "2023-02-01"
+  }
+}
