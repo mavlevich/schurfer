@@ -25,8 +25,10 @@ from .test_new_perp_stage1b_body import (
     feed,
     full_world,
     funding_payload,
+    go_b_fixture,
     kline_payload,
     row,
+    scripted,
     trade_gz,
 )
 from .test_new_perp_stage1b_body_verdict import (
@@ -546,3 +548,71 @@ def test_a_present_bar_with_zero_volume_is_present_not_a_gap() -> None:
     absent = kline_payload("SYMUSDT", [starts[0], starts[2]])
     gap = body.reduce_kline_window(absent, "SYMUSDT", 7, s.HOUR_MS, 1000, low, low + 2 * s.HOUR_MS)
     assert gap["n"] == 2 and gap["runs"] != []
+
+
+# -- round 3: a reserve violation survives a crash (shared Fetcher fix, PR 630)
+
+
+def _dying_stop(_self: s.Fetcher, _reason: str) -> None:
+    raise RuntimeError("the process died before the stop file")
+
+
+def test_go_a_reserve_violation_receipt_survives_a_crash_and_closes_the_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The first-file path writes its receipt before the stop: a crash in between must not
+    leave the root usable. A later Stage 1b fetcher recovers the stop from the receipt."""
+    world = holdout_world(1)
+    sealed = write_sealed(tmp_path, world)
+    big = trade_gz([GOOD]) + b"\0" * (s.READ_RESERVE_BYTES + 1)
+    sent: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return httpx.Response(200, stream=httpx.ByteStream(big))
+
+    client = scripted(handler)
+    root = tmp_path / "body"
+    first, _ = body_fetcher(world, root, sealed, client=client)
+    with monkeypatch.context() as patch:
+        patch.setattr(s.Fetcher, "record_stop", _dying_stop)
+        with pytest.raises(RuntimeError, match="died"):
+            body.run_a(first, sealed.sealed, sealed.pins)
+    receipt = json.loads(next((root / "receipts").glob("*.json")).read_text())
+    assert receipt["reserve_exceeded"] is True and not (root / "stop.json").exists()
+    sent_before = len(sent)
+    with pytest.raises(s.FetchStoppedError, match="larger than the read reserve"):
+        body_fetcher(world, root, sealed, client=client)
+    assert (root / "stop.json").exists() and len(sent) == sent_before  # nothing re-sent
+    with pytest.raises(s.FetchStoppedError, match="was stopped"):
+        body_fetcher(world, root, sealed, client=client)
+
+
+def test_go_b_reserve_violation_receipt_survives_a_crash_and_closes_the_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An API response with outcome ok and `reserve_exceeded` is fatal after a crash too."""
+    world = holdout_world(3)
+    fetcher, _clock, requests, sealed = go_b_fixture(tmp_path, world)
+    request = next(r for r in requests if r.cls == "D5")
+    ok = {"retCode": 0, "result": {"symbol": request.symbol, "list": []}}
+    pad = json.dumps({**ok, "pad": "x" * 150_000}).encode()  # a valid, empty series
+    sent: list[httpx.Request] = []
+
+    def handler(http_request: httpx.Request) -> httpx.Response:
+        sent.append(http_request)
+        return httpx.Response(200, stream=httpx.ByteStream(pad))  # one chunk over 64 KiB
+
+    client = scripted(handler)
+    fetcher.client = client
+    with monkeypatch.context() as patch:
+        patch.setattr(s.Fetcher, "record_stop", _dying_stop)
+        with pytest.raises(RuntimeError, match="died"):
+            fetcher.run_request(request, body.request_reducer(request))
+    root = tmp_path / "body"
+    assert not (root / "stop.json").exists()
+    assert any(json.loads(p.read_text()).get("reserve_exceeded") for p in root.glob("receipts/*"))
+    sent_before = len(sent)
+    with pytest.raises(s.FetchStoppedError, match="larger than the read reserve"):
+        body_fetcher(world, root, sealed, go=2, client=client)
+    assert (root / "stop.json").exists() and len(sent) == sent_before
