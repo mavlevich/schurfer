@@ -1,0 +1,25 @@
+{
+  "evidence": {
+    "stage3-report.json": {
+      "committed_as": "stage3-report.json",
+      "sha256": "1192e1b2a4a0d5f314423bb65a69db99028596cbba5b38436adc483e8b6aad2f"
+    }
+  },
+  "not_published": {
+    "sealed_files": ["cohort.json", "contract.json", "done.json", "run.json"],
+    "sealed_folders": ["attempts", "receipts"],
+    "reason": "per-launch inputs and per-episode returns stay in the sealed run root outside Git"
+  },
+  "run": {
+    "contract_rules": "new_perp_stage3_v1",
+    "cohort_sha256": "60aa139bf33bf129ee9ff5c530c47a5151fa99b9a712c59e90e82a8285ebaa4c",
+    "request_list_sha256": "3392f75267e684e46093cbc0fb55e0714036df585a98d220b416dae4594a08d9",
+    "revision": "67ba33f854fb51ae5e47359493909a6f28620010",
+    "root_name": "i25-stage3-67ba33f"
+  },
+  "scan": {
+    "dates_present": "none",
+    "per_launch_values_in_report": false,
+    "symbol_names_in_report": false
+  }
+}

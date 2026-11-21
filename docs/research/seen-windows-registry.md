@@ -1087,7 +1087,7 @@ green CI and the owner's go for each exact hash are required before any request.
 **Holdout status is unchanged: one shared sealed exam batch.** `stage1b_pass_partial` would be a
 coverage statement, never an economic result, and no holdout fact may tune a Stage 3 parameter.
 
-## I25 Stage 3 registration `new-perp-short-v1`, 2026-11-20 (proposed, not read)
+## I25 Stage 3 registration `new-perp-short-v1`, 2026-11-20 (proposed; executed 2026-11-21, see below)
 
 The [Stage 3 contract](new-perp-stage3-power-calibration-v1.md), frozen as
 [`contract.json`](evidence/new-perp-stage3-v1/contract.json), with its code and synthetic tests,
@@ -1122,3 +1122,32 @@ report `400f635ea29ac52dc5999caa866b152fa14cea1b82381ce91270012821a853ca`, manif
 updated with the root's report and the outcome; until then, nothing at features level is spent.
 The owner also approves the cohort SHA-256 that the `cohort` command prints for the sealed Stage 1
 root (it fixes the actual input files by fingerprint), and the stored report of a root is immutable.
+
+## I25 Stage 3 actual read and stop, 2026-11-21
+
+The Stage 3 contract above was run once, on the owner's go for its exact hashes (request-list
+SHA-256 `3392f75267e684e46093cbc0fb55e0714036df585a98d220b416dae4594a08d9`, go
+`701fcfd51b9d10f0e4093ef9eeb585b8a97a95e66bba7685dcfd9666dead7daf`, cohort SHA-256
+`60aa139bf33bf129ee9ff5c530c47a5151fa99b9a712c59e90e82a8285ebaa4c`), at revision
+`67ba33f854fb51ae5e47359493909a6f28620010`, rules `new_perp_stage3_v1`.
+
+- **Requests:** 228 attempts, all `ok`, no retry, no stop; 2,667,639 response bytes of the 48 MiB
+  cap. A first launch failed before any request (wrong working directory, empty root) and is not
+  counted.
+- **Outcome:** `insufficient_power`. Calibrated V1 MDE 1,158.0 bps (`2.80 * SE`, SE 413.6 bps,
+  effective sample about 123.9, design effect 1.84) against the 400 bps limit; V2 and V3 1,163.1 and
+  1,176.2 bps (extrapolated, conditional). The registered sensitivity check (878.0 and 1,028.5 bps)
+  fails too.
+- **What was read:** hourly trade-bar closes of the pre-entry days 1 to 7 of 228 discovery-year
+  episodes (dispersion and dependence only). **Not read:** any bar at or after an entry minute, any
+  exit, mark price, funding, order book, anything from 2025-10-01 or 2026-09-29, the backward
+  holdout. `returns_read` is false: no return of the short trade exists.
+- **Record:** [result note](new-perp-stage3-result-2026-11-21.md) and
+  [aggregate evidence](evidence/new-perp-stage3-v1-result-2026-11-21/); the run root
+  `i25-stage3-67ba33f` stays sealed outside Git.
+
+**Consequence: I25 `new-perp-short-v1` stops at protocol stop 6.** Stage 1b Go A and Go B are
+withdrawn (the body-phase contract stays merged and unrun) and the backward holdout
+`[2023-02-01, 2024-09-16)` stays unread as one shared sealed exam batch. The discovery ledger count
+is unchanged (no variant outcome was read). The result says the cohort cannot show an edge of any
+realistic size; it is not evidence that no edge exists.
