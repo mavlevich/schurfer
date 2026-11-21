@@ -1,0 +1,147 @@
+{
+  "cohort": {
+    "defined": 228,
+    "entered_at_k": 215,
+    "episodes": 228,
+    "iso_weeks": 48,
+    "slots_k": 8,
+    "undefined": 0,
+    "weeks_with_defined": 48
+  },
+  "dependence": {
+    "blocks": {
+      "2": {
+        "cluster_weighted_variance": 171031.05486008365,
+        "deff_cluster_weighted": 1.840509967754802,
+        "deff_episode_weighted": 1.517476451844176
+      },
+      "4": {
+        "cluster_weighted_variance": 163737.5586791398,
+        "deff_cluster_weighted": 1.7620227454676543,
+        "deff_episode_weighted": 1.4185814705782405
+      },
+      "8": {
+        "cluster_weighted_variance": 156266.6895879414,
+        "deff_cluster_weighted": 1.6816267668461657,
+        "deff_episode_weighted": 1.1953729179800647
+      }
+    },
+    "deff_floor_applied": false,
+    "deff_largest": 1.840509967754802,
+    "deff_used": 1.840509967754802,
+    "n_eff": 123.87870970247025,
+    "primary_block": 4
+  },
+  "dispersion": {
+    "sd_bps": 4602.945404316628,
+    "sd_log_7d": 0.39267050094231326,
+    "top5_share_of_squared_deviations": 0.5500307709639912
+  },
+  "portfolio": {
+    "entered_at_k": 215,
+    "hurdle": 0.05,
+    "hurdle_required_bps": 18.6046511627907,
+    "mde_over_hurdle": 62.24063102463381,
+    "roc_annual_at_mde": 3.1120315512316905,
+    "slots_k": 8,
+    "usd_per_year": {
+      "250": {
+        "at_mde": 778.0078878079227,
+        "hurdle": 12.5
+      },
+      "3000": {
+        "at_mde": 9336.094653695072,
+        "hurdle": 150.0
+      },
+      "50": {
+        "at_mde": 155.60157756158452,
+        "hurdle": 2.5
+      },
+      "5000": {
+        "at_mde": 15560.157756158453,
+        "hurdle": 250.0
+      }
+    },
+    "window_days": 365
+  },
+  "power": {
+    "limit_bps": 400.0,
+    "mde_gate_bps": 1157.9652283652802,
+    "multiplier": 2.8,
+    "passes": false,
+    "se_bps": 413.55901013045724,
+    "sensitivity_bps": {
+      "2.123": 877.9857785069609,
+      "2.487": 1028.5212581944472
+    }
+  },
+  "returns_read": false,
+  "run": {
+    "api_error_codes": {},
+    "attempts": 228,
+    "binding": {
+      "clean_tree_at_run": true,
+      "publication": {
+        "apps/analytics/schurfer_analytics/bybit_carry_feasibility.py": "685dac395ebfe30d650ea89a08e50609550dbf0eb9542b4a1582aa5acb0a4961",
+        "apps/analytics/schurfer_analytics/bybit_presettlement_bounded_fetch.py": "11d2dc538815ea3609d1e5e5c1a930297e2bfb53c2629c994889ab98eaa0e288",
+        "apps/analytics/schurfer_analytics/bybit_presettlement_economics.py": "418984715b4a326d3c5c4b2215813ee3954de64dc62e0c12a348622f13880845",
+        "apps/analytics/schurfer_analytics/catalyst_feasibility.py": "a38ba2540baaf13cca10b900501286b4c086246586917fa3731a293af563c18a",
+        "apps/analytics/schurfer_analytics/new_perp_stage1.py": "a4a8b6afece0b1a6a649548646ec0b1c77a46fc08846a2d16962f968e1c8b073",
+        "apps/analytics/schurfer_analytics/new_perp_stage1_verdict.py": "88728144ae5eab45ff9842c867d3dadb9f8280655b40983dbc3d7889e173867d",
+        "apps/analytics/schurfer_analytics/new_perp_stage3.py": "0b9afb4d75e3e13e8b61f14952003daafadb8fbc6478c1aebf76c6df6bde1b4b",
+        "docs/research/evidence/new-perp-stage1-v1/contract.json": "1f59d45a759d8ee13866611abba366807b87f33ba482d1592cde30a3b0475edc",
+        "docs/research/evidence/new-perp-stage3-v1/contract.json": "3d5b7b9e3740a97df167378ee756a05c94d008874ac6d5329bd866710a24f659",
+        "docs/research/new-perp-short-lab-protocol-v1.md": "b62d0c7c7f8223d87986b1ba036bb5ebe306a432e60e1ec10edfbd87e4028231",
+        "docs/research/new-perp-stage1-request-list-v1.md": "5d92580899fd8e18c12cd12edbbde8a54e7423b7fc70d70bcf9063898e2e56a2",
+        "docs/research/new-perp-stage3-power-calibration-v1.md": "8bb223ce6c4ffac3f31066e4f91f33301f099c6921b6f17311aa5e0e1a936f08",
+        "docs/research/seen-windows-registry.md": "f190b740092a8b2426c995661e4c258056f1b113e2b6b3f76db78301a055bf27"
+      },
+      "revision": "67ba33f854fb51ae5e47359493909a6f28620010",
+      "rules": "new_perp_stage3_v1"
+    },
+    "bytes": 2667639,
+    "cohort_sha256": "60aa139bf33bf129ee9ff5c530c47a5151fa99b9a712c59e90e82a8285ebaa4c",
+    "request_list_sha256": "3392f75267e684e46093cbc0fb55e0714036df585a98d220b416dae4594a08d9",
+    "request_results": {
+      "ok": 228
+    },
+    "requests_finished": 228,
+    "source_fingerprint": "b4226e63093d0cfdfdd7fa388d93a49af9f93e21fb5a50615c71271e9501ad54"
+  },
+  "stop_code": "insufficient_power",
+  "variants": {
+    "V1": {
+      "age_days": 7,
+      "basis": "calibrated",
+      "episodes": 228,
+      "floors_met": true,
+      "mde_bps": 1157.9652283652802,
+      "weeks": 48
+    },
+    "V2": {
+      "age_days": 3,
+      "basis": "conditional_extrapolation_from_v1_se",
+      "episodes": 226,
+      "floors_met": true,
+      "mde_bps": 1163.0776824882323,
+      "weeks": 47
+    },
+    "V3": {
+      "age_days": 14,
+      "basis": "conditional_extrapolation_from_v1_se",
+      "episodes": 221,
+      "floors_met": true,
+      "mde_bps": 1176.1610826043416,
+      "weeks": 47
+    }
+  },
+  "verdict": "insufficient_power",
+  "version": "new_perp_stage3_v1",
+  "window": {
+    "hour_rows_missing_share": 0.0,
+    "hours_between_grid_points": {
+      "143": 226,
+      "144": 2
+    }
+  }
+}

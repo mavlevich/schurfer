@@ -1,5 +1,9 @@
 # I25 Stage 1b: body-phase contract (v1, DRAFT)
 
+**Not authorized to fetch, and withdrawn on 2026-11-21:** the I25 Stage 3 power gate returned
+`insufficient_power` (see the [result note](new-perp-stage3-result-2026-11-21.md)), so neither go will
+be asked for. The text below is the pre-stop design, kept unchanged.
+
 **Not authorized to fetch.** This is the design, the frozen contract and the code for the body
 phase of the I25 Stage 1b check on the sealed backward holdout `[2023-02-01, 2024-09-16)`.
 Merging it grants no request. The owner decides each of the two gos below separately, by their
