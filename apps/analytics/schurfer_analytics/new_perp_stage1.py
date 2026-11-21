@@ -1448,12 +1448,19 @@ class Fetcher:
         # a receipt and no stop file. The receipt alone is enough: recovery writes the missing
         # stop and refuses to continue (every stop kind that has a receipt is covered here).
         for r in self.receipts:
-            if r["outcome"] in FATAL_OUTCOMES:
-                what = {
-                    "forbidden": "HTTP 403",
-                    "schema_mismatch": "schema mismatch",
-                    "api_error": f"api error retCode {r.get('ret_code')}",
-                }[r["outcome"]]
+            # `reserve_exceeded` is its own receipt field: a response whose transport chunk broke
+            # the read reserve can carry outcome "ok" and is still fatal (run_request stops on it
+            # after writing the receipt, so a crash in between must not leave the root usable).
+            if r["outcome"] in FATAL_OUTCOMES or r.get("reserve_exceeded"):
+                what = (
+                    "a transport chunk was larger than the read reserve"
+                    if r.get("reserve_exceeded")
+                    else {
+                        "forbidden": "HTTP 403",
+                        "schema_mismatch": "schema mismatch",
+                        "api_error": f"api error retCode {r.get('ret_code')}",
+                    }[r["outcome"]]
+                )
                 reason = f"{r['cls']}: {what} (recovered from its receipt)"
                 self.record_stop(reason)
                 raise FetchStoppedError(f"this run was stopped: {reason}")

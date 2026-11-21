@@ -1,0 +1,31 @@
+{
+  "evidence": {
+    "metadata-report.json": {
+      "committed_as": "metadata-report.json.gz",
+      "sha256_of_committed_gzip": "95007f511d708420126d3b2915d811ec4cb54e4310e715538cacafc766f89df9",
+      "sha256_of_unzipped_json": "173347ae6785dd2fe5a5bbbce7e6fdfc10b82db37d98908e7ba0fc6f64458352"
+    }
+  },
+  "not_published": {
+    "manifest.json": {
+      "catalog_keys": 254,
+      "admitted_keys": 191,
+      "sha256": "f3098e0840be489df640fbdab66c464257bac3d6aa5315d58e70d86d594d1341",
+      "reason": "holds opaque per-launch and per-series keys; only its SHA-256 and counts are published"
+    },
+    "sealed_folders": ["attempts", "receipts", "catalog", "admitted"],
+    "sealed_files": ["evidence-hashes.json", "metadata_done.json", "run.json", "contract.json"]
+  },
+  "run": {
+    "contract_rules": "new_perp_stage1b_metadata_v2",
+    "finished_at_utc": "2026-11-19T23:53:05Z",
+    "request_list_sha256": "31ae1a57970e7af98d2e52fd75534cf2604cd4a79bb889f25cd2f6a90fbada96",
+    "revision": "e01d67ce32cb46826cb570102db76b193055fa80",
+    "root_name": "i25-stage1b-metadata-v2-e01d67c"
+  },
+  "scan": {
+    "per_launch_dates_in_report": false,
+    "symbol_names_in_report": false,
+    "dates_present": "run finish time and the two window bounds only"
+  }
+}

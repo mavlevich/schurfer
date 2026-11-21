@@ -692,6 +692,51 @@ def test_a_transport_chunk_over_the_reserve_is_counted_and_stops_the_run(tmp_pat
     assert (tmp_path / "run" / "stop.json").exists()
 
 
+def hourly_request() -> s1.Request:
+    """A D5 request (512 KiB response cap), so a 150 KB body is accepted, not too_large."""
+    candidate = {
+        "symbol": "AAAUSDT",
+        "launch_ms": 1,
+        "t0_ms": ms("2024-11-01T10:00:00"),
+        "entry_ms": ms("2024-11-08T10:00:00"),
+        "exit_ms": ms("2024-11-15T10:00:00"),
+    }
+    return s1.bar_requests([candidate])[2]
+
+
+def test_a_reserve_violation_receipt_survives_a_crash_and_closes_the_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: a receipt with outcome ok and reserve_exceeded, written before the stop file,
+    must close the root for good when the process dies in between."""
+    body = json.dumps({"retCode": 0, "result": {}, "pad": "x" * 150_000}).encode()
+    sent: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(request)
+        return httpx.Response(200, stream=httpx.ByteStream(body))  # one chunk over 64 KiB
+
+    client = httpx.Client(transport=httpx.MockTransport(handler))
+    root = tmp_path / "run"
+    f = s1.Fetcher(root, s1.build_contract(), client, go=2)
+
+    def die(_self: s1.Fetcher, _reason: str) -> None:
+        raise RuntimeError("the process died before the stop file")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(s1.Fetcher, "record_stop", die)
+        with pytest.raises(RuntimeError, match="died"):
+            f.run_request(hourly_request())
+    receipt = json.loads(next((root / "receipts").glob("*.json")).read_text())
+    assert receipt["outcome"] == "ok" and receipt["reserve_exceeded"] is True
+    assert not (root / "stop.json").exists()
+    with pytest.raises(s1.FetchStoppedError, match="larger than the read reserve"):
+        s1.Fetcher(root, s1.build_contract(), client, go=2)
+    assert (root / "stop.json").exists() and len(sent) == 1  # stopped, and nothing re-sent
+    with pytest.raises(s1.FetchStoppedError, match="was stopped"):
+        s1.Fetcher(root, s1.build_contract(), client, go=2)
+
+
 def test_the_reserve_and_the_rule_are_part_of_the_contract() -> None:
     limits = s1.build_contract()["limits"]
     assert limits["read_reserve_bytes"] == 65_536 == s1.READ_RESERVE_BYTES
