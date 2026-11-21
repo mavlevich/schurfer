@@ -26,11 +26,11 @@ Proposed Amendment 6, added by this change).
 
 ```text
 request_list_sha256 (whole contract, bound into every run) =
-  a25eb6b9460728e1a6691f8c0b750310ce52bef04f23c16cb070ef1d86b044a2
+  4fa65c35b75b587d55b520833c7c0e84c404c2eadcb56040c3d063f7ab9c4bf2
 go A approval hash (go_sha256["1"]) =
-  f218364a747154cadc480a4e433e5201e801f7daaaafbddc16284bb0999558ca
+  1811a7559ec6e1be0aa40821eb6cd586145c0b0343a2d1a2621e6e6363d7af69
 go B approval hash (go_sha256["2"]) =
-  0fc8c8c2a9b6992552c5bcedca4738231b9fb4ef2ce63cc7e7bf1af7c53b6bff
+  b9bc4e6ab07a0964dbbd4b1955ccfd6a222562748a51855097035b8bfbcc77f5
 ```
 
 Go B is approved by its own hash **and** by the SHA-256 of `queue_b.json`, which Go A writes. The
@@ -288,7 +288,10 @@ fact tunes any of them.** "Candidates" and "episodes after funding" are as in se
   for its funding decision counts as a success, an episode with a decided gap counts as bad.
 - **M6** static catalog fields over episodes after funding: `minNotionalValue` at most USD 50,
   `maxLeverage` at least 2, `qtyStep` and `minOrderQty` present, at least 90%. It can fail an
-  order and never shows that one opens: no price, rounding, risk limit or depth is checked.
+  order and never shows that one opens: no price, rounding, risk limit or depth is checked. An
+  episode still waiting for its funding decision may leave the denominator, so M6 is provisional
+  while any is pending. Its failure is known only as an optimistic bound: every pending episode
+  that is not feasible leaves, every other episode stays, and the share is still below 90%.
 - **Floor:** `n_primary` at least 100 and at least 26 ISO weeks of primary launches. Go A checks
   the same floor on the candidates it knows, as an upper bound.
 - **Stop codes** in protocol section 8 order: `not_reconstructible` (M1), `incomplete_coverage`
@@ -348,7 +351,7 @@ discovery year, the test year and the blind window. Ceilings in section 0.
 
 Ledger text (for the discovery ledger, after a result exists; this change adds no row): "I25
 Stage 1b body phase, backward holdout, coverage level. Two gos on `request_list_sha256`
-`a25eb6b9...44a2`. Counts, shares and stop codes only; no price, rate, volume or return read; the
+`4fa65c35...4bf2`. Counts, shares and stop codes only; no price, rate, volume or return read; the
 holdout remains one shared sealed exam batch; +0 tested variants, +0 parameters." The ledger row
 is written only with the result record.
 
@@ -393,9 +396,9 @@ blind-window input exists anywhere in it.
    known at `E`: the absence of a contradiction is not proof. "Unverifiable" has no base-coin
    check because the metadata rows do not retain `baseCoin`. _Recommend accept, labelled in the
    partial-check list._
-8. **A missing hourly bar is a gap.** The code reads no volume, so an absent bar is not told apart
-   from a bar with zero volume; both count as a gap at hourly resolution (discovery question 1).
-   _Recommend accept._
+8. **A missing hourly bar is a gap.** An absent bar is a gap. The code reads no volume: a present
+   bar is present whatever its volume, and zero volume alone is not a gap (a test with an explicit
+   `"volume": "0"` pins this; discovery question 1). _Recommend accept._
 9. **The 8 h funding step** stays a coarse partial check (discovery question 2); stage 4 fetches
    the exact rows. _Recommend accept._
 10. **Go B refused after any definitive Go A stop code.** _Recommend yes_: it spends no read on a

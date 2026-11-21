@@ -457,3 +457,92 @@ def test_verdict_module_names_m3_as_partial_and_wording_is_exact() -> None:
     text = " ".join(report["partial_checks"])
     assert "absence of a contradiction" in text and "historical identity" in text
     assert v.STATEMENT.startswith("coverage level only")
+
+
+# -- round 3: M6 is provisional while funding is pending (P2) and the zero-volume wording (P3)
+
+
+def _m6_world(*, infeasible: int, pending: int, uncovered: int) -> v.BodyData:
+    """120 launches: the first `infeasible` fail the static order, the first `pending` of them
+    still wait for funding and `uncovered` of those pending ones are later decided uncovered."""
+    data = make(120)
+    ordered = slots(data)
+    for slot in ordered[:infeasible]:
+        data.rows[slot] = {**data.rows[slot], "min_notional": "50.01"}
+    for slot in ordered[:pending]:
+        del data.funding[slot]
+    for slot in ordered[:uncovered]:
+        data.funding[slot] = [funding_page(_candidate(data, slot), max_gap_ms=EIGHT + 1)]
+    return data
+
+
+def test_m6_is_provisional_and_no_stop_while_infeasible_episodes_wait_for_funding() -> None:
+    """106 of 120 feasible is 88.33%, but the 14 infeasible launches may still leave."""
+    report = evaluate(_m6_world(infeasible=14, pending=14, uncovered=0))
+    assert report["m6"]["counts"]["infeasible"] == 14 and report["m6"]["pending"] == 14
+    assert report["m6"]["share"] == pytest.approx(106 / 120)
+    assert report["m6"]["fail"] is False and report["m6"]["pass"] is False
+    assert report["m6"]["provisional"] is True and report["m6"]["status"] == "pending"
+    assert "capital_infeasible" not in report["stop_codes"]
+    assert report["outcome"] == "stage1b_incomplete"
+
+
+def test_m6_transition_six_uncovered_eight_covered_passes_at_exactly_ninety_two_percent() -> None:
+    """The reviewer's transition: six leave through funding, eight are covered and stay."""
+    world = _m6_world(infeasible=14, pending=14, uncovered=6)
+    pending = world.funding.keys()
+    assert len(pending) == 120 - 8  # eight still pending
+    report = evaluate(world)
+    assert report["m6"]["fail"] is False and "capital_infeasible" not in report["stop_codes"]
+    for slot in slots(world)[6:14]:
+        world.funding[slot] = [funding_page(_candidate(world, slot))]
+    final = evaluate(world)
+    assert final["m6"]["counts"] == {"feasible": 106, "infeasible": 8, "unknown": 0}
+    assert final["m6"]["share"] == pytest.approx(106 / 114) and final["m6"]["pending"] == 0
+    assert final["m6"]["pass"] is True and final["m6"]["provisional"] is False
+    assert final["m4"]["share"] == 0.05 and final["m4"]["pass"] is True
+    assert final["stop_codes"] == [] and final["outcome"] == "stage1b_pass_partial"
+
+
+def test_m6_known_failure_is_a_stop_even_with_other_launches_pending() -> None:
+    """Optimistic bound: every pending infeasible launch leaves, decided ones stay."""
+    data = make(100)
+    ordered = slots(data)
+    for slot in ordered[:12]:
+        data.rows[slot] = {**data.rows[slot], "min_notional": "50.01"}  # decided and covered
+    for slot in ordered[12:20]:
+        del data.funding[slot]  # eight feasible launches still pending
+    report = evaluate(data)
+    assert report["m6"]["counts"]["infeasible"] == 12 and report["m6"]["pending"] == 8
+    assert report["m6"]["fail"] is True and report["m6"]["status"] == "fail"
+    assert "capital_infeasible" in report["stop_codes"]
+    data.stop = {"go": 2, "reason": "D6: HTTP 403"}
+    assert "capital_infeasible" in evaluate(data)["stop_codes"]
+
+
+def test_m6_pending_unknown_orders_also_leave_the_optimistic_denominator() -> None:
+    data = make(100)
+    ordered = slots(data)
+    for slot in ordered[:11]:
+        data.rows[slot] = {**data.rows[slot], "qty_step": None}  # unknown static order
+        del data.funding[slot]
+    report = evaluate(data)
+    assert report["m6"]["counts"]["unknown"] == 11 and report["m6"]["fail"] is False
+    assert "capital_infeasible" not in report["stop_codes"]
+
+
+def test_a_present_bar_with_zero_volume_is_present_not_a_gap() -> None:
+    """The reducer reads no volume: an explicit "volume": "0" row is a present bar."""
+    low = CUT - 10 * s.HOUR_MS
+    starts = [low, low + s.HOUR_MS, low + 2 * s.HOUR_MS]
+    payload = kline_payload("SYMUSDT", starts)
+    for item in payload["result"]["list"]:
+        item[5] = "0"  # volume
+        item[6] = "0"  # turnover
+    facts = body.reduce_kline_window(
+        payload, "SYMUSDT", 7, s.HOUR_MS, 1000, low, low + 2 * s.HOUR_MS
+    )
+    assert facts["n"] == 3 and facts["runs"] == []
+    absent = kline_payload("SYMUSDT", [starts[0], starts[2]])
+    gap = body.reduce_kline_window(absent, "SYMUSDT", 7, s.HOUR_MS, 1000, low, low + 2 * s.HOUR_MS)
+    assert gap["n"] == 2 and gap["runs"] != []

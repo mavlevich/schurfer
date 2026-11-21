@@ -772,7 +772,10 @@ def build_contract(pins: Pins = PINS) -> dict[str, Any]:
             "a known failure is an optimistic share below 95% (pending, unproven and "
             "funding-pending episodes counted as successes)",
             "m6": "static catalog fields: minNotionalValue at most USD 50, maxLeverage at least "
-            "2, qtyStep and minOrderQty present, at least 90% of the episodes; partial",
+            "2, qtyStep and minOrderQty present, at least 90% of the episodes; partial; "
+            "provisional while any episode awaits funding, and a known failure is an "
+            "optimistic share below 90% (a pending episode that is not feasible leaves the "
+            "denominator, every other episode stays)",
             "floor": "n_primary at least 100 and at least 26 ISO weeks of primary launches",
             "go_a": "Go B is allowed only with no stop code from M1, M2, M3 or the floor upper "
             "bound, no stop state and no pending first file; M4, M5, M6 and n_primary are "

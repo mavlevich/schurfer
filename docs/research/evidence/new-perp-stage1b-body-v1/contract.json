@@ -94,8 +94,8 @@
     }
   },
   "go_sha256": {
-    "1": "f218364a747154cadc480a4e433e5201e801f7daaaafbddc16284bb0999558ca",
-    "2": "0fc8c8c2a9b6992552c5bcedca4738231b9fb4ef2ce63cc7e7bf1af7c53b6bff"
+    "1": "1811a7559ec6e1be0aa40821eb6cd586145c0b0343a2d1a2621e6e6363d7af69",
+    "2": "b9bc4e6ab07a0964dbbd4b1955ccfd6a222562748a51855097035b8bfbcc77f5"
   },
   "limits": {
     "attempts_per_request": 3,
@@ -155,7 +155,7 @@
   },
   "reducer_rules": "first file: exactly one gzip member, no trailing byte, every row inside the window; API bars: start on the step grid, inside the hour (or minute) containing the requested start and the requested end, no duplicate; funding rows inside [startTime, endTime], no duplicate; a row from the cut is dropped uncounted; any other deviation is a fixed schema stop",
   "report_command": "prints a stored report only if its go finished, or if a stop sealed the root and the report is not positive",
-  "request_list_sha256": "a25eb6b9460728e1a6691f8c0b750310ce52bef04f23c16cb070ef1d86b044a2",
+  "request_list_sha256": "4fa65c35b75b587d55b520833c7c0e84c404c2eadcb56040c3d063f7ab9c4bf2",
   "restart": "fresh root; no resume under different code; a stop seals the root",
   "retention": "sealed 0700 root; opaque slots and keys, no symbol, URL or raw body hash in any receipt; public output is aggregate counts only",
   "rules": "new_perp_stage1b_body_v1",
@@ -210,7 +210,7 @@
     "m3": "survivors are readable launches with a file near launch; contradicting at most 10%, unverifiable (no listing or unverified filename identity) at most 20%, survivors less contradicting at least 100; no baseCoin check",
     "m4": "pagination finished and no gap longer than 8 h over days 3 to 21 after T0, clipped to the window: partial_pass, never proof; uncovered at most 5% of candidates; a share above the limit over the fixed candidate count is a known failure even while launches are pending",
     "m5": "entry bar at E exists, hourly trade and mark series continuous from the hour of E to the hour before X, at least 95% of the episodes after funding; a series that may be cut by its limit is unproven and never green; minute level deferred; a known failure is an optimistic share below 95% (pending, unproven and funding-pending episodes counted as successes)",
-    "m6": "static catalog fields: minNotionalValue at most USD 50, maxLeverage at least 2, qtyStep and minOrderQty present, at least 90% of the episodes; partial",
+    "m6": "static catalog fields: minNotionalValue at most USD 50, maxLeverage at least 2, qtyStep and minOrderQty present, at least 90% of the episodes; partial; provisional while any episode awaits funding, and a known failure is an optimistic share below 90% (a pending episode that is not feasible leaves the denominator, every other episode stays)",
     "outcome": "the first stop code of the known failures, else stage1b_stopped if the root is sealed, else stage1b_incomplete if a check is not assessed, else stage1b_a_complete after Go A, else stage1b_pass_partial"
   },
   "window": {

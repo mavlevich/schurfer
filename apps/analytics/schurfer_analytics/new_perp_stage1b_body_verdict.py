@@ -563,25 +563,57 @@ def _m5(
 
 
 def _m6(episodes: list[dict[str, Any]], provisional: bool = False) -> dict[str, Any]:
+    """M6 over the episodes after funding.
+
+    An episode whose funding is still pending may leave the denominator, so it is not a
+    final observation. `fail` is the proven failure: the optimistic share, where every
+    pending episode that is not feasible leaves and every other episode stays, is below the
+    limit. `pass` needs a fixed denominator: nothing pending and not provisional.
+    """
     counts = {"feasible": 0, "infeasible": 0, "unknown": 0}
+    pending = 0
+    optimistic_feasible = optimistic_n = 0
     for r in episodes:
-        counts[static_order(r["row"])] += 1
+        order = static_order(r["row"])
+        counts[order] += 1
+        waiting = r.get("funding") == "pending"
+        pending += waiting
+        if order == "feasible" or not waiting:
+            optimistic_n += 1
+            optimistic_feasible += order == "feasible"
     n = len(episodes)
     share = _share(counts["feasible"], n)
+    optimistic = _share(optimistic_feasible, optimistic_n)
+    fixed = not provisional and pending == 0
     ok = _at_least(share, T["m6_feasible_min"])
+    if provisional:
+        fail = False
+    elif pending == 0:
+        fail = not ok
+    else:
+        fail = optimistic is not None and not _at_least(optimistic, T["m6_feasible_min"])
+    if fail:
+        status = "fail"
+    elif fixed or provisional:
+        status = "partial_pass" if ok else "fail"
+    else:
+        status = "pending"
     return {
         "episodes": n,
         "counts": counts,
+        "pending": pending,
         "share": share,
+        "optimistic_share": optimistic,
         "partial": True,
-        "provisional": provisional,
-        "status": "partial_pass" if ok else "fail",
+        "provisional": not fixed,
+        "status": status,
         "not_checked": [
             "quantity step and minimum quantity against USD 50 at the entry price",
             "risk limit and position cap",
             "depth at entry",
         ],
-        "pass": ok,
+        "fail": fail,
+        "pass": fixed and ok,
     }
 
 
@@ -615,6 +647,6 @@ def _stops(
         short = n_primary < T["min_episodes"] or weeks < T["min_weeks"]
     if short and not m1["pending"]:
         out.append("insufficient_events")
-    if phase != "a" and not m6["pass"]:
+    if phase != "a" and m6["fail"]:
         out.append("capital_infeasible")
     return out
