@@ -511,3 +511,33 @@ Still open:
    specific contract the owner would trade?
 3. Which of the cheap measurements, if any, should wait for the owner's go after I25 and
    Stage 2A decide?
+
+## Account facts checked, 2026-11-22
+
+Status note only. No verdict above changes, no price, rate, return or book was read, and
+no owner account was used. Everything below comes from Bybit's public pages and one
+public, unauthenticated Bybit endpoint, read on 2026-11-22.
+
+- **LST as collateral (open question 1, second half).** `stETH` is accepted as unified
+  trading account (UTA) collateral: the public collateral endpoint lists a ratio of 0.98
+  up to 2,700 `stETH`, then 0.95, 0.90, 0.80, 0.70 and 0.60 in higher tiers. `ETH` has the
+  same first tiers; `USDT` is 1.0. `wstETH` is **not listed**. At the owner's size this is
+  the 0.98 tier. The ratios apply in cross and portfolio margin; the screens above assume
+  isolated margin, so any real run must restate the liquidation risk under cross margin.
+  Bybit says it reviews these ratios from time to time.
+- **Interest on unused margin and buffer (open question 1, first half).** No source shows
+  a UTA paying interest on idle balances. Bybit's own opt-in route is `BYUSDT`: `USDT` held
+  in Flexible Easy Earn, swapped into the UTA at a 100% collateral ratio, usable in cross
+  and portfolio margin only (not isolated), yielding the base Easy Earn rate without the
+  platform reward part (the help article's example is a base rate of 1.3% a year; the
+  current rate was not read), with a possible swap fee. Whether the owner's account is
+  eligible for Easy Earn is **not verified**.
+- **Effect on I35 (arithmetic only, not a measurement).** The 5% interest corner is not
+  supported by any source; about 1.3% is the documented order of magnitude. The required
+  net ETH funding is linear in `r_b`, so between the 14.5% (no interest) and 9.5% (5%
+  interest) endpoints at H = 8% the 1.3% case is about 13.2% a year. That is the
+  conservative end, not the favorable one, so the weak prior of I35 gets weaker. The
+  verdict stays `needs_measurement`, and I35 keeps the lowest priority of the cheap
+  measurements.
+- **Still not checked.** Easy Earn eligibility of the owner's account; whether an `LST`
+  can be staked from Poland; the settlement fee question (open question 2); I26 inputs.
