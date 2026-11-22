@@ -8,10 +8,10 @@ Update only these four lines after every merge -- this is the fast-path
 status check, not a place for narrative.
 
 ```
-Current primary: preserve the HYP-012 v2 cohort (administrative-stop checkpoint 2026-10-31) and the HYP-015 cohort 2026-10-05..11-02 (single formal read from 2026-11-04 12:00Z; readiness checked 2026-10-28: analytics image matches the checkout digest, first preliminary input set restore-checked); HYP-031 post-funding minute is registered (#523, code #526) and fetched only on the owner's go
-State: DRY_RUN, AUTO_TRADE off, no trading credentials; Bybit is the only confirmed execution venue; no after-cost edge established; carry closed for its tested configuration, USD 50 a leg with isolated +300% collateral (#522, 2026-10-25); the closed pump-short decision writer is off in prod (#528, 2026-10-26)
-Next: the 2026-10-31 direction decision as brief #506 sets it (v2 checkpoint, fresh disk reading, A Gate collector or B carry; queue item 3), then the HYP-015 final input set and read on 2026-11-04. Opening HYP-031 instead is only a proposal: the program review draft (not merged) proposes it under the brief's rule 4, since B's economics already failed; the queue changes only if the owner accepts that review
-User decision required on 2026-10-31: A or B per the brief; whether to accept the program review and open HYP-031; its stop rule (proposed: 2027-01-31)
+Current primary: preserve the HYP-012 v2 cohort (administrative-stop checkpoint 2026-11-30, needs 28 events); everything else is stopped or in maintenance: HYP-015 rejected 2026-11-05, HYP-031 failed 2026-11-05, I25 new-perp-short stopped at Stage 3 insufficient_power 2026-11-21 (#631), program stop adopted 2026-11-09 with a stop rule of 2027-02-11
+State: DRY_RUN, AUTO_TRADE off, no trading credentials; live chain (#539-#553, migrations 0061-0064) deployed and idle; group 1 stopped, group 2 each needs a go; Bybit is the only confirmed execution venue; no after-cost edge established; owner working capital USD 5,000 (hurdle 5% a year)
+Next: owner's two account facts (Bybit margin interest and collateral, Hyperliquid access from Poland), cheap Stage 2C measurements (I26, I35 first) each on the owner's separate go, Stage 2A only after those, the 2026-11-30 checkpoint decision, then maintenance until the March owner decision if no candidate passes a clean window (docs/consilium/plan.md section 4)
+User decision required: 2026-11-30 checkpoint and the R1 blind-window amendment; AWS key for Stage 2A; BIZ1 / ADR-0002; test-year wording
 ```
 
 ### Open-ended margin boundary closed (2026-10-07)
