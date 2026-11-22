@@ -330,6 +330,89 @@ preference:
 3. Only then consider letting Timescale retention delete unexported chunks, and
    record what was lost.
 
+## Host-lost drill (G-03)
+
+Every check above runs on the production host, with the host's own `backup.env`,
+passphrase, SSH key and pinned host key. None of them shows that the repository can be
+read when the host is gone. This drill does, from a different machine, using only what
+survives a lost host.
+
+**What survives a lost host:** the Storage Box and its repository; the passphrase and the
+exported key, if the offline copies exist; the Storage Box sub-account password in the
+password manager. **What does not:** `backup.env`, the SSH key `schurfer_storagebox`, the
+pinned `storagebox_known_hosts`, and every file under `/opt/schurfer/runtime`.
+
+For a `repokey` repository the key is stored inside the repository, so the passphrase
+alone opens an undamaged repository. The exported key matters only when the repository's
+own copy is damaged. The drill therefore checks both separately.
+
+**Who runs it.** The owner, on a machine that has never held these secrets (a laptop is
+fine). It reads secrets from the password manager and the offline copy, so it is not run
+by an agent. Borg 1.x on the drill machine is enough (production runs 1.2.8); a throwaway
+container works.
+
+**Use the smallest archive.** The newest `dbreceipt-*` archive is about 7 kB, so the drill
+moves no meaningful data and cannot disturb production. Do not extract a `db-*` archive
+(about 40 GB) for this drill.
+
+### Steps
+
+1. **Offline copies exist.** Locate the offline passphrase and the offline copy of
+   `borg-repokey.txt`. Neither may be read from the production host for this step: that is
+   the point. If either is missing, stop: that is the finding. Recreate it from the host
+   while the host is still alive (`borg key export` writes the file), store it offline, and
+   record the date.
+2. **Fresh machine, no inherited state.** Use a new empty directory as `HOME` for the
+   drill, so no old key or known-hosts entry is picked up.
+3. **Reach the box.** Generate a new SSH key and install it with the sub-account password
+   as in "Replacing the SSH key". Confirm the Storage Box host key fingerprint against
+   Hetzner's published value, not against a copy from the production host.
+4. **Open the repository with the passphrase only**, without importing the exported key:
+
+   ```bash
+   export BORG_REPO='ssh://u664974-sub1@u664974.your-storagebox.de:23/./borg'
+   export BORG_PASSPHRASE='<from the offline copy>'
+   export BORG_RSH='ssh -i <new key> -o UserKnownHostsFile=<drill known_hosts>'
+   borg list --short | tail -3
+   ```
+
+5. **Prove the offline key is the real key.** Export the key from the repository and
+   compare it with the offline copy:
+
+   ```bash
+   borg key export :: /tmp/repo-key-now.txt
+   diff /tmp/repo-key-now.txt <offline borg-repokey.txt> && echo SAME
+   ```
+
+   A difference means the offline copy is stale or belongs to another repository.
+
+6. **Extract and read one archive.** Extract the newest receipt into a new empty
+   directory and confirm that it parses:
+
+   ```bash
+   mkdir /tmp/g03-extract && cd /tmp/g03-extract
+   borg extract ::dbreceipt-YYYY-MM-DDTHH:MM:SS
+   find . -type f | head && python3 -m json.tool <receipt file> >/dev/null && echo PARSES
+   ```
+
+7. **Clean up.** Remove the drill's extracted files and the exported key copy, and remove
+   the drill's public key from `prod-borg/.ssh/authorized_keys` on the box. Confirm that
+   `borg list` with the production key still works.
+
+### What the result means
+
+| Result                                                      | Meaning                                                    |
+| ----------------------------------------------------------- | ---------------------------------------------------------- |
+| Steps 4 to 6 pass                                           | A lost host does not lose the backups. G-03 is done.       |
+| Step 1 fails (offline copy missing)                         | A damaged repository would be unreadable. Fix, then rerun. |
+| Step 3 fails (no way to reach the box without the host key) | The recovery path is broken. Fix the access, then rerun.   |
+| Step 4 fails (wrong passphrase)                             | The offline passphrase is stale. Replace it, then rerun.   |
+| Step 5 differs                                              | The offline key is not this repository's key.              |
+
+Record the outcome in the verification log below: date, drill machine, archive name, and
+which of steps 1 to 7 passed. Write the result only after running the steps; this section
+does not claim any run.
+
 ## Verification log
 
 Record every verification here: the date, what was checked, and the outcome. An
