@@ -874,3 +874,17 @@ in the revision note at the top and are not repeated here, except where a limit 
     staleness. The B2 pilot supports the first two on 12 files. Hyperliquid's limit now
     follows the pilot's cadence by a fixed rule; is the rule (`max` of 5 s and the p99 gap)
     the right one, and is 30 s the right ceiling?
+
+## Hyperliquid access note, 2026-11-22
+
+Status note only; the contract above is unchanged and no data was fetched. Hyperliquid's
+public Terms of Use (read at `app.hyperliquid.xyz/terms`, last updated 2026-06-15) restrict
+persons and entities in the United States, Ontario, Canada, and in sanctioned or
+export-controlled jurisdictions, and citizens of those, and put compliance with local law
+on the user (clause 1.9). Poland and the EU are **not** on that list. The application also
+loaded from the owner's machine without a restricted-jurisdiction notice (no wallet was
+connected, nothing was entered). This answers the plan's `unknown` for access as far as the
+terms go; it is not legal advice, and the Terms page on the marketing host
+(`hyperliquid.xyz/legal/terms-of-use`) answers automated fetches with 403, so the app host
+was used. The AWS requester-pays decision above is a separate owner decision and is still
+open.
