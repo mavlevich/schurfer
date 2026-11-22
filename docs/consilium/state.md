@@ -393,3 +393,23 @@ Read at: `d5327b1` (`origin/main`), PR #606 (`da22081`), PR #607 (`e3f323d`), PR
     1. `schurfer-cold-bar-export.service` (`03:32:29 UTC`): `Result=exit-code`, `ExecMainStatus=2` (`ValueError: 2026-11-11 has no rows in timeseries.bybit_momentum_bars_1m; refusing to export`) — expected fallout from stopping Group 1 on 2026-11-10.
     2. `schurfer-offsite-backup-health.service` (`07:01:57 UTC`): `Result=exit-code`, `ExecMainStatus=1` (cause of non-zero exit not established: journal not readable during this check; requires separate inspection via `make prod-offsite-backup-health`).
 - **Resolved owner decisions (`2026-11-17`):** working capital set to `USD 5,000`, `A2`/`A4d` (`lab_only`) parked for this cycle, and `I44` parked without reopening the external-channel rule.
+
+## 16. `I25` stopped at Stage 3, 2026-11-22
+
+Read at: `26610fd` (`origin/main`), PR #631.
+
+- **Result:** the `I25` Stage 3 pre-entry power calibration ran on 2026-11-21 on the exact
+  line the owner authorized (228 requests, 2.67 MB). Calibrated `MDE` is `1,158` bps against
+  the pre-chosen `400` bps limit (sensitivity `878` and `1,029` bps also fail). Verdict
+  `insufficient_power`, protocol stop code 6. See
+  [`new-perp-stage3-result-2026-11-21.md`](../research/new-perp-stage3-result-2026-11-21.md).
+- **What did not happen:** no return of the short trade was read, the backward holdout was
+  not opened, and Stage 1b Go A and Go B are withdrawn (the body-phase contract stays merged
+  and unrun). The discovery-ledger count is unchanged.
+- **Reading:** lack of planned power under the registered criterion, not evidence that no
+  edge exists and not evidence about profitability. No variant is rescued by a smaller `k`,
+  another block rule or a looser limit.
+- **Effect on the queue:** `I25` row in [`ideas.md`](ideas.md) is `untestable`. No candidate
+  is ready for the single holdout exam. The next work is Stage 2C cheap measurements and
+  Stage 2A (after the owner's account facts), the `2026-11-30` `HYP-012 v2` checkpoint, and
+  the operational items of `plan.md` section 4.
