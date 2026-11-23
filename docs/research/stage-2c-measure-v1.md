@@ -194,3 +194,40 @@ the delivery price rule and the settlement fee of section 5.
 and the cycle rule). It repeats all parts, about 25 requests, ceiling 100, a new empty
 root. I35 is not re-decided: run 1 stands, and run 2's I35 is a replication check that must
 agree to the printed digits; a difference is reported, not resolved by choosing one.
+
+## 11. Result (2026-11-23)
+
+Run 2, owner go on plan hash `8a4dc75dcd80c5180d7065343089141bac192ca1727439c6c0683ac39385c47a`,
+25 requests, no part stop, no run stop. Report `report.json` SHA-256
+`f0f1f0b337c5dab57fbf9c8741f3ac5bab09bcd4e7f2d85948e5c8db1dd4aa4e` (run 1:
+`4f94d96296018c18adda25db81ac7873c2d8b0f521ab64153c676314261b5f95`). Raw bodies and
+journals stay outside the repository.
+
+**I35: `i35_account_dependent`.** ETHUSDT funding mean 8.375% a year, worst rolling 90 days
++3.27%, 1,095 settlements, no gap, no missing 4 h bar. Run 2 repeated run 1 to every printed
+digit, so the replication check holds. The mean sits between the fail level (5.64%) and the
+pass level (14.50%): the result depends on what the owner's account earns on the leftover
+collateral, which is the definition of the outcome.
+
+**I26: `i26_regime_dependent` for BTC and for ETH; the idea does not pass.** Entry basis `a`,
+percent a year, every cycle 90 days, none negative, none unusable:
+
+| Expiry     | BTC   | ETH   |
+| ---------- | ----- | ----- |
+| 2025-03-28 | 12.25 | 12.02 |
+| 2025-06-27 | 4.60  | 3.76  |
+| 2025-09-26 | 5.04  | 5.10  |
+| 2025-12-26 | 7.17  | 7.06  |
+
+Per asset one of four cycles reaches 11.82% (March), so the pass condition (at least half)
+is not met. Two of four reach 6.62% (March and December), exactly half: not fewer than half,
+so not `i26_fail` either. The excluded counts were 356 not quarterly, 6 duplicate expiries,
+16 entries before the window and 6 after it.
+
+**Reading.** Neither idea earns a protocol. The basis was wide at the March 2025 entry and
+narrow at the June and September entries, which is a regime pattern, not a level. This is
+one year and four cycles per asset: counts, not statistics, and no claim is made beyond the
+year. Still open, as stated in sections 5 and 10: the delivery price rule of USDT expiry
+contracts, the real settlement fee (0 or 5 bps), and the USDC-settled contracts against the
+USDT spot leg (about 0.4 points of `a` per 0.1% gap on a 90-day cycle). No holdout, no R1
+window and no cost model were touched.
