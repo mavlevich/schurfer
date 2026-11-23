@@ -413,3 +413,22 @@ Read at: `26610fd` (`origin/main`), PR #631.
   is ready for the single holdout exam. The next work is Stage 2C cheap measurements and
   Stage 2A (after the owner's account facts), the `2026-11-30` `HYP-012 v2` checkpoint, and
   the operational items of `plan.md` section 4.
+
+## 17. Stage 2C measurement: `I35` and `I26`, 2026-11-23
+
+Read at: `a0334d9` (`origin/main`), PR #639.
+
+- **Result:** two public-Bybit runs under [`stage-2c-measure-v1`](../research/stage-2c-measure-v1.md)
+  (owner go on each plan hash; run 1 stopped `I26` at `too_many_cycles`, amendment 1 fixed
+  the cycle as the quarterly expiry before any price, run 2 made 25 requests). `I35`:
+  ETHUSDT funding mean `8.375%` a year, worst rolling 90 days `+3.27%`,
+  `i35_account_dependent`, replicated to every digit. `I26`: entry basis `3.8` to `12.3%`
+  on four quarterly cycles per asset, `i26_regime_dependent` for BTC and ETH.
+- **What did not happen:** no holdout, no test year, no R1 window and no cost model were
+  touched; no trade return was read. The discovery ledger has one new row.
+- **Reading:** counts on one year, not statistics. The basis was wide at the March 2025
+  entry and narrow at the June and September entries. `I35` depends on what the owner's
+  account earns on leftover collateral and on the LST discount, both still owner-only.
+- **Effect on the queue:** `I26` and `I35` rows in [`ideas.md`](ideas.md) are `parked`; no
+  protocol is permitted for either. Stage 2A (`cost-only`, Hyperliquid) is next and needs
+  the owner's AWS key and a go on its cost ceiling.
