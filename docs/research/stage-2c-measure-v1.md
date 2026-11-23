@@ -134,3 +134,29 @@ the outcomes are computed; nothing is chosen after a look.
    adds the journal and the report, and is reviewed before merge.
 3. The owner gives a separate go before the first request. The run is one execution from
    the repository root at a pinned revision, and its report is the only output.
+
+## 9. Implementation notes (code PR)
+
+The code is `apps/analytics/schurfer_analytics/stage_2c_measure.py`. Where the code had to
+choose, it chose as follows. None of these changes a level or a window in sections 2 to 5.
+
+- **Own fetcher.** The I25 fetchers are built never to read a rate or a price, so they cannot
+  serve here. The module has a small fetcher with the journal of section 3 and shares only
+  `publish_once`.
+- **Approval hash.** `plan` prints a go hash over the window, budget, thresholds, endpoints
+  and symbols. `fetch` refuses to start unless the owner's approved hash equals it, and
+  refuses a root inside the repository or a root that is not empty.
+- **Catalog by request.** The dated-contract catalog is read with two requests
+  (`instruments-info`, base BTC and ETH, status `Closed`), not from the local catalog, so
+  the run needs no other state. More than two pages per asset stops the I26 part.
+- **Entry bar.** One request per cycle asks for 4 h bars from the entry time to seven days
+  later and takes the earliest. No bar in that span is a cycle with `a` unknown: it counts in
+  the denominator and never passes. If the first cycle has no bar, or the API refuses the
+  symbol, the I26 part stops as `dated_history_unavailable`; this probe runs before any spot
+  request.
+- **Sanity klines.** The three ETHUSDT 4 h pages only report coverage (bars and missing
+  bars). They feed no decision and no price is published.
+- **Idea verdict.** Outcomes are reported per asset. `idea_passes` is true only when both
+  assets are `i26_pass_protocol`. An asset with no cycle is `i26_no_cycles`.
+- **Request count.** A run with no retries makes 25 requests: 6 funding, 3 ETH klines, 2
+  catalog, 8 entry (four cycles per asset) and 6 spot klines. The ceiling is 100.
