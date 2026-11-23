@@ -485,6 +485,19 @@ that is not production and production has 24 GB. What remains untested is
 therefore volume and duration, not correctness: every mechanism the dump relies
 on has now been exercised against real data.
 
+### 2026-11-23 -- host-lost drill (G-03), step 1 only, rest postponed
+
+The owner stated that the offline passphrase exists. This is the owner's word; it was not
+checked by an agent, and nothing was read from the production host for it. Whether an
+offline copy of the exported key (`borg-repokey.txt`) exists was not stated.
+
+**Not run:** steps 3 to 7 of the [host-lost drill](#host-lost-drill-g-03) (access from a
+fresh machine, opening the repository with the passphrase alone, comparing the offline
+key with the repository key, extracting one archive, cleanup). The owner postponed them as
+not urgent: all backup and restore timers report success, the weekly ENG-025 drill passes,
+and no live trading depends on the backups. G-03 stays open. Until steps 4 to 6 pass, the
+lost-host path is untested.
+
 ## Checking bar coverage
 
 The health check watches three stamps and, separately, whether the nightly cold
