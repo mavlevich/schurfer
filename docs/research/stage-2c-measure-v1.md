@@ -160,3 +160,37 @@ choose, it chose as follows. None of these changes a level or a window in sectio
   assets are `i26_pass_protocol`. An asset with no cycle is `i26_no_cycles`.
 - **Request count.** A run with no retries makes 25 requests: 6 funding, 3 ETH klines, 2
   catalog, 8 entry (four cycles per asset) and 6 spot klines. The ceiling is 100.
+
+## 10. Amendment 1: what a cycle is (2026-11-23)
+
+**Run 1 record.** The first run (owner go on plan hash `4d0bfdce...`, 11 requests, report
+published once) gave I35 = `i35_account_dependent`: ETHUSDT funding mean 8.375% a year,
+worst rolling 90 days +3.27%, 1,095 settlements, no gap, no missing 4 h bar. I26 stopped
+as `too_many_cycles` before any price was read: the Bybit catalog lists about 195 closed
+dated linear contracts per asset (weeklies, monthlies and quarterlies), not the four
+quarterly cycles section 5 assumed. No spot, entry or dated price was requested, so the
+stop says nothing about the basis.
+
+**Amendment.** Written after seeing the catalog metadata only (symbols, listing and
+delivery times) and before any I26 price. It fixes the word "cycle" in section 5 and
+changes no level, window or outcome rule:
+
+- A cycle is a **quarterly** contract: delivery on the last Friday of March, June,
+  September or December (UTC). Weeklies and monthlies are not cycles.
+- Bybit lists a second series (USDT-settled `BTCUSDT-DDMMMYY`) beside the USDC-settled
+  `BTC-DDMMMYY` for the same expiry. One instrument per asset and expiry is kept: the one
+  that listed first, then the lower symbol. Settle coin is not a selection input.
+- The entry rule of section 5 is unchanged, so the cycles with an entry inside the window
+  are the expiries 2025-03-28, 2025-06-27, 2025-09-26 and 2025-12-26, four per asset.
+  The 2024-12-27 expiry has its entry on 2024-09-28, before the window, and is excluded as
+  before.
+
+**Caveat.** The kept instruments for these four expiries are the USDC-settled series, while
+the spot leg is the USDT pair. A USDC/USDT gap of 0.1% moves `a` by about 0.4 points on a
+90-day cycle; the report does not correct for it and the verdict states it as open next to
+the delivery price rule and the settlement fee of section 5.
+
+**Run 2.** Needs its own owner go on its own plan hash (the plan now carries the amendment
+and the cycle rule). It repeats all parts, about 25 requests, ceiling 100, a new empty
+root. I35 is not re-decided: run 1 stands, and run 2's I35 is a replication check that must
+agree to the printed digits; a difference is reported, not resolved by choosing one.

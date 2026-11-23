@@ -131,6 +131,23 @@ class World:
             }
             for index, delivery in enumerate(DELIVERIES)
         ]
+        # Real catalogs also list weeklies, monthlies and a second settle-coin series for
+        # the same expiry; none of them may become a cycle (they cannot be fetched here).
+        for name, delivery, launch in (
+            ("WEEK", ms(2025, 4, 4, 8), ms(2025, 3, 14, 8)),
+            ("MONTH", ms(2025, 5, 30, 8), ms(2025, 3, 7, 8)),
+            ("DUP", DELIVERIES[2], DELIVERIES[2] - 87 * m.DAY_MS),
+        ):
+            items.append(
+                {
+                    "symbol": f"{base}USDT-{name}",
+                    "contractType": "LinearFutures",
+                    "baseCoin": base,
+                    "launchTime": str(launch),
+                    "deliveryTime": str(delivery),
+                    "status": "Closed",
+                }
+            )
         items.append(
             {
                 "symbol": f"{base}USDT",
@@ -231,6 +248,24 @@ def test_i26_outcome_levels_and_unusable_cycles() -> None:
     assert m.i26_asset_outcome([])["outcome"] == "i26_no_cycles"
 
 
+def test_quarterly_means_the_last_friday_of_a_quarter_month() -> None:
+    assert all(m.is_quarterly(d) for d in DELIVERIES)
+    assert not m.is_quarterly(ms(2025, 4, 4, 8))  # a Friday, but a weekly in April
+    assert not m.is_quarterly(ms(2025, 3, 21, 8))  # March, Friday, not the last one
+    assert not m.is_quarterly(ms(2025, 3, 29, 8))  # March, last Saturday
+    assert m.is_quarterly(ms(2024, 12, 27, 8))  # December rolls into the next year
+
+
+def test_quarterly_cycles_keep_one_instrument_per_expiry() -> None:
+    first = m.Instrument("BTC-27JUN25", "BTC", ms(2024, 7, 5), DELIVERIES[2])
+    second = m.Instrument("BTCUSDT-27JUN25", "BTC", ms(2025, 4, 1), DELIVERIES[2])
+    weekly = m.Instrument("BTCUSDT-04APR25", "BTC", ms(2025, 3, 14), ms(2025, 4, 4, 8))
+    eth = m.Instrument("ETH-27JUN25", "ETH", ms(2024, 7, 5), DELIVERIES[2])
+    chosen, excluded = m.quarterly_cycles([second, weekly, eth, first])
+    assert [i.symbol for i in chosen] == ["BTC-27JUN25", "ETH-27JUN25"]
+    assert excluded == {"not_quarterly": 1, "duplicate_expiry": 1}
+
+
 def test_cycle_entry_windows() -> None:
     inst = m.Instrument("X", "BTC", DELIVERIES[0] - 180 * m.DAY_MS, DELIVERIES[0])
     assert m.cycle_entry(inst) == (None, "entry_before_window")
@@ -257,7 +292,11 @@ def test_full_run_reads_the_known_world(tmp_path: Path) -> None:
     assert report["i35"]["outcome"] == "i35_account_dependent"
     assert report["i35"]["eth_kline_coverage"]["missing_bars"] == 0
     i26 = report["i26"]
-    assert i26["excluded_cycles"] == {"entry_before_window": 2}
+    assert i26["excluded_cycles"] == {
+        "not_quarterly": 4,
+        "duplicate_expiry": 2,
+        "entry_before_window": 2,
+    }
     for asset in m.ASSETS:
         assert i26["assets"][asset]["cycles"] == 4
         assert i26["assets"][asset]["outcome"] == "i26_pass_protocol"

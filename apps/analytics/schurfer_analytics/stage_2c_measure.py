@@ -19,7 +19,7 @@ import json
 import sys
 import time
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from itertools import pairwise
 from pathlib import Path
 from typing import Any, Final
@@ -49,6 +49,9 @@ FUNDING_MAX_PAGES: Final = 8
 KLINE_MAX_PAGES: Final = 4
 CATALOG_MAX_PAGES: Final = 2
 MAX_CYCLES: Final = 12
+QUARTER_MONTHS: Final = (3, 6, 9, 12)
+FRIDAY: Final = 4
+CYCLE_RULE: Final = "quarterly_last_friday_one_per_expiry_earliest_listed"
 ENTRY_SEARCH_MS: Final = 7 * DAY_MS
 ENTRY_LIMIT: Final = 50
 
@@ -233,6 +236,37 @@ def parse_catalog(payload: Any, base: str) -> tuple[list[Instrument], str]:
             )
         )
     return found, str(result.get("nextPageCursor") or "")
+
+
+def is_quarterly(delivery_ms: int) -> bool:
+    """Delivery on the last Friday of March, June, September or December (UTC)."""
+    day = datetime.fromtimestamp(delivery_ms / 1000, UTC)
+    return (
+        day.month in QUARTER_MONTHS and day.weekday() == FRIDAY and day.day + 7 > _month_days(day)
+    )
+
+
+def _month_days(day: datetime) -> int:
+    first_next = datetime(day.year + (day.month == 12), day.month % 12 + 1, 1, tzinfo=UTC)
+    return (first_next - timedelta(days=1)).day
+
+
+def quarterly_cycles(instruments: list[Instrument]) -> tuple[list[Instrument], dict[str, int]]:
+    """Amendment 1: one quarterly contract per asset and expiry, the earliest listed.
+
+    Bybit lists weekly, monthly and quarterly contracts, and two settle-coin series for the
+    same expiry. The cycle is the quarterly expiry; the instrument that listed first is kept.
+    """
+    excluded: dict[str, int] = {}
+    chosen: dict[tuple[str, int], Instrument] = {}
+    for item in sorted(instruments, key=lambda i: (i.base, i.delivery_ms, i.launch_ms, i.symbol)):
+        if not is_quarterly(item.delivery_ms):
+            excluded["not_quarterly"] = excluded.get("not_quarterly", 0) + 1
+        elif (item.base, item.delivery_ms) in chosen:
+            excluded["duplicate_expiry"] = excluded.get("duplicate_expiry", 0) + 1
+        else:
+            chosen[(item.base, item.delivery_ms)] = item
+    return list(chosen.values()), excluded
 
 
 def cycle_entry(instrument: Instrument) -> tuple[int | None, str | None]:
@@ -435,8 +469,8 @@ def measure_i26(run: Run) -> dict[str, Any]:
             raise PartStopError("dated_catalog_empty", base)
         instruments.extend(listed)
     cycles: list[tuple[Instrument, int]] = []
-    excluded: dict[str, int] = {}
-    for instrument in sorted(instruments, key=lambda i: (i.base, i.delivery_ms)):
+    quarterly, excluded = quarterly_cycles(instruments)
+    for instrument in quarterly:
         entry, reason = cycle_entry(instrument)
         if entry is None:
             excluded[str(reason)] = excluded.get(str(reason), 0) + 1
@@ -493,6 +527,8 @@ def plan() -> dict[str, Any]:
     return {
         "version": VERSION,
         "doc": DOC,
+        "amendment": 1,
+        "cycle_rule": CYCLE_RULE,
         "base_url": BASE_URL,
         "window_ms": [WINDOW_START_MS, WINDOW_END_MS],
         "budget": BUDGET,
